@@ -9,7 +9,7 @@ const payloadOf = record => record.photoState?.payload || record.action.body.pay
 
 // Readers prove the entire retained public ancestry independently of writer
 // flags. The caller must gate capture, sending and cancellation separately.
-export function personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId }) {
+export function personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner = false }) {
   try {
     const byId = new Map(records.map(record => [record.action.operationId, record]));
     if (byId.size !== records.length) return null;
@@ -19,8 +19,8 @@ export function personalPublicPendingPhotoFormChain({ records, operationId, list
       if (seen.has(action.operationId) || action.listId !== listId) return null;
       seen.add(action.operationId); reverse.push(record);
       if (action.kind === "list.import" && [1, 2].includes(body.publicImport?.version)) break;
-      if (action.kind === "list.update" ? ![7, 8].includes(body.photoResults?.version)
-        : action.kind !== "photos.mutate" || body.action !== "form" || body.ownerResult?.version !== 2
+      if (action.kind === "list.update" ? ![7, 8, 11].includes(body.photoResults?.version)
+        : action.kind !== "photos.mutate" || body.action !== "form" || ![2, 5].includes(body.ownerResult?.version)
           || body.ownerResult.operationId !== body.causal?.baseOperationId) return null;
       record = byId.get(body.causal?.baseOperationId);
     }
@@ -36,8 +36,10 @@ export function personalPublicPendingPhotoFormChain({ records, operationId, list
         || step.mergeBase && !same(step.mergeBase.payload, basePayload)) return null;
       if (action.kind === "photos.mutate") {
         const form = assertPersonalPhotoFormRecord(step);
-        if (form.copySource || form.ownerResult?.version !== 2 || form.ownerResult.publicOperationId !== publicOperationId
+        if (form.copySource || ![2, 5].includes(form.ownerResult?.version) || form.ownerResult.publicOperationId !== publicOperationId
           || form.ownerResult.operationId !== previous.action.operationId || !same(step.mergeBase.payload, basePayload)) return null;
+        if (form.ownerResult.version === 5 && steps.slice(0, steps.indexOf(step)).some(prior =>
+          payloadOf(prior).items?.[form.entityId] || payloadOf(prior).containers?.[form.entityId])) return null;
         forms.push(step); source = step;
       } else {
         const publicSource = source === root, reference = publicSource ? personalPublicPhotoResultReference(source) : personalFormPhotoResultReference(source);
@@ -52,8 +54,10 @@ export function personalPublicPendingPhotoFormChain({ records, operationId, list
     const selectedId = entityId ?? (source === root ? undefined : source.action.body.entityId);
     if (selectedType !== undefined || selectedId !== undefined) {
       const collection = selectedType === "item" ? "items" : selectedType === "container" ? "containers" : null;
-      if (!collection || typeof selectedId !== "string" || !payloadOf(previous)[collection]?.[selectedId]) return null;
-    }
+      if (!collection || typeof selectedId !== "string" || (allowNewOwner
+        ? steps.some(step => payloadOf(step).items?.[selectedId] || payloadOf(step).containers?.[selectedId])
+        : (entityType !== undefined || entityId !== undefined) && !payloadOf(previous)[collection]?.[selectedId])) return null;
+    } else if (allowNewOwner) return null;
     return { root, source, head: previous, forms, steps, publicOperationId, entityType: selectedType, entityId: selectedId };
   } catch { return null; }
 }

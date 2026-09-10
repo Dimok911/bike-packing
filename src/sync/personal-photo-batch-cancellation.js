@@ -24,8 +24,8 @@ export async function cancelPersonalPhotoBatch({ record, binding, queue, store, 
   if (!enabled || typeof assertCurrent !== "function" || record?.photoState?.fileInventoryVersion !== 2
     || record?.action?.kind === "list.import" && !(Object.hasOwn(record.action.body, "publicImport") ? publicEnabled && (record.action.body.publicImport?.version !== 2 || publicEntityEnabled) : Object.hasOwn(record.action.body, "guestImport") ? guestEnabled : archiveEnabled)
     || record?.action?.body?.action === "form" && !formEnabled
-    || record?.action?.body?.ownerResult?.version === 2 && (!publicPhotoFormEnabled || !publicEnabled)
-    || record?.action?.body?.ownerResult?.version === 3 && (!importPhotoFormEnabled
+    || [2, 5].includes(record?.action?.body?.ownerResult?.version) && (!publicPhotoFormEnabled || !publicEnabled)
+    || [3, 4].includes(record?.action?.body?.ownerResult?.version) && (!importPhotoFormEnabled
       || (record.action.body.ownerResult.importKind === "guest" ? !guestEnabled : !archiveEnabled))
     || !queue?.inspect || !store?.read || !staging?.cancel) throw paused();
   assertCurrent(); record = clone(record); binding = clone(binding);

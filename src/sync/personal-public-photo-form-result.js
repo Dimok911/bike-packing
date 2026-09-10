@@ -3,6 +3,10 @@ import { personalArchiveJson } from "./personal-archive-import-protocol.js";
 
 export const PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = false;
 export const PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY = "personalCausalPublicPhotoFormsV1";
+export const PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED = false;
+export const PERSONAL_PUBLIC_NEW_OWNER_FORM_CAPABILITY = "personalCausalPublicNewOwnerFormsV1";
+export const personalPublicPhotoFormCapabilities = reference => [PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY,
+  ...([5, 11].includes(reference?.version) ? [PERSONAL_PUBLIC_NEW_OWNER_FORM_CAPABILITY] : [])];
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
 const plain = value => value && Object.getPrototypeOf(value) === Object.prototype;
@@ -52,13 +56,15 @@ function inventoryPayload(rows, listId) {
 export function assertPersonalPublicPhotoFormReference(body, listId) {
   assertListOperationJsonValue(body);
   const ref = body.ownerResult;
-  if (!exact(ref, ["version", "operationId", "publicOperationId", "owner", "pendingPhotos"]) || ref.version !== 2
+  if (!exact(ref, ["version", "operationId", "publicOperationId", "owner", "pendingPhotos"]) || ![2, 5].includes(ref.version)
     || !uuid(ref.operationId) || !uuid(ref.publicOperationId) || !["item", "container"].includes(body.entityType)
-    || !id(body.entityId) || !plain(ref.owner) || ref.owner.id !== body.entityId || !Array.isArray(ref.owner.photos)) fail();
-  const selectedListId = listId || ref.pendingPhotos?.[0]?.photos?.[0]?.listId || ref.owner.photos[0]?.listId;
-  if (ref.pendingPhotos?.length || ref.owner.photos.some(photo => photo.status === "pending")) {
+    || !id(body.entityId) || (ref.version === 5 ? ref.owner !== null
+      : !plain(ref.owner) || ref.owner.id !== body.entityId || !Array.isArray(ref.owner.photos))) fail();
+  const photos = ref.owner?.photos || [];
+  const selectedListId = listId || ref.pendingPhotos?.[0]?.photos?.[0]?.listId || photos[0]?.listId;
+  if (ref.pendingPhotos?.length || photos.some(photo => photo.status === "pending")) {
     const payload = inventoryPayload(ref.pendingPhotos, selectedListId), field = body.entityType === "item" ? "items" : "containers";
-    if (!same(payload[field][body.entityId]?.photos || [], ref.owner.photos.filter(photo => photo.status === "pending"))) fail();
+    if (!same(payload[field][body.entityId]?.photos || [], photos.filter(photo => photo.status === "pending"))) fail();
   } else if (!Array.isArray(ref.pendingPhotos)) fail();
   return clone(ref);
 }
@@ -73,8 +79,11 @@ export function assertPersonalPublicPhotoFormSummary(summary, listId) {
 export function assertPersonalPublicPhotoFormBase(body, basePayload, listId) {
   const ref = assertPersonalPublicPhotoFormReference(body, listId), field = body.entityType === "item" ? "items" : "containers";
   const owner = basePayload?.[field]?.[body.entityId];
-  if (!owner || !same({ ...owner, photos: owner.photos ?? [] }, ref.owner)
-    || ref.owner.photos.some(photo => photo.listId !== listId)
+  if ((ref.version === 5 ? basePayload.items?.[body.entityId] || basePayload.containers?.[body.entityId]
+      || Object.values(basePayload.layouts || {}).some(layout => layout.arrangement?.items?.[body.entityId]
+        || layout.arrangement?.containers?.[body.entityId] || layout.rootContainerIds?.includes(body.entityId))
+    : !owner || !same({ ...owner, photos: owner.photos ?? [] }, ref.owner))
+    || (ref.owner?.photos || []).some(photo => photo.listId !== listId)
     || !same(personalPublicPendingPhotoInventory(basePayload, listId), ref.pendingPhotos)) fail();
   return ref;
 }
@@ -83,7 +92,7 @@ export function assertPersonalPublicPhotoFormBase(body, basePayload, listId) {
 // plus this form's own new files. It never invents publication metadata.
 export function personalPublicPhotoFormSummary(body, listId) {
   const ref = assertPersonalPublicPhotoFormReference(body, listId), payload = inventoryPayload(ref.pendingPhotos, listId);
-  const field = body.entityType === "item" ? "items" : "containers", owner = clone(ref.owner);
+  const field = body.entityType === "item" ? "items" : "containers", owner = ref.version === 5 ? { id: body.entityId, photos: [] } : clone(ref.owner);
   if (!Array.isArray(body.changes) || !body.changes.length || body.changes.length > 50) fail();
   for (const change of body.changes) {
     if (!plain(change) || change.entityType !== body.entityType || change.entityId !== body.entityId

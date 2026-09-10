@@ -4,9 +4,11 @@ import { personalPhotoFormOwner } from "./personal-photo-form-protocol.js";
 import { applyPersonalPhotoItemFormContext, refreshPersonalPhotoItemContextView } from "./personal-photo-item-form-context.js";
 import { applyPersonalPhotoContainerFormContext, refreshPersonalPhotoContainerContextView } from "./personal-photo-container-form-context.js";
 import { personalImportPendingPhotoFormChain } from "./personal-import-pending-photo-chain.js";
+import { personalPublicPendingPhotoFormChain } from "./personal-public-pending-photo-chain.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 
 export const PERSONAL_PENDING_IMPORT_CREATE_ENABLED = false;
+export const PERSONAL_PENDING_PUBLIC_CREATE_ENABLED = false;
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
 const payloadOf = record => record.photoState?.payload || record.action.body.payload;
@@ -44,6 +46,7 @@ export function preparePersonalPendingImportCreate(input, { enabled = PERSONAL_P
 
 export function createPersonalPendingImportCreateSession({ outbox, store, getContext, onDurable,
   enabled = PERSONAL_PENDING_IMPORT_CREATE_ENABLED, snapshotToPayload = value => value,
+  publicEnabled = PERSONAL_PENDING_PUBLIC_CREATE_ENABLED,
   itemContextEnabled = false, containerContextEnabled = false, createUuid = () => crypto.randomUUID() }) {
   let attempt;
   return {
@@ -53,7 +56,7 @@ export function createPersonalPendingImportCreateSession({ outbox, store, getCon
       const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
       attempt = { promise, request: null, plan: null, operationId: null };
       try {
-        if (!enabled || !outbox || !store || typeof onDurable !== "function") fail();
+        if (!(enabled || publicEnabled) || !outbox || !store || typeof onDurable !== "function") fail();
         assertListOperationJsonValue(input);
         const frozen = clone(input), initial = clone(getContext()), head = outbox.recover();
         const assertCurrent = () => {
@@ -62,12 +65,13 @@ export function createPersonalPendingImportCreateSession({ outbox, store, getCon
             || outbox.recover()?.action.operationId !== head?.action.operationId) fail();
         };
         assertCurrent();
-        const chain = personalImportPendingPhotoFormChain({ records: outbox.list(), operationId: head?.action.operationId, listId: outbox.binding.listId });
+        const selection = { records: outbox.list(), operationId: head?.action.operationId, listId: outbox.binding.listId };
+        const chain = enabled && personalImportPendingPhotoFormChain(selection) || publicEnabled && personalPublicPendingPhotoFormChain(selection);
         if (!chain || !outbox.hasPending() || frozen.parentOperationId !== head.action.operationId
           || frozen.baseStateRevision !== head.action.body.baseStateRevision || !same(frozen.basePayload, payloadOf(head))
           || chain.steps.some(step => payloadOf(step).items?.[frozen.entityId] || payloadOf(step).containers?.[frozen.entityId])) fail();
         attempt.request = frozen;
-        attempt.plan = preparePersonalPendingImportCreate(frozen, { enabled, snapshotToPayload, itemContextEnabled, containerContextEnabled });
+        attempt.plan = preparePersonalPendingImportCreate(frozen, { enabled: true, snapshotToPayload, itemContextEnabled, containerContextEnabled });
         attempt.operationId = createUuid(); assertCurrent();
         (async () => {
           const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); assertCurrent();

@@ -23,7 +23,7 @@ export function personalPhotoContainerFormContext(body, state = null) {
     || Object.values(context.layoutFields).some(value => typeof value !== "string" || value.length > 255)) fail();
   const inventory = personalPhotoFormLayoutInventory(context.targetLayout, state, fail);
   const before = context.targetLayout.arrangement, previous = before.containers[body.entityId];
-  const created = body.baseEntityRevision === 0 || body.ownerResult?.version === 4;
+  const created = body.baseEntityRevision === 0 || [4, 5].includes(body.ownerResult?.version);
   if (context.sourceLayout !== null) {
     if (!plain(context.sourceLayout) || created || previous || context.sourceLayout.id === context.targetLayout.id) fail();
     personalPhotoFormLayoutInventory(context.sourceLayout, state, fail);

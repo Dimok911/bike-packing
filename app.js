@@ -741,7 +741,7 @@ import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, 
 import { createPersonalPendingFormSession } from "./src/sync/personal-pending-form-session.js";
 import { createPersonalPendingPhotoFormSession } from "./src/sync/personal-pending-photo-form-session.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./src/sync/personal-photo-form-owner-result.js";
-import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./src/sync/personal-public-photo-form-result.js";
+import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./src/sync/personal-public-photo-form-result.js";
 import { personalPendingPhotoFormChain } from "./src/sync/personal-pending-photo-form-chain.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-item-form-context.js";
 import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
@@ -764,8 +764,7 @@ import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparati
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
 import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } from "./src/sync/personal-public-preparation-resolution-protocol.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./src/sync/personal-import-photo-form-result.js";
-import { PERSONAL_PENDING_IMPORT_CREATE_ENABLED, createPersonalPendingImportCreateSession } from "./src/sync/personal-pending-import-create.js";
-import { personalImportPendingPhotoFormChain } from "./src/sync/personal-import-pending-photo-chain.js";
+import { PERSONAL_PENDING_IMPORT_CREATE_ENABLED, PERSONAL_PENDING_PUBLIC_CREATE_ENABLED, createPersonalPendingImportCreateSession } from "./src/sync/personal-pending-import-create.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -2568,22 +2567,25 @@ function personalPendingPhotoFormEnabled(type) {
   const outbox = personalSaveOutboxForScope();
   if (!outbox?.hasPending()) return false;
   const entityId = type === "item" ? editingItemId : editingRootContainerId;
-  const creating = !entityId && PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED;
+  const creating = !entityId;
   const options = { records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId };
-  const chain = creating ? personalImportPendingPhotoFormChain(options)
+  const chain = creating ? personalPendingPhotoFormChain(options)
     : personalPendingPhotoFormChain({ ...options, entityType: type, entityId });
   if (chain?.publicOperationId && (!PERSONAL_PUBLIC_PHOTO_FORM_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED)) return false;
+  if (creating && !(chain?.publicOperationId && PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED
+    || chain?.importOperationId && PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED)) return false;
   if (chain?.importOperationId && (!PERSONAL_IMPORT_PHOTO_FORM_ENABLED || (chain.importKind === "guest"
     ? !PERSONAL_GUEST_IMPORT_ENABLED : !PERSONAL_ARCHIVE_IMPORT_ENABLED || !PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED))) return false;
-  return Boolean(chain && (creating && chain.importOperationId || chain.entityType === type && chain.entityId === entityId));
+  return Boolean(chain && (creating || chain.entityType === type && chain.entityId === entityId));
 }
 
 function personalPendingImportCreateEnabled() {
-  if (!PERSONAL_PENDING_IMPORT_CREATE_ENABLED || !personalPhotoFormUiEnabled()) return false;
+  if (!(PERSONAL_PENDING_IMPORT_CREATE_ENABLED || PERSONAL_PENDING_PUBLIC_CREATE_ENABLED) || !personalPhotoFormUiEnabled()) return false;
   const outbox = personalSaveOutboxForScope();
   if (!outbox?.hasPending()) return false;
-  return Boolean(personalImportPendingPhotoFormChain({ records: outbox.list(),
-    operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId }));
+  const chain = personalPendingPhotoFormChain({ records: outbox.list(),
+    operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId });
+  return Boolean(chain?.importOperationId && PERSONAL_PENDING_IMPORT_CREATE_ENABLED || chain?.publicOperationId && PERSONAL_PENDING_PUBLIC_CREATE_ENABLED);
 }
 
 function personalPhotoFormRequest(values, { pendingImport = false, pendingFiles = false, pendingCreate = false } = {}) {
@@ -2611,7 +2613,8 @@ function personalPhotoFormSession(options) {
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     ...(options.pendingFiles ? { publicEnabled: PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } : {}),
-    ...(options.pendingCreate ? { itemContextEnabled: PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
+    ...(options.pendingCreate ? { enabled: PERSONAL_PENDING_IMPORT_CREATE_ENABLED, publicEnabled: PERSONAL_PENDING_PUBLIC_CREATE_ENABLED,
+      itemContextEnabled: PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
       containerContextEnabled: PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } : {}),
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
     readEntities: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
@@ -2624,8 +2627,8 @@ function personalPhotoFormSession(options) {
       } else if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
       else assertPersonalPhotoFormRecord(record);
       const payload = options.pendingImport || options.pendingCreate ? record.action.body.payload : record.photoState.payload;
-      const publicCopyForm = pendingSource?.action.body.publicImport || record.action.body.ownerResult?.version === 2
-        || record.action.body.photoResults?.version === 8;
+      const publicCopyForm = pendingSource?.action.body.publicImport || [2, 5].includes(record.action.body.ownerResult?.version)
+        || [7, 8, 11].includes(record.action.body.photoResults?.version);
       if (publicCopyForm) personalPublicCopySnapshot(payload, record.snapshot, record.snapshot.activeLayoutId);
       else personalReconciledSnapshot(payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });

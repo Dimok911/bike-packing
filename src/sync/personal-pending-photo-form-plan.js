@@ -5,7 +5,7 @@ import { assertListOperationPayload, assertListOperationJsonValue } from "./list
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
-import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, personalPublicPendingPhotoInventory } from "./personal-public-photo-form-result.js";
+import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, personalPublicPendingPhotoInventory } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -20,13 +20,15 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
   parentOperationId, entityType, entityId, fields, files, created = false, index = null, photoSelection = null, photoIds = null,
   formContext = null, containerFormContext = null, publicOperationId = null, importOperationId = null, importKind = null }, { enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
+  publicNewOwnerEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED,
   importEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   importNewOwnerEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), itemContextEnabled = false, containerContextEnabled = false } = {}) {
   if (!enabled || !uuid(parentOperationId) || !["item", "container"].includes(entityType) || !Array.isArray(files)
     || publicOperationId !== null && (!publicEnabled || !uuid(publicOperationId))
     || (importOperationId === null ? importKind !== null : !importEnabled || !uuid(importOperationId) || !["guest", "archive"].includes(importKind) || publicOperationId !== null)
-    || typeof created !== "boolean" || created && (!importNewOwnerEnabled || !importOperationId || !files.length || photoSelection !== null || photoIds !== null || index !== null)
+    || typeof created !== "boolean" || created && (!(publicOperationId ? publicNewOwnerEnabled : importOperationId && importNewOwnerEnabled)
+      || !files.length || photoSelection !== null || photoIds !== null || index !== null)
     || (files.length ? photoIds !== null : !Array.isArray(photoIds) || photoSelection !== null || index !== null)) fail();
   assertListOperationJsonValue({ binding, snapshot, basePayload, baseStateRevision, parentOperationId, entityType, entityId,
     fields, index, photoSelection, photoIds, formContext, containerFormContext, publicOperationId, importOperationId, importKind });
@@ -76,7 +78,7 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
   if ([parentOperationId, publicOperationId, importOperationId].includes(plan.operationId)
     || plan.files.some(part => [parentOperationId, publicOperationId, importOperationId].includes(part.stage.operationId))) fail();
   plan.body.baseEntityRevision = null;
-  plan.body.ownerResult = { version: created ? 4 : importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
+  plan.body.ownerResult = { version: created ? publicOperationId ? 5 : 4 : importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
     ...(publicOperationId ? { publicOperationId, pendingPhotos } : importOperationId ? { importOperationId, importKind, pendingPhotos } : {}) };
   for (const change of plan.body.changes) {
     change.baseEntityRevision = null;

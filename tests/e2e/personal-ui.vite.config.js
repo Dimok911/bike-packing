@@ -5,8 +5,12 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
-    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_CREATE === "1" && source.endsWith("/src/sync/personal-pending-import-create.js")) return code.replace(
-      "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = false", "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-import-create.js")) {
+      let result = code;
+      if (process.env.BIKE_PERSONAL_PENDING_CREATE === "1") result = result.replace("PERSONAL_PENDING_IMPORT_CREATE_ENABLED = false", "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = true");
+      if (process.env.BIKE_PERSONAL_PENDING_PUBLIC_CREATE === "1") result = result.replace("PERSONAL_PENDING_PUBLIC_CREATE_ENABLED = false", "PERSONAL_PENDING_PUBLIC_CREATE_ENABLED = true");
+      return result;
+    }
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-import-photo-form-result.js")) {
       let result = code;
       if (process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1") result = result.replace("PERSONAL_IMPORT_PHOTO_FORM_ENABLED = false", "PERSONAL_IMPORT_PHOTO_FORM_ENABLED = true");
@@ -17,8 +21,12 @@ export default defineConfig(({ mode }) => ({
       "PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED = false", "PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED = true");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_CHOICE === "1" && source.endsWith("/src/sync/personal-public-import-selection-store.js")) return code.replace(
       "PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED = false", "PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED = true");
-    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" && source.endsWith("/src/sync/personal-public-photo-form-result.js")) return code.replace(
-      "PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = false", "PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-public-photo-form-result.js")) {
+      let result = code;
+      if (process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1") result = result.replace("PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = false", "PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = true");
+      if (process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1") result = result.replace("PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED = false", "PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED = true");
+      return result;
+    }
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" && source.endsWith("/src/sync/personal-pending-public-update.js")) return code.replace(
       "PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED = false", "PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED = true");
     if (source.endsWith("/src/sync/personal-public-import.js")) return code.replace(

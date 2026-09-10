@@ -1,5 +1,5 @@
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
-import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./personal-public-photo-form-result.js";
+import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
 import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "./personal-manufacturer-photo-source.js";
@@ -121,6 +121,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
+  publicNewOwnerFormEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED,
   importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   importNewOwnerFormEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
   photoEditEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED,
@@ -145,6 +146,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     throw blocked("scope", "Не определён личный список для сохранения.");
   }
   const binding = { environment, actorId, listId, scopeKey };
+  const canWritePublicForm = reference => publicPhotoFormEnabled && publicImportEnabled
+    && (publicNewOwnerFormEnabled || reference?.version !== 5 && !reference?.forms?.some(form => form.action.body.ownerResult?.version === 5))
+    && (reference?.root?.action.body.publicImport?.version !== 2 || publicEntityEnabled);
   const canWriteImportForm = reference => importPhotoFormEnabled
     && (importNewOwnerFormEnabled || reference?.version !== 4 && !reference?.forms?.some(form => form.action.body.ownerResult?.version === 4))
     && (reference?.importKind === "guest" ? guestImportEnabled
@@ -268,7 +272,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           throw Error("Invalid pending photo form ancestry");
         }
         if (Object.hasOwn(action.body, "photoResults")) {
-          const form = [5, 6, 8, 9, 10].includes(action.body.photoResults.version) ? personalPendingFormUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
+          const form = [5, 6, 8, 9, 10, 11].includes(action.body.photoResults.version) ? personalPendingFormUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : action.body.photoResults.version === 7 ? personalPendingPublicUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : action.body.photoResults.version === 4 ? personalPendingGuestUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : action.body.photoResults.version === 3 ? personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
@@ -276,8 +280,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           if (!form) throw Error("Invalid pending copy result chain");
           if (form.action.operationId !== parentId) expectedDependencies.push({ operationId: form.action.operationId, listId });
         }
-        const publicRoot = action.body.ownerResult?.version === 2 ? action.body.ownerResult.publicOperationId
-          : action.body.photoResults?.version === 8 ? records.get(action.body.photoResults.operationId)?.action.body.ownerResult?.publicOperationId : null;
+        const publicRoot = [2, 5].includes(action.body.ownerResult?.version) ? action.body.ownerResult.publicOperationId
+          : [8, 11].includes(action.body.photoResults?.version) ? records.get(action.body.photoResults.operationId)?.action.body.ownerResult?.publicOperationId : null;
         if (publicRoot && !expectedDependencies.some(dep => dep.operationId === publicRoot)) expectedDependencies.push({ operationId: publicRoot, listId });
         const importRoot = [3, 4].includes(action.body.ownerResult?.version) ? action.body.ownerResult.importOperationId
           : [9, 10].includes(action.body.photoResults?.version) ? records.get(action.body.photoResults.operationId)?.action.body.ownerResult?.importOperationId : null;
@@ -529,15 +533,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (Object.hasOwn(input.body, "containerFormContext") && !containerContextEnabled) throw blocked("photo-container-context-disabled", "Совместное сохранение фото и размещения сумки ещё не включено.");
       if (Object.hasOwn(input.body, "manufacturerSource") && !manufacturerSourceEnabled) throw blocked("manufacturer-photo-source-disabled", "Сохранение сумки производителя с фото ещё не включено.");
       if (Object.hasOwn(input.body, "ownerResult") && !formOwnerResultEnabled) throw blocked("photo-form-owner-result-disabled", "Следующая форма с файлами ещё не включена.");
-      if (input.body.ownerResult?.version === 2 && (!publicPhotoFormEnabled || !publicImportEnabled)) throw blocked("public-photo-form-disabled", "Фото до подтверждения публичной копии ещё не включены.");
+      if ([2, 5].includes(input.body.ownerResult?.version) && !canWritePublicForm(input.body.ownerResult)) throw blocked("public-photo-form-disabled", "Фото до подтверждения публичной копии ещё не включены.");
       if ([3, 4].includes(input.body.ownerResult?.version) && !canWriteImportForm(input.body.ownerResult)) throw blocked("import-photo-form-disabled", "Фото до подтверждения переноса или архива ещё не включены.");
       if (form && input.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
       const dependent = form && Object.hasOwn(input.body, "ownerResult");
       if (dependent) {
         const chain = head && personalPendingPhotoFormChain({ records: [...records.values()], operationId: head.action.operationId, listId,
-          entityType: input.body.entityType, entityId: input.body.entityId, allowNewOwner: input.body.ownerResult.version === 4 });
+          entityType: input.body.entityType, entityId: input.body.entityId, allowNewOwner: [4, 5].includes(input.body.ownerResult.version) });
         if (!chain || applied.has(head.action.operationId) || input.body.ownerResult.operationId !== head.action.operationId
-          || (chain.publicOperationId ? input.body.ownerResult.version !== 2 || input.body.ownerResult.publicOperationId !== chain.publicOperationId
+          || (chain.publicOperationId ? !canWritePublicForm(chain) || ![2, 5].includes(input.body.ownerResult.version) || input.body.ownerResult.publicOperationId !== chain.publicOperationId
             : chain.importOperationId ? ![3, 4].includes(input.body.ownerResult.version) || input.body.ownerResult.importOperationId !== chain.importOperationId
               || input.body.ownerResult.importKind !== chain.importKind : input.body.ownerResult.version !== 1)
           || chain.entityType !== input.body.entityType || chain.entityId !== input.body.entityId) {
@@ -573,7 +577,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const causal = { dependsOn: [], reads: [], ...(!baseline && head ? { baseOperationId: head.action.operationId } : {}) };
       if (publicCopy) causal.reads.push({ listId: input.body.publicImport.source.listId, revision: input.body.publicImport.source.stateRevision });
       if (causal.baseOperationId) causal.dependsOn.push({ operationId: head.action.operationId, listId });
-      if (input.body.ownerResult?.version === 2 && !causal.dependsOn.some(dep => dep.operationId === input.body.ownerResult.publicOperationId)) {
+      if ([2, 5].includes(input.body.ownerResult?.version) && !causal.dependsOn.some(dep => dep.operationId === input.body.ownerResult.publicOperationId)) {
         causal.dependsOn.push({ operationId: input.body.ownerResult.publicOperationId, listId });
       }
       if ([3, 4].includes(input.body.ownerResult?.version) && !causal.dependsOn.some(dep => dep.operationId === input.body.ownerResult.importOperationId)) {
@@ -638,13 +642,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (Object.hasOwn(input.body || {}, "photoResults")) throw blocked("input", "Связь с результатом копии должна принадлежать исходной локальной очереди.");
       const formSource = head && !applied.has(head.action.operationId) && personalPendingFormUpdateSource({
         records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true });
-      const pendingForm = formSource && (pendingFormUpdateEnabled || [5, 6, 8, 9, 10].includes(head.action.body.photoResults?.version)) ? formSource : null;
+      const pendingForm = formSource && (pendingFormUpdateEnabled || [5, 6, 8, 9, 10, 11].includes(head.action.body.photoResults?.version)) ? formSource : null;
       if (pendingForm) {
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
           && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!pendingFormUpdateEnabled || !photoEnabled || !photoFormEnabled || pendingForm.action.body.ownerResult && !formOwnerResultEnabled
-          || pendingForm.action.body.ownerResult?.version === 2 && (!publicPhotoFormEnabled || !publicImportEnabled)
+          || [2, 5].includes(pendingForm.action.body.ownerResult?.version) && !canWritePublicForm(pendingForm.action.body.ownerResult)
           || [3, 4].includes(pendingForm.action.body.ownerResult?.version) && !canWriteImportForm(pendingForm.action.body.ownerResult)
           || create || restore || archiveImport || migration || localReconciliation
           || !isPersonalPendingFormUpdate({ source: pendingForm, basePayload: personalRecordPayload(head), payload: input.body.payload, userDeletion: input.body.userDeletion, listId })) {
@@ -747,7 +751,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (pendingForm && !causal.dependsOn.some(dep => dep.operationId === pendingForm.action.operationId)) {
         causal.dependsOn.push({ operationId: pendingForm.action.operationId, listId });
       }
-      if (pendingForm?.action.body.ownerResult?.version === 2 && !causal.dependsOn.some(dep => dep.operationId === pendingForm.action.body.ownerResult.publicOperationId)) {
+      if ([2, 5].includes(pendingForm?.action.body.ownerResult?.version) && !causal.dependsOn.some(dep => dep.operationId === pendingForm.action.body.ownerResult.publicOperationId)) {
         causal.dependsOn.push({ operationId: pendingForm.action.body.ownerResult.publicOperationId, listId });
       }
       if ([3, 4].includes(pendingForm?.action.body.ownerResult?.version) && !causal.dependsOn.some(dep => dep.operationId === pendingForm.action.body.ownerResult.importOperationId)) {
@@ -994,13 +998,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
       const { head, records } = assertObserved();
-      if ((head?.action.body.ownerResult || [6, 8, 9, 10].includes(head?.action.body.photoResults?.version)) && !formOwnerResultEnabled) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
-      if ((head?.action.body.ownerResult?.version === 2 || head?.action.body.photoResults?.version === 8)
+      if ((head?.action.body.ownerResult || [6, 8, 9, 10, 11].includes(head?.action.body.photoResults?.version)) && !formOwnerResultEnabled) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
+      if (([2, 5].includes(head?.action.body.ownerResult?.version) || [8, 11].includes(head?.action.body.photoResults?.version))
         && (!publicPhotoFormEnabled || !publicImportEnabled)) throw blocked("public-photo-form-disabled", "Отмена фото до подтверждения публичной копии ещё не включена.");
       const fileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: [...records.values()], operationId: head?.action.operationId, listId }) : null;
       if (fileChain?.forms.length > 1) {
-        if (fileChain.publicOperationId && (!publicPhotoFormEnabled || !publicImportEnabled
-          || fileChain.root.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-photo-form-disabled");
+        if (fileChain.publicOperationId && !canWritePublicForm(fileChain)) throw blocked("public-photo-form-disabled");
         if (fileChain.importOperationId && !canWriteImportForm(fileChain)) throw blocked("import-photo-form-disabled");
         if (!photoEnabled || !photoFormEnabled || !photoBatchEnabled || !photoBatchCancellationEnabled
           || !queue?.inspect || !queue?.cancelExact) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
@@ -1149,7 +1152,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (!head) return null;
       // Gate before inspecting/uploading any ancestor: an OFF reader may have
       // restored this complete new chain while all older photo gates are ON.
-      if ((head.action.body.ownerResult?.version === 2 || head.action.body.photoResults?.version === 8)
+      if (([2, 5].includes(head.action.body.ownerResult?.version) || [8, 11].includes(head.action.body.photoResults?.version))
         && (!publicPhotoFormEnabled || !publicImportEnabled || !formOwnerResultEnabled)) throw blocked("public-photo-form-disabled", "Фото до подтверждения публичной копии ещё не включены.");
       if (([3, 4].includes(head.action.body.ownerResult?.version) || [9, 10].includes(head.action.body.photoResults?.version))
         && (!importPhotoFormEnabled || !formOwnerResultEnabled)) throw blocked("import-photo-form-disabled", "Фото до подтверждения переноса или архива ещё не включены.");
@@ -1170,8 +1173,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const root = chain.at(-1);
       const dependentForm = chain.find((record, index) => record.photoState && index > 0);
       const fileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: [...records.values()], operationId: head.action.operationId, listId }) : null;
-      if (fileChain?.publicOperationId && fileChain.forms.length > 1 && (!publicPhotoFormEnabled || !publicImportEnabled
-        || fileChain.root.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-photo-form-disabled");
+      if (fileChain?.publicOperationId && fileChain.forms.length > 1 && !canWritePublicForm(fileChain)) throw blocked("public-photo-form-disabled");
       if (fileChain?.importOperationId && fileChain.forms.length > 1 && !canWriteImportForm(fileChain)) throw blocked("import-photo-form-disabled");
       const resolvedForm = fileChain?.forms.length > 1 ? fileChain.forms.find(record => record.action.operationId === dependentForm?.action.operationId)
         : dependentForm?.action.kind === "list.import"

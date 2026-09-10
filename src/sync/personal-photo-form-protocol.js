@@ -141,7 +141,7 @@ export function validatePersonalPhotoFormResult(payload, expected) {
         || !Array.isArray(payload.photoChanges) || payload.photoChanges.length !== 0
         : !validatePersonalPhotoPublicationResult(payload, { ...expected, body: photoValidationView(expected.body) }, { allowDeleteThenOrder: true, allowAttachThenOrder: true }))) return false;
     const owner = payload.list.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId];
-    if (manifest.ownerResult?.version === 2 && (payload.publicPhotoFormSourceOperationId !== expected.operationId
+    if ([2, 5].includes(manifest.ownerResult?.version) && (payload.publicPhotoFormSourceOperationId !== expected.operationId
       || !validatePersonalPublicPhotoFormResult(payload, expected.body, expected.listId))) return false;
     if ([3, 4].includes(manifest.ownerResult?.version) && (payload.importPhotoFormSourceOperationId !== expected.operationId
       || !validatePersonalImportPhotoFormResult(payload, expected.body, expected.listId))) return false;

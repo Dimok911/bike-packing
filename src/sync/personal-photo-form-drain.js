@@ -1,5 +1,5 @@
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
-import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./personal-public-photo-form-result.js";
+import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 import { PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED, personalPendingPublicUpdateSource } from "./personal-pending-public-update.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource } from "./personal-pending-guest-update.js";
@@ -33,7 +33,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
   formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
-  publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
+  publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, publicNewOwnerFormEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED,
   importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   importNewOwnerFormEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
@@ -41,7 +41,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
-  if ((head?.action.body.ownerResult?.version === 2 || head?.action.body.photoResults?.version === 8)
+  if (([2, 5].includes(head?.action.body.ownerResult?.version) || [8, 11].includes(head?.action.body.photoResults?.version))
     && (!publicPhotoFormEnabled || !publicEnabled || !formOwnerResultEnabled)) throw blocked();
   if (([3, 4].includes(head?.action.body.ownerResult?.version) || [9, 10].includes(head?.action.body.photoResults?.version))
     && (!importPhotoFormEnabled || !formOwnerResultEnabled)) throw blocked();
@@ -62,6 +62,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   if (fileChain?.importOperationId && fileChain.forms.length > 1 && (!importPhotoFormEnabled
     || (fileChain.importKind === "guest" ? !guestEnabled : !archiveEnabled))) throw blocked();
   const expectedForms = fileChain?.forms || [form];
+  if (!publicNewOwnerFormEnabled && expectedForms.some(form => form.action.body.ownerResult?.version === 5)) throw blocked();
   if (!importNewOwnerFormEnabled && expectedForms.some(form => form.action.body.ownerResult?.version === 4)) throw blocked();
   if (form.action.body.action === "copy-batch" && head.action.operationId !== form.action.operationId && !pendingCopyBatchDeletionEnabled) throw blocked();
   try {
