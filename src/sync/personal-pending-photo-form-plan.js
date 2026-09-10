@@ -6,7 +6,7 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, personalPublicPendingPhotoInventory } from "./personal-public-photo-form-result.js";
-import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./personal-import-photo-form-result.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
@@ -17,20 +17,23 @@ const fail = () => { throw Object.assign(Error("Следующая фотофо�
 // ancestry before linking this plan; an operation ID by itself is not proof.
 // The complete new file set and every new ID are captured once, synchronously.
 export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload, baseStateRevision,
-  parentOperationId, entityType, entityId, fields, files, index = null, photoSelection = null, photoIds = null,
+  parentOperationId, entityType, entityId, fields, files, created = false, index = null, photoSelection = null, photoIds = null,
   formContext = null, containerFormContext = null, publicOperationId = null, importOperationId = null, importKind = null }, { enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
   importEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
+  importNewOwnerEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), itemContextEnabled = false, containerContextEnabled = false } = {}) {
   if (!enabled || !uuid(parentOperationId) || !["item", "container"].includes(entityType) || !Array.isArray(files)
     || publicOperationId !== null && (!publicEnabled || !uuid(publicOperationId))
     || (importOperationId === null ? importKind !== null : !importEnabled || !uuid(importOperationId) || !["guest", "archive"].includes(importKind) || publicOperationId !== null)
+    || typeof created !== "boolean" || created && (!importNewOwnerEnabled || !importOperationId || !files.length || photoSelection !== null || photoIds !== null || index !== null)
     || (files.length ? photoIds !== null : !Array.isArray(photoIds) || photoSelection !== null || index !== null)) fail();
   assertListOperationJsonValue({ binding, snapshot, basePayload, baseStateRevision, parentOperationId, entityType, entityId,
     fields, index, photoSelection, photoIds, formContext, containerFormContext, publicOperationId, importOperationId, importKind });
   const imported = publicOperationId || importOperationId;
   const collection = entityType === "item" ? "items" : "containers", owner = basePayload?.[collection]?.[entityId];
-  if (!isPersonalPhotoPrivateOwner(owner) || !Array.isArray(owner.photos) && !(imported && owner.photos === undefined)
+  if ((created ? basePayload.items?.[entityId] !== undefined || basePayload.containers?.[entityId] !== undefined
+    : !isPersonalPhotoPrivateOwner(owner) || !Array.isArray(owner.photos) && !(imported && owner.photos === undefined))
     || !same(snapshotToPayload(clone(snapshot)), basePayload)) fail();
   for (const type of ["items", "containers"]) for (const record of Object.values(basePayload[type] || {})) {
     for (const photo of record.photos || []) if (photo.status === "pending") {
@@ -38,8 +41,8 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
         || !same(photo, { id: photo.id, photoId: photo.id, assetId: photo.assetId, listId: binding.listId, status: "pending" })) fail();
     }
   }
-  const frozenOwner = clone(owner), base = clone(basePayload), view = clone(snapshot);
-  if (imported && frozenOwner.photos === undefined) frozenOwner.photos = [];
+  const frozenOwner = created ? null : clone(owner), base = clone(basePayload), view = clone(snapshot);
+  if (!created && imported && frozenOwner.photos === undefined) frozenOwner.photos = [];
   const pendingPhotos = imported ? personalPublicPendingPhotoInventory(base, binding.listId) : [];
   const inherited = new Map();
   for (const type of ["items", "containers"]) for (const record of Object.values(base[type] || {})) {
@@ -65,15 +68,15 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
     return inheritedStatus(snapshotToPayload(inheritedStatus(value)), "synced");
   };
   const input = { binding, snapshot: view, basePayload: base, baseStateRevision,
-    entityType, entityId, baseEntityRevision: 1, fields, files, index, photoSelection,
-    photoRevisions: frozenOwner.photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })), formContext, containerFormContext };
+    entityType, entityId, baseEntityRevision: created ? 0 : 1, fields, files, index, photoSelection,
+    photoRevisions: (frozenOwner?.photos || []).map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })), formContext, containerFormContext };
   const options = { enabled: true, snapshotToPayload: grammarProjection, createUuid, itemContextEnabled, containerContextEnabled };
   const plan = files.length ? preparePersonalPhotoFormAttachments(input, options)
     : { version: 1, ...preparePersonalPhotoEditForm({ ...input, photoIds, operationId: createUuid() }, options), files: [] };
   if ([parentOperationId, publicOperationId, importOperationId].includes(plan.operationId)
     || plan.files.some(part => [parentOperationId, publicOperationId, importOperationId].includes(part.stage.operationId))) fail();
   plan.body.baseEntityRevision = null;
-  plan.body.ownerResult = { version: importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
+  plan.body.ownerResult = { version: created ? 4 : importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
     ...(publicOperationId ? { publicOperationId, pendingPhotos } : importOperationId ? { importOperationId, importKind, pendingPhotos } : {}) };
   for (const change of plan.body.changes) {
     change.baseEntityRevision = null;

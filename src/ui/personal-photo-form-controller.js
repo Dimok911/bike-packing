@@ -110,7 +110,8 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
         const values = emptyManufacturer ? { files: [] } : pendingUpdate || pendingCreate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection), ...(pendingFiles ? { files: [] } : {}) }
           : (pendingFiles || isEditEnabled()) && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
         entry.session = (pendingCreate ? createPendingCreateSession : pendingFiles ? createPendingFilesSession : pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry),
-          onDurable: record => onDurable(record, { type, view, ...(pendingCreate ? { pendingCreate: true } : {}) }) });
+          onDurable: record => onDurable(record, { type, view, created: request.created === true,
+            ...(pendingCreate ? { pendingCreate: true } : {}) }) });
         const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);
         pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))

@@ -10,7 +10,8 @@ const payloadOf = record => record.photoState?.payload || record.action.body.pay
 
 // Proves every local step between the original file-owning form and the head.
 // Checkpoints, timestamps, UUID ordering and matching owner IDs are not edges.
-export function personalPendingPhotoFormChain({ records, operationId, listId, entityType, entityId }) {
+export function personalPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner = false }) {
+  if (allowNewOwner) return personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner });
   const publicChain = personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId });
   if (publicChain) return publicChain;
   const importChain = personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId });

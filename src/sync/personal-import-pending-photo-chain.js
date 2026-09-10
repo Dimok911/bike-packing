@@ -13,7 +13,7 @@ const rootKind = record => record.action.kind === "list.import" && (record.actio
 
 // Prove exact retained ancestry. Guest and archive imports cannot substitute
 // for one another, a public copy, or an unrelated accepted photo owner.
-export function personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId }) {
+export function personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner = false }) {
   try {
     const byId = new Map(records.map(record => [record.action.operationId, record]));
     if (byId.size !== records.length) return null;
@@ -23,8 +23,8 @@ export function personalImportPendingPhotoFormChain({ records, operationId, list
       if (seen.has(action.operationId) || action.listId !== listId) return null;
       seen.add(action.operationId); reverse.push(record);
       if (rootKind(record)) break;
-      if (action.kind === "list.update" ? ![3, 4, 9].includes(body.photoResults?.version)
-        : action.kind !== "photos.mutate" || body.action !== "form" || body.ownerResult?.version !== 3
+      if (action.kind === "list.update" ? ![3, 4, 9, 10].includes(body.photoResults?.version)
+        : action.kind !== "photos.mutate" || body.action !== "form" || ![3, 4].includes(body.ownerResult?.version)
           || body.ownerResult.operationId !== body.causal?.baseOperationId) return null;
       record = byId.get(body.causal?.baseOperationId);
     }
@@ -40,8 +40,10 @@ export function personalImportPendingPhotoFormChain({ records, operationId, list
         || step.mergeBase && !same(step.mergeBase.payload, basePayload)) return null;
       if (action.kind === "photos.mutate") {
         const form = assertPersonalPhotoFormRecord(step), ref = form.ownerResult;
-        if (form.copySource || ref?.version !== 3 || ref.importOperationId !== importOperationId || ref.importKind !== importKind
+        if (form.copySource || ![3, 4].includes(ref?.version) || ref.importOperationId !== importOperationId || ref.importKind !== importKind
           || ref.operationId !== previous.action.operationId || !same(step.mergeBase.payload, basePayload)) return null;
+        if (ref.version === 4 && steps.slice(0, steps.indexOf(step)).some(prior =>
+          payloadOf(prior).items?.[form.entityId] || payloadOf(prior).containers?.[form.entityId])) return null;
         forms.push(step); source = step;
       } else {
         const imported = source === root;
@@ -58,8 +60,10 @@ export function personalImportPendingPhotoFormChain({ records, operationId, list
     const selectedId = entityId ?? (source === root ? undefined : source.action.body.entityId);
     if (selectedType !== undefined || selectedId !== undefined) {
       const collection = selectedType === "item" ? "items" : selectedType === "container" ? "containers" : null;
-      if (!collection || typeof selectedId !== "string" || !payloadOf(previous)[collection]?.[selectedId]) return null;
-    }
+      if (!collection || typeof selectedId !== "string" || (allowNewOwner
+        ? steps.some(step => payloadOf(step).items?.[selectedId] || payloadOf(step).containers?.[selectedId])
+        : (entityType !== undefined || entityId !== undefined) && !payloadOf(previous)[collection]?.[selectedId])) return null;
+    } else if (allowNewOwner) return null;
     return { root, source, head: previous, forms, steps, importOperationId, importKind, entityType: selectedType, entityId: selectedId };
   } catch { return null; }
 }

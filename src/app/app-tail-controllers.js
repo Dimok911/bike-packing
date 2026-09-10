@@ -8272,9 +8272,9 @@ const personalPhotoForms = createPersonalPhotoFormController({
   createEditSession: options => personalPhotoFormSession({ ...options, editExistingPhotos: true }),
   createPhoto: createItemPhotoFromFile,
   cachePhoto: (record, scopeKey) => putCachedPhoto(record, scopeKey, { binary: true }),
-  onDurable(record, { type, view, pendingCreate = false }) {
+  onDurable(record, { type, view, created = false, pendingCreate = false }) {
     // No legacy applyPhotoDraft/upload/delete: the durable record owns the candidate.
-    if (record.action.body.baseEntityRevision === 0 || pendingCreate) clearStoredNewEntityFormDraft(type);
+    if (created) clearStoredNewEntityFormDraft(type);
     if (type === "container" && (record.action.body.containerFormContext || pendingCreate)) {
       placeNewRootInCurrentLayout = false; rootContainerPlacementTargetLayoutId = "";
     }

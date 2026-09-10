@@ -7,8 +7,12 @@ export default defineConfig(({ mode }) => ({
     const source = id.replaceAll("\\", "/");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_CREATE === "1" && source.endsWith("/src/sync/personal-pending-import-create.js")) return code.replace(
       "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = false", "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = true");
-    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" && source.endsWith("/src/sync/personal-import-photo-form-result.js")) return code.replace(
-      "PERSONAL_IMPORT_PHOTO_FORM_ENABLED = false", "PERSONAL_IMPORT_PHOTO_FORM_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-import-photo-form-result.js")) {
+      let result = code;
+      if (process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1") result = result.replace("PERSONAL_IMPORT_PHOTO_FORM_ENABLED = false", "PERSONAL_IMPORT_PHOTO_FORM_ENABLED = true");
+      if (process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1") result = result.replace("PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED = false", "PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED = true");
+      return result;
+    }
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_RESOLUTION === "1" && source.endsWith("/src/sync/personal-public-preparation-resolution-protocol.js")) return code.replace(
       "PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED = false", "PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED = true");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_CHOICE === "1" && source.endsWith("/src/sync/personal-public-import-selection-store.js")) return code.replace(

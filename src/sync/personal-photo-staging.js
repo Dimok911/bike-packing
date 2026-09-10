@@ -1,6 +1,6 @@
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY } from "./personal-public-photo-form-result.js";
-import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, personalImportPhotoFormCapabilities } from "./personal-import-photo-form-result.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, personalImportPhotoFormCapabilities, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY } from "./personal-public-import-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY } from "./personal-guest-import-protocol.js";
@@ -51,7 +51,8 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
   timeoutMs = 10000, enabled = PERSONAL_PHOTO_STAGING_ENABLED, cancellationEnabled = PERSONAL_PHOTO_CANCELLATION_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
-  publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED } = {}) {
+  publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
+  importNewOwnerFormEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } = {}) {
   const request = async (path, form, json = false) => {
     const controller = new AbortController(); let timer;
     try {
@@ -87,9 +88,10 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       if (!record?.stage || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
       const ownerForm = record.action?.body?.action === "form", archive = record.action?.kind === "list.import";
       const publicForm = ownerForm && record.action.body.ownerResult?.version === 2;
-      const importedForm = ownerForm && record.action.body.ownerResult?.version === 3;
+      const importedForm = ownerForm && [3, 4].includes(record.action.body.ownerResult?.version);
       if (publicForm && !inspectOnly && (!publicPhotoFormEnabled || !publicEnabled)) throw paused(null, "Фото до подтверждения публичной копии ещё не включены.");
       if (importedForm && !inspectOnly && (!importPhotoFormEnabled
+        || record.action.body.ownerResult.version === 4 && !importNewOwnerFormEnabled
         || (record.action.body.ownerResult.importKind === "guest" ? !guestEnabled : !archiveEnabled))) throw paused(null, "Фото до подтверждения переноса или архива ещё не включены.");
       const guest = archive && Object.hasOwn(record.action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(record.action.body || {}, "publicImport");
       if (publicCopy && !inspectOnly && (!publicEnabled || record.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw paused(null, "Копирование шаблонов с фотографиями ещё не включено.");

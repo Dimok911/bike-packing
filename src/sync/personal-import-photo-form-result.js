@@ -5,10 +5,13 @@ import { assertPersonalPublicPhotoFormReference, assertPersonalPublicPhotoFormSu
 
 export const PERSONAL_IMPORT_PHOTO_FORM_ENABLED = false;
 export const PERSONAL_IMPORT_PHOTO_FORM_CAPABILITY = "personalCausalImportPhotoFormsV1";
+export const PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED = false;
+export const PERSONAL_IMPORT_NEW_OWNER_FORM_CAPABILITY = "personalCausalImportNewOwnerFormsV1";
 // The shared capability may be advertised for just one import kind. Check
 // the selected kind's parent and descendant support before any file claim.
 export const personalImportPhotoFormCapabilities = reference => [PERSONAL_IMPORT_PHOTO_FORM_CAPABILITY,
-  ...(reference?.version === 3 ? reference.importKind === "guest"
+  ...([4, 10].includes(reference?.version) ? [PERSONAL_IMPORT_NEW_OWNER_FORM_CAPABILITY] : []),
+  ...([3, 4].includes(reference?.version) ? reference.importKind === "guest"
     ? ["personalCausalGuestImportV1", "personalCausalGuestDescendantsV1"]
     : ["personalCausalArchiveImportV1", "personalCausalArchivePhotoImportV1", "personalCausalArchiveDescendantsV1"] : [])];
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -25,9 +28,9 @@ function validationBody(body) {
   assertListOperationJsonValue(body);
   const ref = body.ownerResult;
   if (!exact(ref, ["version", "operationId", "importOperationId", "importKind", "owner", "pendingPhotos"])
-    || ref.version !== 3 || !kind(ref.importKind)) fail();
+    || ![3, 4].includes(ref.version) || !kind(ref.importKind) || ref.version === 4 && ref.owner !== null) fail();
   return { ...body, ownerResult: { version: 2, operationId: ref.operationId, publicOperationId: ref.importOperationId,
-    owner: ref.owner, pendingPhotos: ref.pendingPhotos } };
+    owner: ref.version === 4 ? { id: body.entityId, photos: [] } : ref.owner, pendingPhotos: ref.pendingPhotos } };
 }
 
 function validationSummary(summary) {
@@ -47,7 +50,17 @@ export function assertPersonalImportPhotoFormSummary(summary, listId) {
 }
 
 export function assertPersonalImportPhotoFormBase(body, basePayload, listId) {
-  assertPersonalPublicPhotoFormBase(validationBody(body), basePayload, listId);
+  const view = validationBody(body);
+  if (body.ownerResult.version === 4) {
+    assertPersonalPublicPhotoFormReference(view, listId);
+    if (basePayload.items?.[body.entityId] || basePayload.containers?.[body.entityId]
+      || Object.values(basePayload.layouts || {}).some(layout => layout.arrangement?.items?.[body.entityId]
+        || layout.arrangement?.containers?.[body.entityId] || layout.rootContainerIds?.includes(body.entityId))) fail();
+    // A validation-only empty owner proves the original inventory is unchanged.
+    const candidate = clone(basePayload), field = body.entityType === "item" ? "items" : "containers";
+    candidate[field][body.entityId] = view.ownerResult.owner;
+    assertPersonalPublicPhotoFormBase(view, candidate, listId);
+  } else assertPersonalPublicPhotoFormBase(view, basePayload, listId);
   return clone(body.ownerResult);
 }
 

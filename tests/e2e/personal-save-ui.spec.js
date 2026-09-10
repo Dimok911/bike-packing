@@ -316,7 +316,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: structuredClone(state.publicRecords) };
       else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/")) {
@@ -472,9 +472,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(predecessor.operation.state).toBe("committed");
             const source = structuredClone(body.body.ownerResult.owner);
             const published = predecessor.result.payload.list.payload[body.body.entityType === "item" ? "items" : "containers"][body.body.entityId];
-            source.photos = source.photos.map(photo => photo.status === "pending" ? published.photos.find(p => p.id === photo.id && p.assetId === photo.assetId) : photo);
-            for (const key of ["parentId", "childIds", "itemIds", "order", "containerId", "parentContainerId"]) delete source[key];
-            expect(source).toEqual(published);
+            if (body.body.ownerResult.version === 4) {
+              expect(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS).toBe("1"); expect(source).toBeNull(); expect(published).toBeUndefined();
+              expect(state.payload.items[body.body.entityId]).toBeUndefined(); expect(state.payload.containers[body.body.entityId]).toBeUndefined();
+            } else {
+              source.photos = source.photos.map(photo => photo.status === "pending" ? published.photos.find(p => p.id === photo.id && p.assetId === photo.assetId) : photo);
+              for (const key of ["parentId", "childIds", "itemIds", "order", "containerId", "parentContainerId"]) delete source[key];
+              expect(source).toEqual(published);
+            }
             expect(body.body.changes.every(change => change.baseEntityRevision === null)).toBe(true);
           }
           const owner = personalPhotoFormOwner(state.payload, body.body), changes = [];
@@ -515,7 +520,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             changes.push({ index, action: "attach", entityType: change.entityType, entityId: change.entityId, photoId: change.photoId,
               assetId: change.assetId, photoIds: owner.photos.map(photo => photo.id), photo });
           }
-          if (body.body.baseEntityRevision === 0) {
+          if (body.body.baseEntityRevision === 0 || body.body.ownerResult?.version === 4) {
             for (const key of body.body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) delete owner[key];
           }
           state.payload[body.body.entityType === "item" ? "items" : "containers"][owner.id] = owner;
@@ -524,7 +529,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
-              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0,
+              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 || body.body.ownerResult?.version === 4,
                 ...(body.body.manufacturerSource && !body.body.changes.length ? { manufacturerCatalogSource: structuredClone(owner.manufacturerCatalogSource) } : {}) } } } };
           if (state.afterFormCommit) await state.afterFormCommit(body);
         } else if (photoRecovery && body.kind === "photos.mutate") {
@@ -577,13 +582,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             const copy = state.receipts.get(ref.operationId);
             expect(copy.operation.state).toBe("committed");
             expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.operationId, listId: state.listId });
-            if ([3, 4, 5, 6, 7, 8, 9].includes(ref.version)) {
-              expect(copy.operation.kind).toBe([5, 6, 8, 9].includes(ref.version) ? "photos.mutate" : "list.import"); expect(predecessor.operation.state).toBe("committed");
+            if ([3, 4, 5, 6, 7, 8, 9, 10].includes(ref.version)) {
+              expect(copy.operation.kind).toBe([5, 6, 8, 9, 10].includes(ref.version) ? "photos.mutate" : "list.import"); expect(predecessor.operation.state).toBe("committed");
               for (const collection of ["items", "containers"]) for (const [id, owner] of Object.entries(state.payload[collection])) {
                 const previous = predecessor.result.payload.list.payload[collection][id];
                 if (owner.photos) owner.photos = owner.photos.map(photo => {
                   if (photo.status !== "pending") return photo;
-                  const file = ([6, 8, 9].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
+                  const file = ([6, 8, 9, 10].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
                   expect(file?.entityId).toBe(id); expect(file?.assetId).toBe(photo.assetId);
                   expect(previous?.photos).toContainEqual(file.photo); return structuredClone(file.photo);
                 });
@@ -616,18 +621,18 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             publicOperationId: ref.version === 7 ? ref.operationId : source.publicPhotoForm.publicOperationId,
             pendingPhotos: personalPublicPendingPhotoInventory(body.body.payload, state.listId) } });
         }
-        if (data.operation.state === "committed" && body.body.ownerResult?.version === 3) {
+        if (data.operation.state === "committed" && [3, 4].includes(body.body.ownerResult?.version)) {
           expect(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS).toBe("1");
           const ref = body.body.ownerResult, root = state.receipts.get(ref.importOperationId);
           expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.importOperationId, listId: state.listId });
           expect(root.result.payload[ref.importKind === "guest" ? "guestImport" : "archiveImport"].version).toBe(ref.importKind === "guest" ? 1 : 2);
           Object.assign(data.result.payload, { importPhotoForm: personalImportPhotoFormSummary(body.body, state.listId), importPhotoFormSourceOperationId: body.operationId });
         }
-        if (data.operation.state === "committed" && [3, 4, 9].includes(body.body.photoResults?.version) && process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1") {
+        if (data.operation.state === "committed" && [3, 4, 9, 10].includes(body.body.photoResults?.version) && process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1") {
           const ref = body.body.photoResults, source = state.receipts.get(ref.operationId).result.payload;
           Object.assign(data.result.payload, { importPhotoFormSourceOperationId: ref.operationId, importPhotoForm: { version: 1,
-            importOperationId: ref.version === 9 ? source.importPhotoForm.importOperationId : ref.operationId,
-            importKind: ref.version === 9 ? source.importPhotoForm.importKind : ref.version === 4 ? "guest" : "archive",
+            importOperationId: [9, 10].includes(ref.version) ? source.importPhotoForm.importOperationId : ref.operationId,
+            importKind: [9, 10].includes(ref.version) ? source.importPhotoForm.importKind : ref.version === 4 ? "guest" : "archive",
             pendingPhotos: personalPublicPendingPhotoInventory(body.body.payload, state.listId) } });
         }
         state.receipts.set(body.operationId, data);
@@ -5995,6 +6000,146 @@ for (const importKind of ["guest", "archive"]) for (const type of ["item", "cont
     await expect(page.locator(`#${prefix}Weight`)).toHaveValue("743");
     expect(await records()).toEqual(before); expect(f.payload).toEqual(server);
     expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toHaveLength(1); expect(f.errors).toEqual([]);
+  } finally { clearHold(); release(); }
+});
+
+for (const importKind of ["guest", "archive"]) test(`${importKind} atomic owner photo gate off keeps the entire new form`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1", "Checks the independent atomic owner creation gate");
+  const { f, release, clearHold } = await preparePendingImportUi(page, context, false, importKind);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  try {
+    const before = await records(), server = structuredClone(f.payload), posts = f.posts.length;
+    const bytes = Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 3; return canvas.toDataURL("image/png").split(",")[1];
+    }), "base64");
+    await page.locator('[data-view="packing"]').click(); await page.locator("[data-add-packing-root]").click();
+    await page.locator("#createRootForLayoutBtn").click(); await page.locator("#rootContainerName").fill("Новая сумка и удержанное фото");
+    await page.locator("#rootContainerPhotoInput").setInputFiles({ name: "held-new-bag.png", mimeType: "image/png", buffer: bytes });
+    await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1); await submitForm(page, "#saveRootContainerBtn", "#rootContainerName");
+    await expect.poll(() => page.evaluate(() => globalThis.__personalTestPhotoFormError?.message)).toBeTruthy();
+    await expect(page.locator("#rootContainerDialog")).toBeVisible(); await expect(page.locator("#rootContainerName")).toHaveValue("Новая сумка и удержанное фото");
+    await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1);
+    expect(await records()).toEqual(before); expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toHaveLength(1);
+    expect(f.errors).toEqual([]);
+  } finally { clearHold(); release(); }
+});
+
+for (const importKind of ["guest", "archive"]) for (const [fileless, outcome] of [[false, "lost ACK"], [true, "lost ACK"], [false, "quota"], [false, "cancel"]])
+test(`${importKind} atomic owner photo creation ${fileless ? "fileless" : "photos"} ${outcome} preserves complete forms`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS !== "1", "Checks the independent new-owner photo form gate");
+  test.setTimeout(150000);
+  const quota = outcome === "quota";
+  const { f, imported, release, clearHold } = await preparePendingImportUi(page, context, fileless, importKind);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  try {
+    const image = Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 3; return canvas.toDataURL("image/png").split(",")[1];
+    }), "base64");
+    await page.locator('[data-view="packing"]').click(); await page.locator("[data-add-packing-root]").click();
+    await page.locator("#createRootForLayoutBtn").click(); await page.locator("#rootContainerName").fill("Новая сумка сразу с фото");
+    await page.locator("#rootContainerPhotoInput").setInputFiles({ name: "new-bag.png", mimeType: "image/png", buffer: image });
+    await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => Boolean(localStorage.getItem("bike-packing-new-container-form-draft-v1::id:actor-a")))).toBe(true);
+    await submitForm(page, "#saveRootContainerBtn", "#rootContainerName");
+    await expect(page.locator("#rootContainerDialog")).not.toBeVisible();
+    const afterBag = await records(), bagForm = afterBag.find(record => record.action.body.ownerResult?.version === 4);
+    expect(await page.evaluate(() => localStorage.getItem("bike-packing-new-container-form-draft-v1::id:actor-a"))).toBeNull();
+    expect(bagForm).toBeTruthy(); const bagId = bagForm.action.body.entityId;
+    expect(bagForm.action.body.ownerResult.owner).toBeNull(); expect(bagForm.action.kind).toBe("photos.mutate");
+    expect(f.payload.containers[bagId]).toBeUndefined();
+    const bag = page.locator(`#packingView [data-root-container-id="${bagId}"]`);
+    await bag.locator("[data-add-to-container]").click(); await page.locator("#createItemForContainerBtn").click();
+    await page.locator("#itemName").fill("Новая вещь сразу с фото"); await page.locator("#itemWeight").fill("127");
+    await page.locator("#itemPhotoInput").setInputFiles({ name: "new-item.png", mimeType: "image/png", buffer: image });
+    await expect(page.locator("#itemPhotoPreview img")).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => Boolean(localStorage.getItem("bike-packing-new-item-form-draft-v1::id:actor-a")))).toBe(true);
+    if (quota) await page.evaluate(() => {
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:")) {
+          const body = JSON.parse(value).action?.body;
+          if (body?.ownerResult?.version === 4 && body.entityType === "item") throw new DOMException("atomic owner quota", "QuotaExceededError");
+        }
+        return write.call(this, key, value);
+      };
+    });
+    await submitForm(page, "#saveItemBtn", "#itemWeight");
+    if (quota) {
+      await expect(page.locator("#itemDialog")).toBeVisible(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+      expect(await records()).toEqual(afterBag); expect(f.payload.containers[bagId]).toBeUndefined();
+      const download = page.waitForEvent("download"); await page.locator("[data-download-photo-recovery]").click();
+      const entries = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+      expect([...entries.keys()].filter(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toHaveLength(4);
+      return;
+    }
+    await expect(page.locator("#itemDialog"), JSON.stringify(f.errors)).not.toBeVisible();
+    const afterItem = await records(), itemForm = afterItem.find(record => record.action.body.ownerResult?.version === 4 && record.action.body.entityType === "item");
+    expect(await page.evaluate(() => localStorage.getItem("bike-packing-new-item-form-draft-v1::id:actor-a"))).toBeNull();
+    const itemId = itemForm.action.body.entityId; expect(itemForm.action.body.causal.baseOperationId).toBe(bagForm.action.operationId);
+    expect(itemForm.action.body.formContext.placement.targetContainerId).toBe(bagId); expect(f.payload.items[itemId]).toBeUndefined();
+    await page.locator('[data-view="items"]').click(); await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click();
+    await page.locator("#itemWeight").fill("128"); await submitForm(page, "#saveItemBtn", "#itemWeight");
+    await expect(page.locator("#itemDialog")).not.toBeVisible();
+    const all = await records(), update = all.find(record => record.action.body.photoResults?.version === 10);
+    expect(update).toBeTruthy();
+    for (const old of [imported, bagForm, itemForm]) expect(all.find(record => record.action.operationId === old.action.operationId)).toEqual(old);
+    if (outcome === "cancel") {
+      const server = structuredClone(f.payload);
+      await context.route(`${origin}/src/**/*.js`, async route => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid native-file reader path");
+        return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+      });
+      const nativeFiles = () => page.evaluate(async () => {
+        const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+        const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+        const store = createPersonalPhotoActionStore(binding), proofs = [];
+        for (const id of await store.ids()) for (const part of (await store.read(id)).files) proofs.push({ ok: true,
+          operation: { id: part.stage.operationId, actorId: binding.actorId, environment: binding.environment, listId: binding.listId,
+            entityType: part.stage.entityType, entityId: part.stage.entityId, photoId: part.stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+          cancellation: { version: 1, stageOperationId: part.stage.operationId, fileHash: part.fileMetadata.hash,
+            thumbHash: part.thumbMetadata?.hash || part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } });
+        return proofs;
+      });
+      const files = await nativeFiles(); expect(files).toHaveLength(4);
+      f.cancelPhotoActions = new Map(all.map(record => [record.action.operationId, record.action]));
+      f.cancellationReceipts = new Map(files.map(proof => [proof.operation.id, proof]));
+      f.loseStageAt = 1; clearHold(); release(); await expect.poll(() => Boolean(f.hiddenStage)).toBe(true);
+      await reloadApp(page, { recovery: true }); f.loseStageAt = 0; f.hiddenStage = null;
+      const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+      await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible({ timeout: 30000 }); await page.locator("#confirmCancelBtn").click();
+      await expect(recovery).toContainText("Выбор отложен"); expect(f.payload).toEqual(server);
+      await reloadApp(page, { recovery: true }); await cancel.click(); await page.locator("#confirmOkBtn").click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+      expect(f.payload).toEqual(server); expect(f.stagePosts).toHaveLength(1); expect(await nativeFiles()).toEqual(files);
+      expect(new Set(f.ownerCancellationPosts)).toEqual(new Set([imported, bagForm, itemForm, update].map(record => record.action.operationId)));
+      await reloadApp(page); expect(f.errors).toEqual([]); return;
+    }
+    clearHold(); release(); await reloadApp(page, { recovery: true });
+    const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+    f.beforePhotoWrite = action => { f.loseFormOwner = action.operationId === itemForm.action.operationId; };
+    await resume.click(); await expect(resume).toBeEnabled({ timeout: 30000 }); await expect.poll(() => f.injectedFailure).toBe(true);
+    f.beforePhotoWrite = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+    await reloadApp(page, { recovery: true }); await resume.click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+    expect(f.payload.items[itemId].photos).toHaveLength(1); expect(f.payload.items[itemId].weight).toBe(128);
+    expect(f.payload.containers[bagId].photos).toHaveLength(1);
+    expect(Object.values(f.payload.layouts).some(layout => layout.arrangement?.items?.[itemId] === bagId)).toBe(true);
+    expect(f.stagePosts).toHaveLength(fileless ? 2 : 4);
+    for (const old of [imported, bagForm, itemForm, update]) expect(f.posts.filter(post => post.operationId === old.action.operationId)).toHaveLength(1);
+    await reloadApp(page); expect(f.errors).toEqual([]);
+    for (const [view, button, prefix, dialog] of [["items", "addItemBtn", "item", "itemDialog"],
+      ["bags", "addRootContainerBtn", "rootContainer", "rootContainerDialog"]]) {
+      await page.locator(`[data-view="${view}"]`).click(); await page.locator(`#${button}`).click();
+      await expect(page.locator(`#${dialog}`)).toBeVisible();
+      await expect(page.locator(`#${prefix}Name`)).toHaveValue("");
+      await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(0);
+      await page.locator(`#${dialog} header [value="cancel"]`).click();
+      await expect(page.locator(`#${dialog}`)).not.toBeVisible();
+    }
+    expect(f.errors).toEqual([]);
   } finally { clearHold(); release(); }
 });
 

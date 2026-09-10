@@ -763,7 +763,7 @@ import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
 import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } from "./src/sync/personal-public-preparation-resolution-protocol.js";
-import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./src/sync/personal-import-photo-form-result.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./src/sync/personal-import-photo-form-result.js";
 import { PERSONAL_PENDING_IMPORT_CREATE_ENABLED, createPersonalPendingImportCreateSession } from "./src/sync/personal-pending-import-create.js";
 import { personalImportPendingPhotoFormChain } from "./src/sync/personal-import-pending-photo-chain.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
@@ -2567,12 +2567,15 @@ function personalPendingPhotoFormEnabled(type) {
   if (!PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED || !personalPhotoFormUiEnabled()) return false;
   const outbox = personalSaveOutboxForScope();
   if (!outbox?.hasPending()) return false;
-  const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
-    entityType: type, entityId: type === "item" ? editingItemId : editingRootContainerId });
+  const entityId = type === "item" ? editingItemId : editingRootContainerId;
+  const creating = !entityId && PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED;
+  const options = { records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId };
+  const chain = creating ? personalImportPendingPhotoFormChain(options)
+    : personalPendingPhotoFormChain({ ...options, entityType: type, entityId });
   if (chain?.publicOperationId && (!PERSONAL_PUBLIC_PHOTO_FORM_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED)) return false;
   if (chain?.importOperationId && (!PERSONAL_IMPORT_PHOTO_FORM_ENABLED || (chain.importKind === "guest"
     ? !PERSONAL_GUEST_IMPORT_ENABLED : !PERSONAL_ARCHIVE_IMPORT_ENABLED || !PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED))) return false;
-  return Boolean(chain && chain.entityType === type && chain.entityId === (type === "item" ? editingItemId : editingRootContainerId));
+  return Boolean(chain && (creating && chain.importOperationId || chain.entityType === type && chain.entityId === entityId));
 }
 
 function personalPendingImportCreateEnabled() {

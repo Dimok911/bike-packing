@@ -143,17 +143,18 @@ export function validatePersonalPhotoFormResult(payload, expected) {
     const owner = payload.list.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId];
     if (manifest.ownerResult?.version === 2 && (payload.publicPhotoFormSourceOperationId !== expected.operationId
       || !validatePersonalPublicPhotoFormResult(payload, expected.body, expected.listId))) return false;
-    if (manifest.ownerResult?.version === 3 && (payload.importPhotoFormSourceOperationId !== expected.operationId
+    if ([3, 4].includes(manifest.ownerResult?.version) && (payload.importPhotoFormSourceOperationId !== expected.operationId
       || !validatePersonalImportPhotoFormResult(payload, expected.body, expected.listId))) return false;
     if (manifest.ownerResult) {
       if (!isPersonalPhotoPrivateOwner(owner) || payload.stateRevision <= expected.body.baseStateRevision) return false;
-      let frozen = clone(manifest.ownerResult.owner);
+      let frozen = manifest.created ? { id: manifest.entityId, photos: [], ...(manifest.entityType === "item" ? { quantity: 1 } : {}) }
+        : clone(manifest.ownerResult.owner);
       for (const [key, value] of Object.entries(manifest.fields)) {
         if (key === "dimensions" && value === null) delete frozen[key]; else frozen[key] = clone(value);
       }
       if (manifest.formContext) frozen = personalPhotoItemContextOwner(frozen, personalPhotoItemFormContext(expected.body));
       frozen.photos = manifest.photos.at(-1).photoIds.map(photoId => {
-        const actual = owner.photos.find(photo => photo.id === photoId), prior = manifest.ownerResult.owner.photos.find(photo => photo.id === photoId);
+        const actual = owner.photos.find(photo => photo.id === photoId), prior = manifest.ownerResult.owner?.photos.find(photo => photo.id === photoId);
         const attachment = manifest.photos.find(change => change.action === "attach" && change.photoId === photoId);
         if (!actual || actual.status !== "synced" || actual.photoId !== photoId || actual.listId !== expected.listId
           || actual.assetId !== (prior?.assetId || attachment?.assetId) || prior?.status === "synced" && !same(prior, actual)) fail();

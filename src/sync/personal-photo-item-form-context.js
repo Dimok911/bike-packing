@@ -35,7 +35,7 @@ export function personalPhotoItemFormContext(body, state = null) {
     || Object.values(placement.layoutFields).some(value => typeof value !== "string" || value.length > 255)) fail();
   const inventory = personalPhotoFormLayoutInventory(placement.targetLayout, state, fail), before = placement.targetLayout.arrangement;
   const previousContainerId = before.items[body.entityId] || "", targetContainerId = placement.targetContainerId;
-  if (inventory.containers.has(body.entityId) || body.baseEntityRevision === 0 && inventory.items.has(body.entityId)
+  if (inventory.containers.has(body.entityId) || (body.baseEntityRevision === 0 || body.ownerResult?.version === 4) && inventory.items.has(body.entityId)
     || targetContainerId && !inventory.containers.has(targetContainerId)
     || targetContainerId !== previousContainerId && targetContainerId && context.availabilityStatus !== "available"
     || !targetContainerId && placement.quantity !== 1) fail();
