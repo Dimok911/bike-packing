@@ -400,6 +400,66 @@ for (const shared of [false, true]) test(`admin ${shared ? "shared" : "demo"} re
   expect(state.errors).toEqual([]);
 });
 
+for (const shared of [false, true]) for (const mode of ["save", "decline", "choice-quota", "plan-quota", "mirror-quota", "lost-ack", "conflict"]) {
+  test(`post-stop ${shared ? "shared" : "demo"} comparison uses the explicit retained choice (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared }); state.blockBusiness = true;
+    await editItem(page, "Местный вариант после остановки"); await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+    await expect(dialog.locator("[data-admin-stop]")).toBeEnabled();
+    await dialog.locator("[data-admin-stop]").click(); await page.locator("#confirmOkBtn").click();
+    await expect(dialog).toContainText("Отправка остановлена"); const attempts = state.posts.length;
+    state.blockBusiness = false; state.revision = 12; state.visibility = "public";
+    if (["choice-quota", "plan-quota", "mirror-quota"].includes(mode)) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        const prefix = mode === "choice-quota" ? "bike-packing-admin-stop-choice-v1:" : mode === "plan-quota"
+          ? "bike-packing-admin-save-plans-v1:" : "bike-packing-prototype-state-v1";
+        if (key.startsWith(prefix)) throw new DOMException("Comparison quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    await dialog.locator("[data-admin-compare]").click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await expect(page.locator("#confirmDialog")).toContainText("Местный вариант после остановки");
+    await expect(page.locator("#confirmDialog")).toContainText("Насос шаблона");
+    await expect(page.locator("#confirmDialog")).toContainText("будут видны другим пользователям");
+    expect(state.posts).toHaveLength(attempts);
+    if (mode === "conflict") state.revision = 13;
+    if (mode === "lost-ack") state.lose = true;
+    await page.locator(mode === "decline" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    await expect(dialog.locator("[data-admin-recovery-close]")).toBeEnabled();
+    const saved = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(key => key.startsWith("bike-packing-admin-stop-choice-v1:"));
+      return key ? JSON.parse(localStorage.getItem(key)).choice : null;
+    });
+    if (["decline", "choice-quota"].includes(mode)) {
+      expect(saved).toBeNull(); expect(state.posts).toHaveLength(attempts);
+      if (mode === "decline") await expect(dialog).toContainText("Отправка остановлена");
+      else await expect(dialog).toContainText("Comparison quota");
+    } else {
+      expect(saved.server.stateRevision).toBe(12); expect(saved.id).not.toBe(saved.priorPlanId);
+      expect(Object.values(saved.local.payload.items).some(item => item.name === "Местный вариант после остановки")).toBe(true);
+      expect(Object.values(saved.server.payload.items).some(item => item.name === "Насос шаблона")).toBe(true);
+      if (["plan-quota", "mirror-quota"].includes(mode)) {
+        expect(state.posts).toHaveLength(attempts);
+        await page.reload(); await openEditorForTarget(page, shared);
+      } else if (mode === "lost-ack") {
+        expect(state.posts).toHaveLength(attempts + 1); state.lose = false; state.hidden = false;
+        await page.reload(); await openEditorForTarget(page, shared);
+      }
+      if (mode !== "conflict") await confirmedRevision(page, 13);
+      else {
+        await expect(dialog).toContainText("отклонена сервером");
+        await dialog.locator("[data-admin-recovery-close]").click(); await page.reload(); await openEditorForTarget(page, shared);
+        expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).find(layout => layout.adminCausalSource)?.adminCausalSource.planId)).toBe(saved.id);
+      }
+      expect(state.posts).toHaveLength(attempts + 1); const sent = state.posts.at(-1);
+      expect(sent.operationId).toBe(saved.id); expect(sent.kind).toBe("template.save"); expect(sent.body.base).toEqual({ stateRevision: 12 });
+      expect(state.visibility).toBe("public"); expect(state.cancels).toHaveLength(1);
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
+
 test("admin recovery cancellation prompt can be declined without changing the pending action", async ({ page, context }) => {
   const state = await fixture(page, context); state.blockBusiness = true;
   await editItem(page, "Оставить действие ожидающим"); await expect.poll(() => state.posts.length).toBeGreaterThan(0);
@@ -609,7 +669,12 @@ for (const shared of [false, true]) for (const outcome of ["confirmed", "retry",
     expect(original.kind).toBe("template.publication");
     expect(original.body).toEqual({ version: 1, base: { stateRevision: 7 }, published: false, indexes: [] });
     if (outcome !== "confirmed") {
-      await expect.poll(() => state.hidden).toBe(true); state.lose = false; state.hidden = false;
+      await expect.poll(() => state.hidden).toBe(true);
+      // Keep receipt reads unavailable until the original handler reports its
+      // lost result. Otherwise its own GET can succeed and finish the dialog.
+      await expect(page.getByText("Шаблон сохранён локально как черновик, но сервер не подтвердил снятие с публикации.", { exact: false })).toBeVisible();
+      await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled();
+      state.lose = false; state.hidden = false;
       if (outcome === "reload") {
         await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 8);
         await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
@@ -636,6 +701,8 @@ test("a corrupted retained receipt cannot finish unpublish from local flags alon
   await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
   await page.locator("#publishEditedTemplateBtn").click(); await page.locator("#confirmOkBtn").click();
   await expect.poll(() => state.hidden).toBe(true); const original = structuredClone(state.posts[0]);
+  await expect(page.getByText("Шаблон сохранён локально как черновик, но сервер не подтвердил снятие с публикации.", { exact: false })).toBeVisible();
+  await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled();
   state.lose = false; state.hidden = false;
   await page.reload(); await openEditor(page); await confirmedRevision(page, 8);
   await page.evaluate(() => {

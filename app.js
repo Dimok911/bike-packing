@@ -200,8 +200,10 @@ import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-pla
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
 import { createAdminTemplateLegacyChoice } from "./src/public/admin-template-legacy-choice.js";
+import { createAdminTemplateStopChoice } from "./src/public/admin-template-stop-choice.js";
 import { createAdminTemplateRecovery } from "./src/public/admin-template-recovery.js";
 import { createAdminTemplateRecoveryDialog } from "./src/ui/admin-template-recovery-dialog.js";
+import { adminTemplateComparisonHtml } from "./src/ui/admin-template-comparison.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource, stripAdminTemplateEditorMetadata } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -10616,6 +10618,12 @@ function adminTemplateRecoveryFor(binding, layoutId) {
   return createAdminTemplateRecovery({ binding, enabled: adminTemplateUiEnabled(), plans: adminTemplatePlansFor(binding, layoutId),
     client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) });
 }
+function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId) {
+  return createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, enabled: adminTemplateUiEnabled(),
+    getContext: () => adminTemplateOperationContext(binding, layoutId), getSource: () => state.layouts?.[layoutId]?.adminCausalSource,
+    snapshot: () => adminTemplateEditorSnapshot(layoutId), client: adminTemplateClient(binding, layoutId),
+    plans: adminTemplatePlansFor(binding, layoutId), recovery: adminTemplateRecoveryFor(binding, layoutId) });
+}
 let administrativeRecoveryDialog = null;
 function showAdminTemplateRecovery(layoutId) {
   if (!administrativeRecoveryDialog) administrativeRecoveryDialog = createAdminTemplateRecoveryDialog({
@@ -10649,7 +10657,19 @@ async function prepareAdminTemplateRecovery(layoutId) {
     assertShown(); return result;
   };
   const resume = async () => { assertShown(); await coordinator.flush(layoutId); assertEditor(); return inspect(false); };
-  return { inspect, resume, stop: async () => {
+  return { inspect, resume, compare: async () => {
+    assertShown();
+    const choice = adminTemplateStopChoiceFor(binding, layoutId, shownSource.planId), opened = await choice.open(); assertShown();
+    if (!opened.saved) {
+      const describe = value => `«${value.metadata.title}»: вещей ${Object.keys(value.payload.items || {}).length}, сумок ${Object.keys(value.payload.containers || {}).length}`;
+      const approved = await askConfirmDialog({ title: "Сверить остановленный черновик", tone: "warning",
+        highlightHtml: adminTemplateComparisonHtml(opened.local, opened.server),
+        text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Сохранить местный вариант вместо просмотренного серверного? Обе версии сохранятся на устройстве. Если сервер изменится ещё раз, новое сохранение остановится для сверки.${opened.server.visibility === "public" ? " Шаблон опубликован: эти изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
+        okText: "Сохранить местный вариант", cancelText: "Пока оставить черновик", hideClose: true });
+      assertShown(); if (!approved) return inspect(false); await choice.choose(opened); assertShown();
+    }
+    await coordinator.flush(layoutId); assertEditor(); return inspect(false);
+  }, stop: async () => {
     assertShown(); if (!shownSource.planId) return inspect(false);
     await recovery.captureStop(shownSource.planId, shownSnapshot); assertShown();
     await recovery.resumeStop(shownSource.planId); assertEditor(); return inspect(false);
@@ -10664,7 +10684,7 @@ function adminTemplateSaveCoordinator() {
       return adminTemplateOperationContext(binding, layout?.id || "");
     },
     snapshot: adminTemplateEditorSnapshot,
-    plansFor: adminTemplatePlansFor, recoveryFor: adminTemplateRecoveryFor,
+    plansFor: adminTemplatePlansFor, recoveryFor: adminTemplateRecoveryFor, resolutionFor: adminTemplateStopChoiceFor,
     persist: () => persistStateSnapshot(state),
     notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
       : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),

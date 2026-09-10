@@ -54,7 +54,7 @@ export function adminTemplateEditorSource(binding, prepared) {
     base: prepared.exists ? { stateRevision: prepared.stateRevision } : null, indexes: clone(prepared.indexes), planId: null };
 }
 
-export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, persist, notify = () => {},
+export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, resolutionFor = null, persist, notify = () => {},
   uuid = () => crypto.randomUUID(), enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   const captures = new Map();
   const source = layout => {
@@ -153,7 +153,22 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     });
     return job.promise;
   };
+  const resumeResolution = async layoutId => {
+    if (!resolutionFor) return false;
+    const layout = getLayout(layoutId), pending = captures.get(layoutId);
+    if (pending?.layout === layout) await pending.promise.catch(() => {});
+    const observed = source(layout), initial = clone(getContext(observed.binding));
+    if (!observed.planId) return false;
+    const next = await resolutionFor(observed.binding, layoutId, observed.planId).resume();
+    guard(layoutId, layout, initial, observed.binding);
+    if (!next) return false;
+    if (!equal(source(layout), observed) || captures.get(layoutId) !== pending) throw blocked();
+    layout.adminCausalSource = next; layout.templateDraftSyncPending = true;
+    if (persist() === false) { layout.adminCausalSource = observed; throw blocked(); }
+    captures.delete(layoutId); notify("pending", layoutId); return true;
+  };
   const recover = async layoutId => {
+    await resumeResolution(layoutId);
     const layout = getLayout(layoutId), observed = source(layout), initial = clone(getContext(observed.binding));
     const saved = await plansFor(observed.binding, layoutId).list(); guard(layoutId, layout, initial, observed.binding);
     const successor = savedSuccessor(observed, saved);
@@ -175,6 +190,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     const layout = getLayout(layoutId), pending = captures.get(layoutId);
     let captureError = null;
     if (pending?.layout === layout) await pending.promise.catch(error => { captureError = error; });
+    if (await resumeResolution(layoutId)) captureError = null;
     const observed = source(layout), initial = clone(getContext(observed.binding));
     if (!observed.planId) { if (captureError) throw captureError; return { state: "idle" }; }
     const stopped = await recoveryFor?.(observed.binding, layoutId).resumeStop(observed.planId);

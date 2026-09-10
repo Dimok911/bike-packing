@@ -1,6 +1,6 @@
 export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openModalDialog,
   getLanguage = () => "ru", documentRef = document }) {
-  let dialog, status, resume, stop, check, close, busy = false, work, info;
+  let dialog, status, resume, stop, check, compare, close, busy = false, work, info;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   const message = value => {
     if (value.stopped) return text("Отправка остановлена. Местный черновик сохранён. Перед новым сохранением нужна сверка с сервером.",
@@ -21,6 +21,8 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
     resume.disabled = busy || !work || info?.stopped || !info?.operations.length;
     stop.disabled = busy || !work || info?.stopped || !info?.operations.length || info?.stopRequested && info?.stopCoversHead;
     close.disabled = busy;
+    compare.disabled = busy || !work || !info?.stopped;
+    compare.hidden = !info?.stopped;
     resume.textContent = info?.stopRequested ? text("Продолжить остановку", "Continue stopping") : text("Продолжить отправку", "Continue sending");
   };
   const run = async (action, pendingText) => {
@@ -42,6 +44,8 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
     check = button("adminCheckResult", text("Проверить результат", "Check result"));
     resume = button("adminResume", ""); stop = button("adminStop", text("Остановить отправку", "Stop sending"));
     close = button("adminRecoveryClose", text("Закрыть", "Close"));
+    compare = button("adminCompare", text("Сверить с сервером", "Compare with server"));
+    compare.addEventListener("click", () => run(() => work.compare(), text("Готовлю сверку с сервером…", "Preparing the comparison…")));
     check.addEventListener("click", () => run(() => work.inspect(true), text("Проверяю результат…", "Checking the result…")));
     resume.addEventListener("click", () => run(() => work.resume(), info?.stopRequested
       ? text("Проверяю остановку отправки…", "Checking the stop request…") : text("Продолжаю сохранённую отправку…", "Continuing the saved request…")));
@@ -49,7 +53,7 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
       text("Подтверждение остановки…", "Confirm stopping…")));
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
-    dialog.append(heading, description, status, check, resume, stop, close); documentRef.body.append(dialog);
+    dialog.append(heading, description, status, check, resume, stop, compare, close); documentRef.body.append(dialog);
   };
   return Object.freeze({ async show(layoutId) {
     if (busy || dialog?.open) return;
