@@ -56,7 +56,9 @@ jobs:
         run: npm run check:live-api-contract
 
       - name: Install browsers
-        run: npx playwright install --with-deps ${{ matrix.browser == 'mobile-webkit' && 'webkit' || 'chromium' }}
+        # The Chromium project also contains files with an explicit iPhone
+        # device override; those files select WebKit through defaultBrowserType.
+        run: npx playwright install --with-deps ${{ matrix.browser == 'mobile-webkit' && 'webkit' || 'chromium webkit' }}
 
       - name: Browser smoke
         env:
