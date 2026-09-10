@@ -52,6 +52,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     refs.confirmCancelBtn.textContent = cancelText;
     refs.confirmCancelBtn.hidden = Boolean(hideCancel);
     refs.confirmOkBtn.textContent = okText;
+    refs.confirmOkBtn.disabled = false;
     if (closeBtn) closeBtn.hidden = Boolean(hideClose);
     if (refs.confirmAlternateBtn) {
       refs.confirmAlternateBtn.textContent = alternateText || "";
@@ -73,6 +74,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         refs.confirmDialog.removeEventListener("close", handleClose);
         refs.confirmCancelBtn.onclick = null;
         refs.confirmOkBtn.onclick = null;
+        refs.confirmOkBtn.disabled = false;
         closeBtn?.removeEventListener("click", handleCloseButton);
         if (refs.confirmAlternateBtn) {
           refs.confirmAlternateBtn.onclick = null;

@@ -5,6 +5,8 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (process.env.BIKE_PERSONAL_SHARE_LINKS === "1" && source.endsWith("/src/sync/personal-share-link.js")) return code.replace(
+      "PERSONAL_SHARE_LINK_ENABLED = false", "PERSONAL_SHARE_LINK_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-import-create.js")) {
       let result = code;
       if (process.env.BIKE_PERSONAL_PENDING_CREATE === "1") result = result.replace("PERSONAL_PENDING_IMPORT_CREATE_ENABLED = false", "PERSONAL_PENDING_IMPORT_CREATE_ENABLED = true");

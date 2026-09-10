@@ -731,6 +731,7 @@ import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
+import { preparePersonalShareLink, PERSONAL_SHARE_LINK_ENABLED } from "./src/sync/personal-share-link.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate } from "./src/sync/personal-pending-archive-update.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate } from "./src/sync/personal-pending-guest-update.js";
@@ -1967,6 +1968,7 @@ const appTailControllerDeps = {
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
   personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  runCausalPersonalShareLink, personalSavePilotEnabled, PERSONAL_SHARE_LINK_ENABLED,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -8086,6 +8088,52 @@ async function openSharedListFromLink(listId, layoutId = "") {
   }
 }
 
+async function runCausalPersonalShareLink(selection) {
+  if (!personalSavePilotEnabled()) return null;
+  if (!PERSONAL_SHARE_LINK_ENABLED) throw Error("Создание ссылки через очередь ещё не включено. Ваши данные сохранены.");
+  personalSaveRecovery.assertRunning();
+  const initial = personalSaveContext(), layoutId = state.activeLayoutId;
+  if (initial.scope !== "personal" || !initial.actorId || initial.scopeKey !== `id:${initial.actorId}` || !initial.listId) throw Error("Сначала подтвердите личный список.");
+  const assertCurrent = () => {
+    const current = personalSaveContext();
+    if (["environment", "actorId", "listId", "scopeKey", "scope"].some(key => current[key] !== initial[key]) || state.activeLayoutId !== layoutId) {
+      throw Error("Аккаунт или выбранная укладка изменились. Ссылка остаётся связана с сохранённым выбором.");
+    }
+  };
+  selection = JSON.parse(JSON.stringify(selection));
+  const outbox = personalSaveOutboxForScope();
+  const records = outbox.list(), boundaryId = outbox.confirmedBoundary()?.operationId;
+  const boundaryGeneration = records.find(record => record.action.operationId === boundaryId)?.action.generation || 0;
+  const pending = outbox.hasPending() && records.filter(record => record.action.generation > boundaryGeneration && record.action.body.shareLink)
+    .sort((a, b) => b.action.generation - a.action.generation)[0];
+  const latest = outbox.recover(), latestChoice = latest?.action.body.shareLink;
+  const completedChoice = latestChoice && !outbox.hasPending() && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), serializeState({ forSync: true }))
+    && sameJson(Object.fromEntries(Object.entries(latestChoice).filter(([key]) => !["id", "version"].includes(key))), selection) ? latest : null;
+  let record;
+  if (pending || completedChoice) {
+    const saved = pending || completedChoice;
+    const { version, id, ...savedSelection } = saved.action.body.shareLink;
+    if (!sameJson(savedSelection, selection)) throw Error("В очереди уже сохранён другой выбор ссылки. Сначала проверьте его подтверждение.");
+    record = saved;
+  } else {
+    // First persist any field/placement edits. The share is a separate action
+    // even when its payload equals the last saved business snapshot.
+    capturePersonalSaveIntent(state);
+    const snapshot = JSON.parse(JSON.stringify(state));
+    const prepared = preparePersonalShareLink({ binding: outbox.binding, snapshot, basePayload: cloneStateForSync(snapshot, { forSync: true }),
+      baseStateRevision: Number(syncMeta.stateRevision), selection }, { snapshotToPayload: value => cloneStateForSync(value, { forSync: true }) });
+    record = outbox.capture(prepared);
+    syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+  }
+  await queuedPersonalSave({ notify: false }); assertCurrent();
+  const queue = createListOperationQueue({ transport: experimentTransport, getContext: personalSaveContext, readOnly: true });
+  const proof = await queue.inspect({ path: `/bike-packing/lists/${encodeURIComponent(initial.listId)}`, method: "PUT",
+    body: JSON.stringify(record.action.body), operationId: record.action.operationId });
+  assertCurrent();
+  if (proof.operation.state !== "committed") throw Error("Ссылка ещё не подтверждена. Выбранные данные сохранены на устройстве.");
+  return JSON.parse(JSON.stringify(record.action.body.shareLink));
+}
+
 async function shareCurrentPackingListByLink() {
   if (!currentUser) {
     showToast(localText("Sign in to create a list link.", "Войдите, чтобы создать ссылку на список."), "error");
@@ -8097,18 +8145,27 @@ async function shareCurrentPackingListByLink() {
     return;
   }
   try {
+    const chosenContext = personalSaveContext(), chosenLayoutId = state.activeLayoutId;
+    const chosenTitle = state.layouts?.[chosenLayoutId]?.name || currentPackingListMeta?.title || "Велоукладка";
+    const chosenDescription = currentPackingListMeta?.description || "";
     const authorLabel = String(currentUser.displayName || currentUser.email || "").trim();
     let publishOptions = { mode: "live", includeAuthor: false };
     const confirmed = await askConfirmDialog({
       title: uiLanguage === "en" ? "Create list link" : "Создать ссылку на список",
       text: uiLanguage === "en" ? "Choose how the link should work." : "Выберите, как должна работать ссылка.",
-      highlightHtml: sharedListPublishDialogHtml({ authorLabel, language: uiLanguage }),
+      highlightHtml: sharedListPublishDialogHtml({ authorLabel, language: uiLanguage, chooseScope: personalSavePilotEnabled() }),
       okText: uiLanguage === "en" ? "Create link" : "Создать ссылку",
       hideCancel: true,
       keepOpenOnOk: true,
-      onOk: () => { publishOptions = readSharedListPublishOptions(refs.confirmDialog); }
+      onOk: () => { publishOptions = readSharedListPublishOptions(refs.confirmDialog, { chooseScope: personalSavePilotEnabled() }); }
     });
     if (!confirmed) return;
+    if (["actorId", "listId", "scopeKey", "scope"].some(key => personalSaveContext()[key] !== chosenContext[key]) || state.activeLayoutId !== chosenLayoutId) throw Error("Аккаунт или укладка изменились во время выбора ссылки.");
+    const causalLink = await runCausalPersonalShareLink({ ...publishOptions, scope: publishOptions.scope || "layout", entityType: "", entityId: "", layoutId: chosenLayoutId,
+      title: chosenTitle, description: chosenDescription, authorName: publishOptions.includeAuthor ? authorLabel : "" });
+    let link;
+    if (causalLink) link = buildSharedListUrl(causalLink.id, causalLink.layoutId);
+    else {
     updateSyncUi(localText("Preparing the list for link sharing...", "Готовлю список к публикации по ссылке..."));
     await flushActivePublishedEditSave();
     const uploadedPhotos = await uploadPendingPhotos({ markDirty: true });
@@ -8146,7 +8203,8 @@ async function shareCurrentPackingListByLink() {
       });
       rememberCurrentPackingListRecord(data);
     }
-    const link = buildSharedListUrl(sharedListId, sharedLayoutId);
+    link = buildSharedListUrl(sharedListId, sharedLayoutId);
+    }
     refs.confirmTitle.textContent = uiLanguage === "en" ? "List link" : "Ссылка на список";
     refs.confirmText.innerHTML = sharedListLinkResultHtml(link, { language: uiLanguage });
     refs.confirmOkBtn.textContent = uiLanguage === "en" ? "Copy link" : "Скопировать ссылку";
@@ -9147,7 +9205,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     const outbox = personalSaveOutboxForScope();
     if (!outbox) throw new Error("Сначала нужно подтвердить создание личного списка.");
     if (!outbox.hasPending()) return;
-    const deletionReference = personalDeletionReference(loadBaseState(), outbox.list());
+    const confirmedBoundary = outbox.confirmedBoundary();
+    const deletionReference = personalDeletionReference(confirmedBoundary?.payload || loadBaseState(), outbox.list(), { confirmedBoundary });
     const knownDeletion = deletionReference && preservesUndeletedEntities(state, deletionReference)
       && !isDestructiveStateRegression(state, deletionReference)
       && (!isSuspiciousEmptyPackingState(state) || isSuspiciousEmptyPackingState(deletionReference));
@@ -9205,6 +9264,16 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       // Autosave pauses without stealing focus. The explicit sync button opens
       // the decision UI; server CAS still checks the version after that choice.
       resolveConflicts: notify ? (conflicts, details) => askConflictResolution(conflicts, details) : undefined,
+      resolveRejectedShare: notify ? async ({ discardedOperationCount }) => {
+        const confirmed = await askConfirmDialog({
+          title: localText("Link was not created", "Ссылка не создана"),
+          text: localText(
+            `Keep the current server version and discard the rejected link choice and unconfirmed local changes (${discardedOperationCount} actions)? Then select the data for a new link again. Cancel keeps the original data, files and queue.`,
+            `Оставить актуальную серверную версию и отменить отклонённый выбор ссылки вместе с неподтверждёнными локальными изменениями (действий: ${discardedOperationCount})? После этого данные для новой ссылки нужно выбрать заново. Отмена сохраняет исходные данные, файлы и очередь.`),
+          okText: localText("Keep server version", "Оставить серверную версию"), tone: "danger"
+        });
+        return confirmed === true ? "keep-server" : "cancel";
+      } : undefined,
       resolveRejectedRestore: notify ? async ({ discardedOperationCount, source }) => {
         const confirmed = await askConfirmDialog({
           title: localText("Restore was not applied", "Восстановление не применено"),

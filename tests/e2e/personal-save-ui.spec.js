@@ -1,3 +1,4 @@
+import { assertPersonalShareLinkBody, personalShareLinkProjection, personalSharePhotoInventory } from "../../src/sync/personal-share-link.js";
 import { assertPersonalPublicImportBody, assertPersonalPublicImportHashes, personalPublicImportReceipt } from "../../src/sync/personal-public-import-protocol.js";
 import { createBackupZip } from "../../src/backup/archive.js";
 import { createGuestLoginHandoff } from "../../src/public/guest-login-handoff.js";
@@ -233,6 +234,139 @@ for (const phase of ["native files", "queue link"]) test(`actual guest sign-in $
   expect(f.errors).toEqual([]);
 });
 
+for (const mode of ["live", "snapshot"]) for (const scope of ["layout", "list", "item", "container"]) test(`actual causal share ${mode} ${scope} uses saved selection and entity form fields`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS !== "1", "Requires isolated sharing bundle");
+  test.setTimeout(100000);
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Сумка ссылки");
+  const item = await createItemInContainer(page, bag, "Вещь ссылки");
+  await synchronize(page, () => Object.values(f.payload.items).some(owner => owner.name === "Вещь ссылки"));
+  const entity = ["item", "container"].includes(scope), bagId = Object.values(f.payload.containers).find(owner => owner.name === "Сумка ссылки").id;
+  if (scope === "item") { await item.locator(".item-title-hitarea").click(); await page.locator("#itemWeight").fill("147"); await page.locator("#shareItemLinkBtn").click(); }
+  else if (scope === "container") {
+    await page.locator('[data-view="bags"]').click(); await page.locator(`#bagsView [data-root-card="${bagId}"] [data-root-title]`).click();
+    await page.locator("#rootContainerWeight").fill("247"); await page.locator("#shareRootContainerLinkBtn").click();
+  } else { await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click(); }
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  await page.locator(`#confirmDialog input[name="${entity ? "shareEntityMode" : "shareLinkMode"}"][value="${mode}"]`).check();
+  if (!entity) await page.locator(`#confirmDialog input[name="shareListScope"][value="${scope}"]`).check();
+  await submitForm(page, "#confirmOkBtn");
+  await expect(page.locator("#confirmDialog input[readonly]")).toBeVisible({ timeout: 30000 });
+  const share = f.posts.find(post => post.body.shareLink); expect(share).toBeTruthy();
+  expect(share.body.shareLink.mode).toBe(mode); expect(share.body.shareLink.scope).toBe(entity ? "entity" : scope);
+  expect(share.body.shareLink.layoutId).toBe("layout-a"); expect(share.body.shareLink.includeAuthor).toBe(false);
+  expect(share.body.shareLink.authorName).toBe(""); expect(share.body.visibility).toBeUndefined();
+  if (entity) expect(share.body.payload[scope === "item" ? "items" : "containers"][share.body.shareLink.entityId].weight).toBe(scope === "item" ? 147 : 247);
+  expect(await page.locator("#confirmDialog input[readonly]").inputValue()).toContain(share.body.shareLink.id);
+  expect(f.posts.filter(post => post.body.shareLink)).toHaveLength(1); expect(f.errors).toEqual([]);
+  const link = await page.locator("#confirmDialog input[readonly]").inputValue(), writes = f.posts.length;
+  await page.goto(link); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await expect(page.locator("#syncStatus")).toHaveText(/^Общий список ·/);
+  await expect(page.locator("#packingView")).toBeVisible(); await expect(page.locator("#packingView")).toContainText("Вещь ссылки");
+  expect(f.posts).toHaveLength(writes); expect(f.errors).toEqual([]);
+});
+
+test("actual causal share own gate off keeps the edited form and old queue", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS === "1", "Requires own sharing gate off");
+  test.setTimeout(100000);
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Сумка выключенной ссылки");
+  const item = await createItemInContainer(page, bag, "Вещь выключенной ссылки");
+  await synchronize(page, () => Object.values(f.payload.items).some(owner => owner.name === "Вещь выключенной ссылки"));
+  const before = f.posts.length, journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")));
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemWeight").fill("347"); await page.locator("#shareItemLinkBtn").click();
+  await submitForm(page, "#confirmOkBtn");
+  await expect(page.locator("#confirmDialog")).not.toBeVisible(); await expect(page.locator("#itemDialog")).toBeVisible();
+  await expect(page.locator("#itemWeight")).toHaveValue("347");
+  expect(f.posts).toHaveLength(before);
+  expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")))).toEqual(journal);
+  expect(f.errors).toEqual([]);
+});
+
+for (const mode of ["snapshot", "live"]) test(`actual causal share confirmed photo ${mode} preserves the exact selected owner`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS !== "1", "Requires isolated sharing bundle");
+  test.setTimeout(120000);
+  const { f, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type: "item", photoEdit: true });
+  await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  const photoAction = f.posts.find(post => post.kind === "photos.mutate"), owner = structuredClone(f.payload.items[photoAction.body.entityId]);
+  const stages = [...f.stagePosts];
+  await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click();
+  await page.locator(`#confirmDialog input[name="shareLinkMode"][value="${mode}"]`).check(); await submitForm(page, "#confirmOkBtn");
+  await expect(page.locator("#confirmDialog input[readonly]")).toBeVisible({ timeout: 30000 });
+  const share = f.posts.find(post => post.body.shareLink); expect(share.body.payload.items[owner.id].photos).toEqual(owner.photos);
+  expect(f.receipts.get(share.operationId).result.payload.sharedLink.files).toHaveLength(owner.photos.length);
+  expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
+});
+
+test("actual causal share lost ACK resumes the same selected link after reload", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS !== "1", "Requires isolated sharing bundle");
+  test.setTimeout(110000);
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Сумка сохранённой ссылки");
+  await createItemInContainer(page, bag, "Вещь сохранённой ссылки");
+  await synchronize(page, () => Object.values(f.payload.items).some(owner => owner.name === "Вещь сохранённой ссылки"));
+  const choose = async () => { await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click();
+    await page.locator('#confirmDialog input[name="shareLinkMode"][value="snapshot"]').check(); await submitForm(page, "#confirmOkBtn"); };
+  f.loseShare = true; await choose();
+  await expect.poll(() => f.hiddenFormOwner).toBeTruthy(); await expect(page.locator("#confirmDialog")).not.toBeVisible();
+  const original = structuredClone(f.posts.find(post => post.body.shareLink));
+  f.loseShare = false; f.hiddenFormOwner = "";
+  await reloadApp(page); await page.locator("#syncBtn").click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  await choose(); await expect(page.locator("#confirmDialog input[readonly]")).toBeVisible({ timeout: 30000 });
+  expect(await page.locator("#confirmDialog input[readonly]").inputValue()).toContain(original.body.shareLink.id);
+  expect(f.posts.filter(post => post.body.shareLink)).toEqual([original]); expect(f.errors).toEqual([]);
+});
+
+for (const mode of ["snapshot", "live"]) test(`actual causal share pending photo ${mode} resumes its original choice and files`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS !== "1" || process.env.BIKE_PERSONAL_PENDING_FORM !== "1", "Requires isolated sharing and pending form bundle");
+  test.setTimeout(120000);
+  const { f, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type: "item", photoEdit: true });
+  f.loseFormOwner = true; await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.hiddenFormOwner).toBeTruthy();
+  const original = structuredClone(f.posts.find(post => post.kind === "photos.mutate")), stages = [...f.stagePosts];
+  const choose = async () => { await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click();
+    await page.locator(`#confirmDialog input[name="shareLinkMode"][value="${mode}"]`).check(); await submitForm(page, "#confirmOkBtn"); };
+  await choose(); await expect(page.locator("#confirmDialog")).not.toBeVisible();
+  const saved = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(value => value.action?.body.shareLink));
+  expect(saved).toBeTruthy(); expect(saved.action.body.photoResults.version).toBe(5);
+  expect(saved.action.body.photoResults.operationId).toBe(original.operationId);
+  f.loseFormOwner = false; f.hiddenFormOwner = "";
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog");
+  await recovery.getByRole("button", { name: "Продолжить сохранённую форму", exact: true }).click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  await choose(); await expect(page.locator("#confirmDialog input[readonly]")).toBeVisible({ timeout: 30000 });
+  expect(await page.locator("#confirmDialog input[readonly]").inputValue()).toContain(saved.action.body.shareLink.id);
+  expect(f.posts.filter(post => post.body.shareLink).map(post => post.operationId)).toEqual([saved.action.operationId]);
+  expect(f.posts.filter(post => post.kind === "photos.mutate")).toEqual([original]); expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
+});
+
+test("actual causal share rejected source keeps the queue on cancel and requires a new selection after keep server", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS !== "1", "Requires isolated sharing bundle");
+  test.setTimeout(120000);
+  page.setDefaultTimeout(15000);
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Сумка отклонённой ссылки");
+  await createItemInContainer(page, bag, "Вещь отклонённой ссылки");
+  await synchronize(page, () => Object.values(f.payload.items).some(owner => owner.name === "Вещь отклонённой ссылки"));
+  f.allowConflicts = true; f.beforeUpdate = body => { if (body.body.shareLink) { f.revision++; Object.values(f.payload.items)[0].note = "Изменено на сервере"; } };
+  const choose = async () => { await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click();
+    await page.locator('#confirmDialog input[name="shareLinkMode"][value="snapshot"]').check(); await submitForm(page, "#confirmOkBtn"); };
+  await choose(); await expect(page.locator("#confirmDialog")).not.toBeVisible(); f.beforeUpdate = null;
+  const original = structuredClone(f.posts.find(post => post.body.shareLink)), remote = structuredClone(f.payload);
+  const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")));
+  const before = await journal(); await page.locator("#syncBtn").click();
+  await expect(page.locator("#confirmDialog")).toContainText("Ссылка не создана"); await page.locator("#confirmCancelBtn").click();
+  await expect(page.locator("#confirmDialog")).not.toBeVisible(); expect(await journal()).toEqual(before);
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmDialog")).toContainText("Ссылка не создана");
+  await submitForm(page, "#confirmOkBtn");
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  expect(f.payload).toEqual(remote); expect(f.posts.filter(post => post.body.shareLink)).toEqual([original]);
+  await reloadApp(page); await choose(); await expect(page.locator("#confirmDialog input[readonly]")).toBeVisible({ timeout: 30000 });
+  const shares = f.posts.filter(post => post.body.shareLink); expect(shares).toHaveLength(2);
+  expect(shares[1].operationId).not.toBe(original.operationId); expect(shares[1].body.payload).toEqual(personalBusinessPayload(remote)); expect(f.errors).toEqual([]);
+});
+
 async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true,
   guestSource = null, publicSource = null, publicSourceConfig = null, language = "ru", configure = () => {} } = {}) {
   photoForm ||= photoEdit;
@@ -316,8 +450,19 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
+      else if (request.method() === "GET" && /^\/bike-packing\/(?:entity-links|lists)\/shared-entity-(?:link|snapshot)-[a-f0-9-]+$/.test(path)) {
+        const id = path.split("/").at(-1), receipt = [...state.receipts.values()].find(value => value.operation.state === "committed" && value.result.payload.sharedLink?.descriptor.id === id);
+        if (!receipt) { data = { ok: false, code: "not_found" }; status = 404; }
+        else {
+          const descriptor = receipt.result.payload.sharedLink.descriptor;
+          const payload = personalShareLinkProjection(personalBusinessPayload(descriptor.mode === "snapshot" ? receipt.result.payload.list.payload : state.payload), descriptor, receipt.operation.id);
+          const record = { id, listId: id, ownerId: "actor-a", visibility: "shared", sourceType: "user", title: descriptor.title,
+            description: descriptor.description, stateRevision: 1, payload, updatedAt: "2026-09-10T12:00:00.000Z" };
+          data = { ok: true, [path.includes("/entity-links/") ? "entityLink" : "list"]: record, mode: descriptor.mode, scope: descriptor.scope };
+        }
+      }
       else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: structuredClone(state.publicRecords) };
       else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/")) {
         const itemKey = decodeURIComponent(path.split("/").at(-1)), source = state.publicRecords.find(record => record.itemKey === itemKey);
@@ -569,6 +714,11 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
               assertPersonalArchiveImportBody(body.body, { base: state.payload, causal: true }); await assertPersonalArchiveImportHashes(body.body);
             }
           }
+          if (body.body.shareLink) {
+            expect(process.env.BIKE_PERSONAL_SHARE_LINKS).toBe("1");
+            assertPersonalShareLinkBody(body.body, body.operationId, { causal: true });
+          }
+          const shareSource = body.body.shareLink ? personalBusinessPayload(state.payload) : null;
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
           if (body.kind === "list.import" && (publicImport || guestImport || body.body.archiveImport.version === 2)) {
             state.payload = structuredClone(state.payload);
@@ -599,6 +749,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
               if (state.payload[collection][owner.entityId]) state.payload[collection][owner.entityId].photos = structuredClone(copy.result.payload.list.payload[collection][owner.entityId].photos);
             }
           }
+          if (shareSource) expect(personalBusinessPayload(state.payload)).toEqual(shareSource);
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
@@ -635,7 +786,12 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             importKind: [9, 10].includes(ref.version) ? source.importPhotoForm.importKind : ref.version === 4 ? "guest" : "archive",
             pendingPhotos: personalPublicPendingPhotoInventory(body.body.payload, state.listId) } });
         }
+        if (data.operation.state === "committed" && body.body.shareLink) data.result.payload.sharedLink = {
+          version: 1, descriptor: structuredClone(body.body.shareLink), sourceListId: state.listId, sourceStateRevision: state.revision - 1,
+          files: personalSharePhotoInventory(personalShareLinkProjection(personalBusinessPayload(state.payload), body.body.shareLink, body.operationId))
+            .map(file => ({ ...file, fileHash: "a".repeat(64), thumbHash: "b".repeat(64) })) };
         state.receipts.set(body.operationId, data);
+        if (state.loseShare && body.body.shareLink) { state.hiddenFormOwner = body.operationId; state.injectedFailure = true; return route.abort("failed"); }
         if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && ([1, 2].includes(body.body.publicImport?.version) || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");

@@ -3,6 +3,8 @@ import { deleteRootContainerFromState } from "../state/container-ops.js";
 import { removeItemFromLayoutArrangement, touchLayoutsReferencingItemInState } from "../state/layout-ops.js";
 import { reducePersonalPlacementReference } from "./personal-placement-mutation.js";
 import { validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
+import { validPersonalShareCancellation } from "./personal-share-cancellation.js";
+import { canonicalListOperationJson } from "./list-operation-queue.js";
 
 export function personalDeletionIntent(value) {
   if (value?.type === "batch") {
@@ -64,13 +66,24 @@ export function preparePersonalDeletionBatch(state, value, { changedAt = "", mar
 
 // Reduce only the comparison baseline, never live state. This is not a general
 // force save: unrelated losses must still pass the ordinary regression guard.
-export function personalDeletionReference(base, records) {
+export function personalDeletionReference(base, records, { confirmedBoundary = null } = {}) {
   if (!base) return null;
   let reference = JSON.parse(JSON.stringify(base));
   let declared = false;
-  for (const record of [...records].sort((a, b) => (a.action?.generation || 0) - (b.action?.generation || 0))) {
+  const byId = new Map(records.map(record => [record.action?.operationId, record]));
+  let boundaryGeneration = 0;
+  if (confirmedBoundary) {
+    const record = byId.get(confirmedBoundary.operationId);
+    if (!record || record.action.listId !== confirmedBoundary.listId || !Number.isSafeInteger(confirmedBoundary.stateRevision)
+      || confirmedBoundary.stateRevision < 1 || canonicalListOperationJson(base) !== canonicalListOperationJson(confirmedBoundary.payload)) {
+      throw Error("Не подтверждена текущая исходная версия списка.");
+    }
+    boundaryGeneration = record.action.generation;
+  }
+  for (const record of [...records].filter(record => !boundaryGeneration || record.action.generation > boundaryGeneration)
+    .sort((a, b) => (a.action?.generation || 0) - (b.action?.generation || 0))) {
     if (record.reconciliation?.decision) {
-      if (!validPersonalRestoreCancellation(record)) throw Error("Не подтверждён отказ от отклонённого восстановления.");
+      if (!validPersonalRestoreCancellation(record) && !validPersonalShareCancellation(record, byId)) throw Error("Не подтверждён отказ от отклонённого действия.");
       reference = JSON.parse(JSON.stringify(record.snapshot)); declared = true;
     }
     if (["list.restore", "list.import"].includes(record.action?.kind)) {

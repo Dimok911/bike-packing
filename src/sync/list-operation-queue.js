@@ -1,3 +1,4 @@
+import { PERSONAL_SHARE_LINK_ENABLED, PERSONAL_SHARE_LINK_CAPABILITY, assertPersonalShareLinkBody, verifyPersonalShareLinkResult } from "./personal-share-link.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, personalPublicPhotoFormCapabilities } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_PHOTO_FORM_CAPABILITY, personalImportPhotoFormCapabilities,
@@ -82,6 +83,7 @@ export function validateListReceipt(data, expected) {
       && proof.operationId === expected.operationId && proof.noBusinessEffects === true && proof.operationCannotApply === true;
   }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
+  if (Object.hasOwn(expected.body || {}, "shareLink") && (expected.kind !== "list.update" || !verifyPersonalShareLinkResult(result, expected))) return false;
   if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
@@ -162,6 +164,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
+  shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
   containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
@@ -260,6 +263,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
     async cancelExact({ path, method, body: bodyText, operationId }) {
       if (!this.supportsCancellation(path, method) || !locks?.request) throw paused(operationId);
       const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
+      if (Object.hasOwn(body, "shareLink")) {
+        if (!shareLinkEnabled || route.kind !== "list.update") throw paused(operationId);
+        assertPersonalShareLinkBody(body, operationId, { causal: true });
+      }
       if ((body.ownerResult?.version === 5 || body.photoResults?.version === 11) && !publicNewOwnerFormEnabled) throw paused(operationId);
       if (body.photoResults?.version === 10 && !importNewOwnerFormEnabled) throw paused(operationId);
       if (([2, 5].includes(body.ownerResult?.version) || [8, 11].includes(body.photoResults?.version))
@@ -315,6 +322,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (([3, 4].includes(body.ownerResult?.version) || [9, 10].includes(body.photoResults?.version))
           && ![...personalImportPhotoFormCapabilities(body.ownerResult || body.photoResults), PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY]
             .every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
+        if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
         if (Object.hasOwn(body, "publicImport") && (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(operationId,
           "Сервер ещё не поддерживает отмену копирования шаблона.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
@@ -405,6 +413,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
     async settleRejectedDependency({ path, method, body: bodyText, operationId, predecessor, photoResultPredecessor }) {
       if (!this.supports(path, method) || !locks?.request) throw paused(operationId);
       const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
+      if (Object.hasOwn(body, "shareLink")) {
+        if (!shareLinkEnabled || route.kind !== "list.update") throw paused(operationId);
+        assertPersonalShareLinkBody(body, operationId, { causal: true });
+      }
       const parent = JSON.parse(JSON.stringify(predecessor || {}));
       const parentRoute = listOperationRoute(parent.path, parent.method), parentBody = JSON.parse(parent.body || "{}");
       const rejectedFormParent = photoEnabled && photoFormEnabled && parentRoute?.kind === "photos.mutate"
@@ -486,6 +498,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
+        if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId);
         if (copyExpected && !capabilities.capabilities?.includes([5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
         if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) throw paused(operationId);
         if ([6, 8, 9, 10, 11].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) throw paused(operationId);
@@ -588,6 +601,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
+      if (Object.hasOwn(body, "shareLink")) {
+        if (!shareLinkEnabled || route.kind !== "list.update") throw paused(requestedId, "Создание ссылки через очередь ещё не включено. Выбор сохранён.");
+        assertPersonalShareLinkBody(body, requestedId, { causal: true });
+      }
       if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !photoRestoreEnabled) throw paused(requestedId, "Восстановление истории с фото ещё не включено.");
       if (route.kind === "list.import") {
         if (Object.hasOwn(body, "publicImport")) {
@@ -702,6 +719,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
+          if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
           if (route.kind === "list.migrate" && !capabilities.capabilities?.includes(PERSONAL_LIST_MIGRATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подготовку старого списка. Запрос не отправлен.");
           if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает подтверждение фотодействий. Запрос не отправлен.");

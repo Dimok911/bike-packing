@@ -1,3 +1,4 @@
+import { PERSONAL_SHARE_LINK_ENABLED, assertPersonalShareLinkBody } from "./personal-share-link.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
@@ -37,6 +38,7 @@ import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, per
 import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { validateCancelledStagedPhotoReceipt } from "./personal-photo-staging.js";
 import { validPersonalPhotoCancellation } from "./personal-photo-cancellation.js";
+import { validPersonalShareCancellation } from "./personal-share-cancellation.js";
 import { cancelPersonalPhotoBatch, PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } from "./personal-photo-batch-cancellation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints, mergePersonalPhotoReceipts } from "./personal-save-checkpoints.js";
@@ -102,7 +104,13 @@ const blocked = (code, message) => Object.assign(new Error(message), {
   code, isPersonalSaveBlocked: true, isOperationReceiptError: true
 });
 const preflight = (action, snapshot) => {
-  try { assertListOperationPayload(action); }
+  try {
+    assertListOperationPayload(action);
+    if (Object.hasOwn(action.body, "shareLink")) {
+      if (action.kind !== "list.update") throw Error("Invalid share action");
+      assertPersonalShareLinkBody(action.body, action.operationId, { causal: true });
+    }
+  }
   catch (error) {
     if (!error.isOperationPreflightError) throw error;
     throw Object.assign(blocked(error.code, error.message), { unconfirmedMemoryDraft: snapshot,
@@ -114,6 +122,7 @@ const preflight = (action, snapshot) => {
 // another's intent. A concurrent fork is retained and blocked, never date-sorted.
 export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED,
+  shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
@@ -192,6 +201,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
             : action.body.causal?.reads?.length !== 0)
           || !Array.isArray(action.body.causal?.dependsOn)
           || !Number.isSafeInteger(action.generation) || action.generation < 1) throw Error("Invalid record");
+        if (Object.hasOwn(action.body, "shareLink")) {
+          if (action.kind !== "list.update") throw Error("Invalid share action");
+          assertPersonalShareLinkBody(action.body, action.operationId, { causal: true });
+        }
         if (record.mergeBase && (!record.mergeBase.payload || !Number.isSafeInteger(record.mergeBase.stateRevision)
           || record.mergeBase.stateRevision < 1 || !updateKind(action.kind))) throw Error("Invalid merge base");
         if (action.kind === "list.import" && !Object.hasOwn(action.body, "guestImport") && !Object.hasOwn(action.body, "publicImport") && action.body.archiveImport?.version !== 2) {
@@ -255,7 +268,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               || !Array.isArray(settled) || settled.length !== ancestors.length || !settled.length
               || settled.some((proof, index) => !validHistoricalProof(proof, ancestors[index].action))
               || settled.at(-1).operation.id !== parentId
-              || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) && !validPersonalPhotoCancellation(record)
+              || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) && !validPersonalPhotoCancellation(record) && !validPersonalShareCancellation(record, records)
                 : !revisionConflictChain(parent, records, settled))) throw Error("Invalid reconciled successor");
             parents.add(parentId);
             continue;
@@ -626,13 +639,19 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     capture({ snapshot, body, create = false, restore = false, migration = false, archiveImport = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
       const input = clone({ snapshot, body });
+      const sharing = Object.hasOwn(input.body || {}, "shareLink");
+      if (sharing) {
+        if (!shareLinkEnabled) throw blocked("share-link-disabled", "Создание ссылки через очередь ещё не включено. Выбор сохранён.");
+        if (create || restore || migration || archiveImport || localReconciliation) throw blocked("input", "Не определён вид действия ссылки.");
+        assertPersonalShareLinkBody(input.body, operationId);
+      }
       if ([create, restore, migration, archiveImport].filter(Boolean).length > 1) throw blocked("input", "Не определён вид действия.");
       let current;
       try { current = assertObserved(); }
       catch (error) {
         // Only a pre-publication stale-editor failure has a resumable memory
         // draft. Quota, corrupt journals and actual stored forks are separate.
-        if (error.code === "stale-tab" && !staleCapture && !restore && !archiveImport && !migration) staleCapture = {
+        if (error.code === "stale-tab" && !staleCapture && !restore && !archiveImport && !migration && !sharing) staleCapture = {
           input, base: clone(observedPayload || initialMergeBase?.payload || null),
           sourceOperationId: JSON.parse(observed).operationId
         };
@@ -645,7 +664,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const pendingForm = formSource && (pendingFormUpdateEnabled || [5, 6, 8, 9, 10, 11].includes(head.action.body.photoResults?.version)) ? formSource : null;
       if (pendingForm) {
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
-          && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
+          && !["shareLink", "userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!pendingFormUpdateEnabled || !photoEnabled || !photoFormEnabled || pendingForm.action.body.ownerResult && !formOwnerResultEnabled
           || [2, 5].includes(pendingForm.action.body.ownerResult?.version) && !canWritePublicForm(pendingForm.action.body.ownerResult)
@@ -663,7 +682,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (pendingImport) {
         const guest = Object.hasOwn(pendingImport.action.body, "guestImport"), publicCopy = Object.hasOwn(pendingImport.action.body, "publicImport");
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
-          && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
+          && !["shareLink", "userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!photoEnabled || (publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled || pendingImport.action.body.publicImport?.version === 2 && !publicEntityEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled)
           || create || restore || archiveImport || migration || localReconciliation || !(publicCopy ? isPersonalPendingPublicUpdate : guest ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: pendingImport,
@@ -679,7 +698,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         // same entry point. An unchanged business snapshot creates no action
         // and must reach the read-only recovery screen even with writers off.
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
-          && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
+          && !["shareLink", "userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
             .some(key => Object.hasOwn(input.body, key))
           && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled
@@ -730,7 +749,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // UI-only changes don't create another business operation. The ordinary
       // local mirror may still persist those UI preferences.
       const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
-      if (head && !restore && !archiveImport && !localReconciliation && canonicalListOperationJson(baseline?.payload || personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
+      if (head && !restore && !archiveImport && !localReconciliation && !sharing && canonicalListOperationJson(baseline?.payload || personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
       if (create && head) throw blocked("create", "Повторное создание списка запрещено.");
       if (!head && !create && (!Number.isSafeInteger(input.body.baseStateRevision) || input.body.baseStateRevision < 1)) {
         throw blocked("revision", "Перед первым сохранением нужна подтверждённая версия списка.");
@@ -844,10 +863,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
     },
     inspect,
-    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore, resolveRejectedPhoto,
+    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore, resolveRejectedPhoto, resolveRejectedShare,
       operationId = crypto.randomUUID(), adoptCommittedOnly = false }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
+      if ([...records.values()].some(record => record.action.body.shareLink && !applied.has(record.action.operationId)) && !shareLinkEnabled) throw blocked("share-link-disabled", "Решение по сохранённой ссылке ещё не включено. Очередь сохранена.");
       const assertCurrent = guardEditor(getContext, head);
       const settled = await settle({ queue, getContext }, !adoptCommittedOnly);
       assertCurrent();
@@ -856,6 +876,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
       if (adoptCommittedOnly && !alreadyCommitted) throw blocked("unconfirmed-owner", "Сервер ещё не подтвердил завершение всей очереди. Повторная отправка не выполнялась.");
       const lastCommittedIndex = settled.outcomes.findLastIndex(proof => proof.operation.state === "committed");
+      const rejectedShare = !alreadyCommitted && settled.outcomes.slice(lastCommittedIndex + 1).findLast(proof => proof.operation.state === "rejected"
+        && Object.hasOwn(records.get(proof.operation.id)?.action.body || {}, "shareLink"));
+      if (rejectedShare && typeof resolveRejectedShare !== "function") {
+        throw blocked("share-link-reconciliation", "Ссылка не создана. Её область и выбранные данные нельзя автоматически заменить другой версией списка.");
+      }
       const rejectedPhoto = !alreadyCommitted && settled.outcomes.slice(lastCommittedIndex + 1).findLast(proof => proof.operation.kind === "photos.mutate" && proof.operation.state === "rejected");
       if (rejectedPhoto && !photoEnabled) throw blocked("photo-disabled", "Явное разрешение фотодействий ещё не включено.");
       if (rejectedPhoto && records.get(rejectedPhoto.operation.id)?.action.body.action === "copy-batch"
@@ -865,15 +890,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (rejectedPhoto && records.get(rejectedPhoto.operation.id)?.action.body.action === "form" && !photoFormEnabled) {
         throw blocked("photo-form-disabled", "Решение по отклонённой карточке с фото ещё не включено. Поля и файлы сохранены.");
       }
-      if (rejectedPhoto && typeof resolveRejectedPhoto !== "function") throw blocked("photo-reconciliation", "Фотодействие отклонено. Сохранённый файл нельзя автоматически привязать к другой версии карточки.");
+      if (rejectedPhoto && !rejectedShare && typeof resolveRejectedPhoto !== "function") throw blocked("photo-reconciliation", "Фотодействие отклонено. Сохранённый файл нельзя автоматически привязать к другой версии карточки.");
       const rejectedRestore = !alreadyCommitted && [...settled.outcomes].reverse().find(proof => ["list.restore", "list.import"].includes(proof.operation.kind) && proof.operation.state === "rejected");
       if (!alreadyCommitted && settled.outcomes.some(proof => proof.operation.kind === "list.migrate" && proof.operation.state === "rejected")) {
         throw blocked("migration-reconciliation", "Подготовка старого списка отклонена. Её нельзя автоматически перенести на другую версию; требуется проверка исходных данных.");
       }
-      if (rejectedRestore && typeof resolveRejectedRestore !== "function") {
+      if (rejectedRestore && !rejectedShare && typeof resolveRejectedRestore !== "function") {
         throw blocked("restore-reconciliation", "Восстановление не применено. Его нельзя автоматически перенести на другую версию списка; требуется новый выбор из истории.");
       }
-      if (!alreadyCommitted && !rejectedRestore && !rejectedPhoto && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
+      if (!alreadyCommitted && !rejectedShare && !rejectedRestore && !rejectedPhoto && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
       // previously committed edit is not replayed over a later remote edit.
@@ -884,7 +909,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         if (record.mergeBase) { base = record.mergeBase; break; }
       }
-      if (!base && !alreadyCommitted && !rejectedRestore && !rejectedPhoto) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
+      if (!base && !alreadyCommitted && !rejectedShare && !rejectedRestore && !rejectedPhoto) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
       const remote = clone(await readRemote());
       assertCurrent();
       if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
@@ -922,7 +947,18 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           serverRecord: remote, action: clone(head.action) };
       }
       let plan, decision = null;
-      if (rejectedPhoto) {
+      if (rejectedShare) {
+        if (!preservesConfirmedPersonalPhotos(remote.payload, remote.payload, listId)) throw blocked("share-link-files", "Файлы актуальной версии ещё не подтверждены. Выбор ссылки и очередь сохранены.");
+        const choice = await resolveRejectedShare({ shareOperationId: rejectedShare.operation.id,
+          descriptor: clone(records.get(rejectedShare.operation.id).action.body.shareLink), stateRevision: remote.stateRevision,
+          discardedOperationCount: settled.outcomes.slice(lastCommittedIndex + 1).filter(proof => proof.operation.state === "rejected").length,
+          localFilesRetained: true });
+        assertCurrent();
+        if (choice !== "keep-server") throw blocked("reconciliation-cancelled", "Выбор отложен. Исходные данные ссылки, файлы и очередь сохранены.");
+        decision = { version: 1, type: "keep-server-after-rejected-share", shareOperationId: rejectedShare.operation.id,
+          stateRevision: remote.stateRevision, localFilesRetained: true };
+        plan = { payload: remote.payload, conflicts: [] };
+      } else if (rejectedPhoto) {
         const choice = await resolveRejectedPhoto({ photoOperationId: rejectedPhoto.operation.id,
           action: records.get(rejectedPhoto.operation.id).action.body.action, stateRevision: remote.stateRevision,
           discardedOperationCount: settled.outcomes.slice(lastCommittedIndex + 1).filter(proof => proof.operation.state === "rejected").length,
@@ -968,7 +1004,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         || !snapshot || typeof snapshot !== "object") throw blocked("input", "Не удалось зарегистрировать объединённое действие.");
       const action = { ...head.action, operationId, generation: head.action.generation + 1,
         previousLocalOperationId: head.action.operationId, kind: "list.update",
-        body: { ...(rejectedPhoto ? {} : head.action.body), payload, baseStateRevision: remote.stateRevision,
+        body: { ...(rejectedPhoto || rejectedShare ? {} : head.action.body), payload, baseStateRevision: remote.stateRevision,
           stateRevision: remote.stateRevision, baseServerUpdatedAt: remote.updatedAt || null,
           force: false, forceOverwrite: false, fullReplace: false,
           causal: { dependsOn: [], reads: [] } } };
@@ -998,6 +1034,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
       const { head, records } = assertObserved();
+      if (head?.action.body.shareLink && !shareLinkEnabled) throw blocked("share-link-disabled", "Отмена сохранённого создания ссылки ещё не включена.");
       if ((head?.action.body.ownerResult || [6, 8, 9, 10, 11].includes(head?.action.body.photoResults?.version)) && !formOwnerResultEnabled) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
       if (([2, 5].includes(head?.action.body.ownerResult?.version) || [8, 11].includes(head?.action.body.photoResults?.version))
         && (!publicPhotoFormEnabled || !publicImportEnabled)) throw blocked("public-photo-form-disabled", "Отмена фото до подтверждения публичной копии ещё не включена.");
@@ -1150,6 +1187,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     async drain({ queue, getContext, photoStore, photoStaging, onConfirmed = () => {} }) {
       const { records, head } = assertObserved();
       if (!head) return null;
+      if (head.action.body.shareLink && !shareLinkEnabled) throw blocked("share-link-disabled", "Создание ссылки через очередь ещё не включено. Выбор сохранён.");
       // Gate before inspecting/uploading any ancestor: an OFF reader may have
       // restored this complete new chain while all older photo gates are ON.
       if (([2, 5].includes(head.action.body.ownerResult?.version) || [8, 11].includes(head.action.body.photoResults?.version))
@@ -1213,6 +1251,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       for (const record of chain.reverse()) {
         assertContext();
         const action = record.action;
+        if (Object.hasOwn(action.body, "shareLink") && !shareLinkEnabled) throw blocked("share-link-disabled", "Создание ссылки через очередь ещё не включено. Выбор сохранён.");
         const publicCopy = action.kind === "list.import" && Object.hasOwn(action.body, "publicImport");
         if (publicCopy && (!publicImportEnabled || action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-import-disabled", "Копирование шаблонов через очередь ещё не включено.");
         const guest = action.kind === "list.import" && Object.hasOwn(action.body, "guestImport");

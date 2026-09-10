@@ -1,7 +1,7 @@
 param(
   [string]$MysqlBase = 'node_modules/.cache/mysql-causal-test/mysql-8.4.11-winx64',
   [string]$ApiDirectory = '../bikepacking-api-experiment',
-  [ValidateSet('all', 'public', 'imports')][string]$Scope = 'all'
+  [ValidateSet('all', 'public', 'imports', 'sharing')][string]$Scope = 'all'
 )
 $ErrorActionPreference = 'Stop'
 $frontendRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path

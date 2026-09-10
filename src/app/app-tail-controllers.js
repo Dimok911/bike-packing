@@ -385,6 +385,7 @@ export function createAppTailControllers(ctx) {
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
     personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    runCausalPersonalShareLink, personalSavePilotEnabled, PERSONAL_SHARE_LINK_ENABLED,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -9221,6 +9222,7 @@ async function shareEditedEntityByLink({ entityId, entityType, layoutId, name, s
     return;
   }
   const canUseLayout = sharedEntityBelongsToLayout(state, { entityId, entityType, layoutId });
+  const chosenContext = personalSaveContext();
   const authorLabel = currentUserEmail();
   let publishOptions = { mode: "live", scope: "entity", includeAuthor: false };
   const entityOnlyLabel = entityType === "item"
@@ -9253,7 +9255,17 @@ async function shareEditedEntityByLink({ entityId, entityType, layoutId, name, s
   if (!confirmed) return;
 
   try {
-    saveDialog();
+    if (personalSavePilotEnabled() && !PERSONAL_SHARE_LINK_ENABLED) throw Error("Создание ссылки через очередь ещё не включено. Поля формы сохранены.");
+    const assertShareContext = () => {
+      if (["actorId", "listId", "scopeKey", "scope"].some(key => personalSaveContext()[key] !== chosenContext[key])) throw Error("Аккаунт или список изменились во время выбора ссылки.");
+    };
+    assertShareContext();
+    if (await saveDialog() === false) { if (refs.confirmDialog.open) refs.confirmDialog.close("close"); return; }
+    assertShareContext();
+    const causalLink = await runCausalPersonalShareLink({ ...publishOptions, entityType, entityId, layoutId,
+      title: name || "", description: "", authorName: publishOptions.includeAuthor ? authorLabel : "" });
+    let sharedListId = causalLink?.id || "";
+    if (!causalLink) {
     updateSyncUi(t("shareEntity.preparing"));
     await flushActivePublishedEditSave();
     const uploadedPhotos = await uploadPendingPhotos({ markDirty: true });
@@ -9278,7 +9290,8 @@ async function shareEditedEntityByLink({ entityId, entityType, layoutId, name, s
         title: name || ""
       })
     });
-    const sharedListId = data?.entityLink?.id || data?.list?.id || "";
+    sharedListId = data?.entityLink?.id || data?.list?.id || "";
+    }
     if (!sharedListId) throw new Error("Entity link id is missing");
     const link = buildSharedEntityUrlFromHref(location.href, {
       listParam: SHARED_LIST_QUERY_PARAM,

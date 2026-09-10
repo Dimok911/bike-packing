@@ -11,6 +11,7 @@ import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResul
   PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED } from "../../src/sync/personal-photo-publication-protocol.js";
 import { personalPhotoContainerFormContext } from "../../src/sync/personal-photo-container-form-context.js";
 import { personalManufacturerSourceMetadata } from "../../src/sync/personal-manufacturer-photo-source.js";
+import { preparePersonalShareLink } from "../../src/sync/personal-share-link.js";
 
 const path = "/bike-packing/lists/list-a";
 function fixture() {
@@ -56,12 +57,34 @@ function fixture() {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
     return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
       photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, containerContextEnabled: state.containerContextEnabled, manufacturerSourceEnabled: state.manufacturerSourceEnabled,
-      migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
+      migrationEnabled: state.migrationEnabled, shareLinkEnabled: state.shareLinkEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
     posts: () => calls.filter(call => call.options.method === "POST") };
 }
+
+test("share receipt survives lost response and reload; own gate and capability prevent claims", async () => {
+  const f = fixture(), payload = { items: {}, containers: {}, layouts: {}, locations: [], categories: [] };
+  const plan = preparePersonalShareLink({ binding: { actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a", environment: "bike-packing-experiment" },
+    snapshot: payload, basePayload: payload, baseStateRevision: 7, selection: { mode: "snapshot", scope: "list", entityType: "", entityId: "",
+      layoutId: "", title: "Frozen", description: "", includeAuthor: false, authorName: "" } }, { enabled: true });
+  const body = { ...plan.body, causal: { dependsOn: [], reads: [] } };
+  const input = { path, method: "PUT", body: JSON.stringify(body), operationId: plan.operationId, receiptOnly: true };
+  await assert.rejects(f.make().queue.run(input), { isOperationReceiptError: true }); assert.equal(f.calls.length, 0);
+  f.state.shareLinkEnabled = true;
+  await assert.rejects(f.make().queue.run(input), { isOperationReceiptError: true }); assert.equal(f.posts().length, 0);
+  assert.equal(f.make().transport.writes.length, 0);
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalCausalShareLinksV1"];
+  f.state.payload = { ok: true, stateRevision: 8, list: { id: "list-a", stateRevision: 8, payload },
+    sharedLink: { version: 1, descriptor: body.shareLink, sourceListId: "list-a", sourceStateRevision: 7, files: [] } };
+  f.state.loseResponse = true;
+  await f.make().queue.run(input);
+  assert.equal(f.posts().length, 1);
+  await f.make().queue.run(input); assert.equal(f.posts().length, 1, "reload reads the same receipt instead of making another link");
+  const actual = f.receipts.get(plan.operationId); actual.result.payload.sharedLink.descriptor.scope = "layout";
+  await assert.rejects(f.make().queue.run(input), { isOperationReceiptError: true });
+});
 
 test("list queue is release-gated; legacy API remains untouched when off", () => {
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);

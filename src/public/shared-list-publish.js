@@ -1,9 +1,11 @@
 import { escapeHtml } from "../utils/html.js";
 
-export function sharedListPublishDialogHtml({ authorLabel = "", language = "ru" } = {}) {
+export function sharedListPublishDialogHtml({ authorLabel = "", language = "ru", chooseScope = false } = {}) {
   const en = language === "en";
   return `
     <span class="share-link-options">
+      ${chooseScope ? `<label class="share-link-mode-option"><input type="radio" name="shareListScope" value="layout" checked><span><strong>${en ? "Selected layout only" : "Только выбранная укладка"}</strong><small>${en ? "Other layouts and catalog entries stay private." : "Остальные укладки и записи каталога останутся приватными."}</small></span></label>
+      <label class="share-link-mode-option"><input type="radio" name="shareListScope" value="list"><span><strong>${en ? "Entire personal list" : "Весь личный список"}</strong><small>${en ? "Include all layouts and catalog entries." : "Включить все укладки и записи каталога."}</small></span></label>` : ""}
       <label class="share-link-mode-option">
         <input type="radio" name="shareLinkMode" value="live" checked>
         <span><strong>${en ? "Live layout" : "Живая укладка"}</strong><small>${en ? "Saved changes will appear at the same link." : "Сохранённые изменения будут появляться по той же ссылке."}</small></span>
@@ -19,8 +21,9 @@ export function sharedListPublishDialogHtml({ authorLabel = "", language = "ru" 
     </span>`;
 }
 
-export function readSharedListPublishOptions(root) {
+export function readSharedListPublishOptions(root, { chooseScope = false } = {}) {
   return {
+    ...(chooseScope ? { scope: root?.querySelector('input[name="shareListScope"]:checked')?.value === "list" ? "list" : "layout" } : {}),
     mode: root?.querySelector('input[name="shareLinkMode"]:checked')?.value === "snapshot" ? "snapshot" : "live",
     includeAuthor: Boolean(root?.querySelector("[data-share-author]")?.checked)
   };
