@@ -100,6 +100,7 @@ export function normalizePublishedDemoTemplatePayload(payload, options = {}) {
   next.layouts = { [DEMO_LAYOUT_ID]: demoLayout };
   next.activeLayoutId = DEMO_LAYOUT_ID;
   const { containerIds, itemIds } = collectDemoLayoutTreeIds(next, demoLayout);
+  if (options.preserveCatalog === true) return next;
   next.containers = Object.fromEntries(
     Object.entries(next.containers && typeof next.containers === "object" ? next.containers : {})
       .filter(([containerId]) => containerIds.has(containerId))

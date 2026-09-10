@@ -19,11 +19,12 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
   nowIso,
   render,
   renderAfter = true,
+  preserveCatalog = false,
   saveState,
   setActivePrivateScope,
   switchView
 } = {}) {
-  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language) || createBlankBikePackingState();
+  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language, { preserveCatalog }) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
   const normalizedLanguage = normalizeUiLanguage(language);
@@ -57,6 +58,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
   };
 
   const rootContainerIds = (sourceLayout.rootContainerIds || []).map((id) => copyContainer(id, null)).filter(Boolean);
+  if (preserveCatalog) Object.keys(source.containers || {}).forEach(id => copyContainer(id, null));
   Object.values(source.items || {}).forEach((item) => {
     const nextContainerId = item.containerId ? containerMap[item.containerId] : "";
     const nextId = `admin-demo-item-${stamp}-${item.id}`;
@@ -74,6 +76,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
     const sourceContainer = source.containers[sourceId];
     const targetContainer = targetState.containers[nextId];
     if (!sourceContainer || !targetContainer) return;
+    if (preserveCatalog) targetContainer.parentId = sourceContainer.parentId ? containerMap[sourceContainer.parentId] || null : null;
     targetContainer.childIds = (sourceContainer.childIds || []).map((id) => containerMap[id]).filter(Boolean);
     targetContainer.itemIds = (sourceContainer.itemIds || []).map((id) => itemMap[id]).filter(Boolean);
     targetContainer.order = (sourceContainer.order || []).map((entry) => {

@@ -72,7 +72,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, stor
     return saved;
   };
   const execute = async (id, cancel) => {
-    if (!enabled) throw paused(); const initial = context();
+    if (enabled !== true) throw paused(); const initial = context();
     return lock(id, async () => {
       let saved = await read(id); guard(initial); if (!saved) throw paused();
       if (cancel && !saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, initial);
@@ -90,7 +90,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, stor
   };
   return Object.freeze({
     async capture(input) {
-      if (!enabled) throw paused(); const initial = context();
+      if (enabled !== true) throw paused(); const initial = context();
       const plan = adminTemplateSavePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
       return lock(plan.id, async () => {

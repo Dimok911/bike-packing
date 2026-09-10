@@ -194,6 +194,10 @@ import {
   savePublicTemplateOfflineCache
 } from "./src/public/public-template-offline-cache.js";
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
+import { ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./src/sync/admin-template-protocol.js";
+import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
+import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSaveFlow, adminTemplateEditorSource } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
   isManagedTemplateUnpublished,
@@ -3315,11 +3319,11 @@ function normalizeDemoLayoutName(name = "", language = uiLanguage) {
   });
 }
 
-function normalizeDemoPayloadForLanguage(payload, language = uiLanguage) {
+function normalizeDemoPayloadForLanguage(payload, language = uiLanguage, { preserveCatalog = false } = {}) {
   const normalizedLanguage = normalizeUiLanguage(language);
   return normalizePublishedDemoTemplatePayload(payload, {
     fallbackName: I18N[normalizedLanguage]?.["demo.layoutName"] || t("demo.layoutName"),
-    demoNames: demoTemplateNameCandidates()
+    demoNames: demoTemplateNameCandidates(), preserveCatalog
   });
 }
 
@@ -5755,6 +5759,18 @@ function sharedLayoutItemKey(layoutId) {
 function schedulePublishedLayoutSave(layoutId, delay = 900) {
   const layout = state.layouts?.[layoutId];
   if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId) || !layout) return;
+  if (adminTemplateUiEnabled()) {
+    // Capture at the edit, before debounce, route changes or asynchronous checks.
+    adminTemplateSaveCoordinator().capture(layoutId, { published: shouldAutoPublishManagedTemplate(layout) }).then(() => {
+      if (publishedLayoutSaveTimer) window.clearTimeout(publishedLayoutSaveTimer);
+      publishedLayoutSaveLayoutId = layoutId;
+      publishedLayoutSaveTimer = window.setTimeout(() => {
+        publishedLayoutSaveTimer = null; publishedLayoutSaveLayoutId = "";
+        adminTemplateSaveCoordinator().flush(layoutId).catch(reportAdminTemplateSaveError);
+      }, delay);
+    }).catch(reportAdminTemplateSaveError);
+    return;
+  }
   if (publishedLayoutSaveTimer && publishedLayoutSaveLayoutId && publishedLayoutSaveLayoutId !== layoutId) {
     const previousLayoutId = publishedLayoutSaveLayoutId;
     window.clearTimeout(publishedLayoutSaveTimer);
@@ -5810,6 +5826,12 @@ function scheduleActivePublishedEditSave(delay = 500) {
 
 async function flushActivePublishedEditSave() {
   const layoutId = publishedLayoutSaveLayoutId || getPublishedEditLayoutId();
+  if (adminTemplateUiEnabled()) {
+    if (publishedLayoutSaveTimer) window.clearTimeout(publishedLayoutSaveTimer);
+    publishedLayoutSaveTimer = null; publishedLayoutSaveLayoutId = "";
+    if (state.layouts?.[layoutId]?.adminCausalSource) await adminTemplateSaveCoordinator().flush(layoutId).catch(reportAdminTemplateSaveError);
+    return;
+  }
   if (!publishedLayoutSaveTimer || !isAdminEditablePublishedLayout(layoutId) || !canOpenAdminPublishedEdit()) return;
   window.clearTimeout(publishedLayoutSaveTimer);
   publishedLayoutSaveTimer = null;
@@ -10186,6 +10208,7 @@ async function openAdminDemoLayout({ remember = true, language = uiLanguage, tem
     })
     : selectDemoTemplateForLanguage(normalizedLanguage, "");
   const demoListId = requestedTemplateId || demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalizedLanguage);
+  if (adminTemplateUiEnabled()) return openCausalAdminTemplate({ type: "demo", demoListId, language: normalizedLanguage }, { remember });
   activeDemoTemplateListId = demoListId;
   const demoListConfirmedByServer = Boolean(demoTemplate?.serverConfirmed);
   const layoutChoice = demoTemplateChoiceForLanguage(normalizedLanguage, demoListId);
@@ -10374,7 +10397,7 @@ function repairActiveEmptyAdminDemoDraft() {
   return true;
 }
 
-function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true } = {}) {
+function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true, preserveCatalog = false } = {}) {
   return importDemoStateAsEditableLayoutValue(state, demoState, {
     activate,
     applyLayoutArrangement,
@@ -10396,6 +10419,7 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, lis
     nowIso,
     render,
     renderAfter,
+    preserveCatalog,
     saveState,
     setActivePrivateScope,
     switchView
@@ -10411,11 +10435,106 @@ function repairAdminDemoLayout(layout) {
     uniqueLayoutIds
   });
 }
+function adminTemplateUiEnabled() {
+  return ADMIN_TEMPLATE_OPERATIONS_ENABLED && experimentTransport.experiment;
+}
+
+let administrativeSaveCoordinator = null;
+const administrativeObjectIds = new WeakMap();
+let administrativeObjectCounter = 0;
+function administrativeObjectId(value) {
+  if (!value || typeof value !== "object") return "none";
+  if (!administrativeObjectIds.has(value)) administrativeObjectIds.set(value, ++administrativeObjectCounter);
+  return administrativeObjectIds.get(value);
+}
+function adminTemplateBinding(target) {
+  const listId = publicListIdForPublishedTarget(target);
+  const itemKey = target.type === "demo"
+    ? listId === "public-demo-state" ? "demo-state" : "demo-state:" + listId.slice("public-demo-state-".length)
+    : "shared-layout:" + listId.slice("public-shared-layout-".length);
+  return { actorId: String(currentUser?.id || ""), environment: "bike-packing-experiment", listId, itemKey };
+}
+function adminTemplateOperationContext(binding, layoutId = "", preparing = false) {
+  return { ...binding, actorId: String(currentUser?.id || ""), scope: "admin-template",
+    admin: canOpenAdminPublishedEdit() && (preparing || isAdminPublicEditScope(modeState) && getPublishedEditLayoutId() === layoutId),
+    generation: JSON.stringify([administrativeObjectId(currentUser), administrativeObjectId(state), currentViewScope(), state.activeLayoutId,
+      modeState.adminPublishedEditLayoutId || "", location.pathname, location.search, location.hash]) };
+}
+function adminTemplateClient(binding, layoutId = "", preparing = false) {
+  return createAdminTemplateClient({ binding, transport: experimentTransport, enabled: adminTemplateUiEnabled(),
+    getContext: () => adminTemplateOperationContext(binding, layoutId, preparing) });
+}
+function reportAdminTemplateSaveError(error) {
+  updateSyncUi(`Сохранение шаблона приостановлено: ${error.message}`);
+}
+function adminTemplateSaveCoordinator() {
+  if (!administrativeSaveCoordinator) administrativeSaveCoordinator = createAdminTemplateSaveFlow({
+    enabled: adminTemplateUiEnabled(), getLayout: id => state.layouts?.[id],
+    getContext: binding => {
+      const layout = Object.values(state.layouts || {}).find(value => value.adminCausalSource?.binding?.listId === binding.listId
+        && value.adminCausalSource?.binding?.actorId === binding.actorId);
+      return adminTemplateOperationContext(binding, layout?.id || "");
+    },
+    snapshot: layoutId => withLayoutArrangementApplied(layoutId, () => {
+      const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
+      const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
+      let payload = exportLayoutAsDemoState(layoutId);
+      if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
+      return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
+        description: String(layout.note || "").trim(), language } };
+    }),
+    plansFor: (binding, layoutId) => createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(),
+      client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) }),
+    persist: () => persistStateSnapshot(state),
+    notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
+      : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),
+  });
+  return administrativeSaveCoordinator;
+}
+async function openCausalAdminTemplate(target, { remember = true } = {}) {
+  const binding = adminTemplateBinding(target);
+  try {
+    const existing = Object.values(state.layouts || {}).find(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
+      : layout.adminSharedSourceId === target.sharedId);
+    if (existing) {
+      if (!existing.adminCausalSource || existing.adminCausalSource.binding.actorId !== binding.actorId
+        || existing.adminCausalSource.binding.listId !== binding.listId) throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
+      activateAdminPublishedLayout(existing.id, { remember });
+      if (existing.adminCausalSource.planId) await adminTemplateSaveCoordinator().flush(existing.id);
+      return existing;
+    }
+    const prepared = await adminTemplateClient(binding, "", true).prepare();
+    if (!prepared.exists || prepared.deleted || !prepared.payload) throw Error("Шаблон недоступен для редактирования.");
+    if (Object.keys(prepared.payload.layouts || {}).length !== 1) throw Error("Этот шаблон содержит несколько укладок и требует отдельной подготовки к редактированию.");
+    const editorSource = adminTemplateEditorSource(binding, prepared);
+    const layout = target.type === "demo"
+      ? importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true })
+      : materializeSharedLayoutForAdmin(target.sharedId, { sourceLayout: { id: target.sharedId, name: prepared.metadata.title,
+        language: prepared.metadata.language, statePayload: prepared.payload, runtimeSharedTemplate: true } });
+    if (!layout) throw Error("Не удалось открыть шаблон.");
+    layout.adminCausalSource = editorSource; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
+    layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
+    layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
+    persistStateSnapshot(state); activateAdminPublishedLayout(layout.id, { remember });
+    return layout;
+  } catch (error) { reportAdminTemplateSaveError(error); showToast(error.message, "error"); return null; }
+}
 async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, options = {}) {
   const layout = state.layouts?.[layoutId];
   const published = typeof options?.published === "boolean"
     ? options.published
     : shouldAutoPublishManagedTemplate(layout);
+  if (adminTemplateUiEnabled()) {
+    const coordinator = adminTemplateSaveCoordinator(), source = layout?.adminCausalSource;
+    if (!source) throw Error("Откройте шаблон с проверенной серверной версией перед сохранением.");
+    if (!source.planId && !coordinator.hasPendingCapture(layoutId) || published !== (source.visibility === "public")) {
+      await coordinator.capture(layoutId, { published });
+    }
+    const result = await coordinator.flush(layoutId);
+    if (result.state !== "committed" || result.applied === false) throw Error("Сохранённое действие требует сверки перед продолжением.");
+    if (options.notify) showToast("Шаблон сохранён.", "success");
+    return { layoutId, published: layout.templatePublished, target: publishedLayoutTarget(layout) };
+  }
   return savePublishedLayoutRecordFlow({
     runtime: {
       get activeDemoTemplateListId() { return activeDemoTemplateListId; },
@@ -10538,6 +10657,7 @@ async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
   }
   const layout = findSharedLayout(layoutId);
   if (!layout || !canOpenAdminPublishedEdit()) return;
+  if (adminTemplateUiEnabled()) return openCausalAdminTemplate({ type: "shared", sharedId: layoutId }, { remember });
   updateSyncUi(t("shared.statusLoadingEdit", { name: layout.name || "" }));
   try {
     await loadSharedLayoutPayload(layoutId);
