@@ -1,3 +1,4 @@
+import { preparePersonalLegacyServerImportSource } from "../../src/sync/personal-legacy-server-import-source.js";
 import { preparePersonalServerImportSource } from "../../src/sync/personal-server-import-source.js";
 import { assertPersonalServerImportBody, assertPersonalServerImportHashes, personalServerImportReceipt } from "../../src/sync/personal-server-import-protocol.js";
 import { assertPersonalShareLinkBody, personalShareLinkProjection, personalSharePhotoInventory } from "../../src/sync/personal-share-link.js";
@@ -299,7 +300,7 @@ for (const mode of ["live", "snapshot"]) test(`actual server import ${mode} layo
   expect(f.posts.filter(post => post.body.serverImport)).toHaveLength(1); expect(f.errors).toEqual([]);
 });
 
-async function openServerSourceUi(page, context, { mode = "live", photos = true } = {}) {
+async function openServerSourceUi(page, context, { mode = "live", photos = true, legacy = false } = {}) {
   const source = guestImportPayload(photos), payload = replacementPayload();
   source.items.source.name = "Точная вещь по ссылке"; source.containers.bag.name = "Точная сумка по ссылке";
   if (photos) source.containers.bag.photos = [{ ...source.items.source.photos[0], id: "server-bag-photo" }];
@@ -307,7 +308,10 @@ async function openServerSourceUi(page, context, { mode = "live", photos = true 
   const descriptor = { version: 1, id: `shared-entity-${mode === "live" ? "link" : "snapshot"}-${randomUUID()}`,
     mode, scope: "list", layoutId: "", entityType: "", entityId: "", title: "Чужой список по ссылке",
     description: "", includeAuthor: false, authorName: "" };
-  const marker = await preparePersonalServerImportSource({ descriptor, stateRevision: mode === "live" ? 7 : 1 });
+  if (legacy === "whole") descriptor.id = `shared-snapshot-${randomUUID()}`;
+  const marker = legacy ? await preparePersonalLegacyServerImportSource({ listId: descriptor.id, stateRevision: mode === "live" ? 7 : 1,
+    descriptor: mode === "live" ? { mode, scope: "layout", layoutId: "guest-source", entityType: "container", entityId: "bag", sourceListId: "old-private-source" } : null })
+    : await preparePersonalServerImportSource({ descriptor, stateRevision: mode === "live" ? 7 : 1 });
   const f = await setup(page, context, { photoEdit: true, payload, configure: state => {
     state.serverSharedRecord = { id: descriptor.id, listId: descriptor.id, title: descriptor.title, ownerId: "actor-b",
       visibility: "shared", sourceType: "user", stateRevision: 1, serverCopySource: marker, payload: structuredClone(source) };
@@ -318,10 +322,11 @@ async function openServerSourceUi(page, context, { mode = "live", photos = true 
   return { f, source, before, marker };
 }
 
-for (const mode of ["live", "snapshot"]) for (const kind of ["layout", "item", "tree", "empty", "catalog"])
-test(`actual server import ${mode} ${kind} with photos preserves another owner's source through lost ACK`, async ({ page, context }) => {
+for (const [mode, legacy] of [["live", false], ["snapshot", false], ["live", true], ["snapshot", true], ["snapshot", "whole"]])
+  for (const kind of ["layout", "item", "tree", "empty", "catalog"])
+test(`actual server import ${legacy ? `legacy ${legacy === "whole" ? "whole " : ""}` : ""}${mode} ${kind} with photos preserves another owner's source through lost ACK`, async ({ page, context }) => {
   test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires isolated server import bundle"); test.setTimeout(120000);
-  const { f, source, before, marker } = await openServerSourceUi(page, context, { mode });
+  const { f, source, before, marker } = await openServerSourceUi(page, context, { mode, legacy });
   f.loseFormOwner = true;
   if (kind === "layout") await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
   else if (kind === "catalog") {
@@ -632,7 +637,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
         capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SERVER_IMPORT === "1" ? ["personalCausalServerImportV1"] : []), ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
-      else if (request.method() === "GET" && /^\/bike-packing\/(?:entity-links|lists)\/shared-entity-(?:link|snapshot)-[a-f0-9-]+$/.test(path)) {
+      else if (request.method() === "GET" && /^\/bike-packing\/(?:entity-links|lists)\/shared-(?:entity-link|entity-snapshot|snapshot)-[a-f0-9-]+$/.test(path)) {
         const id = path.split("/").at(-1), receipt = [...state.receipts.values()].find(value => value.operation.state === "committed" && value.result.payload.sharedLink?.descriptor.id === id);
         if (state.serverSharedRecord?.id === id) data = { ok: true, [path.includes("/entity-links/") ? "entityLink" : "list"]: structuredClone(state.serverSharedRecord) };
         else if (!receipt) { data = { ok: false, code: "not_found" }; status = 404; }

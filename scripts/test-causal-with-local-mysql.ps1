@@ -1,9 +1,13 @@
 param(
   [string]$MysqlBase = 'node_modules/.cache/mysql-causal-test/mysql-8.4.11-winx64',
   [string]$ApiDirectory = '../bikepacking-api-experiment',
-  [ValidateSet('all', 'public', 'imports', 'sharing', 'server-import')][string]$Scope = 'all'
+  [string]$NodeExecutable = (Get-Command node -ErrorAction Stop).Source,
+  [ValidateSet('all', 'public', 'imports', 'sharing', 'server-import', 'photo-forms')][string]$Scope = 'all'
 )
 $ErrorActionPreference = 'Stop'
+$nodeRuntime = (Resolve-Path -LiteralPath $NodeExecutable).Path
+& $nodeRuntime --version
+if ($LASTEXITCODE -ne 0) { throw 'Selected Node runtime is unavailable.' }
 $frontendRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $apiRoot = (Resolve-Path -LiteralPath (Join-Path $frontendRoot $ApiDirectory)).Path
 $mysqlRoot = (Resolve-Path -LiteralPath (Join-Path $frontendRoot $MysqlBase)).Path
@@ -41,18 +45,18 @@ try {
   Set-Location -LiteralPath $frontendRoot
   # Before creating/dropping even test databases, prove that the listener owns
   # this exact freshly created data directory, not a different local server.
-  node --input-type=module -e 'import mysql from "mysql2/promise"; import path from "node:path"; import assert from "node:assert/strict"; let connection; for (let n=0;n<100;n++) { try { connection=await mysql.createConnection({host:"127.0.0.1",port:Number(process.env.BIKE_PACKING_TEST_DB_PORT),user:"root"}); break; } catch { await new Promise(r=>setTimeout(r,100)); } } if(!connection) throw Error("Disposable MySQL did not start"); try { const [[row]]=await connection.query("SELECT @@datadir AS location"); assert.equal(path.resolve(row.location).toLowerCase(),path.resolve(process.env.CAUSAL_TEST_EXPECTED_DATADIR).toLowerCase()); } finally { await connection.end(); }'
+  & $nodeRuntime --input-type=module -e 'import mysql from "mysql2/promise"; import path from "node:path"; import assert from "node:assert/strict"; let connection; for (let n=0;n<100;n++) { try { connection=await mysql.createConnection({host:"127.0.0.1",port:Number(process.env.BIKE_PACKING_TEST_DB_PORT),user:"root"}); break; } catch { await new Promise(r=>setTimeout(r,100)); } } if(!connection) throw Error("Disposable MySQL did not start"); try { const [[row]]=await connection.query("SELECT @@datadir AS location"); assert.equal(path.resolve(row.location).toLowerCase(),path.resolve(process.env.CAUSAL_TEST_EXPECTED_DATADIR).toLowerCase()); } finally { await connection.end(); }'
   if ($LASTEXITCODE -ne 0 -or $mysqlProcess.HasExited) { throw 'Disposable MySQL identity check failed.' }
   $mysqlVerified = $true
   Set-Location -LiteralPath $apiRoot
-  npm run test:integration
+  & $nodeRuntime --test test/integration/mysql-api-smoke.test.js
   if ($LASTEXITCODE -ne 0) { throw 'Paired API/MySQL integration tests failed.' }
 } finally {
   Set-Location -LiteralPath $frontendRoot
   if ($mysqlVerified) {
     # MySQL's Windows monitor may outlive/reparent the original launcher. Stop
     # the verified server over SQL, not only the Start-Process handle.
-    node --input-type=module -e 'import mysql from "mysql2/promise"; import path from "node:path"; import assert from "node:assert/strict"; const connection=await mysql.createConnection({host:"127.0.0.1",port:Number(process.env.BIKE_PACKING_TEST_DB_PORT),user:"root",connectTimeout:2000}); try { const [[row]]=await connection.query("SELECT @@datadir AS location"); assert.equal(path.resolve(row.location).toLowerCase(),path.resolve(process.env.CAUSAL_TEST_EXPECTED_DATADIR).toLowerCase()); await connection.query("SHUTDOWN"); } finally { await connection.end(); }'
+    & $nodeRuntime --input-type=module -e 'import mysql from "mysql2/promise"; import path from "node:path"; import assert from "node:assert/strict"; const connection=await mysql.createConnection({host:"127.0.0.1",port:Number(process.env.BIKE_PACKING_TEST_DB_PORT),user:"root",connectTimeout:2000}); try { const [[row]]=await connection.query("SELECT @@datadir AS location"); assert.equal(path.resolve(row.location).toLowerCase(),path.resolve(process.env.CAUSAL_TEST_EXPECTED_DATADIR).toLowerCase()); await connection.query("SHUTDOWN"); } finally { await connection.end(); }'
     if ($LASTEXITCODE -ne 0) { Write-Warning "Could not confirm SQL shutdown of disposable MySQL at $mysqlData" }
   }
   Set-Location -LiteralPath $priorDirectory

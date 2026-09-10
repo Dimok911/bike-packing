@@ -9632,7 +9632,7 @@ async function preparePersonalPublicPickerSource(viewLayoutId, entityType, sourc
 
 async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId, targetLayoutId, { includeContents = false, targetIndex = null, catalog = false } = {}) {
   if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit() || isAdminEditablePublishedLayout(targetLayoutId)) return null;
-  const serverCopy = personalPublicPickerSource?.source?.kind === "shared-link";
+  const serverCopy = ["shared-link", "legacy-link"].includes(personalPublicPickerSource?.source?.kind);
   if (serverCopy ? !PERSONAL_SERVER_IMPORT_ENABLED : !PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error(serverCopy ? "Копирование списка по ссылке через очередь ещё не включено." : "Копирование отдельных записей шаблона через очередь ещё не включено.");
   const prepareSelection = serverCopy ? preparePersonalServerEntitySelection : preparePersonalPublicEntitySelection;
   personalSaveRecovery.assertRunning();

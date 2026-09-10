@@ -1,3 +1,4 @@
+import { personalLegacyServerImportSource } from "./personal-legacy-server-import-source.js";
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
 import { assertPersonalShareLinkDescriptor } from "./personal-share-link.js";
 import { personalArchiveHash } from "./personal-archive-import-protocol.js";
@@ -11,6 +12,7 @@ const linkPattern = /^shared-entity-(link|snapshot)-([a-f0-9]{8}-[a-f0-9]{4}-4[a
 // This is an explicit read precondition, not an authorization token. The
 // importer must recheck the link and all actual source aggregates under locks.
 export function personalServerImportSource(value) {
+  if (value?.kind === "legacy-link") return personalLegacyServerImportSource(value);
   assertListOperationJsonValue(value);
   const match = typeof value?.listId === "string" && value.listId.match(linkPattern);
   const keys = ["kind", "listId", "mode", "stateRevision", "selectionHash"];
