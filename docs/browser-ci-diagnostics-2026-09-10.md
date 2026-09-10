@@ -1,5 +1,16 @@
 # Мобильные прерывания Linux CI: подтверждённые факты
 
+Run `34531714499`, FE `130485c`, завершён успешно: Chromium 625 passed /
+260 skipped, mobile 593 passed / 268 skipped / 2 flaky; OFF 4/4 на каждом.
+Оба первых mobile-отказа (pending photo copy / container deletion / both и
+pending archive descendants / full quota) содержат `page-crash`. Ядро
+зафиксировало ещё два segfault потока `eadedCompositor` в той же библиотеке
+`libWPEWebKit-2.0.so.1.10.2`, смещение `5fd556a`, в 21:48:57 и 21:57:49 UTC.
+Первичные assertions различаются, но нативное падение во время обоих тестов
+подтверждено независимо. Причина внутри WebKit всё ещё не установлена.
+Сохранены `ci-130485c-mobile.zip`, `ci-130485c-mobile-analysis.json`,
+`ci-130485c-linux-browser.txt` и оба `resume-ci-130485c-*.txt`.
+
 ## Чтение cgroup службы CI — 11.09
 
 Диагностика читает фактический путь `0::...` из `/proc/self/cgroup`, затем

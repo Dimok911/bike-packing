@@ -61,6 +61,7 @@ import {
 import { I18N } from "./src/data/i18n.js";
 import { demoSharedLayout } from "./src/data/demo-data.js";
 import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
+import { prepareAdminTemplateTreeCopy } from "./src/sync/admin-template-tree-copy.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -1786,6 +1787,7 @@ const appTailControllerDeps = {
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
   prepareCausalAdminCatalogCopy,
+  prepareCausalAdminTreeCopy,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
   newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
@@ -10644,6 +10646,62 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
       try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(layout.id); }
       catch (error) { reportAdminTemplateSaveError(error); }
       return targetContainerId ? added[0] : true;
+    } catch (error) { reportAdminTemplateSaveError(error); return false; }
+  };
+}
+async function prepareCausalAdminTreeCopy(request) {
+  request = clone(request);
+  let layout, original, snapshot, initial, prepared, operationId, changedAt;
+  const coordinator = adminTemplateSaveCoordinator();
+  const guard = () => {
+    if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
+      || layout.adminCausalCopyPlan || layout.templateDraftSyncPending
+      || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
+      || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial
+      || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error("Шаблон изменился. Выберите сумку для копирования заново.");
+  };
+  const capacity = () => ["items", "containers"].every(type => {
+    const count = prepared.entries.filter(entry => entry.type === type).length;
+    return !count || requireUsageCapacity(type, count);
+  });
+  try {
+    layout = state.layouts[getPublishedEditLayoutId()]; original = clone(layout?.adminCausalSource || null);
+    if (!layout || !original?.exists || original.planId || !original.base?.stateRevision || layout.adminCausalCopyPlan
+      || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) throw Error("Сначала дождитесь подтверждения исходного шаблона.");
+    if (request.sourceLayoutId !== layout.id || request.targetLayoutId !== layout.id) throw Error("Между разными шаблонами копирование сумки ещё не подготовлено.");
+    initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id));
+    snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)); guard();
+    operationId = crypto.randomUUID(); changedAt = nowIso();
+    prepared = await prepareAdminTemplateTreeCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
+      normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
+      copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
+    guard(); if (!capacity()) return false;
+  } catch (error) { reportAdminTemplateSaveError(error); return false; }
+  let used = false;
+  return async () => {
+    const priorLayout = { ...layout }, parentId = request.targetParentId || "", priorParent = state.containers[parentId];
+    try {
+      if (used) return false; guard(); if (!capacity()) return false;
+      if (prepared.entries.some(({ targetId }) => state.items[targetId] || state.containers[targetId] || state.layouts[targetId])) throw Error("Идентификатор копии уже занят.");
+      used = true;
+      for (const { type, targetId } of prepared.entries) state[type][targetId] = clone(prepared.snapshot[type][targetId]);
+      try {
+        layout.arrangement = clone(prepared.snapshot.layouts[layout.id].arrangement);
+        layout.rootContainerIds = [...prepared.snapshot.layouts[layout.id].rootContainerIds]; markEdited(layout, changedAt);
+        if (parentId) state.containers[parentId] = clone(prepared.snapshot.containers[parentId]);
+        const candidate = adminTemplateEditorSnapshot(layout.id);
+        layout.adminCausalCopyPlan = adminTemplateSavePlan({ binding: original.binding, operationId, exists: true,
+          visibility: original.visibility, base: original.base, payload: stripAdminTemplateEditorMetadata(candidate.payload), metadata: candidate.metadata });
+        layout.templateDraftSyncPending = true; persistNewCausalAdminTemplateDraft(layout);
+      } catch (error) {
+        for (const { type, targetId } of prepared.entries) delete state[type][targetId];
+        for (const key of Object.keys(layout)) if (!Object.hasOwn(priorLayout, key)) delete layout[key];
+        Object.assign(layout, priorLayout); if (parentId) state.containers[parentId] = priorParent;
+        throw error;
+      }
+      try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(layout.id); }
+      catch (error) { reportAdminTemplateSaveError(error); }
+      return prepared.rootId;
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   };
 }

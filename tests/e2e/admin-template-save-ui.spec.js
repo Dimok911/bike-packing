@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { trackBrowserLifecycle } from "../fixtures/browser-lifecycle.js";
+import { stripAdminTemplateEditorMetadata } from "../../src/public/admin-template-causal-save-flow.js";
 import { adminTemplateIntent, canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
@@ -257,6 +258,103 @@ for (const kind of ["demo", "shared"]) test(`new admin ${kind} draft keeps its t
   expect(state.posts[0].listId).toBe(source.binding.listId); expect(state.posts[0].kind).toBe("template.create");
   expect(state.errors).toEqual([]);
 });
+
+for (const shared of [false, true]) for (const shape of ["tree", "shell", "nested"])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"]) {
+  test(`admin tree copy ${shared ? "shared" : "demo"} ${shape} retains its full saved result (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true, hydrate: ["plan-quota", "pointer-quota"].includes(mode) });
+    const before = await page.evaluate(() => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const bag = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && !row.parentId);
+      const child = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.parentId);
+      return { layoutId: layout.id, binding: layout.adminCausalSource.binding, bagId: bag.id, childId: child.id,
+        snapshot: __adminUiTest.snapshot(layout.id), localIds: Object.keys(current.containers) };
+    });
+    const sourceId = shape === "nested" ? before.childId : before.bagId;
+    if (shape === "shell") {
+      await page.locator('[data-view="bags"]').click();
+      await page.locator(`#bagsView [data-root-card="${sourceId}"] [data-root-title]`).click();
+    } else {
+      await page.locator('[data-view="packing"]').click();
+      await page.evaluate(id => __adminUiTest.openContainer(id), sourceId);
+    }
+    await expect(page.locator("#rootContainerDialog")).toBeVisible();
+    await page.locator("#rootContainerCopyToContainerBtn").click(); await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await expect(page.locator("#containerPickerLayoutSelect")).toHaveValue(before.layoutId);
+    if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.bagId}"][data-pick-container-index="0"]`).click();
+    else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
+    await expect(page.locator("#confirmDialog")).toContainText(shape === "shell" ? "пустую копию" : "со всем содержимым");
+    if (mode === "changed-choice") await page.evaluate(id => { __adminUiTest.state().containers[id].name = "Источник изменился"; }, sourceId);
+    if (mode === "changed-target") await page.evaluate(id => { __adminUiTest.state().layouts[id].arrangement.itemQuantities[Object.keys(__adminUiTest.state().layouts[id].arrangement.items)[0]] = 5; }, before.layoutId);
+    if (mode === "changed-account") await page.evaluate(() => { __adminUiTest.user().id = "admin-b"; });
+    if (mode === "pending-source") await page.evaluate(id => { __adminUiTest.state().layouts[id].templateDraftSyncPending = true; }, before.layoutId);
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:") || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Tree copy quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    state.lose = mode === "lost"; if (mode === "conflict") state.revision = 8;
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    if (["mirror-quota", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"].includes(mode)) {
+      if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Tree copy quota" : "Шаблон изменился");
+      expect(state.posts).toEqual([]); expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers))).toEqual(before.localIds);
+      if (["mirror-quota", "cancel"].includes(mode)) expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(state.errors).toEqual([]); return;
+    }
+    const candidate = async () => {
+      const value = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+      value.payload = stripAdminTemplateEditorMetadata(value.payload); return value;
+    };
+    await expect.poll(async () => Object.keys((await candidate()).payload.containers).length).toBe(Object.keys(before.snapshot.payload.containers).length + (shape === "tree" ? 2 : 1));
+    const chosen = await candidate(); let planId;
+    if (["plan-quota", "pointer-quota"].includes(mode)) {
+      planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId); expect(state.posts).toEqual([]);
+      if (mode === "pointer-quota") await expect.poll(() => page.evaluate(id => Object.entries(localStorage).some(([key, value]) =>
+        key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan?.id === id), planId)).toBe(true);
+      await page.evaluate(() => __adminUiTest.refreshDrafts()); expect(await candidate()).toEqual(chosen);
+    } else { await expect.poll(() => state.posts.length).toBe(1); planId = state.posts[0].operationId; }
+    if (mode === "lost") await expect.poll(() => state.hidden).toBe(true);
+    state.lose = false; state.hidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+      ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), before.binding);
+    expect(state.posts).toHaveLength(1); expect(state.posts[0].operationId).toBe(planId);
+    expect(state.posts[0].kind).toBe("template.save"); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(state.posts[0].body.payload).toEqual(chosen.payload);
+    expect(JSON.stringify(state.posts[0].body.payload)).not.toContain("adminCausalCopyPlan");
+    if (mode === "conflict") { expect(state.receipts.get(planId).operation.state).toBe("rejected"); return; }
+    await confirmedRevision(page, 8); expect(state.payload).toEqual(chosen.payload);
+    const addedContainers = Object.keys(state.payload.containers).filter(id => !before.snapshot.payload.containers[id]);
+    const addedItems = Object.keys(state.payload.items).filter(id => !before.snapshot.payload.items[id]);
+    expect(addedItems).toHaveLength(shape === "shell" ? 0 : 1);
+    const arrangement = Object.values(state.payload.layouts)[0].arrangement, oldArrangement = Object.values(before.snapshot.payload.layouts)[0].arrangement;
+    for (const [id, row] of Object.entries(before.snapshot.payload.items)) expect(state.payload.items[id]).toEqual(row);
+    for (const id of Object.keys(oldArrangement.items)) {
+      expect(arrangement.items[id]).toBe(oldArrangement.items[id]); expect(arrangement.itemQuantities[id]).toBe(oldArrangement.itemQuantities[id]);
+      expect(arrangement.packedItems[id]).toBe(oldArrangement.packedItems[id]);
+    }
+    const root = addedContainers.find(id => !addedContainers.includes(state.payload.containers[id].parentId));
+    expect(root).toBeTruthy();
+    if (shape === "nested") {
+      const parentId = Object.values(state.payload.containers).find(row => row.name === "Сумка шаблона").id;
+      expect(arrangement.containers[root].parentId).toBe(parentId); expect(arrangement.containers[parentId].order[0]).toEqual({ type: "container", id: root });
+    } else expect(arrangement.rootContainerIds[0]).toBe(root);
+    for (const id of addedContainers) expect(state.payload.containers[id].sharedSourceId).toBeUndefined();
+    for (const id of addedItems) {
+      expect(arrangement.itemQuantities[id]).toBe(2); expect(arrangement.packedItems[id]).toBeUndefined();
+      expect(state.payload.items[id].quantity).toBe(1); expect(state.payload.items[id].sharedSourceId).toBeUndefined();
+    }
+    await editItem(page, "Правка после дерева", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(state.posts).toHaveLength(2); expect(state.posts[1].body.base).toEqual({ stateRevision: 8 });
+    for (const id of addedContainers) expect(state.payload.containers[id]).toEqual(chosen.payload.containers[id]);
+    expect(state.errors).toEqual([]);
+  });
+}
 
 async function submitAdminTemplateCopy(page, name) {
   const sourceId = await page.evaluate(() => {

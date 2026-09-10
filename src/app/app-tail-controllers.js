@@ -142,6 +142,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     prepareCausalAdminCatalogCopy,
+    prepareCausalAdminTreeCopy,
     openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
     newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate } = ctx;
   const runtime = ctx.runtime;
@@ -1737,7 +1738,7 @@ function getContainerCopyExcludedLayoutIds() {
     readonlyLayoutId: activeReadOnlyLayoutId(),
     sourceLayoutId: runtime.containerPickerSourceLayoutId
   });
-  if (adminTemplateUiEnabled() && canOpenAdminPublishedEdit() && runtime.containerPickerMode === "item-copy"
+  if (adminTemplateUiEnabled() && canOpenAdminPublishedEdit() && ["item-copy", "container-copy"].includes(runtime.containerPickerMode)
     && state.layouts[runtime.containerPickerSourceLayoutId]?.adminCausalSource) excluded.delete(runtime.containerPickerSourceLayoutId);
   return excluded;
 }
@@ -1978,7 +1979,7 @@ function getContainerPickerLayoutOptions() {
   }).filter((layout) => isPublishedLayoutEditable(layout) && !excludedLayoutIds.has(layout.id)));
   // The open prepared editor remains selectable even while the independent
   // catalog index has not loaded it. The copy adapter validates its revision.
-  if (adminTemplateUiEnabled() && runtime.containerPickerMode === "item-copy" && currentLayout?.adminCausalSource
+  if (adminTemplateUiEnabled() && ["item-copy", "container-copy"].includes(runtime.containerPickerMode) && currentLayout?.adminCausalSource
     && currentLayout.id === runtime.containerPickerSourceLayoutId && !publicDrafts.some(row => row.id === currentLayout.id)) publicDrafts.unshift(currentLayout);
   return [...publicDrafts, ...personalLayouts];
 }
@@ -2141,11 +2142,13 @@ function renderContainerPickerChildren(containerId, level) {
     const child = state.containers[entry.id];
     if (!child) return "";
     const isCurrentContainer = isContainerPickerCurrentTarget(child.id);
-    const beforeSlot = !isCurrentContainer && shouldRenderSlots
+    const copyIntoCurrent = adminTemplateUiEnabled() && isContainerPickerContainerCopyMode()
+      && runtime.containerPickerLayoutId === runtime.containerPickerSourceLayoutId;
+    const beforeSlot = (!isCurrentContainer || copyIntoCurrent) && shouldRenderSlots
       ? renderContainerPickerSlot(containerId, index, level, containerPosition > 0, isContainerPickerCurrentPositionSlot(containerId, index))
       : "";
     containerPosition += 1;
-    if (isCurrentContainer) return "";
+    if (isCurrentContainer) return beforeSlot;
     if (!isContainerPickerTargetAllowed(child.id)) {
       return runtime.containerPickerMode === "container" ? "" : `${beforeSlot}${renderContainerPickerChildren(child.id, level + 1)}`;
     }
@@ -2557,6 +2560,18 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (warnLockedLayoutMutation(targetLayoutId)) return;
   if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (adminTemplateUiEnabled() && targetIsPublic) {
+    const commit = await prepareCausalAdminTreeCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
+    if (!commit) return;
+    if (!await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
+      text: includeContents ? localText("Create an independent copy with all contents at the selected position?", "Создать отдельную копию со всем содержимым в выбранном месте?")
+        : localText("Create an empty copy at the selected position?", "Создать пустую копию в выбранном месте?"),
+      okText: localText("Copy", "Копировать"), tone: "safe" })) return;
+    const rootId = await commit(); if (!rootId) return;
+    markRecentlyAddedContainer(rootId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
+    refs.containerPickerDialog.close(); closeSourceEditorAfterCopy("container", containerId);
+    render(); requestAnimationFrame(() => focusRecentlyAddedContainer(rootId)); return;
+  }
   const sourceLayout = state.layouts?.[sourceLayoutId];
   const sourceIsPublic = Boolean(
     sourceLayout?.adminDemo ||
