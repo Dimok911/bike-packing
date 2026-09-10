@@ -1,3 +1,5 @@
+import { remapGuestLayoutArrangement } from "./guest-login-entity-reuse.js";
+
 export function importDemoStateAsEditableLayout(targetState, demoState, {
   activate = true,
   applyLayoutArrangement,
@@ -92,7 +94,12 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
     id: layoutId,
     name: demoTemplate?.name || normalizeDemoLayoutName(sourceLayout.name, normalizedLanguage),
     rootContainerIds,
-    arrangement: createLayoutArrangementFromCurrentState(targetState, rootContainerIds),
+    // Placement-specific quantities/order belong to the viewed template, not
+    // the catalog's default item quantity or its display relationship mirrors.
+    arrangement: remapGuestLayoutArrangement(sourceLayout, targetState, {
+      containerIdMap: new Map(Object.entries(containerMap)), itemIdMap: new Map(Object.entries(itemMap)),
+      fallbackArrangement: () => createLayoutArrangementFromCurrentState(targetState, rootContainerIds)
+    }),
     adminDemo: true,
     adminDemoLanguage: normalizedLanguage,
     adminDemoListId: demoListId,

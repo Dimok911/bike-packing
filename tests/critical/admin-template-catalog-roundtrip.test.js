@@ -45,3 +45,34 @@ test("opening and exporting an admin demo retains detached trees, orphan items, 
   assert.equal(exported.items["item-orphan"].containerId, "");
   assert.equal(Object.values(exported.items).some(value => value.name === "Private unrelated"), false);
 });
+
+test("admin demo opening keeps arrangement quantities, packing flags and order instead of catalog defaults", () => {
+  const payload = source(), original = clone(payload);
+  payload.items.placed.quantity = 99;
+  payload.layouts.main.arrangement = { rootContainerIds: ["root"],
+    containers: { root: { parentId: "", itemIds: ["placed", "orphan"], childIds: [],
+      order: [{ type: "item", id: "orphan" }, { type: "item", id: "placed" }] } },
+    items: { placed: "root", orphan: "root" }, itemQuantities: { placed: 2, orphan: 3 },
+    itemQuantityMigrationVersion: 3, packedItems: { placed: true } };
+  const before = clone(payload), state = { containers: {}, items: {}, layouts: {}, packedItems: {} };
+  const layout = importDemoStateAsEditableLayout(state, payload, { preserveCatalog: true, activate: false, renderAfter: false,
+    clone, normalizePublishedStatePayload: clone, normalizeDemoPayloadForLanguage: (value, _language, options) => normalizePublishedDemoTemplatePayload(value, options),
+    normalizeUiLanguage: value => value, language: "ru", listId: "public-demo-state-a", currentDemoTemplate: () => null,
+    normalizeDemoLayoutName: value => value, nowIso: () => "2026-09-10T00:00:00Z", currentCreateMeta: () => ({}),
+    createLayoutArrangementFromCurrentState, normalizeDictionaryValues: values => values, saveState: () => {} });
+  const placed = Object.values(state.items).find(row => row.name === "Placed").id;
+  const orphan = Object.values(state.items).find(row => row.name === "Orphan").id;
+  const root = layout.arrangement.rootContainerIds[0];
+  assert.equal(layout.arrangement.itemQuantities[placed], 2);
+  assert.equal(layout.arrangement.itemQuantities[orphan], 3);
+  assert.equal(layout.arrangement.items[orphan], root);
+  assert.deepEqual(layout.arrangement.containers[root].order, [{ type: "item", id: orphan }, { type: "item", id: placed }]);
+  assert.deepEqual(layout.arrangement.packedItems, { [placed]: true });
+  assert.deepEqual(payload, before);
+  const exported = exportLayoutAsPublishedState(state, layout.id, { clone, createLayoutArrangementFromCurrentState,
+    ensureLayoutDictionaries: value => value, normalizePublishedStatePayload: clone, stripPublishedPublicOriginMarkers: () => {} });
+  const exportedLayout = Object.values(exported.layouts)[0];
+  assert.equal(exportedLayout.arrangement.itemQuantities["item-placed"], 2);
+  assert.equal(exportedLayout.arrangement.itemQuantities["item-orphan"], 3);
+  assert.equal(Object.keys(exported.containers).length, Object.keys(original.containers).length);
+});

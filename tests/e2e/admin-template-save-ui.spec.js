@@ -28,8 +28,18 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("admin-ui-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], errors: [], lose: false, hidden: false, hold: null };
+  if (withContainers) {
+    state.payload.containers.bag = { id: "bag", name: "Сумка шаблона", weight: 300, location: "Велосипед", categories: [], parentId: "", itemIds: [], childIds: ["pocket"] };
+    state.payload.containers.pocket = { id: "pocket", name: "Карман шаблона", weight: 20, location: "Велосипед", categories: [], parentId: "bag", itemIds: ["pump"], childIds: [] };
+    state.payload.items.pump.containerId = "pocket";
+    state.payload.layouts["layout-a"].rootContainerIds = ["bag"];
+    state.payload.layouts["layout-a"].arrangement = { rootContainerIds: ["bag"],
+      containers: { bag: { parentId: "", itemIds: [], childIds: ["pocket"], order: [{ type: "container", id: "pocket" }] },
+        pocket: { parentId: "bag", itemIds: ["pump"], childIds: [], order: [{ type: "item", id: "pump" }] } },
+      items: { pump: "pocket" }, itemQuantities: { pump: 2 }, packedItems: {}, itemQuantityMigrationVersion: 3 };
+  }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
   state.visibility = published ? "public" : "private";
@@ -179,6 +189,88 @@ async function renameTemplate(page, name) {
   if (test.info().project.name === "mobile-webkit") await page.locator("#saveEditedLayoutBtn").tap();
   else await page.locator("#saveEditedLayoutBtn").click();
 }
+
+async function editContainer(page, oldName, newName) {
+  const id = await page.evaluate(name => Object.values(__adminUiTest.state().containers).find(row => row.name === name)?.id, oldName);
+  expect(id).toBeTruthy(); await page.evaluate(id => __adminUiTest.openContainer(id), id);
+  await expect(page.locator("#rootContainerDialog")).toBeVisible();
+  await page.locator("#rootContainerName").fill(newName); await page.locator("#rootContainerName").blur();
+  if (test.info().project.name === "mobile-webkit") await page.locator("#saveRootContainerBtn").tap();
+  else await page.locator("#saveRootContainerBtn").click();
+  await expect(page.locator("#rootContainerDialog")).not.toBeVisible();
+}
+
+for (const place of [false, true]) test(`admin new container retains its ID and ${place ? "placement" : "catalog entry"} across lost acknowledgement`, async ({ page, context }) => {
+  const state = await fixture(page, context, { withContainers: true }); state.lose = true;
+  if (place) {
+    await page.locator('[data-view="packing"]').click();
+    await page.locator("[data-add-packing-root]").click(); await page.locator("#createRootForLayoutBtn").click();
+  } else {
+    await page.locator('[data-view="bags"]').click(); await page.locator("#addRootContainerBtn").click();
+  }
+  await page.locator("#rootContainerName").fill("Новая административная сумка"); await page.locator("#rootContainerName").blur();
+  if (test.info().project.name === "mobile-webkit") await page.locator("#saveRootContainerBtn").tap();
+  else await page.locator("#saveRootContainerBtn").click();
+  await expect(page.locator("#rootContainerDialog")).not.toBeVisible(); await expect.poll(() => state.hidden).toBe(true);
+  const original = structuredClone(state.posts[0]);
+  const added = Object.values(state.payload.containers).find(row => row.name === "Новая административная сумка");
+  expect(added?.id).toBeTruthy(); expect(Object.keys(state.payload.containers)).toHaveLength(3);
+  const roots = Object.values(state.payload.layouts)[0].arrangement.rootContainerIds;
+  expect(roots.includes(added.id)).toBe(place);
+  state.lose = false; state.hidden = false;
+  await page.reload(); await openEditor(page); await confirmedRevision(page, 8);
+  expect(state.posts).toEqual([original]);
+  expect(await page.evaluate(id => __adminUiTest.state().containers[id]?.name, added.id)).toBe("Новая административная сумка");
+  expect(state.errors).toEqual([]);
+});
+
+test("admin add-subcontainer form saves its exact parent and preserves existing contents", async ({ page, context }) => {
+  const state = await fixture(page, context, { withContainers: true });
+  await page.locator('[data-view="packing"]').click();
+  const bag = page.locator("#packingView [data-root-container-id]").filter({ hasText: "Сумка шаблона" });
+  await bag.locator("[data-add-to-container]").first().click();
+  await page.locator("#newSubcontainerName").fill("Новый карман администратора"); await page.locator("#newSubcontainerName").blur();
+  if (test.info().project.name === "mobile-webkit") await page.locator("#createSubcontainerBtn").tap();
+  else await page.locator("#createSubcontainerBtn").click();
+  await expect(page.locator("#addToContainerDialog")).not.toBeVisible(); await confirmedRevision(page, 8);
+  expect(state.posts).toHaveLength(1);
+  const added = Object.values(state.payload.containers).find(row => row.name === "Новый карман администратора");
+  const layout = Object.values(state.payload.layouts)[0], root = layout.arrangement.rootContainerIds[0];
+  expect(layout.arrangement.containers[root].childIds).toContain(added.id);
+  expect(layout.arrangement.containers[added.id].parentId).toBe(root);
+  expect(Object.keys(state.payload.containers)).toHaveLength(3); expect(Object.keys(state.payload.items)).toHaveLength(1);
+  expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) for (const owner of ["Сумка шаблона", "Карман шаблона"]) {
+  test(`real admin ${shared ? "shared" : "demo"} container form preserves the complete tree and quantities (${owner})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true });
+    await editContainer(page, owner, "Изменённая сумка"); await confirmedRevision(page, 8);
+    expect(state.posts).toHaveLength(1); expect(state.posts[0].kind).toBe("template.save");
+    expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(Object.values(state.payload.containers).map(row => row.name)).toContain("Изменённая сумка");
+    const layout = Object.values(state.payload.layouts)[0], bagId = layout.arrangement.rootContainerIds[0];
+    const pocketId = layout.arrangement.containers[bagId].childIds[0], pumpId = layout.arrangement.containers[pocketId].itemIds[0];
+    expect(Object.keys(state.payload.containers)).toHaveLength(2);
+    expect(state.payload.items[pumpId].name).toBe("Насос шаблона");
+    expect(layout.arrangement.itemQuantities[pumpId]).toBe(2);
+    expect(layout.arrangement.containers[pocketId].parentId).toBe(bagId);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test("admin container lost acknowledgement survives reload before a subsequent nested edit", async ({ page, context }) => {
+  const state = await fixture(page, context, { withContainers: true }); state.lose = true;
+  await editContainer(page, "Сумка шаблона", "Сумка после обрыва");
+  await expect.poll(() => state.hidden).toBe(true); const original = structuredClone(state.posts[0]);
+  state.lose = false; state.hidden = false;
+  await page.reload(); await openEditor(page); await confirmedRevision(page, 8);
+  expect(state.posts).toEqual([original]);
+  await editContainer(page, "Карман шаблона", "Следующая правка кармана"); await confirmedRevision(page, 9);
+  expect(state.posts).toHaveLength(2); expect(state.posts[1].body.base).toEqual({ stateRevision: 8 });
+  expect(Object.values(state.payload.containers).map(row => row.name).sort()).toEqual(["Следующая правка кармана", "Сумка после обрыва"]);
+  expect(state.errors).toEqual([]);
+});
 for (const published of [false, true]) test(`the real ${published ? "public template" : "private draft"} label form sends only an immutable metadata command`, async ({ page, context }) => {
   const state = await fixture(page, context, { published }); const before = structuredClone(state.payload);
   await renameTemplate(page, "Новое название шаблона"); await confirmedRevision(page, 8);
