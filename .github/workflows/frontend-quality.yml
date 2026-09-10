@@ -13,9 +13,13 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    # The complete desktop/mobile suite already exceeded fourteen minutes
-    # before the additional causal operation and recovery scenarios.
-    timeout-minutes: 45
+    # Keep each browser's full suite on an isolated runner: both projects
+    # share test build paths and cannot safely run as concurrent workers.
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, mobile-webkit]
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
@@ -52,13 +56,13 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
 
       - name: Browser smoke
-        run: npm run test:e2e
+        run: npm run test:e2e -- --project=${{ matrix.browser }}
 
       - name: Upload browser report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: |
             playwright-report/
             test-results/
