@@ -42,7 +42,7 @@ export function projectAdminTemplateServerVariant(layout, server, decisionId) {
   for (const field of ["adminDemo", "adminDemoLanguage", "adminDemoListId", "adminSharedSourceId", "adminTemplateCopy"]) {
     delete next[field]; if (Object.hasOwn(layout, field)) next[field] = clone(layout[field]);
   }
-  for (const field of ["adminCausalSource", "templateDraftSyncPending", "templateUnpublishPending", "publicCatalogLayoutId"]) delete next[field];
+  for (const field of ["adminCausalSource", "adminCausalCopyPlan", "templateDraftSyncPending", "templateUnpublishPending", "publicCatalogLayoutId"]) delete next[field];
   return { layoutId: layout.id, layout: next, items, containers };
 }
 

@@ -1,7 +1,8 @@
 import { canonicalAccessJson as canonicalOperationJson, validAccessOperationId as validListOperationId } from "./personal-access-protocol.js";
 export const ADMIN_TEMPLATE_OPERATIONS_ENABLED = false;
 export const TEMPLATE_OPERATION_CAPABILITY = "adminTemplateCausalOperationsV1";
-export const TEMPLATE_OPERATION_KINDS = Object.freeze(["template.create", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"]);
+export const TEMPLATE_COPY_CAPABILITY = "adminTemplateCopyV1";
+export const TEMPLATE_OPERATION_KINDS = Object.freeze(["template.create", "template.copy", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"]);
 export { canonicalOperationJson as canonicalTemplateJson, validListOperationId as validTemplateOperationId };
 
 const environment = "bike-packing-experiment";
@@ -21,11 +22,21 @@ export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listI
   canonicalOperationJson(body); // No coercion, undefined, NaN, class objects or mutable input alias.
   if (!plain(body) || body.version !== 1) fail();
   const extra = ["template.create", "template.save"].includes(kind) ? ["payload", "metadata"]
+    : kind === "template.copy" ? ["source", "metadata"]
     : kind === "template.metadata" ? ["metadata"] : kind === "template.publication" ? ["published", "indexes"] : ["indexes"];
   if (!exact(body, ["version", "base", ...extra])) fail();
-  if (kind === "template.create") {
+  if (["template.create", "template.copy"].includes(kind)) {
     if (body.base !== null) fail();
   } else if (!validBase(body.base, operationId)) fail();
+  if (kind === "template.copy") {
+    const source = body.source;
+    if (!exact(source, ["itemKey", "listId", "base", "payloadDigest"])
+      || !text(source.itemKey, 191) || !/^(demo-state(?:[:-].+)?|shared-layout:.+)$/.test(source.itemKey)
+      || !text(source.listId, 64) || !/^(public-demo-state(?:-.+)?|public-shared-layout-.+)$/.test(source.listId)
+      || source.listId === listId || !exact(source.base, ["stateRevision"])
+      || !Number.isSafeInteger(source.base.stateRevision) || source.base.stateRevision < 1
+      || typeof source.payloadDigest !== "string" || !/^[a-f0-9]{64}$/.test(source.payloadDigest)) fail();
+  }
   if (extra.includes("indexes")) {
     if (!Array.isArray(body.indexes) || body.indexes.length > 100 || new Set(body.indexes.map(index => index?.listId)).size !== body.indexes.length
       || body.indexes.some(index => !exact(index, ["listId", "base"]) || !text(index.listId, 64)

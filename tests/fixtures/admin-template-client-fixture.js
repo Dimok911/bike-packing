@@ -19,13 +19,13 @@ export function adminClientFixture() {
     assert.equal(options.redirect, "error"); assert.equal(options.credentials, "include");
     if (url.endsWith("/auth/me")) data = { ok: true, user: { id: state.actor } };
     else if (url.endsWith("/authorization")) data = { ok: true, authorization: { version: 1, role: state.admin ? "admin" : "user", capabilities: state.admin ? ["templates:write"] : [] } };
-    else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1"] : [] };
+    else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1", ...(state.copyCapability ? ["adminTemplateCopyV1"] : [])] : [] };
     else if (options.method === "POST") {
       const input = JSON.parse(options.body), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input });
       const { id, ...bound } = intent, { body, ...identity } = bound;
       if (!receipts.has(id) || receipts.get(id).operation.state === "waiting") {
         const cancel = url.endsWith("/cancel");
-        const payload = { ok: true, listId: intent.listId, itemKey: intent.itemKey, stateRevision: intent.kind === "template.create" ? 1 : Number(body.base?.stateRevision ?? receipts.get(body.base?.operationId)?.result.payload.stateRevision) + 1,
+        const payload = { ok: true, listId: intent.listId, itemKey: intent.itemKey, stateRevision: ["template.create", "template.copy"].includes(intent.kind) ? 1 : Number(body.base?.stateRevision ?? receipts.get(body.base?.operationId)?.result.payload.stateRevision) + 1,
           ...(intent.kind === "template.delete" ? { deleted: true } : { visibility: intent.kind === "template.publication" && body.published ? "public" : "private" }),
           indexes: (body.indexes || []).map(index => ({ listId: index.listId, stateRevision: index.base.stateRevision + 1 })) };
         receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(bound)).digest("hex"), state: cancel ? "rejected" : "committed" },

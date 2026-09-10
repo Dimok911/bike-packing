@@ -1,5 +1,5 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
-  TEMPLATE_OPERATION_CAPABILITY } from "./admin-template-protocol.js";
+  TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY } from "./admin-template-protocol.js";
 const environment = "bike-packing-experiment";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -38,10 +38,10 @@ export function validateAdminTemplateReceipt(receipt, expected) {
     if (operation.state !== "committed" || result.status !== 200 || !exact(payload, ["ok", "listId", "itemKey", "stateRevision", deleted ? "deleted" : "visibility", "indexes"])
       || payload.ok !== true || payload.listId !== intent.listId || payload.itemKey !== intent.itemKey
       || !Number.isSafeInteger(payload.stateRevision) || payload.stateRevision < 1
-      || intent.kind === "template.create" && payload.stateRevision !== 1
+      || ["template.create", "template.copy"].includes(intent.kind) && payload.stateRevision !== 1
       || intent.body.base?.stateRevision && payload.stateRevision !== intent.body.base.stateRevision + 1
       || (deleted ? payload.deleted !== true : !["private", "public"].includes(payload.visibility))) return false;
-    if (!deleted && (["template.create", "template.archive"].includes(intent.kind) && payload.visibility !== "private"
+    if (!deleted && (["template.create", "template.copy", "template.archive"].includes(intent.kind) && payload.visibility !== "private"
       || intent.kind === "template.publication" && payload.visibility !== (intent.body.published ? "public" : "private"))) return false;
     const indexes = intent.body.indexes || [];
     return Array.isArray(payload.indexes) && payload.indexes.length === indexes.length
@@ -146,6 +146,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       saved = await read(id); guard(initial);
       const capabilities = await request("/bike-packing/capabilities", initial);
       if (capabilities.service !== "bikepacking-api" || !capabilities.capabilities?.includes(TEMPLATE_OPERATION_CAPABILITY)) throw blocked();
+      if (saved.intent.kind === "template.copy" && !capabilities.capabilities.includes(TEMPLATE_COPY_CAPABILITY)) throw blocked();
       const recovery = metadata(saved), gateway = "/bike-packing/admin/template-operations";
       const path = saved.cancelRequested ? gateway + "/" + id + "/cancel" : gateway;
       const envelope = { expectedActorId: binding.actorId, environment, operationId: id, listId: binding.listId, itemKey: binding.itemKey,

@@ -8,7 +8,7 @@ const blocked = () => Object.assign(Error("Сохранение шаблона �
 const recoveryRequired = () => Object.assign(blocked(), { code: "admin-template-editor-recovery-required" });
 const finalOperationId = plan => plan.operations.at(-1).id;
 const writeOperation = plan => plan.operations.find(operation => ["template.save", "template.create"].includes(operation.kind));
-const planSnapshot = plan => plan.version === 2 ? plan.editorSnapshot
+const planSnapshot = plan => [2, 3].includes(plan.version) ? plan.editorSnapshot
   : { payload: writeOperation(plan).body.payload, metadata: writeOperation(plan).body.metadata };
 const plannedVisibility = (plan, fallback) => {
   const publication = plan.operations.find(operation => operation.kind === "template.publication");
@@ -40,7 +40,7 @@ export function stripAdminTemplateEditorMetadata(payload) {
   for (const layout of Object.values(result.layouts || {})) {
     for (const key of ["adminCausalSource", "templateDraftSyncPending", "templateDraftServerHydrated",
       "templatePublished", "templateUnpublishPending", "adminDemo", "adminDemoLanguage", "adminDemoListId",
-      "adminSharedSourceId", "adminTemplateCopy", "publicCatalogLayoutId"]) delete layout[key];
+      "adminSharedSourceId", "adminTemplateCopy", "publicCatalogLayoutId", "adminCausalCopyPlan"]) delete layout[key];
   }
   return result;
 }
@@ -60,7 +60,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
   const captures = new Map();
   const source = layout => {
     const value = layout?.adminCausalSource;
-    if (!value || value.version !== 1 || value.deleted && !value.planId || !value.binding || value.binding.actorId !== getContext(value.binding).actorId) throw blocked();
+    if (layout?.adminCausalCopyPlan || !value || value.version !== 1 || value.deleted && !value.planId || !value.binding || value.binding.actorId !== getContext(value.binding).actorId) throw blocked();
     return clone(value);
   };
   const guard = (layoutId, layout, initial, binding) => {

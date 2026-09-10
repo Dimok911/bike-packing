@@ -26,6 +26,13 @@ test("the editor preserves its observed revision; late preparation cannot author
     assert.throws(() => adminTemplateEditorSource(f.binding, { ok: true, ...f.binding, exists: true, stateRevision: 7, visibility: "private", indexes: [], ...changed }));
   }
 });
+test("a copy awaiting plan capture cannot fall through to an ordinary create, save or command", async () => {
+  const f = fixture(), flow = f.make(); f.layout.adminCausalCopyPlan = { version: 3, id: "retained-copy" };
+  f.layout.adminCausalSource = { ...f.layout.adminCausalSource, exists: false, visibility: null, base: null, planId: null };
+  for (const run of [() => flow.capture(f.layout.id), () => flow.captureCommand(f.layout.id, { kind: "template.metadata", metadata: { title: "Changed", language: "ru" } }),
+    () => flow.flush(f.layout.id), () => flow.recover(f.layout.id)]) await assert.rejects(run());
+  assert.equal(f.values.size, 0); assert.equal(f.posts().length, 0); assert.equal(f.layout.adminCausalCopyPlan.id, "retained-copy");
+});
 test("consecutive edits freeze two candidates and persist an explicit predecessor before autosave", async () => {
   const f = fixture(), flow = f.make();
   const first = flow.capture(f.layout.id, { published: false }); f.snapshot.payload.items.a.name = "Second captured item";

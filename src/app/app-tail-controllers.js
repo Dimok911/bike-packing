@@ -142,7 +142,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
-    newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft } = ctx;
+    newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate } = ctx;
   const runtime = ctx.runtime;
   let itemDialogPhotoPreviewRenderToken = 0;
   let rootContainerDialogPhotoPreviewRenderToken = 0;
@@ -154,6 +154,7 @@ export function createAppTailControllers(ctx) {
   let sharedPickerCopyIncludesContents = true;
   let itemFormDraftSaveTimer = null;
   let rootContainerFormDraftSaveTimer = null;
+  let templateCopyCreationPending = false;
   let itemFormDraftSaving = false;
   let rootContainerFormDraftSaving = false;
   let layoutOrderDragId = "";
@@ -6726,6 +6727,13 @@ async function resolveLayoutCreateTemplateCopySource(choice) {
 }
 
 async function resolveLayoutCreateTemplateCopyLayout(choice) {
+  if (adminTemplateUiEnabled()) {
+    const value = String(choice || "").trim(), draftId = templateDraftLayoutId(value);
+    if (draftId) return state.layouts[draftId] || null;
+    if (isDemoLayoutChoice(value)) return openCausalAdminTemplate({ type: "demo", demoListId: demoTemplateIdFromLayoutChoice(value), language: demoLanguageFromLayoutChoice(value) });
+    if (value.startsWith("shared:")) return openCausalAdminTemplate({ type: "shared", sharedId: value.slice("shared:".length) });
+    return state.layouts[value] || null;
+  }
   return resolveLayoutCreateTemplateCopyLayoutValue(choice, {
     canOpenAdminPublishedEdit,
     demoLanguageFromLayoutChoice,
@@ -6788,6 +6796,7 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
 
 async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind = "" } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
+  if (adminTemplateUiEnabled()) return createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind });
   const language = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
   const createdId = await createTemplateCopyFromSource(sourceLayout, requestedName, {
     language,
@@ -6966,13 +6975,14 @@ async function saveNewLayout(event) {
     return;
   }
   if (shouldCopyTemplate) {
-    const sourceChoice = refs.layoutCopyFrom.value;
-    const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
-    if (!sourceLayout) {
-      showToast(localText("Template source not found.", "Источник шаблона не найден."), "error");
-      return;
-    }
+    if (templateCopyCreationPending) return;
+    templateCopyCreationPending = true; refs.saveLayoutBtn.disabled = true;
     try {
+      const sourceChoice = refs.layoutCopyFrom.value;
+      const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
+      if (!sourceLayout) {
+        showToast(localText("Template source not found.", "Источник шаблона не найден."), "error"); return;
+      }
       const sourceKind = templateCopySourceKindFromChoice(sourceChoice, {
         isDemoLayoutChoice,
         state,
@@ -6985,6 +6995,8 @@ async function saveNewLayout(event) {
       showToast(t("template.draftCreated"), "success");
     } catch (error) {
       showToast(localText(`Could not copy the template: ${error.message}`, `Не удалось скопировать шаблон: ${error.message}`), "error");
+    } finally {
+      templateCopyCreationPending = false; refs.saveLayoutBtn.disabled = false;
     }
     return;
   }

@@ -252,7 +252,7 @@ export function createExperimentTransport({
     const adminMetadata = value => value?.type === "admin-template" && value.protocol === "admin-template-v1"
       && value.environment === "bike-packing-experiment" && typeof value.actorId === "string" && value.actorId
       && /^public-(demo-state|shared-layout-)/.test(value.listId) && typeof value.itemKey === "string"
-      && ["template.create", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"].includes(value.kind)
+      && ["template.create", "template.copy", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"].includes(value.kind)
       && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.operationId)
       && /^[a-f0-9]{64}$/.test(value.payloadDigest);
     const adminPath = value => /^\/bike-packing\/admin\/template-operations(?:\/[0-9a-f-]{36}\/cancel)?$/.test(value);

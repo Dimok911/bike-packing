@@ -1,4 +1,5 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
+import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admin-template-copy-projection.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -40,7 +41,23 @@ export function adminTemplateCommandPlan({ binding, operationId, kind, body, edi
   return { version: 2, id: operationId, binding: clone(binding), operations: [intent], editorSnapshot: clone(editorSnapshot) };
 }
 
+export function adminTemplateCopyPlan({ binding, operationId, body, sourceSnapshot, editorSnapshot = null }) {
+  if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== "bike-packing-experiment") throw paused();
+  const intent = adminTemplateIntent({ ...binding, operationId, kind: "template.copy", body });
+  // The editor export has normalized layout IDs and UI defaults. Retain that
+  // separate comparison snapshot; SQL derives its result from sourceSnapshot.
+  if (editorSnapshot && (!exact(editorSnapshot, ["payload", "metadata"]) || !same(editorSnapshot.metadata, intent.body.metadata))) throw paused();
+  return { version: 3, id: operationId, binding: clone(binding), operations: [intent], sourceSnapshot: clone(sourceSnapshot),
+    editorSnapshot: editorSnapshot ? clone(editorSnapshot) : { payload: projectAdminTemplateCopy(sourceSnapshot, operationId, intent.body.metadata), metadata: clone(intent.body.metadata) } };
+}
+
 function validatePlan(plan) {
+  if (plan?.version === 3) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "sourceSnapshot", "editorSnapshot"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplateCopyPlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0].body, sourceSnapshot: plan.sourceSnapshot, editorSnapshot: plan.editorSnapshot }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 2) {
     if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1) throw paused();
@@ -86,6 +103,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     const saved = JSON.parse(raw);
     if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || typeof saved.cancelRequested !== "boolean"
       || saved.plan.id !== id || !same(saved.plan.binding, binding) || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
+    if (saved.plan.version === 3 && await adminTemplateCopyPayloadDigest(saved.plan.sourceSnapshot) !== saved.plan.operations[0].body.source.payloadDigest) throw paused();
     return saved;
   };
   const execute = async (id, cancel) => {
@@ -116,6 +134,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   const capturePlan = async (input, makePlan) => {
       if (enabled !== true) throw paused(); const initial = context();
       const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
+      if (plan.version === 3 && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
       return lock(plan.id, async () => {
         const existing = await read(plan.id); guard(initial);
@@ -126,6 +145,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   return Object.freeze({
     capture: input => capturePlan(input, adminTemplateSavePlan),
     captureCommand: input => capturePlan(input, adminTemplateCommandPlan),
+    captureCopy: input => capturePlan(input, adminTemplateCopyPlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];

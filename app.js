@@ -196,7 +196,8 @@ import {
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
 import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "./src/sync/admin-template-protocol.js";
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
-import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSavePlans, adminTemplateCopyPlan } from "./src/sync/admin-template-save-plan.js";
+import { adminTemplateCopyPayloadDigest } from "./src/sync/admin-template-copy-projection.js";
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
 import { createAdminTemplateLegacyChoice } from "./src/public/admin-template-legacy-choice.js";
@@ -1785,7 +1786,7 @@ const appTailControllerDeps = {
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
-  newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft,
+  newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
   API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
@@ -10536,6 +10537,77 @@ function persistNewCausalAdminTemplateDraft(layout) {
   localStorage.setItem(key, encoded);
   if (localStorage.getItem(key) !== encoded) throw Error("Не удалось сохранить новый черновик на устройстве.");
 }
+async function resumeCausalAdminTemplateCopy(layout) {
+  const pending = layout.adminCausalCopyPlan;
+  if (!pending) return;
+  const original = layout.adminCausalSource, binding = original?.binding;
+  if (!binding || layout.id !== "layout-" + pending.id || original.exists || original.base !== null || original.planId
+    || canonicalTemplateJson(binding) !== canonicalTemplateJson(pending.binding)) throw Error("Подготовленная копия требует сверки.");
+  const expected = adminTemplateCopyPlan({ binding, operationId: pending.id, body: pending.operations?.[0]?.body, sourceSnapshot: pending.sourceSnapshot, editorSnapshot: pending.editorSnapshot });
+  if (canonicalTemplateJson(expected) !== canonicalTemplateJson(pending)) throw Error("Сохранённая подготовка копии повреждена.");
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id));
+  await adminTemplatePlansFor(binding, layout.id).captureCopy({ operationId: pending.id, body: pending.operations[0].body, sourceSnapshot: pending.sourceSnapshot, editorSnapshot: pending.editorSnapshot });
+  if (state.layouts[layout.id] !== layout || layout.adminCausalSource !== original || layout.adminCausalCopyPlan !== pending
+    || canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id)) !== initial) throw Error("Контекст копирования изменился.");
+  layout.adminCausalSource = { ...original, exists: true, visibility: "private", base: { operationId: pending.id }, planId: pending.id };
+  delete layout.adminCausalCopyPlan; layout.templateDraftSyncPending = true;
+  if (persistStateSnapshot(state, { recordAction: false }) === false) {
+    layout.adminCausalSource = original; layout.adminCausalCopyPlan = pending; delete layout.templateDraftSyncPending;
+    throw Error("Копия сохранена и ожидает восстановления редактора.");
+  }
+}
+async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "" } = {}) {
+  const observed = clone(sourceLayout?.adminCausalSource || null), coordinator = adminTemplateSaveCoordinator();
+  if (!adminTemplateUiEnabled() || !observed?.exists || observed.planId || !observed.base?.stateRevision
+    || sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id)) {
+    throw Error("Сначала дождитесь подтверждения изменений исходного шаблона и откройте его для копирования.");
+  }
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(observed.binding, sourceLayout.id, true));
+  const snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id));
+  const guard = () => {
+    if (!canOpenAdminPublishedEdit() || state.layouts[sourceLayout.id] !== sourceLayout
+      || coordinator.hasPendingCapture(sourceLayout.id) || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(observed)
+      || canonicalTemplateJson(adminTemplateOperationContext(observed.binding, sourceLayout.id, true)) !== initial
+      || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== snapshot) throw Error("Источник копии изменился. Откройте копирование заново.");
+  };
+  guard();
+  const prepared = await adminTemplateClient(observed.binding, sourceLayout.id, true).prepare(); guard();
+  const verified = adminTemplateEditorSource(observed.binding, prepared);
+  if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(observed.base)) throw Error("Серверная версия источника изменилась. Сначала сверьте исходный шаблон.");
+  const operationId = crypto.randomUUID(), targetId = crypto.randomUUID();
+  const kind = sourceKind || (sourceLayout.adminSharedSourceId ? "shared" : "demo");
+  if (!["demo", "shared"].includes(kind)) throw Error("Выберите тип копии шаблона.");
+  const binding = { actorId: observed.binding.actorId, environment: observed.binding.environment,
+    listId: (kind === "demo" ? "public-demo-state-" : "public-shared-layout-") + targetId,
+    itemKey: (kind === "demo" ? "demo-state:" : "shared-layout:") + targetId };
+  const body = { version: 1, base: null, source: { itemKey: observed.binding.itemKey, listId: observed.binding.listId,
+    base: observed.base, payloadDigest: await adminTemplateCopyPayloadDigest(prepared.payload) },
+    metadata: { ...prepared.metadata, title: requestedName.trim() } }; guard();
+  const plan = adminTemplateCopyPlan({ binding, operationId, body, sourceSnapshot: prepared.payload });
+  const payload = plan.editorSnapshot.payload, id = payload.activeLayoutId;
+  if (state.layouts[id] || Object.keys(payload.items).some(key => state.items[key]) || Object.keys(payload.containers).some(key => state.containers[key])) throw Error("Идентификатор копии уже используется.");
+  const layout = { ...clone(payload.layouts[id]), locations: clone(payload.locations || []), categories: clone(payload.categories || []),
+    adminTemplateCopy: true, templatePublished: false, adminCausalCopyPlan: plan,
+    ...(kind === "demo" ? { adminDemo: true, adminDemoLanguage: body.metadata.language, adminDemoListId: binding.listId } : { adminSharedSourceId: targetId }),
+    adminCausalSource: { version: 1, binding, exists: false, visibility: null, base: null, indexes: [], planId: null } };
+  state.layouts[id] = layout;
+  for (const type of ["items", "containers"]) for (const [key, row] of Object.entries(payload[type])) {
+    state[type][key] = { ...clone(row), publicCatalogLayoutId: id, adminDemo: kind === "demo" };
+  }
+  try {
+    const editorSnapshot = adminTemplateEditorSnapshot(id); editorSnapshot.payload = stripAdminTemplateEditorMetadata(editorSnapshot.payload);
+    layout.adminCausalCopyPlan = adminTemplateCopyPlan({ binding, operationId, body, sourceSnapshot: prepared.payload, editorSnapshot });
+    persistNewCausalAdminTemplateDraft(layout);
+  }
+  catch (error) {
+    delete state.layouts[id]; for (const type of ["items", "containers"]) Object.keys(payload[type]).forEach(key => delete state[type][key]);
+    throw error;
+  }
+  activateAdminPublishedLayout(id);
+  try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(id); }
+  catch (error) { reportAdminTemplateSaveError(error); }
+  render(); return id;
+}
 async function openCausalAdminTemplateOrder(sections) {
   const actorId = String(currentUser?.id || "");
   const batch = createAdminTemplateOrderBatch({ actorId, enabled: adminTemplateUiEnabled(),
@@ -10645,7 +10717,8 @@ async function prepareAdminTemplateRecovery(layoutId) {
     if (state.layouts?.[layoutId] !== layout || !adminTemplateOperationContext(binding, layoutId).admin
       || canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId)) !== initial) throw Error("Контекст редактирования изменился. Откройте сохранение шаблона заново.");
   };
-  assertEditor(); const coordinator = adminTemplateSaveCoordinator(); await coordinator.prepareRecovery(layoutId); assertEditor();
+  assertEditor(); await resumeCausalAdminTemplateCopy(layout); assertEditor();
+  const coordinator = adminTemplateSaveCoordinator(); await coordinator.prepareRecovery(layoutId); assertEditor();
   const recovery = adminTemplateRecoveryFor(binding, layoutId);
   let shownSource, shownSnapshot;
   const snapshot = () => { const value = adminTemplateEditorSnapshot(layoutId); return { ...value, payload: stripAdminTemplateEditorMetadata(value.payload) }; };
@@ -10781,6 +10854,7 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
         throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
       }
       activateAdminPublishedLayout(existing.id, { remember });
+      await resumeCausalAdminTemplateCopy(existing);
       await adminTemplateSaveCoordinator().recover(existing.id);
       if (!existing.adminCausalSource.exists && !existing.adminCausalSource.planId) {
         await adminTemplateSaveCoordinator().capture(existing.id, { published: false });
