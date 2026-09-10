@@ -1188,7 +1188,7 @@ export async function openPhotoLightbox(sourceImage, {
   let startY = 0;
   let startPanX = 0;
   let startPanY = 0;
-  let touchStartScrollLeft = 0;
+  let touchStartPhotoIndex = initialIndex;
   let touchStartTime = 0;
   let moved = false;
   let pinching = false;
@@ -1333,6 +1333,9 @@ export async function openPhotoLightbox(sourceImage, {
     trackWidth,
     slideCount: entries.length
   });
+  // Desktop presents one slide at a time, so scrollLeft stays zero even when
+  // a later photo is visible. Capture that photo before a touch gesture starts.
+  const swipeStartIndex = () => directDesktop ? fullscreenSwitcher.presentedIndex : visibleTouchIndex();
   const updateNavigation = () => {
     fullscreenSwitcher?.render(activeIndex, false);
     if (prevButton) {
@@ -1811,6 +1814,7 @@ export async function openPhotoLightbox(sourceImage, {
     let navStartX = 0;
     let navStartY = 0;
     let navStartScrollLeft = 0;
+    let navStartPhotoIndex = initialIndex;
     let navMoved = false;
     button.addEventListener("touchstart", (event) => {
       if (event.touches.length !== 1) return;
@@ -1821,6 +1825,7 @@ export async function openPhotoLightbox(sourceImage, {
       navStartX = touch.clientX;
       navStartY = touch.clientY;
       navStartScrollLeft = track.scrollLeft;
+      navStartPhotoIndex = swipeStartIndex();
       navMoved = false;
     }, { passive: true });
     button.addEventListener("touchmove", (event) => {
@@ -1833,21 +1838,16 @@ export async function openPhotoLightbox(sourceImage, {
       navMoved = true;
       event.preventDefault();
       event.stopPropagation();
-      track.scrollLeft = navStartScrollLeft - dx;
+      if (!directDesktop) track.scrollLeft = navStartScrollLeft - dx;
     }, { passive: false });
     button.addEventListener("touchend", (event) => {
       if (controlledTouchPaging) trackTouchActive = event.touches.length > 0;
       if (!navMoved || !event.changedTouches.length) return;
       const touch = event.changedTouches[0];
       const dx = touch.clientX - navStartX;
-      const baseIndex = resolvePhotoGallerySnapIndex({
-        scrollLeft: navStartScrollLeft,
-        trackWidth: track.clientWidth,
-        slideCount: entries.length
-      });
       suppressNavClickUntil = Date.now() + 500;
       suppressImageCloseUntil = Date.now() + 500;
-      navigatePhoto(baseIndex + (dx < 0 ? 1 : -1));
+      navigatePhoto(navStartPhotoIndex + (dx < 0 ? 1 : -1));
       event.preventDefault();
       event.stopPropagation();
     }, { passive: false });
@@ -1980,7 +1980,7 @@ export async function openPhotoLightbox(sourceImage, {
       startY = touch.clientY;
       startPanX = panX;
       startPanY = panY;
-      touchStartScrollLeft = pagingPosition();
+      touchStartPhotoIndex = swipeStartIndex();
       touchStartTime = Date.now();
       resetPanVelocity(touch.clientX, touch.clientY);
       moved = false;
@@ -2078,13 +2078,8 @@ export async function openPhotoLightbox(sourceImage, {
       const minDistance = Math.min(36, Math.max(18, (track.clientWidth || 1) * 0.06));
       const fastEnough = Date.now() - touchStartTime <= 1000;
       if (fastEnough && Math.abs(dx) >= minDistance && Math.abs(dx) > Math.abs(dy) * 0.55) {
-        const baseIndex = resolvePhotoGallerySnapIndex({
-          scrollLeft: touchStartScrollLeft,
-          trackWidth: track.clientWidth,
-          slideCount: entries.length
-        });
         suppressImageCloseUntil = Date.now() + 500;
-        navigatePhoto(baseIndex + (dx < 0 ? 1 : -1));
+        navigatePhoto(touchStartPhotoIndex + (dx < 0 ? 1 : -1));
         event.preventDefault();
         event.stopPropagation();
       }
