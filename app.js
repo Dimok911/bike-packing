@@ -288,6 +288,7 @@ import {
   syncPublishedEntityPhotos as syncPublishedEntityPhotosValue
 } from "./src/public/shared-admin-merge.js";
 import { materializeSharedLayoutForAdminState } from "./src/public/shared-admin-materialize.js";
+import { hydrateCausalAdminTemplateDrafts } from "./src/public/admin-template-causal-hydration.js";
 import {
   buildAdminSharedTemplateOptions,
   compareSharedTemplateAdminOrder,
@@ -1772,6 +1773,7 @@ const appTailRuntime = {
 };
 const appTailControllerDeps = {
   runtime: appTailRuntime,
+  adminTemplateUiEnabled,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
   API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
@@ -7113,7 +7115,7 @@ async function savePublishedTemplateMetadata(layout, previousLayout = null) {
   });
   const path = publicTemplateMetadataPath(target, { demoAdminPathForPublicListId });
   if (!target || !path) return false;
-  await assertAdminApiCompatibility({ force: true });
+  if (!adminTemplateUiEnabled()) await assertAdminApiCompatibility({ force: true });
   cancelPublishedLayoutSave(layout.id);
   const previousRuntime = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
   const previousRuntimeSnapshot = previousRuntime ? clone(previousRuntime) : null;
@@ -7130,7 +7132,18 @@ async function savePublishedTemplateMetadata(layout, previousLayout = null) {
     demoFallbackName: demoTemplateFallbackName
   });
   try {
-    const data = await apiFetch(path, {
+    let data;
+    if (adminTemplateUiEnabled()) {
+      const coordinator = adminTemplateSaveCoordinator();
+      await coordinator.captureCommand(layout.id, { kind: "template.metadata",
+        metadata: { title: requestBody.title, language: requestBody.language } });
+      const result = await coordinator.flush(layout.id);
+      if (result.state !== "committed" || !result.applied) throw Error("Подтверждение изменения параметров ещё не получено.");
+      data = { ...requestBody, listId: layout.adminCausalSource.binding.listId };
+      if (layout.adminCausalSource.visibility === "private") {
+        saveState({ sync: false }); refreshPublishedLayoutView(target); return true;
+      }
+    } else data = await apiFetch(path, {
       method: "POST",
       timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
       body: JSON.stringify(requestBody)
@@ -7179,6 +7192,7 @@ async function savePublishedTemplateMetadata(layout, previousLayout = null) {
     refreshPublishedLayoutView(target);
     return true;
   } catch (error) {
+    if (adminTemplateUiEnabled()) throw Object.assign(error, { isAdminTemplateBlocked: true });
     if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
     if (previousRuntimeSnapshot) {
       upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
@@ -8644,6 +8658,22 @@ async function refreshPublicSharedTemplates(options = {}) {
 
 async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
   if (!currentUser || !canOpenAdminPublishedEdit() || isForcedOffline()) return 0;
+  if (adminTemplateUiEnabled()) {
+    const targetForRecord = record => record.publicTemplateKind === "shared-layout"
+      ? { type: "shared", sharedId: record.sharedId || record.id, language: record.language }
+      : { type: "demo", demoListId: record.demoListId || record.listId || record.id, language: record.language };
+    const result = await hydrateCausalAdminTemplateDrafts({
+      getContext: () => adminTemplateOperationContext({}, "", true), getLayouts: () => state.layouts,
+      getBinding: record => adminTemplateBinding(targetForRecord(record)),
+      readCatalog: () => apiFetch("/bike-packing/admin/template-records", { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
+      normalizeRecords: normalizeAdminTemplateHistoryRecords,
+      readTemplate: binding => adminTemplateClient(binding, "", true).prepare(),
+      materialize: (record, prepared) => materializeCausalAdminTemplate(targetForRecord(record), prepared),
+      acceptRecords: records => { adminTemplateHistoryRecords = records; }, persist: () => persistStateSnapshot(state),
+    });
+    if (renderAfter && result.restored) render();
+    return result.restored;
+  }
   const result = await hydrateAdminTemplateDraftsFlow({
     runtime: {
       get adminTemplateHistoryRecords() { return adminTemplateHistoryRecords; },
@@ -10491,6 +10521,13 @@ function adminTemplateSaveCoordinator() {
   });
   return administrativeSaveCoordinator;
 }
+function materializeCausalAdminTemplate(target, prepared) {
+  const binding = adminTemplateBinding(target);
+  return target.type === "demo"
+    ? importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true })
+    : materializeSharedLayoutForAdmin(target.sharedId, { sourceLayout: { id: target.sharedId, name: prepared.metadata.title,
+      language: prepared.metadata.language, statePayload: prepared.payload, runtimeSharedTemplate: true } });
+}
 async function openCausalAdminTemplate(target, { remember = true } = {}) {
   const binding = adminTemplateBinding(target);
   try {
@@ -10500,17 +10537,17 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
       if (!existing.adminCausalSource || existing.adminCausalSource.binding.actorId !== binding.actorId
         || existing.adminCausalSource.binding.listId !== binding.listId) throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
       activateAdminPublishedLayout(existing.id, { remember });
+      await adminTemplateSaveCoordinator().recover(existing.id);
       if (existing.adminCausalSource.planId) await adminTemplateSaveCoordinator().flush(existing.id);
       return existing;
     }
     const prepared = await adminTemplateClient(binding, "", true).prepare();
+    if (Object.values(state.layouts || {}).some(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
+      : layout.adminSharedSourceId === target.sharedId)) return openCausalAdminTemplate(target, { remember });
     if (!prepared.exists || prepared.deleted || !prepared.payload) throw Error("Шаблон недоступен для редактирования.");
     if (Object.keys(prepared.payload.layouts || {}).length !== 1) throw Error("Этот шаблон содержит несколько укладок и требует отдельной подготовки к редактированию.");
     const editorSource = adminTemplateEditorSource(binding, prepared);
-    const layout = target.type === "demo"
-      ? importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true })
-      : materializeSharedLayoutForAdmin(target.sharedId, { sourceLayout: { id: target.sharedId, name: prepared.metadata.title,
-        language: prepared.metadata.language, statePayload: prepared.payload, runtimeSharedTemplate: true } });
+    const layout = materializeCausalAdminTemplate(target, prepared);
     if (!layout) throw Error("Не удалось открыть шаблон.");
     layout.adminCausalSource = editorSource; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
@@ -11832,28 +11869,43 @@ function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
     writeContainerTreeToLayoutArrangement
   });
 }
-function findMaterializedSharedItemId(sourceId) {
-  return Object.values(state.items || {}).find((item) => item.sharedSourceId === sourceId)?.id || "";
+function findMaterializedSharedItemId(sourceId, layout = null) {
+  const included = layout ? getLayoutItemIdSet(layout) : null;
+  return Object.values(state.items || {}).find(item => item.sharedSourceId === sourceId
+    && (!layout || item.publicCatalogLayoutId === layout.id || included.has(item.id)))?.id || "";
 }
 
-function findMaterializedSharedContainerId(sourceId) {
-  return Object.values(state.containers || {}).find((container) => container.sharedSourceId === sourceId)?.id || "";
+function findMaterializedSharedContainerId(sourceId, layout = null) {
+  const included = layout ? getLayoutContainerIdSet(layout) : null;
+  return Object.values(state.containers || {}).find(container => container.sharedSourceId === sourceId
+    && (!layout || container.publicCatalogLayoutId === layout.id || included.has(container.id)))?.id || "";
 }
 
 function editSharedSourceAsAdmin(type, sourceId, action = "edit", { copyIncludesContents = true } = {}) {
   if (!canOpenAdminPublishedEdit()) return false;
+  if (adminTemplateUiEnabled()) {
+    const sharedId = activeReadOnlyLayoutId();
+    if (!sharedId) return false;
+    openCausalAdminTemplate({ type: "shared", sharedId }).then(layout => {
+      if (layout && canOpenAdminPublishedEdit() && getPublishedEditLayoutId() === layout.id) openMaterializedSharedEditor(layout, type, sourceId, action, copyIncludesContents);
+    }).catch(reportAdminTemplateSaveError);
+    return true;
+  }
   const layout = materializeSharedLayoutForAdmin();
   if (!layout) return false;
   activateAdminPublishedLayout(layout.id);
+  return openMaterializedSharedEditor(layout, type, sourceId, action, copyIncludesContents);
+}
+function openMaterializedSharedEditor(layout, type, sourceId, action, copyIncludesContents) {
   if (type === "item") {
-    const itemId = findMaterializedSharedItemId(sourceId);
+    const itemId = findMaterializedSharedItemId(sourceId, layout);
     if (itemId) {
       if (action === "delete") confirmDeleteItem(itemId);
       else openItemDialog(itemId);
     }
     return true;
   }
-  const containerId = findMaterializedSharedContainerId(sourceId);
+  const containerId = findMaterializedSharedContainerId(sourceId, layout);
   if (containerId) {
     if (action === "add") openAddToContainerDialog(containerId);
     else if (action === "delete") confirmDeleteRootContainer(containerId);

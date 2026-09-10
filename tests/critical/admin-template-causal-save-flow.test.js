@@ -75,3 +75,67 @@ test("capture failure and route changes leave business requests unsent", async (
   const next = fixture(), fresh = next.make(), capture = fresh.capture(next.layout.id, { published: false }); next.context.generation = "new route";
   await assert.rejects(capture); assert.equal(next.posts().length, 0);
 });
+
+test("a crash between plan durability and editor-pointer durability recovers the original plan", async () => {
+  const f = fixture(), previous = structuredClone(f.layout.adminCausalSource);
+  const captured = await f.make().capture(f.layout.id, { published: false });
+  f.layout.adminCausalSource = previous; delete f.layout.templateDraftSyncPending;
+  const reloaded = f.make(); assert.deepEqual(await reloaded.recover(f.layout.id), { state: "pending" });
+  assert.equal(f.layout.adminCausalSource.planId, captured.operationId);
+  assert.equal((await reloaded.flush(f.layout.id)).applied, true); assert.equal(f.posts().length, 1);
+  assert.equal(JSON.parse(f.posts()[0].options.body).operationId, captured.operationId);
+});
+
+test("another tab's durable successor cannot be replaced by capturing a fresh operation", async () => {
+  const f = fixture(), previous = structuredClone(f.layout.adminCausalSource);
+  await f.make().capture(f.layout.id, { published: false }); f.layout.adminCausalSource = previous;
+  f.snapshot.payload.items.a.name = "Unsent competing edit";
+  await assert.rejects(f.make().capture(f.layout.id, { published: false }), { code: "admin-template-editor-recovery-required" });
+  await assert.rejects(f.make().recover(f.layout.id), { code: "admin-template-editor-recovery-required" });
+  assert.equal((await f.plans().list()).length, 1); assert.equal(f.posts().length, 0);
+  assert.equal(f.snapshot.payload.items.a.name, "Unsent competing edit");
+});
+
+test("two already saved branches require an explicit choice instead of timestamp ordering", async () => {
+  const f = fixture(), action = f.action();
+  const input = { operationId: action.operationId, exists: true, visibility: "private", base: { stateRevision: 7 },
+    payload: f.snapshot.payload, metadata: f.snapshot.metadata, published: false };
+  await f.plans().capture(input); await f.plans().capture({ ...input, operationId: f.action().operationId });
+  await assert.rejects(f.make().recover(f.layout.id), { code: "admin-template-editor-recovery-required" });
+  assert.equal(f.layout.adminCausalSource.planId, null); assert.equal(f.posts().length, 0);
+});
+
+test("metadata is a distinct immutable command following the pending data save", async () => {
+  const f = fixture(), flow = f.make();
+  const data = await flow.capture(f.layout.id, { published: false });
+  f.snapshot.metadata.title = "Changed title";
+  const metadata = { title: "Changed title", language: "ru", layoutOrder: 2 };
+  await flow.captureCommand(f.layout.id, { kind: "template.metadata", metadata }); metadata.title = "Late mutation";
+  assert.equal((await flow.flush(f.layout.id)).applied, true);
+  const requests = f.posts().map(call => JSON.parse(call.options.body));
+  assert.deepEqual(requests.map(request => request.kind), ["template.save", "template.metadata"]);
+  assert.deepEqual(requests[1].body.base, { operationId: data.operationId });
+  assert.deepEqual(requests[1].body.metadata, { title: "Changed title", language: "ru", layoutOrder: 2 });
+  assert.equal(Object.hasOwn(requests[1].body, "payload"), false);
+  assert.deepEqual(f.layout.adminCausalSource.base, { stateRevision: 9 });
+});
+
+test("a saved delete resumes after reload and prevents a new save of the same target", async () => {
+  const f = fixture(), flow = f.make();
+  const command = await flow.captureCommand(f.layout.id, { kind: "template.delete" });
+  await assert.rejects(flow.capture(f.layout.id));
+  assert.equal((await f.make().flush(f.layout.id)).applied, true);
+  assert.equal(f.layout.adminCausalSource.deleted, true);
+  await assert.rejects(f.make().capture(f.layout.id));
+  assert.equal(f.posts().length, 1); assert.equal(JSON.parse(f.posts()[0].options.body).operationId, command.operationId);
+});
+
+test("a command survives pointer loss and a delayed command receipt cannot clear newer fields", async () => {
+  const f = fixture(), original = structuredClone(f.layout.adminCausalSource);
+  await f.make().captureCommand(f.layout.id, { kind: "template.metadata", metadata: { title: f.snapshot.metadata.title, language: "ru" } });
+  f.layout.adminCausalSource = original;
+  const recovered = f.make(); await recovered.recover(f.layout.id);
+  f.state.afterPost = () => { f.snapshot.metadata.title = "New unsent title"; };
+  assert.equal((await recovered.flush(f.layout.id)).applied, false);
+  assert.ok(f.layout.adminCausalSource.planId); assert.equal(f.posts().length, 1);
+});

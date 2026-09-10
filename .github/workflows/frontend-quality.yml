@@ -13,7 +13,9 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The complete desktop/mobile suite already exceeded fourteen minutes
+    # before the additional causal operation and recovery scenarios.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout

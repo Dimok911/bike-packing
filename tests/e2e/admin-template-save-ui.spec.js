@@ -28,9 +28,11 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("admin-ui-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], errors: [], lose: false, hidden: false, hold: null };
-  const listId = "public-demo-state-ui", itemKey = "demo-state:ui", metadata = { title: "Проверяемый шаблон", description: "", language: "ru" };
+  const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
+  const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
+  state.visibility = published ? "public" : "private";
   page.on("pageerror", error => state.errors.push(error.message));
   await context.addInitScript(() => localStorage.setItem("bike-packing-language-v1", "ru"));
   await context.route("**/*", async route => {
@@ -44,6 +46,9 @@ async function fixture(page, context) {
       else if (suffix === "/bike-packing/capabilities") data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
         capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1"] };
       else if (suffix === "/bike-packing/lists") data = { ok: true, lists: [{ id: "personal-list", title: "Личный тест", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: 1, payload: personal() }] };
+      else if (suffix === "/bike-packing/admin/template-records") data = { ok: true, lists: state.hydrate ? [{ id: listId, listId,
+        publicTemplateKind: shared ? "shared-layout" : "demo", language: "ru", title: "Catalog title", published: false,
+        visibility: "private", adminPayloadEndpoint: "/legacy-read-must-not-be-used" }] : [] };
       else if (suffix.startsWith("/bike-packing/lists/personal-list")) data = { ok: true, list: { id: "personal-list", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: 1, payload: personal() }, payload: personal(), stateRevision: 1 };
       else if (suffix === "/bike-packing/admin/template-operations/prepare") data = { ok: true, actorId: "admin-a", environment: "bike-packing-experiment", itemKey, listId,
         sourceType: "public-template", exists: true, deleted: false, stateRevision: state.revision, visibility: state.visibility, metadata, payload: state.payload, indexes: [] };
@@ -55,6 +60,7 @@ async function fixture(page, context) {
           expect(base).toBe(state.revision); state.revision++;
           if (intent.kind === "template.save") state.payload = structuredClone(intent.body.payload);
           if (intent.kind === "template.publication") state.visibility = intent.body.published ? "public" : "private";
+          if (intent.kind === "template.metadata") Object.assign(metadata, intent.body.metadata);
           const { body, ...identity } = binding;
           state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "committed" },
             result: { status: 200, payload: { ok: true, listId, itemKey, stateRevision: state.revision, visibility: state.visibility, indexes: [] } } });
@@ -75,7 +81,14 @@ async function fixture(page, context) {
     try { return route.fulfill({ body: await readFile(file), contentType: file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".html") ? "text/html" : "application/octet-stream" }); }
     catch { return route.fulfill({ status: 404, body: "" }); }
   });
-  await page.goto(origin); await openEditor(page);
+  await page.goto(origin);
+  if (hydrate || shared) {
+    await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");
+    if (hydrate) await page.evaluate(() => __adminUiTest.refreshDrafts());
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: listId, language: "ru" });
+    await page.waitForFunction(() => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource));
+  } else await openEditor(page);
   return state;
 }
 async function openEditor(page) {
@@ -156,5 +169,43 @@ test("local journal quota failure keeps the form draft and sends no template wri
   await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
   expect(state.posts).toHaveLength(0);
   expect(await page.evaluate(() => Object.values(__adminUiTest.state().items).some(item => item.name === "Несохранённая локальная правка"))).toBe(true);
+  expect(state.errors).toEqual([]);
+});
+
+async function renameTemplate(page, name) {
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await expect(page.locator("#layoutEditDialog")).toBeVisible();
+  await page.locator("#layoutEditName").fill(name); await page.locator("#layoutEditName").blur();
+  if (test.info().project.name === "mobile-webkit") await page.locator("#saveEditedLayoutBtn").tap();
+  else await page.locator("#saveEditedLayoutBtn").click();
+}
+for (const published of [false, true]) test(`the real ${published ? "public template" : "private draft"} label form sends only an immutable metadata command`, async ({ page, context }) => {
+  const state = await fixture(page, context, { published }); const before = structuredClone(state.payload);
+  await renameTemplate(page, "Новое название шаблона"); await confirmedRevision(page, 8);
+  expect(state.posts).toHaveLength(1);
+  expect(state.posts[0].kind).toBe("template.metadata");
+  expect(state.posts[0].body).toEqual({ version: 1, base: { stateRevision: 7 }, metadata: { title: "Новое название шаблона", language: "ru" } });
+  expect(state.visibility).toBe(published ? "public" : "private"); expect(state.payload).toEqual(before);
+  await expect(page.locator("#layoutEditDialog")).not.toBeVisible(); expect(state.errors).toEqual([]);
+});
+
+test("a lost metadata response keeps the named draft and recovers the original command after reload", async ({ page, context }) => {
+  const state = await fixture(page, context); state.lose = true;
+  await renameTemplate(page, "Название с потерянным ответом"); await expect.poll(() => state.hidden).toBe(true);
+  const original = structuredClone(state.posts[0]);
+  expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).some(layout => layout.name === "Название с потерянным ответом"))).toBe(true);
+  state.lose = false; state.hidden = false;
+  await page.reload(); await openEditor(page); await confirmedRevision(page, 8);
+  expect(state.posts).toEqual([original]); expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) test(`hydrating a ${shared ? "shared" : "demo"} draft retains its source revision and background refresh preserves a pending edit`, async ({ page, context }) => {
+  const state = await fixture(page, context, { hydrate: true, shared });
+  expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).filter(layout => layout.adminCausalSource).length)).toBe(1);
+  await editItem(page, "Изменение загруженного черновика");
+  await page.evaluate(() => __adminUiTest.refreshDrafts());
+  await confirmedRevision(page, 8);
+  expect(state.posts).toHaveLength(1); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+  expect(Object.values(state.payload.items).some(item => item.name === "Изменение загруженного черновика")).toBe(true);
   expect(state.errors).toEqual([]);
 });

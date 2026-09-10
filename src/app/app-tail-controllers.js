@@ -140,6 +140,7 @@ import {
 import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
+  const { adminTemplateUiEnabled = () => false } = ctx;
   const runtime = ctx.runtime;
   let itemDialogPhotoPreviewRenderToken = 0;
   let rootContainerDialogPhotoPreviewRenderToken = 0;
@@ -7616,7 +7617,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
   }
   touchLayout(layout.id, changedAt);
   if (adminPublished) {
-    if (isManagedTemplateUnpublished(layout)) {
+    if (isManagedTemplateUnpublished(layout) && !adminTemplateUiEnabled()) {
       saveState();
       layoutEditInitialSnapshot = getLayoutEditSnapshot();
       updateLayoutEditSaveState();
@@ -7633,7 +7634,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
       if (notify) showToast(localText("Template label updated.", "Метка шаблона обновлена."), "success");
       return true;
     } catch (error) {
-      if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
+      if (previousLayout?.id && !error?.isAdminTemplateBlocked) state.layouts[previousLayout.id] = previousLayout;
       saveState({ sync: false });
       render();
       if (error?.isAdminApiCompatibilityError) {

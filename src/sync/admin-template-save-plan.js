@@ -31,7 +31,24 @@ export function adminTemplateSavePlan({ binding, operationId, publicationId = nu
     operations: publication ? hidingFirst ? [publication, write] : [write, publication] : [write] };
 }
 
+export function adminTemplateCommandPlan({ binding, operationId, kind, body, editorSnapshot }) {
+  if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== "bike-packing-experiment"
+    || !["template.metadata", "template.publication", "template.archive", "template.delete"].includes(kind)
+    || !exact(editorSnapshot, ["payload", "metadata"])) throw paused();
+  canonicalTemplateJson(editorSnapshot);
+  const intent = adminTemplateIntent({ ...binding, operationId, kind, body });
+  return { version: 2, id: operationId, binding: clone(binding), operations: [intent], editorSnapshot: clone(editorSnapshot) };
+}
+
 function validatePlan(plan) {
+  if (plan?.version === 2) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1) throw paused();
+    const operation = plan.operations[0];
+    if (!same(plan, adminTemplateCommandPlan({ binding: plan.binding, operationId: plan.id, kind: operation.kind,
+      body: operation.body, editorSnapshot: plan.editorSnapshot }))) throw paused();
+    return plan;
+  }
   if (!exact(plan, ["version", "id", "binding", "requestedPublication", "operations"]) || plan.version !== 1
     || !validTemplateOperationId(plan.id) || ![null, true, false].includes(plan.requestedPublication)
     || !Array.isArray(plan.operations) || ![1, 2].includes(plan.operations.length)) throw paused();
@@ -88,17 +105,19 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, stor
       return { state: cancelled ? "cancelled" : rejected ? "rejected" : "committed", receipts };
     });
   };
-  return Object.freeze({
-    async capture(input) {
+  const capturePlan = async (input, makePlan) => {
       if (enabled !== true) throw paused(); const initial = context();
-      const plan = adminTemplateSavePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
+      const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
       return lock(plan.id, async () => {
         const existing = await read(plan.id); guard(initial);
         if (existing) { if (!same(existing.plan, plan)) throw paused(); return clone(existing); }
         return clone(persist(saved, initial));
       });
-    },
+  };
+  return Object.freeze({
+    capture: input => capturePlan(input, adminTemplateSavePlan),
+    captureCommand: input => capturePlan(input, adminTemplateCommandPlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];
