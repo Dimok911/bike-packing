@@ -242,6 +242,21 @@ export function createExperimentTransport({
     validateApiPath(path);
     refreshJournal();
     const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
+    const accessMetadata = value => value?.type === "access" && value.protocol === "access-v1"
+      && value.environment === "bike-packing-experiment" && typeof value.actorId === "string" && value.actorId
+      && typeof value.listId === "string" && value.listId && ["access.grant", "access.revoke", "access.accept"].includes(value.kind)
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.operationId)
+      && /^[a-f0-9]{64}$/.test(value.payloadDigest);
+    const accessPath = value => /^\/bike-packing\/access-operations(?:\/[0-9a-f-]{36}\/cancel)?$/.test(value);
+    const access = accessMetadata(recovery) && accessPath(path) && method === "POST";
+    const ownAccess = entry => (causal || access) && entry.method === "POST" && accessPath(entry.path)
+      && accessMetadata(entry.recovery) && entry.id === entry.recovery.operationId && entry.recovery.actorId === recovery.actorId;
+    // These handlers serialize against the owner's data head on the server.
+    // An exact pending-data dependency guards grants; revocation can deny a
+    // future grant even while its photo files are still awaiting confirmation.
+    const accessPeer = entry => access && entry.recovery?.actorId === recovery.actorId
+      && (entry.recovery.type === "list" && entry.recovery.protocol === "causal-v1"
+        || entry.recovery.type === "photo-stage" && entry.recovery.protocol === "staging-v1");
     // Cancelling a frozen form/import can fence its owner even if one of its own
     // stage ACKs is unknown. This marker is local transport metadata; the
     // queue forbids dispatch/resume of a business write from such an entry.
@@ -269,7 +284,8 @@ export function createExperimentTransport({
         && /^[a-f0-9]{64}$/.test(file.file?.hash) && file.file.hash === entry.recovery.fileHash
         && (file.thumb?.hash || file.file.hash) === entry.recovery.thumbHash));
     if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
-      && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId) && !ownCancelledStage(entry)) && !isReadOnlyRequest(path, method)) {
+      && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)
+      && !ownCancelledStage(entry) && !ownAccess(entry) && !accessPeer(entry)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;
@@ -313,7 +329,7 @@ export function createExperimentTransport({
     try {
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
-      if (committed && (entry?.identity || ["list", "photo-stage"].includes(entry?.recovery?.type))) {
+      if (committed && (entry?.identity || ["list", "photo-stage", "access"].includes(entry?.recovery?.type))) {
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));

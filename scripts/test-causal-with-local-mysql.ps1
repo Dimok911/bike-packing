@@ -2,7 +2,7 @@ param(
   [string]$MysqlBase = 'node_modules/.cache/mysql-causal-test/mysql-8.4.11-winx64',
   [string]$ApiDirectory = '../bikepacking-api-experiment',
   [string]$NodeExecutable = (Get-Command node -ErrorAction Stop).Source,
-  [ValidateSet('all', 'public', 'imports', 'sharing', 'server-import', 'server-photo-forms', 'photo-forms')][string]$Scope = 'all'
+  [ValidateSet('all', 'public', 'imports', 'sharing', 'access', 'server-import', 'server-photo-forms', 'photo-forms')][string]$Scope = 'all'
 )
 $ErrorActionPreference = 'Stop'
 $nodeRuntime = (Resolve-Path -LiteralPath $NodeExecutable).Path
