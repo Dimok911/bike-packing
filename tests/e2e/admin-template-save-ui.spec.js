@@ -235,8 +235,8 @@ for (const kind of ["demo", "shared"]) test(`new admin ${kind} draft keeps its t
   expect(state.errors).toEqual([]);
 });
 
-async function legacyDraftFixture(page, context, shared) {
-  const state = await fixture(page, context, { shared });
+async function legacyDraftFixture(page, context, shared, options = {}) {
+  const state = await fixture(page, context, { ...options, shared });
   state.localId = await page.evaluate(() => {
     const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
     delete layout.adminCausalSource; layout.name = "Старый местный вариант";
@@ -300,6 +300,95 @@ for (const shared of [false, true]) for (const outcome of ["confirm", "lost", "c
       expect(Object.values(state.payload.items).some(row => row.name === "Местный насос")).toBe(true);
     }
     expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const mode of ["adopt", "mirror-quota", "choice-quota", "changed-server"]) {
+  test(`legacy server variant ${shared ? "shared" : "demo"} retains both drafts and adopts without a write (${mode})`, async ({ page, context }) => {
+    const state = await legacyDraftFixture(page, context, shared, { withContainers: true, layoutOrder: 17 });
+    state.payload.items.pump.name = "Серверный насос";
+    state.payload.containers.detached = { id: "detached", name: "Вне укладки", parentId: "", childIds: ["detachedPocket"], itemIds: [], order: [{ type: "container", id: "detachedPocket" }] };
+    state.payload.containers.detachedPocket = { id: "detachedPocket", name: "Вложенный карман", parentId: "detached", childIds: [], itemIds: ["outside"], order: [{ type: "item", id: "outside" }] };
+    state.payload.items.outside = { id: "outside", name: "Запасная вещь", containerId: "detachedPocket", quantity: 3, weight: 10 };
+    state.payload.layouts["layout-a"].arrangement.packedItems.pump = true;
+    const before = await page.evaluate(() => structuredClone(__adminUiTest.state()));
+    await beginLegacyComparison(page, shared);
+    await expect(page.locator("#confirmDialog")).toContainText("Местный насос");
+    await expect(page.locator("#confirmDialog")).toContainText("Серверный насос");
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith(mode === "choice-quota" ? "bike-packing-admin-legacy-choice-v1:" : "bike-packing-prototype-state-v1")) throw new DOMException("Legacy adoption quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    if (mode === "changed-server") { state.revision = 12; state.payload.items.pump.name = "Поздняя серверная правка"; }
+    await page.locator("#confirmAlternateBtn").click(); await page.waitForFunction(() => __legacyOpenDone);
+    expect(state.posts).toEqual([]); expect(state.cancels).toEqual([]);
+    const choice = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(key => key.startsWith("bike-packing-admin-legacy-choice-v1:"));
+      return key ? JSON.parse(localStorage.getItem(key)).choice : null;
+    });
+    if (mode.endsWith("quota")) {
+      const current = await page.evaluate(() => structuredClone(__adminUiTest.state()));
+      expect(current.layouts[state.localId]).toEqual(before.layouts[state.localId]);
+      expect(current.items).toEqual(before.items); expect(current.containers).toEqual(before.containers);
+      if (mode === "choice-quota") { expect(choice).toBeNull(); expect(state.errors).toEqual([]); return; }
+      // The decision survived; losing only the editor mirror must apply that
+      // frozen decision after reload, even if the server has since changed.
+      state.revision = 12; state.payload.items.pump.name = "Поздняя серверная правка";
+      await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+      await beginLegacyComparison(page, shared); await page.waitForFunction(() => __legacyOpenDone);
+      await expect(page.locator("#confirmDialog")).not.toBeVisible();
+    }
+    expect(choice.variant).toBe("server"); expect(choice.server.stateRevision).toBe(7);
+    expect(Object.values(choice.local.payload.items).some(row => row.name === "Местный насос")).toBe(true);
+    expect(choice.server.payload.items.pump.name).toBe("Серверный насос");
+    await confirmedRevision(page, 7);
+    const adopted = await page.evaluate(() => structuredClone(__adminUiTest.state()));
+    const layout = adopted.layouts[state.localId], pump = Object.values(adopted.items).find(row => row.name === "Серверный насос");
+    expect(pump).toBeTruthy(); expect(layout.adminCausalSource.planId).toBeNull(); expect(layout.layoutOrder).toBe(17);
+    expect(layout.arrangement.itemQuantities[pump.id]).toBe(2); expect(layout.arrangement.packedItems[pump.id]).toBe(true);
+    expect(Object.values(adopted.items).some(row => row.name === "Местный насос")).toBe(false);
+    for (const [id, row] of Object.entries(before.layouts)) if (id !== state.localId) expect(adopted.layouts[id]).toEqual(row);
+    const checkDetached = value => {
+      const bag = Object.values(value.containers).find(row => row.name === "Вне укладки");
+      const pocket = Object.values(value.containers).find(row => row.name === "Вложенный карман");
+      const item = Object.values(value.items).find(row => row.name === "Запасная вещь");
+      expect(bag.childIds).toEqual([pocket.id]); expect(pocket.parentId).toBe(bag.id);
+      expect(pocket.itemIds).toEqual([item.id]); expect(item.containerId).toBe(pocket.id); expect(item.quantity).toBe(3);
+    };
+    checkDetached(adopted);
+    await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 7);
+    const reopened = await page.evaluate(() => structuredClone(__adminUiTest.state())); checkDetached(reopened);
+    expect(Object.values(reopened.items).find(row => row.name === "Серверный насос")?.id).toBe(pump.id);
+    expect(state.posts).toEqual([]);
+    expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("bike-packing-admin-save-plans-v1:")))).toBe(false);
+    await editItem(page, "Правка после старого черновика", "Серверный насос");
+    await expect.poll(() => state.posts.length).toBe(1); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(state.posts[0].kind).toBe("template.save"); checkDetached(state.posts[0].body.payload);
+    if (mode === "adopt") await confirmedRevision(page, 8);
+    else expect(state.receipts.get(state.posts[0].operationId).operation.state).toBe("rejected");
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const mode of ["unowned", "foreign-reference"]) {
+  test(`legacy server variant ${shared ? "shared" : "demo"} preserves ambiguous catalog ownership (${mode})`, async ({ page, context }) => {
+    const state = await legacyDraftFixture(page, context, shared, { withContainers: true });
+    const before = await page.evaluate(({ id, mode }) => {
+      const current = __adminUiTest.state(), layout = current.layouts[id];
+      if (mode === "unowned") {
+        for (const row of Object.values(current.containers)) if (row.publicCatalogLayoutId === id) delete row.publicCatalogLayoutId;
+      } else current.layouts["personal-reference"] = { id: "personal-reference", name: "Личная укладка со ссылкой", rootContainerIds: [...layout.rootContainerIds], arrangement: structuredClone(layout.arrangement) };
+      return structuredClone(current);
+    }, { id: state.localId, mode });
+    await beginLegacyComparison(page, shared); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await page.locator("#confirmAlternateBtn").click(); await page.waitForFunction(() => __legacyOpenDone);
+    await expect(page.locator("body")).toContainText("отдельной сверки связей");
+    const after = await page.evaluate(() => structuredClone(__adminUiTest.state()));
+    expect(after.layouts).toEqual(before.layouts); expect(after.items).toEqual(before.items); expect(after.containers).toEqual(before.containers);
+    expect(state.posts).toEqual([]); expect(state.errors).toEqual([]);
   });
 }
 

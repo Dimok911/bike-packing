@@ -14,6 +14,7 @@ const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest
 // One decision per target retains BOTH versions before the first business write.
 // Reload uses this decision, never a fresh server revision to rebase the old edit.
 export function createAdminTemplateLegacyChoice({ binding, layoutId, getContext, snapshot, client, plans,
+  projectServer = null,
   storage = globalThis.localStorage, locks = globalThis.navigator?.locks, uuid = () => crypto.randomUUID(),
   enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
@@ -41,9 +42,12 @@ export function createAdminTemplateLegacyChoice({ binding, layoutId, getContext,
       payload: choice.local.payload, metadata: choice.local.metadata, published: null, indexes: [] };
   };
   const validate = choice => {
-    if (!exact(choice, ["version", "id", "binding", "layoutId", "local", "server"]) || choice.version !== 1
+    const serverChoice = choice?.version === 2;
+    if (!exact(choice, ["version", "id", "binding", "layoutId", "local", "server", ...(serverChoice ? ["variant", "projection"] : [])]) || ![1, 2].includes(choice.version)
       || !validTemplateOperationId(choice.id) || !same(choice.binding, binding) || choice.layoutId !== layoutId
       || !exact(choice.local, ["payload", "metadata"])) throw paused();
+    if (serverChoice && (choice.variant !== "server" || !exact(choice.projection, ["layoutId", "layout", "items", "containers"])
+      || choice.projection.layoutId !== layoutId || choice.projection.layout?.id !== layoutId)) throw paused();
     adminTemplateSavePlan({ ...input(choice), binding });
     return choice;
   };
@@ -64,16 +68,18 @@ export function createAdminTemplateLegacyChoice({ binding, layoutId, getContext,
       const server = clone(await client.prepare()); unchanged(initial, local); source(server);
       return { initial, local, server, saved: null };
     },
-    async choose(session) {
+    async choose(session, { variant = "local" } = {}) {
       // Clone before hashing/locking so callers cannot change the approved choice.
       session = clone(session); unchanged(session.initial, session.local);
       if (session.saved) throw paused();
-      const choice = validate({ version: 1, id: uuid(), binding, layoutId, local: session.local, server: session.server });
+      if (!["local", "server"].includes(variant) || variant === "server" && !projectServer) throw paused();
+      const id = uuid(), choice = validate({ version: variant === "server" ? 2 : 1, id, binding, layoutId, local: session.local, server: session.server,
+        ...(variant === "server" ? { variant, projection: clone(projectServer(session.server, id)) } : {}) });
       const row = { version: 1, choice, digest: await hash(choice) }; unchanged(session.initial, session.local);
       return lock(async () => {
         const saved = await read(); unchanged(session.initial, session.local);
         if (saved) {
-          if (!same(saved.local, choice.local) || !same(saved.server, choice.server)) throw paused();
+          if (!same(saved.local, choice.local) || !same(saved.server, choice.server) || saved.version !== choice.version) throw paused();
           return clone(saved);
         }
         if ((await plans.list()).length) throw paused(); unchanged(session.initial, session.local);
@@ -87,6 +93,12 @@ export function createAdminTemplateLegacyChoice({ binding, layoutId, getContext,
       return lock(async () => {
         const choice = await read(); unchanged(initial, local);
         if (!choice || !same(choice.local, local)) throw paused();
+        if (choice.version === 2) {
+          // A legacy draft has no operation chain to exclude. Any journal
+          // entry, even one created after the choice, requires separate review.
+          if ((await plans.list()).length) throw paused(); unchanged(initial, local);
+          return { serverAdoption: { projection: clone(choice.projection), source: source(choice.server) } };
+        }
         await plans.capture(input(choice)); unchanged(initial, local);
         return source(choice.server);
       });

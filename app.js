@@ -10744,19 +10744,27 @@ async function reconcileLegacyAdminTemplate(layout, binding) {
   const client = createAdminTemplateClient({ binding, transport: experimentTransport, enabled: adminTemplateUiEnabled(), getContext });
   const plans = createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client, getContext });
   const choice = createAdminTemplateLegacyChoice({ binding, layoutId: layout.id, enabled: adminTemplateUiEnabled(),
-    getContext, snapshot: () => adminTemplateEditorSnapshot(layout.id), client, plans });
+    getContext, snapshot: () => adminTemplateEditorSnapshot(layout.id), client, plans,
+    projectServer: (server, id) => projectAdminTemplateServerVariant(layout, server, id) });
   const opened = await choice.open();
   if (!opened.saved) {
     const describe = value => `«${value.metadata.title}»: вещей ${Object.keys(value.payload.items || {}).length}, сумок ${Object.keys(value.payload.containers || {}).length}`;
     const approved = await askConfirmDialog({ title: "Сверить старый черновик", tone: "warning",
-      text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Перенести местный вариант на сервер вместо просмотренного? Если серверный вариант изменится, сохранение остановится для сверки. Обе версии сохранятся на устройстве.${opened.server.visibility === "public" ? " Шаблон опубликован: перенесённые изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
-      okText: "Перенести местный вариант", cancelText: "Пока оставить черновик", hideClose: true });
+      highlightHtml: adminTemplateComparisonHtml(opened.local, opened.server),
+      text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Выберите вариант для продолжения. Серверный вариант заменит только текущий редактор; отправки не будет. Обе версии сохранятся на устройстве. Перенос местного варианта заменит просмотренную серверную версию и остановится при новом конфликте.${opened.server.visibility === "public" ? " Шаблон опубликован: перенесённые местные изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
+      okText: "Перенести местный вариант", alternateText: "Использовать серверный вариант", cancelText: "Пока оставить черновик", hideClose: true });
     if (!approved) return false;
-    await choice.choose(opened);
+    await choice.choose(opened, { variant: approved === "alternate" ? "server" : "local" });
   }
-  // The choice and its original save plan are durable before attaching a source
-  // or dispatching. If the editor mirror is lost, the same old draft finds them.
-  layout.adminCausalSource = await choice.resume();
+  // Both snapshots and either the original save plan or the server projection
+  // are durable before changing the editor. A lost mirror finds the same choice.
+  const next = await choice.resume();
+  if (next.serverAdoption) {
+    const { projection, source } = next.serverAdoption;
+    return applyAdminTemplateServerVariant(state, layout.id, projection, source, {
+      persist: () => persistStateSnapshot(state, { recordAction: false }), applyArrangement: applyLayoutArrangement });
+  }
+  layout.adminCausalSource = next;
   persistStateSnapshot(state);
   return true;
 }
