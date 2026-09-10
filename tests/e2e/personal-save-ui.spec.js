@@ -6510,6 +6510,8 @@ async function preparePendingOwnerUi(page, context, fileless, importKind) {
 }
 
 for (const importKind of ["guest", "archive", "public", "server"]) test(`${importKind} atomic owner photo gate off keeps the entire new form`, async ({ page, context }) => {
+  test.skip(importKind === "public" && process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1"
+    || importKind === "server" && process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires the parent import; the independent owner form gate stays OFF");
   test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"] === "1", "Checks the independent atomic owner creation gate");
   const { f, release, clearHold } = await preparePendingOwnerUi(page, context, false, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
@@ -6650,6 +6652,8 @@ test(`${importKind} atomic owner photo creation ${fileless ? "fileless" : "photo
 });
 
 for (const importKind of ["guest", "archive", "public", "server"]) test(`${importKind} pending owner creation gate off preserves the form and original import`, async ({ page, context }) => {
+  test.skip(importKind === "public" && process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1"
+    || importKind === "server" && process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires the parent import; the independent owner creation gate stays OFF");
   test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PENDING_PUBLIC_CREATE" : "BIKE_PERSONAL_PENDING_CREATE"] === "1", "Checks the independent fileless owner creation gate");
   const { f, release, clearHold } = await preparePendingOwnerUi(page, context, false, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
