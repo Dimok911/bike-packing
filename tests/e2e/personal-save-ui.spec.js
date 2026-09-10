@@ -351,7 +351,8 @@ test(`actual server import ${legacy ? `legacy ${legacy === "whole" ? "whole " : 
   expect(manifest.files).toHaveLength(["layout", "tree"].includes(kind) ? 2 : 1);
   expect(manifest.ownerTargets.every(row => row.targetId !== row.sourceId && !row.reuse)).toBe(true);
   await expect.poll(() => f.hiddenFormOwner).toBe(original.operationId);
-  f.reloading = true; await page.goto(origin); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible({ timeout: 30000 }); f.reloading = false;
+  await expect(page).not.toHaveURL(/[?&](?:sharedList|shared)=/);
+  await reloadApp(page, { recovery: true });
   f.loseFormOwner = false; f.hiddenFormOwner = null; f.serverSharedRecord = null; f.guestPhotoUnavailable = true;
   await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
   await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены");
