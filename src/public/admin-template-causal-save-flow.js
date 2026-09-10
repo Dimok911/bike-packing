@@ -54,7 +54,8 @@ export function adminTemplateEditorSource(binding, prepared) {
     base: prepared.exists ? { stateRevision: prepared.stateRevision } : null, indexes: clone(prepared.indexes), planId: null };
 }
 
-export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, resolutionFor = null, persist, notify = () => {},
+export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, resolutionFor = null,
+  applyServerVariant = null, persist, notify = () => {},
   uuid = () => crypto.randomUUID(), enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   const captures = new Map();
   const source = layout => {
@@ -64,6 +65,12 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
   };
   const guard = (layoutId, layout, initial, binding) => {
     if (getLayout(layoutId) !== layout || !equal(getContext(binding), initial)) throw blocked();
+  };
+  const eligiblePlans = async (observed, layoutId) => {
+    const excluded = observed.adoptedStop ? await resolutionFor?.(observed.binding, layoutId, observed.adoptedStop.priorPlanId)
+      .excludedPlans(observed.adoptedStop) : [];
+    if (!excluded) throw recoveryRequired();
+    return (await plansFor(observed.binding, layoutId).list()).filter(row => !excluded.includes(row.plan.id));
   };
   const capture = async (layoutId, { published = null } = {}) => {
     if (enabled !== true) throw blocked();
@@ -89,7 +96,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       const plans = plansFor(base.binding, layoutId);
       await recoveryFor?.(base.binding, layoutId).assertCanAppend(base.planId);
       guard(layoutId, layout, initial, base.binding);
-      if (savedSuccessor(base, await plans.list())) throw recoveryRequired();
+      if (savedSuccessor(base, await eligiblePlans(base, layoutId))) throw recoveryRequired();
       guard(layoutId, layout, initial, base.binding);
       await plans.capture(input);
       guard(layoutId, layout, initial, base.binding);
@@ -141,7 +148,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       const plans = plansFor(base.binding, layoutId);
       await recoveryFor?.(base.binding, layoutId).assertCanAppend(base.planId);
       guard(layoutId, layout, initial, base.binding);
-      if (savedSuccessor(base, await plans.list())) throw recoveryRequired();
+      if (savedSuccessor(base, await eligiblePlans(base, layoutId))) throw recoveryRequired();
       guard(layoutId, layout, initial, base.binding);
       await plans.captureCommand({ operationId, kind, body, editorSnapshot: candidate });
       guard(layoutId, layout, initial, base.binding);
@@ -163,16 +170,20 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     guard(layoutId, layout, initial, observed.binding);
     if (!next) return false;
     if (!equal(source(layout), observed) || captures.get(layoutId) !== pending) throw blocked();
+    if (next.serverAdoption) {
+      if (!applyServerVariant || applyServerVariant(layoutId, next.serverAdoption) !== true) throw blocked();
+      captures.delete(layoutId); notify("adopted", layoutId); return true;
+    }
     layout.adminCausalSource = next; layout.templateDraftSyncPending = true;
     if (persist() === false) { layout.adminCausalSource = observed; throw blocked(); }
     captures.delete(layoutId); notify("pending", layoutId); return true;
   };
   const recover = async layoutId => {
-    await resumeResolution(layoutId);
+    const resolved = await resumeResolution(layoutId);
     const layout = getLayout(layoutId), observed = source(layout), initial = clone(getContext(observed.binding));
-    const saved = await plansFor(observed.binding, layoutId).list(); guard(layoutId, layout, initial, observed.binding);
+    const saved = await eligiblePlans(observed, layoutId); guard(layoutId, layout, initial, observed.binding);
     const successor = savedSuccessor(observed, saved);
-    if (!successor) return { state: observed.planId ? "pending" : "idle" };
+    if (!successor) return { state: observed.planId ? "pending" : "idle", ...(resolved ? { resolved: true } : {}) };
     const current = clone(snapshot(layoutId)); current.payload = stripAdminTemplateEditorMetadata(current.payload);
     if (!equal(current, planSnapshot(successor.plan))) throw recoveryRequired();
     const visibility = successor.chain.reduce((value, plan) => plannedVisibility(plan, value), observed.visibility);
@@ -228,8 +239,8 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     let captureError = null;
     if (pending?.layout === layout) await pending.promise.catch(error => { captureError = error; });
     if (getLayout(layoutId) !== layout) throw blocked();
-    await recover(layoutId);
-    if (captureError && !layout.adminCausalSource.planId) throw captureError;
+    const recovered = await recover(layoutId);
+    if (captureError && !layout.adminCausalSource.planId && !recovered.resolved) throw captureError;
   };
   return Object.freeze({ capture, captureCommand, recover, flush, prepareRecovery, hasPendingCapture: layoutId => captures.has(layoutId) });
 }

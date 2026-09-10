@@ -204,6 +204,7 @@ import { createAdminTemplateStopChoice } from "./src/public/admin-template-stop-
 import { createAdminTemplateRecovery } from "./src/public/admin-template-recovery.js";
 import { createAdminTemplateRecoveryDialog } from "./src/ui/admin-template-recovery-dialog.js";
 import { adminTemplateComparisonHtml } from "./src/ui/admin-template-comparison.js";
+import { projectAdminTemplateServerVariant, applyAdminTemplateServerVariant } from "./src/public/admin-template-server-variant.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource, stripAdminTemplateEditorMetadata } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -5154,13 +5155,14 @@ function persistActiveLayoutSelection({ sync = false } = {}) {
   if (sync && syncMeta.dirty) updateSyncUi();
 }
 
-function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state) {
+function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state, { preserveCatalog = false } = {}) {
   applyingLayoutArrangement = true;
   try {
     applyLayoutArrangementToState(targetState, layoutId, {
       migrateContainerOrder,
       normalizeLayoutArrangement,
-      repairContainerMembershipFromItemLinks
+      repairContainerMembershipFromItemLinks,
+      preserveCatalog
     });
   } finally {
     applyingLayoutArrangement = false;
@@ -6227,7 +6229,7 @@ function normalizeRemoteState(payload, { repairCatalog = true } = {}) {
   return normalized;
 }
 
-function normalizePublishedStatePayload(payload) {
+function normalizePublishedStatePayload(payload, { preserveCatalog = false } = {}) {
   if (!payload || typeof payload !== "object") return null;
   const normalized = JSON.parse(JSON.stringify(payload));
   if (!normalized.locations || !normalized.categories || !normalized.containers || !normalized.items || !normalized.layouts) {
@@ -6242,12 +6244,12 @@ function normalizePublishedStatePayload(payload) {
   normalizeContainerFields(normalized);
   normalizeItemFields(normalized);
   repairContainerMembershipFromItemLinks(normalized);
-  normalizeLayoutFields(normalized);
+  normalizeLayoutFields(normalized, { preserveCatalog });
   normalizeItemCategories(normalized);
   migrateContainerOrder(normalized);
-  repairPublishedLayoutArrangement(normalized);
+  if (!preserveCatalog) repairPublishedLayoutArrangement(normalized);
   isolateLinkedLayoutEntities(normalized);
-  applyLayoutArrangement(normalized.activeLayoutId, normalized);
+  applyLayoutArrangement(normalized.activeLayoutId, normalized, { preserveCatalog });
   applyDefaultCollapsedContainers(normalized);
   return normalized;
 }
@@ -10620,6 +10622,7 @@ function adminTemplateRecoveryFor(binding, layoutId) {
 }
 function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId) {
   return createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, enabled: adminTemplateUiEnabled(),
+    projectServer: (server, id) => projectAdminTemplateServerVariant(state.layouts[layoutId], server, id),
     getContext: () => adminTemplateOperationContext(binding, layoutId), getSource: () => state.layouts?.[layoutId]?.adminCausalSource,
     snapshot: () => adminTemplateEditorSnapshot(layoutId), client: adminTemplateClient(binding, layoutId),
     plans: adminTemplatePlansFor(binding, layoutId), recovery: adminTemplateRecoveryFor(binding, layoutId) });
@@ -10664,9 +10667,9 @@ async function prepareAdminTemplateRecovery(layoutId) {
       const describe = value => `«${value.metadata.title}»: вещей ${Object.keys(value.payload.items || {}).length}, сумок ${Object.keys(value.payload.containers || {}).length}`;
       const approved = await askConfirmDialog({ title: "Сверить остановленный черновик", tone: "warning",
         highlightHtml: adminTemplateComparisonHtml(opened.local, opened.server),
-        text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Сохранить местный вариант вместо просмотренного серверного? Обе версии сохранятся на устройстве. Если сервер изменится ещё раз, новое сохранение остановится для сверки.${opened.server.visibility === "public" ? " Шаблон опубликован: эти изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
-        okText: "Сохранить местный вариант", cancelText: "Пока оставить черновик", hideClose: true });
-      assertShown(); if (!approved) return inspect(false); await choice.choose(opened); assertShown();
+        text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Выберите вариант для продолжения. Серверный вариант заменит только текущий редактор; отправки не будет. Обе версии сохранятся на устройстве. Сохранение местного варианта заменит просмотренную серверную версию и остановится при новом конфликте.${opened.server.visibility === "public" ? " Шаблон опубликован: сохранённые местные изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
+        okText: "Сохранить местный вариант", alternateText: "Использовать серверный вариант", cancelText: "Пока оставить черновик", hideClose: true });
+      assertShown(); if (!approved) return inspect(false); await choice.choose(opened, { variant: approved === "alternate" ? "server" : "local" }); assertShown();
     }
     await coordinator.flush(layoutId); assertEditor(); return inspect(false);
   }, stop: async () => {
@@ -10685,18 +10688,29 @@ function adminTemplateSaveCoordinator() {
     },
     snapshot: adminTemplateEditorSnapshot,
     plansFor: adminTemplatePlansFor, recoveryFor: adminTemplateRecoveryFor, resolutionFor: adminTemplateStopChoiceFor,
+    applyServerVariant: (layoutId, { projection, source }) => {
+      const result = applyAdminTemplateServerVariant(state, layoutId, projection, source, {
+        persist: () => persistStateSnapshot(state, { recordAction: false }), applyArrangement: applyLayoutArrangement });
+      render(); return result;
+    },
     persist: () => persistStateSnapshot(state),
     notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
+      : status === "adopted" ? "Серверный вариант открыт. Новые изменения не отправлялись."
       : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),
   });
   return administrativeSaveCoordinator;
 }
 function materializeCausalAdminTemplate(target, prepared) {
   const binding = adminTemplateBinding(target);
-  return target.type === "demo"
+  const before = { items: new Set(Object.keys(state.items || {})), containers: new Set(Object.keys(state.containers || {})) };
+  const layout = target.type === "demo"
     ? importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true })
     : materializeSharedLayoutForAdmin(target.sharedId, { sourceLayout: { id: target.sharedId, name: prepared.metadata.title,
       language: prepared.metadata.language, statePayload: prepared.payload, runtimeSharedTemplate: true } });
+  if (layout) for (const kind of ["items", "containers"]) for (const [id, record] of Object.entries(state[kind] || {})) {
+    if (!before[kind].has(id)) record.publicCatalogLayoutId = layout.id;
+  }
+  return layout;
 }
 async function runCausalAdminTemplateCommand(target, layout, kind) {
   const binding = adminTemplateBinding(target), source = layout?.adminCausalSource;

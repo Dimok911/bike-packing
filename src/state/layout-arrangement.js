@@ -65,7 +65,8 @@ export function createLayoutArrangementFromCurrentState(targetState, rootIds = [
 export function applyLayoutArrangementToState(targetState, layoutId, {
   migrateContainerOrder,
   normalizeLayoutArrangement,
-  repairContainerMembershipFromItemLinks
+  repairContainerMembershipFromItemLinks,
+  preserveCatalog = false
 } = {}) {
   const layout = targetState.layouts?.[layoutId];
   if (!layout) return false;
@@ -90,6 +91,23 @@ export function applyLayoutArrangementToState(targetState, layoutId, {
   });
   const arrangement = normalizeLayoutArrangement(layout, targetState);
   const arrangedContainerIds = new Set(Object.keys(arrangement.containers || {}));
+  const wholeCatalog = preserveCatalog && Object.keys(targetState.layouts || {}).length === 1;
+  // Administrative editors retain an entire server catalog, including trees
+  // outside the selected arrangement. Switching/reopening must not flatten
+  // those trees before a later full save, even when another layout opens first
+  // during startup. Restore only links within the same detached catalog;
+  // placements in either the owner's or active arrangement stay authoritative.
+  const detachedOwner = (id, row, kind) => {
+    const owner = wholeCatalog ? layout : targetState.layouts?.[row.publicCatalogLayoutId];
+    return (wholeCatalog || owner?.adminCausalSource) && !Object.hasOwn(owner.arrangement?.[kind] || {}, id)
+      && !Object.hasOwn(arrangement[kind], id) ? owner.id : null;
+  };
+  const detachedContainers = new Map(Object.entries(targetState.containers || {})
+    .filter(([id, row]) => detachedOwner(id, row, "containers"))
+    .map(([id, row]) => [id, { ownerId: detachedOwner(id, row, "containers"), parentId: row.parentId, childIds: [...(row.childIds || [])], itemIds: [...(row.itemIds || [])], order: [...(row.order || [])] }]));
+  const detachedItems = new Map(Object.entries(targetState.items || {})
+    .filter(([id, row]) => detachedOwner(id, row, "items") && detachedContainers.get(row.containerId)?.ownerId === detachedOwner(id, row, "items"))
+    .map(([id, row]) => [id, row.containerId]));
   Object.values(targetState.items || {}).forEach((item) => {
     item.containerId = "";
   });
@@ -137,6 +155,14 @@ export function applyLayoutArrangementToState(targetState, layoutId, {
       }
     });
   }
+  detachedContainers.forEach((saved, id) => {
+    const container = targetState.containers[id];
+    container.parentId = detachedContainers.get(saved.parentId)?.ownerId === saved.ownerId ? saved.parentId : null;
+    container.childIds = saved.childIds.filter(childId => detachedContainers.get(childId)?.parentId === id && detachedContainers.get(childId)?.ownerId === saved.ownerId);
+    container.itemIds = saved.itemIds.filter(itemId => detachedItems.get(itemId) === id);
+    container.order = saved.order.filter(row => row.type === "container" ? container.childIds.includes(row.id) : row.type === "item" && container.itemIds.includes(row.id));
+  });
+  detachedItems.forEach((containerId, id) => { targetState.items[id].containerId = containerId; });
   targetState.packedItems = { ...(arrangement.packedItems || {}) };
   repairContainerMembershipFromItemLinks(targetState);
   migrateContainerOrder(targetState);

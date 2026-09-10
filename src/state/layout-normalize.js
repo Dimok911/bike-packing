@@ -60,7 +60,7 @@ export function layoutDisplayNameForLanguage(layout, language = "ru") {
   return storedName || (language === "en" ? "Current layout" : DEFAULT_LAYOUT_NAME);
 }
 
-export function normalizeLayoutFields(targetState, { createFallbackLayout = true } = {}) {
+export function normalizeLayoutFields(targetState, { createFallbackLayout = true, preserveCatalog = false } = {}) {
   const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};
   const rootContainerIds = Object.values(containers)
     .filter((container) => container && !container.parentId)
@@ -121,7 +121,13 @@ export function normalizeLayoutFields(targetState, { createFallbackLayout = true
   }
 
   Object.values(targetState.items || {}).forEach((item) => {
-    if (item && typeof item === "object") item.quantity = 1;
+    if (!item || typeof item !== "object") return;
+    const wholeCatalog = preserveCatalog && layoutValues.length === 1;
+    const owner = wholeCatalog ? layoutValues[0] : targetState.layouts[item.publicCatalogLayoutId];
+    // Detached administrative catalog items have no arrangement quantity to
+    // receive this value. Keep it for the next full template save after reload.
+    item.quantity = (wholeCatalog || owner?.adminCausalSource) && !Object.hasOwn(owner.arrangement?.items || {}, item.id)
+      ? normalizeItemQuantity(item.quantity) : 1;
   });
 
   if (!targetState.activeLayoutId || !targetState.layouts[targetState.activeLayoutId]) {

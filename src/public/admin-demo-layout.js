@@ -26,7 +26,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
   setActivePrivateScope,
   switchView
 } = {}) {
-  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language, { preserveCatalog }) || createBlankBikePackingState();
+  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState, { preserveCatalog }), language, { preserveCatalog }) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
   const normalizedLanguage = normalizeUiLanguage(language);

@@ -124,7 +124,18 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     if (!container || containerIdMap.has(containerId)) return;
     if (container.publicCatalogLayoutId !== layoutId) return;
     if (publishedSourceAlreadyExported("container", containers, container, containerId, { cssSafeId })) return;
-    walk(containerId, null);
+    // Catalog enumeration can place a detached child before its parent.
+    // Export that owned tree from its root so the earlier visit cannot freeze
+    // the child as a second root and lose its parent during normalization.
+    let rootId = containerId;
+    const ancestors = new Set([rootId]);
+    for (;;) {
+      const parentId = targetState.containers[rootId]?.parentId;
+      if (!parentId || containerIdMap.has(parentId) || targetState.containers[parentId]?.publicCatalogLayoutId !== layoutId) break;
+      if (ancestors.has(parentId)) throw new Error("В каталоге шаблона обнаружен цикл сумок. Сохранение приостановлено.");
+      ancestors.add(parentId); rootId = parentId;
+    }
+    walk(rootId, null);
   });
   Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
     if (!item || itemIdMap.has(itemId)) return;
@@ -165,7 +176,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     packedItems: {}
   };
   demoLayout.arrangement = createLayoutArrangementFromCurrentState(demoState, demoLayout.rootContainerIds);
-  return normalizePublishedStatePayload(demoState) || demoState;
+  return normalizePublishedStatePayload(demoState, { preserveCatalog: Boolean(layout.adminCausalSource) }) || demoState;
 }
 
 export function cleanPublishedEntityId(type, entity, fallbackId = "", { cssSafeId } = {}) {

@@ -122,8 +122,9 @@ async function openEditor(page) {
   await page.evaluate(() => __adminUiTest.openDemo({ language: "ru", templateId: "public-demo-state-ui" }));
   await page.waitForFunction(() => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource));
 }
-async function editItem(page, name) {
-  const itemId = await page.evaluate(() => Object.values(__adminUiTest.state().items).find(item => item.publicCatalogLayoutId)?.id);
+async function editItem(page, name, currentName = null) {
+  const itemId = await page.evaluate(currentName => Object.values(__adminUiTest.state().items)
+    .find(item => item.publicCatalogLayoutId && (!currentName || item.name === currentName))?.id, currentName);
   expect(itemId).toBeTruthy(); await page.evaluate(id => __adminUiTest.openItem(id), itemId);
   await expect(page.locator("#itemDialog")).toBeVisible(); await page.locator("#itemName").fill(name);
   await submitItem(page);
@@ -456,6 +457,73 @@ for (const shared of [false, true]) for (const mode of ["save", "decline", "choi
       expect(sent.operationId).toBe(saved.id); expect(sent.kind).toBe("template.save"); expect(sent.body.base).toEqual({ stateRevision: 12 });
       expect(state.visibility).toBe("public"); expect(state.cancels).toHaveLength(1);
     }
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const mode of ["adopt", "mirror-quota", "choice-quota", "changed-server"]) {
+  test(`server variant ${shared ? "shared" : "demo"} adoption preserves both drafts without a write (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true, layoutOrder: 17 }); state.blockBusiness = true;
+    await editItem(page, "Местный насос для сверки"); await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+    await dialog.locator("[data-admin-stop]").click(); await page.locator("#confirmOkBtn").click();
+    await expect(dialog).toContainText("Отправка остановлена"); const attempts = state.posts.length;
+    state.blockBusiness = false; state.payload.items.pump.name = "Серверный насос";
+    state.payload.containers.detached = { id: "detached", name: "Сумка вне укладки", parentId: "", childIds: ["detachedPocket"], itemIds: [], order: [{ type: "container", id: "detachedPocket" }] };
+    state.payload.containers.detachedPocket = { id: "detachedPocket", name: "Вложенная сумка вне укладки", parentId: "detached", childIds: [], itemIds: ["outside"], order: [{ type: "item", id: "outside" }] };
+    state.payload.items.outside = { id: "outside", name: "Вещь вне укладки", containerId: "detachedPocket", quantity: 3, weight: 10 };
+    state.payload.layouts["layout-a"].arrangement.packedItems.pump = true;
+    const before = await page.evaluate(() => structuredClone(__adminUiTest.state()));
+    const editorId = Object.values(before.layouts).find(row => row.adminCausalSource).id;
+    expect(Object.values(before.items).filter(row => row.name === "Местный насос для сверки").every(row => row.publicCatalogLayoutId === editorId)).toBe(true);
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith(mode === "choice-quota" ? "bike-packing-admin-stop-choice-v1:" : "bike-packing-prototype-state-v1")) throw new DOMException("Adoption quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    await dialog.locator("[data-admin-compare]").click(); await expect(page.locator("#confirmDialog")).toContainText("Серверный насос");
+    if (mode === "changed-server") { state.revision = 12; state.payload.items.pump.name = "Поздняя серверная правка"; }
+    await page.locator("#confirmAlternateBtn").click(); await expect(dialog.locator("[data-admin-recovery-close]")).toBeEnabled();
+    expect(state.posts).toHaveLength(attempts); expect(state.cancels).toHaveLength(1);
+    if (mode === "choice-quota") {
+      await expect(dialog).toContainText("Adoption quota");
+      expect(await page.evaluate(() => Object.values(__adminUiTest.state().items).some(row => row.name === "Местный насос для сверки"))).toBe(true);
+      expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("bike-packing-admin-stop-choice-v1:")))).toBe(false);
+      return;
+    }
+    if (mode === "mirror-quota") {
+      expect(await page.evaluate(() => Object.values(__adminUiTest.state().items).some(row => row.name === "Местный насос для сверки"))).toBe(true);
+      await page.reload(); await openEditorForTarget(page, shared);
+    } else { await expect(dialog).toContainText("Нет действий, ожидающих отправки"); await dialog.locator("[data-admin-recovery-close]").click(); }
+    await confirmedRevision(page, 7);
+    const adopted = await page.evaluate(() => structuredClone(__adminUiTest.state())), layout = adopted.layouts[editorId];
+    const pump = Object.values(adopted.items).find(row => row.name === "Серверный насос"); expect(pump).toBeTruthy();
+    expect(layout.arrangement.itemQuantities[pump.id]).toBe(2); expect(layout.arrangement.packedItems[pump.id]).toBe(true);
+    expect(layout.layoutOrder).toBe(17); expect(Object.values(adopted.items).some(row => row.name === "Вещь вне укладки")).toBe(true);
+    const detachedTree = value => {
+      const bag = Object.values(value.containers).find(row => row.name === "Сумка вне укладки");
+      const pocket = Object.values(value.containers).find(row => row.name === "Вложенная сумка вне укладки");
+      const item = Object.values(value.items).find(row => row.name === "Вещь вне укладки");
+      expect(bag.childIds).toEqual([pocket.id]); expect(pocket.parentId).toBe(bag.id);
+      expect(pocket.itemIds).toEqual([item.id]); expect(item.containerId).toBe(pocket.id); expect(item.quantity).toBe(3);
+      expect(Object.values(value.layouts)[0].rootContainerIds).not.toContain(bag.id);
+    };
+    detachedTree({ ...adopted, layouts: { [editorId]: layout } });
+    expect(Object.values(adopted.items).some(row => row.name === "Местный насос для сверки")).toBe(false);
+    for (const [id, row] of Object.entries(before.layouts)) if (id !== editorId) expect(adopted.layouts[id]).toEqual(row);
+    const choice = await page.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith("bike-packing-admin-stop-choice-v1:")))).choice);
+    expect(choice.variant).toBe("server"); expect(choice.server.stateRevision).toBe(7);
+    expect(Object.values(choice.local.payload.items).some(row => row.name === "Местный насос для сверки")).toBe(true);
+    await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 7);
+    const reopened = await page.evaluate(() => structuredClone(__adminUiTest.state())); detachedTree({ ...reopened, layouts: { [editorId]: reopened.layouts[editorId] } });
+    expect(await page.evaluate(() => Object.values(__adminUiTest.state().items).find(row => row.name === "Серверный насос")?.id)).toBe(pump.id);
+    expect(state.posts).toHaveLength(attempts);
+    await editItem(page, "Правка после серверного выбора", "Серверный насос");
+    await expect.poll(() => state.posts.length).toBe(attempts + 1); expect(state.posts.at(-1).body.base).toEqual({ stateRevision: 7 });
+    expect(state.posts.at(-1).kind).toBe("template.save"); detachedTree(state.posts.at(-1).body.payload);
+    if (mode !== "changed-server") await confirmedRevision(page, 8);
+    else expect(state.receipts.get(state.posts.at(-1).operationId).operation.state).toBe("rejected");
     expect(state.errors).toEqual([]);
   });
 }
