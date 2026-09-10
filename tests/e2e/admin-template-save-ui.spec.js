@@ -68,7 +68,13 @@ async function fixture(page, context, { published = false, shared = false, hydra
         state.posts.push(input);
         if (!state.receipts.has(id)) {
           const base = intent.body.base.stateRevision ?? state.receipts.get(intent.body.base.operationId)?.result.payload.stateRevision;
-          expect(base).toBe(state.revision); state.revision++;
+          if (base !== state.revision) {
+            const { body, ...identity } = binding;
+            const receipt = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
+              result: { status: 409, payload: { ok: false, code: "template_revision_conflict" } } };
+            state.receipts.set(id, receipt); return route.fulfill({ headers, json: { ok: true, ...receipt } });
+          }
+          state.revision++;
           if (intent.kind === "template.save") state.payload = structuredClone(intent.body.payload);
           if (intent.kind === "template.publication") state.visibility = intent.body.published ? "public" : "private";
           if (intent.kind === "template.archive") { state.visibility = "private"; state.archived = true; }
@@ -219,6 +225,102 @@ for (const kind of ["demo", "shared"]) test(`new admin ${kind} draft keeps its t
   await confirmedRevision(page, 1); expect(state.posts).toHaveLength(1);
   expect(state.posts[0].listId).toBe(source.binding.listId); expect(state.posts[0].kind).toBe("template.create");
   expect(state.errors).toEqual([]);
+});
+
+async function legacyDraftFixture(page, context, shared) {
+  const state = await fixture(page, context, { shared });
+  state.localId = await page.evaluate(() => {
+    const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+    delete layout.adminCausalSource; layout.name = "Старый местный вариант";
+    Object.values(current.items).find(row => row.publicCatalogLayoutId).name = "Местный насос";
+    for (const key of Object.keys(localStorage).filter(key => key.startsWith("bike-packing-prototype-state-v1"))) {
+      const saved = JSON.parse(localStorage.getItem(key));
+      if (saved.layouts?.[layout.id]) localStorage.setItem(key, JSON.stringify(current));
+    }
+    return layout.id;
+  });
+  return state;
+}
+async function beginLegacyComparison(page, shared) {
+  await page.evaluate(shared => { window.__legacyOpenDone = false;
+    void __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" })
+      .then(() => { window.__legacyOpenDone = true; });
+  }, shared);
+}
+for (const shared of [false, true]) for (const outcome of ["confirm", "lost", "cancel", "choice-quota", "plan-quota", "conflict"]) {
+  test(`legacy ${shared ? "shared" : "demo"} comparison retains the explicit choice (${outcome})`, async ({ page, context }) => {
+    const state = await legacyDraftFixture(page, context, shared);
+    await beginLegacyComparison(page, shared); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await expect(page.locator("#confirmDialog")).toContainText("Старый местный вариант");
+    await expect(page.locator("#confirmDialog")).toContainText("Проверяемый шаблон");
+    expect(state.posts).toEqual([]);
+    if (outcome.endsWith("quota")) await page.evaluate(kind => {
+      const prefix = kind === "choice-quota" ? "bike-packing-admin-legacy-choice-v1:" : "bike-packing-admin-save-plans-v1:";
+      const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith(prefix)) throw new DOMException("Quota", "QuotaExceededError"); return set.call(this, key, value);
+      };
+    }, outcome);
+    if (outcome === "lost") state.lose = true;
+    if (outcome === "conflict") state.revision++;
+    await page.locator(outcome === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    await page.waitForFunction(() => __legacyOpenDone);
+    const local = await page.evaluate(id => __adminUiTest.state().layouts[id], state.localId);
+    expect(local.name).toBe("Старый местный вариант");
+    if (outcome === "cancel" || outcome === "choice-quota") {
+      expect(local.adminCausalSource).toBeUndefined(); expect(state.posts).toEqual([]);
+      expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("bike-packing-admin-legacy-choice-v1:")))).toBe(false);
+      return;
+    }
+    const choice = await page.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith("bike-packing-admin-legacy-choice-v1:")))).choice);
+    expect(choice.server.stateRevision).toBe(7); expect(choice.server.payload.items.pump.name).toBe("Насос шаблона");
+    expect(Object.values(choice.local.payload.items).some(row => row.name === "Местный насос")).toBe(true);
+    if (outcome === "plan-quota") expect(state.posts).toEqual([]);
+    if (outcome !== "confirm") {
+      state.lose = false; state.hidden = false;
+      await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+      await beginLegacyComparison(page, shared); await page.waitForFunction(() => __legacyOpenDone);
+      await expect(page.locator("#confirmDialog")).not.toBeVisible();
+    }
+    expect(state.posts).toHaveLength(1); expect(state.posts[0].operationId).toBe(choice.id);
+    expect(state.posts[0].kind).toBe("template.save"); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    if (outcome === "conflict") {
+      expect(state.receipts.get(choice.id).operation.state).toBe("rejected");
+      expect(state.payload.items.pump.name).toBe("Насос шаблона");
+    } else {
+      await confirmedRevision(page, 8); expect(state.visibility).toBe("private");
+      expect(Object.values(state.payload.items).some(row => row.name === "Местный насос")).toBe(true);
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) test(`legacy ${shared ? "shared" : "demo"} draft selected in the real list requires comparison`, async ({ page, context }) => {
+  const state = await legacyDraftFixture(page, context, shared);
+  await page.evaluate(id => {
+    __adminUiTest.state().layouts[id].adminTemplateCopy = true;
+    __adminUiTest.setOrderCatalog({ demo: [], shared: [] });
+  }, state.localId);
+  await page.locator("#layoutSelect").selectOption("template-draft:" + state.localId);
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await expect(page.locator("#confirmDialog")).toContainText("Сверить старый черновик");
+  expect(state.posts).toEqual([]);
+  await page.locator("#confirmOkBtn").click(); await confirmedRevision(page, 8);
+  expect(state.posts).toHaveLength(1); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+  expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) test(`legacy ${shared ? "shared" : "demo"} duplicate drafts cannot choose a local variant implicitly`, async ({ page, context }) => {
+  const state = await legacyDraftFixture(page, context, shared);
+  const before = await page.evaluate(id => {
+    const local = __adminUiTest.state().layouts;
+    local["duplicate-draft"] = { ...structuredClone(local[id]), id: "duplicate-draft", name: "Другой местный вариант" };
+    return structuredClone(local);
+  }, state.localId);
+  await beginLegacyComparison(page, shared); await page.waitForFunction(() => __legacyOpenDone);
+  await expect(page.locator("#confirmDialog")).not.toBeVisible();
+  await expect(page.locator("body")).toContainText("Найдено несколько местных черновиков");
+  expect(await page.evaluate(() => __adminUiTest.state().layouts)).toEqual(before);
+  expect(state.posts).toEqual([]); expect(state.errors).toEqual([]);
 });
 
 async function orderFixture(page, context, shared) {

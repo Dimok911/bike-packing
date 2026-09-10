@@ -199,6 +199,7 @@ import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-plan.js";
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
+import { createAdminTemplateLegacyChoice } from "./src/public/admin-template-legacy-choice.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -4042,7 +4043,8 @@ async function init() {
             return;
           }
         }
-        activateAdminPublishedLayout(layoutId);
+        if (adminTemplateUiEnabled()) await openCausalAdminTemplate(publishedLayoutTarget(layout));
+        else activateAdminPublishedLayout(layoutId);
       } else {
         renderFilters();
       }
@@ -5054,16 +5056,19 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
     if (privateOnly || publicOnly || !canOpenAdminPublishedEdit()) return false;
     const layoutId = templateDraftId;
     if (!isManagedPublicTemplateDraft(state.layouts?.[layoutId])) return false;
+    if (adminTemplateUiEnabled()) return Boolean(await openCausalAdminTemplate(publishedLayoutTarget(state.layouts[layoutId]), { remember: false }));
     activateAdminPublishedLayout(layoutId, { remember: false });
     return true;
   }
   const savedLayout = state.layouts?.[choice];
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminDemo) {
+    if (adminTemplateUiEnabled()) return Boolean(await openCausalAdminTemplate(publishedLayoutTarget(savedLayout), { remember: false }));
     if (savedLayout.adminTemplateCopy) activateAdminPublishedLayout(savedLayout.id, { remember: false });
     else await openAdminDemoLayout({ remember: false, language: savedLayout.adminDemoLanguage || uiLanguage, templateId: savedLayout.adminDemoListId || "" });
     return true;
   }
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminSharedSourceId) {
+    if (adminTemplateUiEnabled()) return Boolean(await openCausalAdminTemplate(publishedLayoutTarget(savedLayout), { remember: false }));
     if (savedLayout.adminTemplateCopy) activateAdminPublishedLayout(savedLayout.id, { remember: false });
     else await openSharedLayoutForAdmin(savedLayout.adminSharedSourceId, { remember: false });
     return true;
@@ -10585,6 +10590,16 @@ async function finishCausalAdminTemplateOrder(work) {
     await work.batch.acknowledge(work.pending.id);
   }
 }
+function adminTemplateEditorSnapshot(layoutId) {
+  return withLayoutArrangementApplied(layoutId, () => {
+    const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
+    const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
+    let payload = exportLayoutAsDemoState(layoutId);
+    if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
+    return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
+      description: String(layout.note || "").trim(), language } };
+  });
+}
 function adminTemplateSaveCoordinator() {
   if (!administrativeSaveCoordinator) administrativeSaveCoordinator = createAdminTemplateSaveFlow({
     enabled: adminTemplateUiEnabled(), getLayout: id => state.layouts?.[id],
@@ -10593,14 +10608,7 @@ function adminTemplateSaveCoordinator() {
         && value.adminCausalSource?.binding?.actorId === binding.actorId);
       return adminTemplateOperationContext(binding, layout?.id || "");
     },
-    snapshot: layoutId => withLayoutArrangementApplied(layoutId, () => {
-      const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
-      const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
-      let payload = exportLayoutAsDemoState(layoutId);
-      if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
-      return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
-        description: String(layout.note || "").trim(), language } };
-    }),
+    snapshot: adminTemplateEditorSnapshot,
     plansFor: (binding, layoutId) => createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(),
       client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) }),
     persist: () => persistStateSnapshot(state),
@@ -10642,14 +10650,40 @@ async function runCausalAdminTemplateCommand(target, layout, kind) {
   if (result.state !== "committed" || !result.applied) throw Error("Подтверждение действия ещё не получено. Исходное действие сохранено для продолжения.");
   return true;
 }
+async function reconcileLegacyAdminTemplate(layout, binding) {
+  const getContext = () => ({ ...adminTemplateOperationContext(binding, layout.id, true),
+    admin: canOpenAdminPublishedEdit() && state.layouts?.[layout.id] === layout && !layout.adminCausalSource });
+  const client = createAdminTemplateClient({ binding, transport: experimentTransport, enabled: adminTemplateUiEnabled(), getContext });
+  const plans = createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client, getContext });
+  const choice = createAdminTemplateLegacyChoice({ binding, layoutId: layout.id, enabled: adminTemplateUiEnabled(),
+    getContext, snapshot: () => adminTemplateEditorSnapshot(layout.id), client, plans });
+  const opened = await choice.open();
+  if (!opened.saved) {
+    const describe = value => `«${value.metadata.title}»: вещей ${Object.keys(value.payload.items || {}).length}, сумок ${Object.keys(value.payload.containers || {}).length}`;
+    const approved = await askConfirmDialog({ title: "Сверить старый черновик", tone: "warning",
+      text: `На устройстве: ${describe(opened.local)}. На сервере: ${describe(opened.server)}. Перенести местный вариант на сервер вместо просмотренного? Если серверный вариант изменится, сохранение остановится для сверки. Обе версии сохранятся на устройстве.${opened.server.visibility === "public" ? " Шаблон опубликован: перенесённые изменения будут видны другим пользователям." : " Шаблон останется личным черновиком администратора."}`,
+      okText: "Перенести местный вариант", cancelText: "Пока оставить черновик", hideClose: true });
+    if (!approved) return false;
+    await choice.choose(opened);
+  }
+  // The choice and its original save plan are durable before attaching a source
+  // or dispatching. If the editor mirror is lost, the same old draft finds them.
+  layout.adminCausalSource = await choice.resume();
+  persistStateSnapshot(state);
+  return true;
+}
 async function openCausalAdminTemplate(target, { remember = true } = {}) {
-  const binding = adminTemplateBinding(target);
   try {
-    const existing = Object.values(state.layouts || {}).find(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
+    const binding = adminTemplateBinding(target);
+    const matching = Object.values(state.layouts || {}).filter(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
       : layout.adminSharedSourceId === target.sharedId);
+    if (matching.length > 1) throw Error("Найдено несколько местных черновиков этого шаблона. Сохранение остановлено для сверки; все варианты сохранены.");
+    const existing = matching[0];
     if (existing) {
-      if (!existing.adminCausalSource || existing.adminCausalSource.binding.actorId !== binding.actorId
-        || existing.adminCausalSource.binding.listId !== binding.listId) throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
+      if (!existing.adminCausalSource && !await reconcileLegacyAdminTemplate(existing, binding)) return null;
+      if (!existing.adminCausalSource || Object.keys(binding).some(key => existing.adminCausalSource.binding?.[key] !== binding[key])) {
+        throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
+      }
       activateAdminPublishedLayout(existing.id, { remember });
       await adminTemplateSaveCoordinator().recover(existing.id);
       if (!existing.adminCausalSource.exists && !existing.adminCausalSource.planId) {
