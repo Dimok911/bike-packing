@@ -105,6 +105,22 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     const candidate = clone(snapshot(layoutId)); candidate.payload = stripAdminTemplateEditorMetadata(candidate.payload);
     const previous = captures.get(layoutId), sameEditor = previous?.layout === layout && equal(previous.binding, observed.binding);
     const base = sameEditor ? previous.nextSource : observed;
+    if (!sameEditor && observed.planId) {
+      // A repeated button press after reload must continue its durable command,
+      // including the original index revisions, rather than append a new UUID.
+      const saved = await plansFor(base.binding, layoutId).list();
+      guard(layoutId, layout, initial, base.binding);
+      const current = clone(snapshot(layoutId)); current.payload = stripAdminTemplateEditorMetadata(current.payload);
+      if (captures.get(layoutId) !== previous || !equal(source(layout), observed) || !equal(current, candidate)) throw blocked();
+      const plan = saved.find(row => row.plan.id === observed.planId)?.plan;
+      if (!plan) throw recoveryRequired();
+      const operation = plan.operations.at(-1);
+      const sameChoice = operation.kind === kind && (kind === "template.metadata" ? equal(operation.body.metadata, metadata)
+        : kind === "template.publication" ? operation.body.published === published : ["template.archive", "template.delete"].includes(kind));
+      if (plan.version === 2 && sameChoice && equal(planSnapshot(plan), candidate)) {
+        return { operationId: plan.id, finalOperationId: operation.id };
+      }
+    }
     if (!base.exists || base.deleted) throw blocked();
     const fields = kind === "template.metadata" ? { metadata: clone(metadata) }
       : kind === "template.publication" ? { published, indexes: published ? [] : base.indexes } : { indexes: base.indexes };
@@ -183,7 +199,8 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     const finalId = plan.operations.at(-1).id, receipt = result.receipts.find(value => value.operation.id === finalId);
     if (!receipt?.result?.payload?.stateRevision) throw blocked();
     layout.adminCausalSource = { ...observed, base: { stateRevision: receipt.result.payload.stateRevision },
-      visibility: receipt.result.payload.visibility || null, deleted: receipt.result.payload.deleted === true, planId: null };
+      visibility: receipt.result.payload.visibility || null, deleted: receipt.result.payload.deleted === true, planId: null,
+      lastConfirmedOperation: { id: receipt.operation.id, kind: receipt.operation.kind } };
     layout.templatePublished = receipt.result.payload.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
     captures.delete(layoutId); persist(); notify("committed", layoutId);

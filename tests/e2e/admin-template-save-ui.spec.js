@@ -70,6 +70,7 @@ async function fixture(page, context, { published = false, shared = false, hydra
           expect(base).toBe(state.revision); state.revision++;
           if (intent.kind === "template.save") state.payload = structuredClone(intent.body.payload);
           if (intent.kind === "template.publication") state.visibility = intent.body.published ? "public" : "private";
+          if (intent.kind === "template.archive") { state.visibility = "private"; state.archived = true; }
           if (intent.kind === "template.metadata") Object.assign(metadata, intent.body.metadata);
           const { body, ...identity } = binding;
           state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "committed" },
@@ -188,6 +189,109 @@ async function renameTemplate(page, name) {
   await page.locator("#layoutEditName").fill(name); await page.locator("#layoutEditName").blur();
   if (test.info().project.name === "mobile-webkit") await page.locator("#saveEditedLayoutBtn").tap();
   else await page.locator("#saveEditedLayoutBtn").click();
+}
+
+for (const shared of [false, true]) for (const outcome of ["confirmed", "retry", "reload"]) {
+  test(`real admin ${shared ? "shared" : "demo"} unpublish button keeps one immutable command (${outcome})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { published: true, shared });
+    state.lose = outcome !== "confirmed";
+    const before = structuredClone(state.payload);
+    await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+    await page.locator("#publishEditedTemplateBtn").click();
+    await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+    await expect.poll(() => state.posts.length).toBe(1);
+    const original = structuredClone(state.posts[0]);
+    expect(original.kind).toBe("template.publication");
+    expect(original.body).toEqual({ version: 1, base: { stateRevision: 7 }, published: false, indexes: [] });
+    if (outcome !== "confirmed") {
+      await expect.poll(() => state.hidden).toBe(true); state.lose = false; state.hidden = false;
+      if (outcome === "reload") {
+        await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 8);
+        await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+      }
+      await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled();
+      await page.locator("#publishEditedTemplateBtn").click();
+    }
+    await expect(page.locator("#layoutEditDialog")).not.toBeVisible(); await confirmedRevision(page, 8);
+    expect(state.posts).toEqual([original]); expect(state.visibility).toBe("private"); expect(state.payload).toEqual(before);
+    expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).some(row => row.templateUnpublishPending))).toBe(false);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+async function openEditorForTarget(page, shared) {
+  if (!shared) return openEditor(page);
+  await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");
+  await page.evaluate(() => __adminUiTest.openPrepared({ type: "shared", sharedId: "ui", language: "ru" }));
+}
+
+test("a corrupted retained receipt cannot finish unpublish from local flags alone", async ({ page, context }) => {
+  const state = await fixture(page, context, { published: true }); state.lose = true;
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await page.locator("#publishEditedTemplateBtn").click(); await page.locator("#confirmOkBtn").click();
+  await expect.poll(() => state.hidden).toBe(true); const original = structuredClone(state.posts[0]);
+  state.lose = false; state.hidden = false;
+  await page.reload(); await openEditor(page); await confirmedRevision(page, 8);
+  await page.evaluate(() => {
+    const source = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource).adminCausalSource;
+    const [key, value] = Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-template-v1:")
+      && JSON.parse(value).intent.id === source.lastConfirmedOperation.id);
+    const row = JSON.parse(value); row.receipt.operation.payloadDigest = "0".repeat(64); localStorage.setItem(key, JSON.stringify(row));
+  });
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await page.locator("#publishEditedTemplateBtn").click();
+  await expect(page.getByText("Шаблон сохранён локально как черновик, но сервер не подтвердил снятие с публикации.", { exact: false })).toBeVisible();
+  await expect(page.locator("#layoutEditDialog")).toBeVisible();
+  expect(state.posts).toEqual([original]);
+  expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).some(row => row.templateUnpublishPending))).toBe(true);
+  expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) for (const outcome of ["confirmed", "retry", "reload"]) {
+  test(`real admin ${shared ? "shared" : "demo"} publish button keeps its save-before-publication plan (${outcome})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared }); state.lose = outcome !== "confirmed";
+    await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+    await page.locator("#publishEditedTemplateBtn").click();
+    await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    const first = structuredClone(state.posts[0]); expect(first.kind).toBe("template.save");
+    if (outcome !== "confirmed") {
+      await expect.poll(() => state.hidden).toBe(true); expect(state.visibility).toBe("private");
+      state.lose = false; state.hidden = false;
+      if (outcome === "reload") { await page.reload(); await openEditorForTarget(page, shared); }
+      else { await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled(); await page.locator("#publishEditedTemplateBtn").click(); }
+    }
+    await confirmedRevision(page, 9); await expect(page.locator("#layoutEditDialog")).not.toBeVisible();
+    expect(state.posts).toHaveLength(2); expect(state.posts[0]).toEqual(first);
+    expect(state.posts[1].kind).toBe("template.publication"); expect(state.posts[1].body.published).toBe(true);
+    expect(state.posts[1].body.base).toEqual({ operationId: first.operationId }); expect(state.visibility).toBe("public");
+    expect(Object.values(state.payload.items).some(item => item.name === "Насос шаблона")).toBe(true);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const lost of [false, true]) {
+  test(`real admin ${shared ? "shared" : "demo"} draft removal archives once${lost ? " across reload" : ""}`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared }); state.lose = lost;
+    const layoutId = await page.evaluate(() => Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource)?.id);
+    const originalPayload = structuredClone(state.payload);
+    const remove = async () => {
+      await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+      await page.locator("#deleteEditedLayoutBtn").click();
+      await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+    };
+    await remove(); await expect.poll(() => state.posts.length).toBe(1);
+    const original = structuredClone(state.posts[0]); expect(original.kind).toBe("template.archive");
+    expect(original.body).toEqual({ version: 1, base: { stateRevision: 7 }, indexes: [] });
+    if (lost) {
+      await expect.poll(() => state.hidden).toBe(true); state.lose = false; state.hidden = false;
+      await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 8);
+      await remove();
+    }
+    await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id]), layoutId)).toBe(false);
+    expect(state.posts).toEqual([original]); expect(state.archived).toBe(true); expect(state.payload).toEqual(originalPayload);
+    expect(state.errors).toEqual([]);
+  });
 }
 
 async function editContainer(page, oldName, newName) {

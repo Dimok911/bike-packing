@@ -140,7 +140,7 @@ import {
 import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
-  const { adminTemplateUiEnabled = () => false } = ctx;
+  const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand } = ctx;
   const runtime = ctx.runtime;
   let itemDialogPhotoPreviewRenderToken = 0;
   let rootContainerDialogPhotoPreviewRenderToken = 0;
@@ -7709,7 +7709,7 @@ async function unpublishEditedTemplate(event) {
   refs.publishEditedTemplateBtn.disabled = true;
   refs.saveEditedLayoutBtn.disabled = true;
   try {
-    await assertAdminApiCompatibility({ force: true });
+    if (!adminTemplateUiEnabled()) await assertAdminApiCompatibility({ force: true });
     updateSyncUi(t("template.unpublishing"));
     const unpublished = await unpublishManagedTemplateFlow({
       layout,
@@ -7747,7 +7747,9 @@ async function unpublishEditedTemplate(event) {
 
 async function unpublishPublishedTemplate(target, sourceLayout = null, { historyAction = "" } = {}) {
   if (target?.type === "shared" && target.sharedId) {
-    const unpublished = await unpublishPublishedSharedTemplate({
+    const unpublished = adminTemplateUiEnabled()
+      ? await runCausalAdminTemplateCommand(target, sourceLayout, historyAction === "delete" ? "template.archive" : "template.publication")
+      : await unpublishPublishedSharedTemplate({
       sharedId: target.sharedId,
       apiFetch,
       historyAction,
@@ -7762,7 +7764,9 @@ async function unpublishPublishedTemplate(target, sourceLayout = null, { history
   if (target?.type !== "demo") return false;
 
   const listId = target.demoListId || sourceLayout?.adminDemoListId || demoPublicListIdForLanguage(target.language || uiLanguage);
-  const unpublished = await unpublishPublishedDemoTemplateRecord({
+  const unpublished = adminTemplateUiEnabled()
+    ? await runCausalAdminTemplateCommand(target, sourceLayout, historyAction === "delete" ? "template.archive" : "template.publication")
+    : await unpublishPublishedDemoTemplateRecord({
     listId,
     apiFetch,
     historyAction,
@@ -7865,7 +7869,9 @@ async function deletePublishedSharedTemplate(sharedId, sourceLayout = null, { pr
   const runtimeLayout = findSharedLayout(sharedId);
   const deletedName = runtimeLayout?.name || sourceLayout?.name || sharedId;
   const deletedLanguage = runtimeLayout?.language || sourceLayout?.language || uiLanguage;
-  const deleted = await deletePublishedSharedTemplateRecord({
+  const deleted = adminTemplateUiEnabled()
+    ? await runCausalAdminTemplateCommand({ type: "shared", sharedId }, sourceLayout, "template.delete")
+    : await deletePublishedSharedTemplateRecord({
     sharedId,
     apiFetch,
     timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
@@ -7892,7 +7898,9 @@ async function deletePublishedSharedTemplate(sharedId, sourceLayout = null, { pr
 
 async function deletePublishedDemoTemplate(target, sourceLayout = null) {
   const listId = target.demoListId || sourceLayout?.adminDemoListId || demoPublicListIdForLanguage(target.language || uiLanguage);
-  const deleted = await deletePublishedDemoTemplateRecord({
+  const deleted = adminTemplateUiEnabled()
+    ? await runCausalAdminTemplateCommand({ ...target, demoListId: listId }, sourceLayout, "template.delete")
+    : await deletePublishedDemoTemplateRecord({
     listId,
     apiFetch,
     fetchCatalog: fetchPublicSharedLayoutCatalog,
@@ -7960,7 +7968,7 @@ async function deleteManagedPublicLayout(layoutId) {
     : null;
   if (shouldDeletePublishedTemplate || shouldArchiveServerDraft) {
     try {
-      await assertAdminApiCompatibility({ force: true });
+      if (!adminTemplateUiEnabled()) await assertAdminApiCompatibility({ force: true });
       updateSyncUi(t("template.removingFromList"));
       const removedFromList = await unpublishPublishedTemplate(target, layout, { historyAction: "delete" });
       if (!removedFromList) {

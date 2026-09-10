@@ -1775,6 +1775,7 @@ const appTailRuntime = {
 const appTailControllerDeps = {
   runtime: appTailRuntime,
   adminTemplateUiEnabled,
+  runCausalAdminTemplateCommand,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
   API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
@@ -10532,6 +10533,32 @@ function materializeCausalAdminTemplate(target, prepared) {
     ? importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true })
     : materializeSharedLayoutForAdmin(target.sharedId, { sourceLayout: { id: target.sharedId, name: prepared.metadata.title,
       language: prepared.metadata.language, statePayload: prepared.payload, runtimeSharedTemplate: true } });
+}
+async function runCausalAdminTemplateCommand(target, layout, kind) {
+  const binding = adminTemplateBinding(target), source = layout?.adminCausalSource;
+  if (!adminTemplateUiEnabled() || !source || state.layouts?.[layout.id] !== layout
+    || !adminTemplateOperationContext(binding, layout.id).admin
+    || Object.keys(binding).some(key => binding[key] !== source.binding?.[key])) {
+    throw Error("Откройте актуальный административный шаблон перед продолжением действия.");
+  }
+  const coordinator = adminTemplateSaveCoordinator();
+  // Finish interrupted UI cleanup only against the validated, retained receipt.
+  // A local visibility flag alone cannot stand in for that confirmation.
+  if (!source.planId && !coordinator.hasPendingCapture(layout.id) && source.lastConfirmedOperation?.kind === kind
+    && (kind !== "template.publication" || source.visibility === "private")) {
+    const saved = await adminTemplateClient(binding, layout.id).read(source.lastConfirmedOperation.id);
+    if (layout.adminCausalSource !== source || coordinator.hasPendingCapture(layout.id)
+      || saved?.intent?.kind !== kind || saved?.receipt?.operation?.state !== "committed"
+      || saved.receipt.result.payload.stateRevision !== source.base.stateRevision
+      || kind === "template.publication" && saved.intent.body.published !== false) {
+      throw Error("Сохранённое подтверждение требует проверки. Действие не отправлено повторно.");
+    }
+    return true;
+  }
+  await coordinator.captureCommand(layout.id, { kind, ...(kind === "template.publication" ? { published: false } : {}) });
+  const result = await coordinator.flush(layout.id);
+  if (result.state !== "committed" || !result.applied) throw Error("Подтверждение действия ещё не получено. Исходное действие сохранено для продолжения.");
+  return true;
 }
 async function openCausalAdminTemplate(target, { remember = true } = {}) {
   const binding = adminTemplateBinding(target);

@@ -139,3 +139,48 @@ test("a command survives pointer loss and a delayed command receipt cannot clear
   assert.equal((await recovered.flush(f.layout.id)).applied, false);
   assert.ok(f.layout.adminCausalSource.planId); assert.equal(f.posts().length, 1);
 });
+
+for (const request of [
+  { kind: "template.publication", published: false }, { kind: "template.archive" }, { kind: "template.delete" },
+  { kind: "template.metadata", metadata: { title: "Retained title", language: "ru" } }
+]) test(`repeating ${request.kind} after reload reuses the original durable command`, async () => {
+  const f = fixture(), first = await f.make().captureCommand(f.layout.id, request);
+  const saved = [...f.values];
+  const reloaded = f.make(), repeated = await reloaded.captureCommand(f.layout.id, structuredClone(request));
+  assert.deepEqual(repeated, first); assert.deepEqual([...f.values], saved);
+  assert.equal((await reloaded.flush(f.layout.id)).applied, true);
+  assert.equal(f.posts().length, 1);
+  assert.equal(JSON.parse(f.posts()[0].options.body).operationId, first.operationId);
+});
+
+test("a new visibility choice after reload follows the prior choice instead of reusing it", async () => {
+  const f = fixture(), first = await f.make().captureCommand(f.layout.id, { kind: "template.publication", published: false });
+  const flow = f.make(), second = await flow.captureCommand(f.layout.id, { kind: "template.publication", published: true });
+  assert.notEqual(second.operationId, first.operationId);
+  const saved = (await f.plans().list()).find(row => row.plan.id === second.operationId);
+  assert.deepEqual(saved.plan.operations[0].body.base, { operationId: first.operationId });
+  assert.equal((await flow.flush(f.layout.id)).applied, true);
+  assert.equal(f.posts().length, 2); assert.equal(f.layout.templatePublished, true);
+});
+
+test("reloaded unpublish keeps the original affected index revisions after the editor projected their removal", async () => {
+  const f = fixture();
+  Object.assign(f.binding, { listId: "public-shared-layout-a", itemKey: "shared-layout:a" });
+  Object.assign(f.context, f.binding); f.layout.adminCausalSource.binding = structuredClone(f.binding);
+  f.layout.adminCausalSource.visibility = "public";
+  const indexes = [{ listId: "public-demo-state-index", base: { stateRevision: 3 } }];
+  f.layout.adminCausalSource.indexes = structuredClone(indexes);
+  const first = await f.make().captureCommand(f.layout.id, { kind: "template.publication", published: false });
+  assert.deepEqual(f.layout.adminCausalSource.indexes, []);
+  const flow = f.make(); assert.deepEqual(await flow.captureCommand(f.layout.id, { kind: "template.publication", published: false }), first);
+  assert.equal((await flow.flush(f.layout.id)).applied, true);
+  assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.indexes, indexes); assert.equal(f.posts().length, 1);
+});
+
+test("changing editor during a reloaded command lookup leaves the original plan untouched", async () => {
+  const f = fixture(); await f.make().captureCommand(f.layout.id, { kind: "template.archive" });
+  const before = [...f.values], source = structuredClone(f.layout.adminCausalSource);
+  const repeated = f.make().captureCommand(f.layout.id, { kind: "template.archive" }); f.context.generation = "another-route";
+  await assert.rejects(repeated); assert.deepEqual([...f.values], before);
+  assert.deepEqual(f.layout.adminCausalSource, source); assert.equal(f.posts().length, 0);
+});
