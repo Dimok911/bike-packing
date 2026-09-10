@@ -60,6 +60,21 @@ jobs:
           DEBUG: "pw:browser"
         run: npm run test:e2e -- --project=${{ matrix.browser }}
 
+      # Preserve failed first attempts even when a retry passes. The next
+      # Playwright invocation replaces these reports and output directories.
+      - name: Preserve browser smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/**/error-context.md
+            test-results/**/trace.zip
+            test-results/**/test-failed-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Disabled owner forms with their parent imports enabled
         env:
           BIKE_PERSONAL_UI_MODES: "photo-edit"
@@ -68,13 +83,15 @@ jobs:
           BIKE_PERSONAL_SERVER_IMPORT: "1"
         run: npm run test:e2e -- tests/e2e/personal-save-ui.spec.js --project=${{ matrix.browser }} --grep '(public|server) (atomic owner photo gate off|pending owner creation gate off)'
 
-      - name: Upload browser report on failure
-        if: failure()
+      - name: Preserve disabled owner form diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.browser }}
+          name: playwright-disabled-owner-${{ matrix.browser }}
           path: |
             playwright-report/
-            test-results/
+            test-results/**/error-context.md
+            test-results/**/trace.zip
+            test-results/**/test-failed-*.png
           if-no-files-found: ignore
           retention-days: 7
