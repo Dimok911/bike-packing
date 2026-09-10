@@ -1,3 +1,4 @@
+import { personalPendingServerUpdateSource } from "./personal-pending-server-update.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
@@ -6,6 +7,7 @@ import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
+import { PERSONAL_SERVER_IMPORT_ENABLED } from "./personal-server-import-source.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
@@ -28,6 +30,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
@@ -45,11 +48,12 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     && (!publicPhotoFormEnabled || !publicEnabled || !formOwnerResultEnabled)) throw blocked();
   if (([3, 4].includes(head?.action.body.ownerResult?.version) || [9, 10].includes(head?.action.body.photoResults?.version))
     && (!importPhotoFormEnabled || !formOwnerResultEnabled)) throw blocked();
-  const pendingImport = operationId => publicEnabled && pendingPublicUpdateEnabled && personalPendingPublicUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
+  const pendingImport = operationId => serverEnabled && personalPendingServerUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
+    || publicEnabled && pendingPublicUpdateEnabled && personalPendingPublicUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
     || guestEnabled && pendingGuestUpdateEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
     || archiveEnabled && pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
   const pendingForm = operationId => pendingFormUpdateEnabled && personalPendingFormUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
-  const form = head?.action.kind === "list.import" && (publicEnabled && [1, 2].includes(head.action.body.publicImport?.version) || guestEnabled && head.action.body.guestImport?.version === 1
+  const form = head?.action.kind === "list.import" && (serverEnabled && [1, 2].includes(head.action.body.serverImport?.version) || publicEnabled && [1, 2].includes(head.action.body.publicImport?.version) || guestEnabled && head.action.body.guestImport?.version === 1
     || archiveEnabled && head.action.body.archiveImport?.version === 2) ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
     : pendingForm(head?.action.operationId) || pendingImport(head?.action.operationId)
       || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })

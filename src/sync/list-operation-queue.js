@@ -1,3 +1,4 @@
+import { personalServerPhotoBodyResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, PERSONAL_SHARE_LINK_CAPABILITY, assertPersonalShareLinkBody, verifyPersonalShareLinkResult } from "./personal-share-link.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, personalPublicPhotoFormCapabilities } from "./personal-public-photo-form-result.js";
@@ -13,6 +14,8 @@ import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, PERSONAL_PENDING_FORM_UPDATE_CAPA
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY, assertPersonalGuestImportHashes, validatePersonalGuestImportResult } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY, assertPersonalPublicImportHashes, validatePersonalPublicImportResult } from "./personal-public-import-protocol.js";
+import { PERSONAL_SERVER_IMPORT_ENABLED, PERSONAL_SERVER_IMPORT_CAPABILITY } from "./personal-server-import-source.js";
+import { assertPersonalServerImportHashes, validatePersonalServerImportResult } from "./personal-server-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY, personalArchivePhotoBodyResultReference } from "./personal-pending-archive-update.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, PERSONAL_ARCHIVE_IMPORT_CAPABILITY, assertPersonalArchiveImportHashes, validatePersonalArchiveImportResult } from "./personal-archive-import-protocol.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
@@ -87,7 +90,8 @@ export function validateListReceipt(data, expected) {
   if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
-  if (expected.kind === "list.import") return Object.hasOwn(expected.body, "publicImport") ? validatePersonalPublicImportResult(result.payload, expected)
+  if (expected.kind === "list.import") return Object.hasOwn(expected.body, "serverImport") ? validatePersonalServerImportResult(result.payload, expected)
+    : Object.hasOwn(expected.body, "publicImport") ? validatePersonalPublicImportResult(result.payload, expected)
     : Object.hasOwn(expected.body, "guestImport") ? validatePersonalGuestImportResult(result.payload, expected)
     : expected.body.archiveImport?.version === 2 ? validatePersonalArchivePhotoResult(result.payload, expected) : validatePersonalArchiveImportResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
@@ -187,6 +191,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  serverImportEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const canWriteImportForm = reference => importPhotoFormEnabled && formOwnerResultEnabled && photoFormEnabled && photoEnabled
@@ -301,6 +306,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry?.confirmed || !(validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
           && op.id === operationId && (op.actorId === undefined || op.actorId === initial.actorId)
           && (op.environment === undefined || op.environment === environment) && (op.listId === undefined || op.listId === listId))) throw paused(operationId);
+        if (Object.hasOwn(body, "serverImport")) {
+          if (route.kind !== "list.import" || !serverImportEnabled || !photoEnabled || body.serverImport?.operationId !== operationId) throw paused(operationId, "Отмена серверной копии ещё не включена.");
+          await assertPersonalServerImportHashes(body); assertCurrent();
+        }
         if (Object.hasOwn(body, "publicImport")) {
           if (route.kind !== "list.import" || !publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== operationId) {
             throw paused(operationId, "Отмена копирования шаблона ещё не включена.");
@@ -325,6 +334,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
         if (Object.hasOwn(body, "publicImport") && (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(operationId,
           "Сервер ещё не поддерживает отмену копирования шаблона.");
+        if (Object.hasOwn(body, "serverImport") && !capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает отмену серверной копии.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
           "Отмена копии дерева с фото ещё не включена. Исходная копия сохранена.");
         if (body.copyPlacement && (!photoCopyPlacementEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY))) throw paused(operationId,
@@ -336,11 +346,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
             && body.guestImport.operationId === operationId && photoEnabled && guestImportEnabled;
           const publicCancellation = route.kind === "list.import" && [1, 2].includes(body.publicImport?.version)
             && body.publicImport.operationId === operationId && photoEnabled && publicImportEnabled;
+          const serverCancellation = route.kind === "list.import" && [1, 2].includes(body.serverImport?.version)
+            && body.serverImport.operationId === operationId && photoEnabled && serverImportEnabled;
           if (Object.hasOwn(body, "guestImport") && !guestCancellation) throw paused(operationId, "Отмена гостевого переноса ещё не включена.");
-          const cancellationOnly = archiveCancellation || guestCancellation || publicCancellation || route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
+          const cancellationOnly = archiveCancellation || guestCancellation || publicCancellation || serverCancellation || route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
             && (body.action === "form" || body.action === "copy-batch" && photoCopyBatchEnabled && photoCopyEnabled);
           if (cancellationOnly) {
-            if (publicCancellation) await assertPersonalPublicImportHashes(body);
+            if (serverCancellation) await assertPersonalServerImportHashes(body);
+            else if (publicCancellation) await assertPersonalPublicImportHashes(body);
             else if (guestCancellation) await assertPersonalGuestImportHashes(body);
             else if (archiveCancellation) await assertPersonalArchivePhotoHashes(body);
             else if (body.action === "copy-batch") personalPhotoCopyBatchManifest(body);
@@ -431,18 +444,19 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if ([8, 11].includes(body.photoResults.version) && (!publicPhotoFormEnabled || !publicImportEnabled
           || body.photoResults.version === 11 && !publicNewOwnerFormEnabled)) throw paused(operationId);
         if ([9, 10].includes(body.photoResults.version) && (!importPhotoFormEnabled || body.photoResults.version === 10 && !importNewOwnerFormEnabled)) throw paused(operationId);
-        const publicCopy = body.photoResults.version === 7, archive = body.photoResults.version === 3, guest = body.photoResults.version === 4, form = [5, 6, 8, 9, 10, 11].includes(body.photoResults.version);
-        if (!photoEnabled || (publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled : form ? !pendingFormUpdateEnabled || !photoFormEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : archive ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
+        const serverCopy = body.photoResults.version === 12, publicCopy = body.photoResults.version === 7, archive = body.photoResults.version === 3, guest = body.photoResults.version === 4, form = [5, 6, 8, 9, 10, 11].includes(body.photoResults.version);
+        if (!photoEnabled || (serverCopy ? !serverImportEnabled : publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled : form ? !pendingFormUpdateEnabled || !photoFormEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : archive ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
           : !pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoFormEnabled)) throw paused(operationId);
         const copy = JSON.parse(JSON.stringify(photoResultPredecessor || {})), copyRoute = listOperationRoute(copy.path, copy.method);
-        const copyBody = JSON.parse(copy.body || "{}"), reference = (publicCopy ? personalPublicPhotoBodyResultReference : form ? personalFormPhotoBodyResultReference : guest ? personalGuestPhotoBodyResultReference : archive ? personalArchivePhotoBodyResultReference : personalPhotoCopyBodyResultReference)(copyBody, copy.operationId, listId);
+        const copyBody = JSON.parse(copy.body || "{}"), reference = (serverCopy ? personalServerPhotoBodyResultReference : publicCopy ? personalPublicPhotoBodyResultReference : form ? personalFormPhotoBodyResultReference : guest ? personalGuestPhotoBodyResultReference : archive ? personalArchivePhotoBodyResultReference : personalPhotoCopyBodyResultReference)(copyBody, copy.operationId, listId);
         if ([9, 10].includes(reference.version) && !canWriteImportForm(copyBody.ownerResult)) throw paused(operationId);
         if (archive) await assertPersonalArchivePhotoHashes(copyBody);
         if (guest) await assertPersonalGuestImportHashes(copyBody);
+        if (serverCopy) await assertPersonalServerImportHashes(copyBody);
         if (publicCopy && copyBody.publicImport?.version === 2 && !publicEntityEnabled) throw paused(operationId);
         if (publicCopy) await assertPersonalPublicImportHashes(copyBody);
         if (reference.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)
-          || copyRoute?.kind !== (archive || guest || publicCopy ? "list.import" : "photos.mutate") || copyRoute.listId !== listId || !validUuid(copy.operationId)
+          || copyRoute?.kind !== (archive || guest || publicCopy || serverCopy ? "list.import" : "photos.mutate") || copyRoute.listId !== listId || !validUuid(copy.operationId)
           || canonicalListOperationJson(body.photoResults) !== canonicalListOperationJson(reference)) throw paused(operationId);
         if (copy.operationId !== parent.operationId) dependencies.push({ operationId: copy.operationId, listId });
         if ([8, 11].includes(reference.version) && !dependencies.some(dep => dep.operationId === copyBody.ownerResult.publicOperationId)) {
@@ -499,7 +513,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
         if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId);
-        if (copyExpected && !capabilities.capabilities?.includes([5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
+        if (copyExpected && !capabilities.capabilities?.includes([5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 12 ? PERSONAL_SERVER_IMPORT_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
         if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) throw paused(operationId);
         if ([6, 8, 9, 10, 11].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) throw paused(operationId);
         if ([8, 11].includes(body.photoResults?.version) && ![PERSONAL_PUBLIC_IMPORT_CAPABILITY, ...personalPublicPhotoFormCapabilities(body.ownerResult || body.photoResults)].every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
@@ -607,7 +621,11 @@ export function createListOperationQueue({ transport, getContext = () => null,
       }
       if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !photoRestoreEnabled) throw paused(requestedId, "Восстановление истории с фото ещё не включено.");
       if (route.kind === "list.import") {
-        if (Object.hasOwn(body, "publicImport")) {
+        if (Object.hasOwn(body, "serverImport")) {
+          if (!serverImportEnabled || !photoEnabled || body.serverImport?.operationId !== requestedId || initial.environment !== environment
+            || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId, "Копирование списка по ссылке ещё не включено или не совпало с сохранённым действием.");
+          await assertPersonalServerImportHashes(body);
+        } else if (Object.hasOwn(body, "publicImport")) {
           if (!publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== requestedId
             || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) {
             throw paused(requestedId, "Копирование шаблона ещё не включено или не совпало с сохранённым действием.");
@@ -650,7 +668,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
-      if (body.photoResults && (!photoEnabled || route.kind !== "list.update" || (body.photoResults.version === 7 ? !pendingPublicUpdateEnabled || !publicImportEnabled : [5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? !pendingFormUpdateEnabled || !photoFormEnabled : body.photoResults.version === 4 ? !pendingGuestUpdateEnabled || !guestImportEnabled : body.photoResults.version === 3
+      if (body.photoResults && (!photoEnabled || route.kind !== "list.update" || (body.photoResults.version === 12 ? !serverImportEnabled : body.photoResults.version === 7 ? !pendingPublicUpdateEnabled || !publicImportEnabled : [5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? !pendingFormUpdateEnabled || !photoFormEnabled : body.photoResults.version === 4 ? !pendingGuestUpdateEnabled || !guestImportEnabled : body.photoResults.version === 3
         ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
         : !pendingPhotoCopyDeletionEnabled || !photoFormEnabled || !photoCopyEnabled
           || body.photoResults.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)))) {
@@ -745,7 +763,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (([3, 4].includes(body.ownerResult?.version) || [9, 10].includes(body.photoResults?.version))
             && !personalImportPhotoFormCapabilities(body.ownerResult || body.photoResults).every(capability => capabilities.capabilities?.includes(capability))) throw paused(requestedId, "Сервер ещё не поддерживает фото до подтверждения переноса или архива.");
-          if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
+          if (route.kind === "list.import" && Object.hasOwn(body, "serverImport")) {
+            if (!capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает копирование списка по ссылке через очередь.");
+          } else if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
             if ((!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(requestedId, "Сервер ещё не поддерживает копирование шаблона через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает гостевой перенос через очередь.");
@@ -766,7 +786,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && body.copyPlacement && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает копирование вещи в сумку с фото. Запрос не отправлен.");
           }
-          if (body.photoResults && !capabilities.capabilities?.includes([5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
+          if (body.photoResults && !capabilities.capabilities?.includes([5, 6, 8, 9, 10, 11].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 12 ? PERSONAL_SERVER_IMPORT_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");
           }
           if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) {

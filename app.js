@@ -1,3 +1,5 @@
+import { createPersonalPendingServerFormSession } from "./src/sync/personal-pending-server-form.js";
+import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate } from "./src/sync/personal-pending-server-update.js";
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-container-form-context.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./src/sync/personal-archive-photo-protocol.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED } from "./src/sync/personal-archive-import-protocol.js";
@@ -757,11 +759,17 @@ import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-protocol.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, personalPublicMissingPreview } from "./src/sync/personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./src/sync/personal-public-import-protocol.js";
+import { PERSONAL_SERVER_IMPORT_ENABLED, personalServerImportSource } from "./src/sync/personal-server-import-source.js";
+import { preparePersonalServerImportSelection, preparePersonalServerEntitySelection } from "./src/sync/personal-server-import-selection.js";
+import { createPersonalServerImportSelectionStore } from "./src/sync/personal-server-import-selection-store.js";
+import { preparePersonalServerImport } from "./src/sync/personal-server-import.js";
+import { personalServerPendingPreparations, recoverPersonalServerImportPreparation, choosePersonalServerPreparation } from "./src/sync/personal-server-import-preparation-recovery.js";
 import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } from "./src/sync/personal-public-import-selection.js";
 import { createPersonalPublicImportSelectionStore, PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
+import { resolvePersonalServerPreparation, personalServerRecoverablePreparations } from "./src/sync/personal-server-preparation-resolution.js";
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
 import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } from "./src/sync/personal-public-preparation-resolution-protocol.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./src/sync/personal-import-photo-form-result.js";
@@ -1278,6 +1286,7 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
     publicSelectionStore: personalPhotoRecoverySource?.store && personalPublicSelectionStore(personalPhotoRecoverySource.store.binding),
+    serverSelectionStore: personalPhotoRecoverySource?.store && personalServerSelectionStore(personalPhotoRecoverySource.store.binding),
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
 let applyingLayoutArrangement = false;
@@ -2416,7 +2425,7 @@ function bindOfflineLayoutSettingsControls() {
 }
 
 function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true } = {}) {
-  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport)
+  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport || record.action.body.serverImport)
     ? clone(nextState) : null;
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
@@ -2551,7 +2560,8 @@ function personalPhotoContainerContextUiEnabled() {
 function personalPendingImportSource(outbox, includeSource = false, { allowDisabledPublic = false } = {}) {
   if (!outbox) return null;
   const options = { records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId, includeSource };
-  return PERSONAL_PENDING_FORM_UPDATE_ENABLED && personalPendingFormUpdateSource(options)
+  return (allowDisabledPublic || PERSONAL_SERVER_IMPORT_ENABLED) && personalPendingServerUpdateSource(options)
+    || PERSONAL_PENDING_FORM_UPDATE_ENABLED && personalPendingFormUpdateSource(options)
     || (allowDisabledPublic || PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED && PERSONAL_PUBLIC_IMPORT_ENABLED) && personalPendingPublicUpdateSource(options)
     || PERSONAL_PENDING_GUEST_UPDATE_ENABLED && PERSONAL_GUEST_IMPORT_ENABLED && personalPendingGuestUpdateSource(options)
     || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource(options)
@@ -2611,7 +2621,7 @@ function personalPhotoFormSession(options) {
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
   const pendingSource = options.pendingImport ? personalPendingImportSource(outbox, true, { allowDisabledPublic: true }) : null;
-  const createSession = options.pendingCreate ? createPersonalPendingImportCreateSession : options.pendingFiles ? createPersonalPendingPhotoFormSession : options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.publicImport ? createPersonalPendingPublicFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.pendingCreate ? createPersonalPendingImportCreateSession : options.pendingFiles ? createPersonalPendingPhotoFormSession : options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.serverImport ? createPersonalPendingServerFormSession : pendingSource?.action.body.publicImport ? createPersonalPendingPublicFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     ...(options.pendingFiles ? { publicEnabled: PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } : {}),
@@ -2629,8 +2639,8 @@ function personalPhotoFormSession(options) {
       } else if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
       else assertPersonalPhotoFormRecord(record);
       const payload = options.pendingImport || options.pendingCreate ? record.action.body.payload : record.photoState.payload;
-      const publicCopyForm = pendingSource?.action.body.publicImport || [2, 5].includes(record.action.body.ownerResult?.version)
-        || [7, 8, 11].includes(record.action.body.photoResults?.version);
+      const publicCopyForm = pendingSource?.action.body.serverImport || pendingSource?.action.body.publicImport || [2, 5].includes(record.action.body.ownerResult?.version)
+        || [7, 8, 11, 12].includes(record.action.body.photoResults?.version);
       if (publicCopyForm) personalPublicCopySnapshot(payload, record.snapshot, record.snapshot.activeLayoutId);
       else personalReconciledSnapshot(payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
@@ -2713,7 +2723,7 @@ function preparePersonalCatalogDeletion(value) {
           && isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
             userDeletion: prepared.intent, listId: currentPackingListId });
         const archive = sameJson(parent?.photoState?.payload || parent?.action.body.payload, currentPayload) && personalPendingImportSource(outbox, true);
-        const archiveDeletion = archive && (archive.action.kind === "photos.mutate" ? isPersonalPendingFormUpdate : archive.action.body.publicImport ? isPersonalPendingPublicUpdate : archive.action.body.guestImport ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: archive, basePayload: currentPayload,
+        const archiveDeletion = archive && (archive.action.kind === "photos.mutate" ? isPersonalPendingFormUpdate : archive.action.body.serverImport ? isPersonalPendingServerUpdate : archive.action.body.publicImport ? isPersonalPendingPublicUpdate : archive.action.body.guestImport ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: archive, basePayload: currentPayload,
           payload: cloneStateForSync(prepared.snapshot, { forSync: true }), userDeletion: prepared.intent, listId: currentPackingListId });
         if (!copyDeletion && !formDeletion && !archiveDeletion) {
           throw Error("Удаление требует подтверждённых фото либо точно сохранённой формы этого владельца. Исходные данные сохранены.");
@@ -4487,7 +4497,7 @@ function loadState({ createFallbackLayout = true } = {}) {
       installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
       return fallback;
     }
-    if (recovered && outbox.list().some(record => record.action.body.publicImport)) parsed = personalPublicImportSnapshot(recovered, parsed);
+    if (recovered && outbox.list().some(record => record.action.body.publicImport || record.action.body.serverImport)) parsed = personalPublicImportSnapshot(recovered, parsed);
     installRuntimeActiveLayoutId(parsed, parsed.activeLayoutId);
     persistStateSnapshot(parsed, { recordAction: false });
     return parsed;
@@ -6216,7 +6226,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
   }
-  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport)
+  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport || record.action.body.serverImport)
     ? clone(nextState) : null;
   saveRecoverySnapshot("before-replace", state);
   captureActiveLayoutArrangement();
@@ -8879,6 +8889,9 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       const publicEntries = await personalPublicSelectionStore(binding).entries();
       const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
       assignPersonalPublicPreparations(source, publicEntries);
+      const serverEntries = await personalServerSelectionStore(binding).entries();
+      assignPersonalServerPreparations(source, serverEntries);
+      if (source.serverPreparations.length) throw Error("Prepared server copy needs explicit recovery");
       if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
       const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
       if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
@@ -8920,7 +8933,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
 function personalPhotoRecoveryOptions() {
   const source = personalPhotoRecoverySource;
   if (!source?.outbox || !currentUser || isForcedOffline()) throw Error("Для проверки нужен вход в тот же аккаунт и доступ к серверу. Файлы сохранены.");
-  const publicCopy = source.publicPreparation || source.outbox.list().some(record => record.action.body.publicImport);
+  const publicCopy = source.publicPreparation || source.serverPreparation || source.outbox.list().some(record => record.action.body.publicImport || record.action.body.serverImport);
   return { outbox: source.outbox, store: source.store, transport: experimentTransport,
     getContext: personalSaveContext, makeSnapshot: publicCopy
       ? (payload, previous) => personalPublicCopySnapshot(payload, previous, previous.activeLayoutId) : personalReconciledSnapshot,
@@ -8944,6 +8957,8 @@ function personalPhotoRecoveryOptions() {
 
 async function checkRetainedPersonalPhotoResult() {
   const source = personalPhotoRecoverySource;
+  if (source?.outbox && personalServerPendingPreparations(await personalServerSelectionStore(source.outbox.binding).entries(), source.outbox).length)
+    throw Error("Сначала продолжите сохранённую копию списка по ссылке. Её отправка ещё не подтверждена.");
   if (source?.outbox && personalPublicPendingPreparations(await personalPublicSelectionStore(source.outbox.binding).entries(), source.outbox).length)
     throw Error("Сначала выберите или продолжите сохранённую копию шаблона. Её отправка ещё не подтверждена.");
   const result = await checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
@@ -8967,13 +8982,16 @@ async function cancelRetainedPersonalPhoto() {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
     const imported = original?.action?.kind === "list.import", guest = imported && original.action.body.guestImport?.version === 1;
     const publicCopy = imported && [1, 2].includes(original.action.body.publicImport?.version);
-    const archive = imported && !guest && !publicCopy;
+    const serverCopy = imported && [1, 2].includes(original.action.body.serverImport?.version);
+    const archive = imported && !guest && !publicCopy && !serverCopy;
     const fileless = (imported || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
-    const photoCount = imported ? (publicCopy ? original.action.body.publicImport : guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
+    const photoCount = imported ? (serverCopy ? original.action.body.serverImport : publicCopy ? original.action.body.publicImport : guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: publicCopy ? localText("Template was not copied", "Шаблон не скопирован") : guest ? localText("Guest work was not imported", "Гостевая работа не перенесена") : archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
+      title: serverCopy ? localText("Shared list was not copied", "Список по ссылке не скопирован") : publicCopy ? localText("Template was not copied", "Шаблон не скопирован") : guest ? localText("Guest work was not imported", "Гостевая работа не перенесена") : archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
         : photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
-      text: publicCopy ? localText(
+      text: serverCopy ? localText(
+        `The server did not apply this shared copy. Keep its current version? Rejected actions: ${discardedOperationCount}. The selected source and all files remain available for recovery.`,
+        `Сервер не применил копию списка по ссылке. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Выбранный источник и все фотографии останутся для восстановления.`) : publicCopy ? localText(
         `The server did not apply this template copy. Keep its current version? Rejected actions: ${discardedOperationCount}. The chosen source and all files remain available for recovery.`,
         `Сервер не применил копию шаблона. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Выбранный источник и все фотографии останутся для восстановления.`) : guest ? localText(
         `The server did not apply this guest import. Keep its current version? Rejected actions: ${discardedOperationCount}. The original guest work and all files remain available for recovery.`,
@@ -9027,13 +9045,15 @@ async function recoverStalePersonalDraft() {
 function retainedPersonalPublicPreparationChoices() {
   try {
     const source = personalPhotoRecoverySource;
-    if (!PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED || !personalPhotoFormUiEnabled()
+    const serverCopy = Boolean(source?.serverPreparations?.length), entries = serverCopy ? source.serverPreparations : source?.publicPreparations;
+    if (!(serverCopy ? PERSONAL_SERVER_IMPORT_ENABLED && !source.publicPreparations?.length
+        : PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED && PERSONAL_PUBLIC_IMPORT_ENABLED) || !personalPhotoFormUiEnabled()
       || !source?.outbox || source.outbox.hasPending() || source.store.binding.scopeKey !== localStorageScopeKey
-      || source.store.binding.listId !== currentPackingListId || source.publicPreparations?.length < 2
-      || !source.publicPreparations || source.publicPreparations.some(entry => entry.action || entry.completion || entry.retainedAlternative
-        || entry.selection.version === 2 && !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED)
+      || source.store.binding.listId !== currentPackingListId || entries?.length < 2
+      || !entries || entries.some(entry => entry.action || entry.completion || entry.retainedAlternative
+        || !serverCopy && entry.selection.version === 2 && !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED)
       || source.inventory?.entries.some(entry => entry.state !== "settled-retained")) return [];
-    return source.publicPreparations.map(({ selection }, index) => ({ operationId: selection.operationId,
+    return entries.map(({ selection }, index) => ({ operationId: selection.operationId,
       label: `${index + 1}. ${selection.layoutTargets?.map(value => value.name).filter(Boolean).join(", ")
         || selection.copy?.entries?.map(value => selection.sourcePayload[value.entityType === "item" ? "items" : "containers"]?.[value.sourceId]?.name).filter(Boolean).join(", ")
         || localText("Template copy", "Копия шаблона")} · ${selection.photoTargets.length} ${localText("photos", "фото")}` }));
@@ -9046,19 +9066,28 @@ function assignPersonalPublicPreparations(source, entries) {
   source.publicPreparation = !source.outbox.hasPending() && pending.length === 1 && source.publicPreparations.length === 1 ? pending[0] : null;
 }
 
+function assignPersonalServerPreparations(source, entries) {
+  const pending = personalServerPendingPreparations(entries, source.outbox);
+  source.serverPreparations = personalServerRecoverablePreparations(entries, source.outbox, source.inventory);
+  source.serverPreparation = !source.outbox.hasPending() && pending.length === 1 && source.serverPreparations.length === 1 ? pending[0] : null;
+}
+
 function retainedPersonalPublicPreparations() {
   try {
     const source = personalPhotoRecoverySource;
     if (!source?.outbox || source.outbox.hasPending() || !currentUser || isForcedOffline()
       || Object.keys(source.outbox.binding).some(key => personalSaveContext()[key] !== source.outbox.binding[key])) return [];
-    return (source.publicPreparations || []).map(({ selection, action, completion }, index) => ({ operationId: selection.operationId,
+    const entries = [...(source.publicPreparations || []).map(entry => ({ ...entry, serverCopy: false })),
+      ...(source.serverPreparations || []).map(entry => ({ ...entry, serverCopy: true }))];
+    if (new Set(entries.map(entry => entry.selection.operationId)).size !== entries.length) return [];
+    return entries.map(({ selection, action, completion, serverCopy }, index) => ({ operationId: selection.operationId, serverCopy,
       label: `${index + 1}. ${selection.layoutTargets?.map(value => value.name).filter(Boolean).join(", ")
         || selection.copy?.entries?.map(value => selection.sourcePayload[value.entityType === "item" ? "items" : "containers"]?.[value.sourceId]?.name).filter(Boolean).join(", ")
         || localText("Template copy", "Копия шаблона")} · ${selection.photoTargets.length} ${localText("photos", "фото")}`,
       state: completion?.operation.state === "committed" ? localText("Copy accepted; files need review", "Копия принята; файлы требуют проверки")
         : completion ? localText("Action rejected; files need review", "Действие отклонено; файлы требуют проверки")
         : action ? localText("Action prepared; result needs review", "Действие подготовлено; результат требует проверки") : localText("Selection retained; action not prepared", "Выбор сохранён; действие ещё не подготовлено"),
-      canStop: PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED && PERSONAL_PUBLIC_IMPORT_ENABLED
+      canStop: serverCopy ? PERSONAL_SERVER_IMPORT_ENABLED : PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED && PERSONAL_PUBLIC_IMPORT_ENABLED
         && (selection.version === 1 || PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) }));
   } catch { return []; }
 }
@@ -9067,10 +9096,10 @@ async function resolveRetainedPersonalPublicPreparation(operationId, cancel) {
   const option = retainedPersonalPublicPreparations().find(value => value.operationId === operationId);
   if (!option || cancel && !option.canStop) throw Error("Решение для этой подготовки недоступно. Исходные данные сохранены.");
   const source = personalPhotoRecoverySource, getContext = personalSaveContext;
-  const entry = source.publicPreparations.find(value => value.selection.operationId === operationId);
+  const entry = (option.serverCopy ? source.serverPreparations : source.publicPreparations).find(value => value.selection.operationId === operationId);
   try {
-    const result = await resolvePersonalPublicPreparation({ entry, cancel, outbox: source.outbox, store: source.store,
-      selectionStore: personalPublicSelectionStore(source.outbox.binding), getContext,
+    const result = await (option.serverCopy ? resolvePersonalServerPreparation : resolvePersonalPublicPreparation)({ entry, cancel, outbox: source.outbox, store: source.store,
+      selectionStore: (option.serverCopy ? personalServerSelectionStore : personalPublicSelectionStore)(source.outbox.binding), getContext,
       queue: createListOperationQueue({ transport: experimentTransport, getContext, readOnly: !cancel }),
       staging: createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext }) });
     return result;
@@ -9078,6 +9107,7 @@ async function resolveRetainedPersonalPublicPreparation(operationId, cancel) {
     if (source === personalPhotoRecoverySource && Object.keys(source.outbox.binding).every(key => getContext()[key] === source.outbox.binding[key])) {
       source.inventory = await inspectPersonalPhotoRecovery({ outbox: source.outbox, store: source.store, getContext });
       assignPersonalPublicPreparations(source, await personalPublicSelectionStore(source.outbox.binding).entries());
+      assignPersonalServerPreparations(source, await personalServerSelectionStore(source.outbox.binding).entries());
     }
   }
 }
@@ -9085,17 +9115,24 @@ async function resolveRetainedPersonalPublicPreparation(operationId, cancel) {
 async function chooseRetainedPersonalPublicPreparation(operationId) {
   if (!retainedPersonalPublicPreparationChoices().some(value => value.operationId === operationId)) throw Error("Выбор изменился. Данные сохранены; перезагрузите страницу для проверки.");
   const source = personalPhotoRecoverySource;
-  const entry = await choosePersonalPublicPreparation({ entries: source.publicPreparations, operationId,
-    selectionStore: personalPublicSelectionStore(source.outbox.binding), outbox: source.outbox, store: source.store, getContext: personalSaveContext });
+  const serverCopy = Boolean(source.serverPreparations?.length);
+  const entry = await (serverCopy ? choosePersonalServerPreparation : choosePersonalPublicPreparation)({ entries: serverCopy ? source.serverPreparations : source.publicPreparations, operationId,
+    selectionStore: (serverCopy ? personalServerSelectionStore : personalPublicSelectionStore)(source.outbox.binding), outbox: source.outbox, store: source.store, getContext: personalSaveContext });
   if (source !== personalPhotoRecoverySource) throw Error("Редактор изменился. Сохранённый выбор будет проверен после перезагрузки.");
-  source.publicPreparation = entry; source.publicPreparations = [entry];
+  if (serverCopy) { source.serverPreparation = entry; source.serverPreparations = [entry]; }
+  else { source.publicPreparation = entry; source.publicPreparations = [entry]; }
   return { selected: true, alternativesRetained: true };
 }
 
 function canResumeRetainedPersonalPhotoForm() {
   if (!personalPhotoFormUiEnabled() || isForcedOffline()) return false;
   try {
+    if (PERSONAL_SERVER_IMPORT_ENABLED && personalPhotoRecoverySource?.serverPreparation
+      && !personalPhotoRecoverySource.publicPreparations?.length
+      && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
+      && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     if (PERSONAL_PUBLIC_IMPORT_ENABLED && personalPhotoRecoverySource?.publicPreparation
+      && !personalPhotoRecoverySource.serverPreparations?.length
       && (personalPhotoRecoverySource.publicPreparation.selection.version === 1 || PERSONAL_PUBLIC_ENTITY_COPY_ENABLED)
       && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
       && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
@@ -9106,7 +9143,8 @@ function canResumeRetainedPersonalPhotoForm() {
     const publicVersion = outbox && (personalPendingImportSource(outbox, true) || outbox.recover())?.action.body.publicImport?.version;
     if (publicVersion === 2 && !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) return false;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && (PERSONAL_PUBLIC_IMPORT_ENABLED && [1, 2].includes(outbox.recover()?.action.body.publicImport?.version)
+      && outbox.hasPending() && (PERSONAL_SERVER_IMPORT_ENABLED && [1, 2].includes(outbox.recover()?.action.body.serverImport?.version)
+        || PERSONAL_PUBLIC_IMPORT_ENABLED && [1, 2].includes(outbox.recover()?.action.body.publicImport?.version)
         || PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
         || PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
         || personalPendingImportSource(outbox)
@@ -9126,7 +9164,14 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
     throw Error("Продолжение этой формы недоступно. Поля, файлы и прежние номера сохранены.");
   }
   const getContext = personalSaveContext;
+  if (recovery && source.serverPreparation) {
+    if (source.publicPreparations?.length) throw Error("Есть несколько сохранённых подготовок. Исходные выборы требуют проверки.");
+    await recoverPersonalServerImportPreparation({ entry: source.serverPreparation, selectionStore: personalServerSelectionStore(source.outbox.binding),
+      outbox: source.outbox, store: source.store, getContext, makeSnapshot: personalPublicCopySnapshot, loadFile: loadPersonalServerCopyFile });
+    source.serverPreparation = null;
+  }
   if (recovery && source.publicPreparation) {
+    if (source.serverPreparations?.length) throw Error("Есть несколько сохранённых подготовок. Исходные выборы требуют проверки.");
     await recoverPersonalPublicImportPreparation({ entry: source.publicPreparation, selectionStore: personalPublicSelectionStore(source.outbox.binding),
       outbox: source.outbox, store: source.store, getContext, makeSnapshot: personalPublicCopySnapshot, loadFile: loadPersonalPublicCopyFile });
     source.publicPreparation = null;
@@ -9140,10 +9185,11 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   const archive = source.outbox.recover()?.action.kind === "list.import" || personalPendingImportSource(source.outbox)?.action.kind === "list.import";
   const guest = (personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.guestImport?.version === 1;
   const publicCopy = [1, 2].includes((personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.publicImport?.version);
-  updateSyncUi(publicCopy ? "Сохраняю личную копию шаблона и проверяю фотографии…" : guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
+  const serverCopy = [1, 2].includes((personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.serverImport?.version);
+  updateSyncUi(serverCopy ? "Сохраняю копию списка по ссылке и проверяю фотографии…" : publicCopy ? "Сохраняю личную копию шаблона и проверяю фотографии…" : guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,
-    ...(publicCopy ? { makeSnapshot: (payload, previous) => personalPublicCopySnapshot(payload, previous, previous.activeLayoutId) } : {}),
+    ...(publicCopy || serverCopy ? { makeSnapshot: (payload, previous) => personalPublicCopySnapshot(payload, previous, previous.activeLayoutId) } : {}),
     beforeAdopted: async () => { await completePersonalGuestImportSelections(source); await completePersonalPublicImportSelections(source); },
     onAdopted(record) {
       if (recovery) return; // Journal is complete; the blocked editor reloads explicitly.
@@ -9165,7 +9211,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
       personalPhotoFormLiveSource = null;
       personalPhotoRecoverySource = null;
       renderPreservingPackingScroll(); updateSyncUi();
-      if (notify) showToast(publicCopy ? "Личная копия шаблона и фотографии сохранены в аккаунте." : guest ? "Гостевая работа и фотографии сохранены в аккаунте." : archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
+      if (notify) showToast(serverCopy ? "Копия списка по ссылке и фотографии сохранены в аккаунте." : publicCopy ? "Личная копия шаблона и фотографии сохранены в аккаунте." : guest ? "Гостевая работа и фотографии сохранены в аккаунте." : archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
     }
   });
   return recovery ? { ...result, verified: true, reloadRequired: true } : result;
@@ -9470,6 +9516,30 @@ function personalPublicSelectionStore(binding) {
   return createPersonalPublicImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
 }
 
+function personalServerSelectionStore(binding) {
+  return createPersonalServerImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
+}
+
+async function loadPersonalServerCopyFile({ photo }) {
+  const read = async url => {
+    if (!url) throw Error("Не найден выбранный файл фотографии по ссылке.");
+    const response = await transportPhotoFetch(url, { credentials: "include", cache: "no-store" });
+    if (!response.ok) throw Error("Выбранная фотография по ссылке недоступна.");
+    return response.blob();
+  };
+  const file = await read(photo.url), thumb = await read(photo.thumbUrl);
+  if (!photo.fileName) throw Error("Не подтверждено имя исходной фотографии.");
+  return { file, thumb, fileName: photo.fileName };
+}
+
+async function retainPersonalServerPreparationForRecovery(source) {
+  try {
+    source.outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
+    source.inventory = await inspectPersonalPhotoRecovery({ outbox: source.outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+    assignPersonalServerPreparations(source, await personalServerSelectionStore(source.outbox.binding).entries());
+  } catch { /* Original failure and partial files remain available for export. */ }
+}
+
 async function loadPersonalPublicCopyFile({ photo }) {
   if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
   const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
@@ -9493,8 +9563,8 @@ async function completePersonalPublicImportSelections(source) {
   if (!source?.outbox || source.outbox.hasPending()) return;
   const outbox = source.outbox, boundary = outbox.confirmedBoundary();
   if (!boundary) return;
-  const journal = personalPublicSelectionStore(outbox.binding), references = outbox.photoRecoveryReferences();
-  for (const entry of await journal.entries()) {
+  const references = outbox.photoRecoveryReferences();
+  for (const journal of [personalPublicSelectionStore(outbox.binding), personalServerSelectionStore(outbox.binding)]) for (const entry of await journal.entries()) {
     if (!entry.action || entry.completion) continue;
     const proof = references.photoReceipts.find(proof => proof.operation.id === entry.selection.operationId);
     if (!proof || proof.operation.state === "committed" && boundary.stateRevision < proof.stateRevision) continue;
@@ -9510,7 +9580,8 @@ function personalPublicCopySnapshot(payload, previous, activeLayoutId) {
 }
 
 function personalPublicSourceTarget(layout) {
-  if (!layout || layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
+  if (!layout) throw Error("Не найден выбранный источник копирования.");
+  if (layout.linkedSharedList) return { serverListId: layout.listId, requestedLayoutId: layout.requestedLayoutId };
   // Every demo shares the same display-layout ID. Freeze the actual selected
   // catalog entry before loading the private editor or awaiting any response.
   const demoEntry = layout.id === DEMO_SHARED_LAYOUT_ID
@@ -9524,33 +9595,46 @@ function personalPublicSourceTarget(layout) {
   return { demoTarget, sourceLanguage, itemKey: demoTarget?.itemKey || sharedLayoutItemKey(layout.id, sourceLanguage) };
 }
 
+async function readPersonalRemoteCopySource(target) {
+  target = clone(target);
+  if (target.serverListId) {
+    const record = await fetchSharedListLinkRecord(target.serverListId), source = personalServerImportSource(record.serverCopySource);
+    const sourcePayload = record.payload, sourceLayout = sourcePayload?.layouts?.[target.requestedLayoutId];
+    if (source.listId !== target.serverListId || !sourceLayout || sourceLayout.id !== target.requestedLayoutId) throw Error("Выбранная укладка по ссылке недоступна. Копирование остановлено.");
+    return { sourcePayload: clone(sourcePayload), sourceLayout: clone(sourceLayout), source };
+  }
+  const loaded = await apiFetch(publicTemplatePayloadPath(target.itemKey), { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true });
+  const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId] || Object.values(sourcePayload?.layouts || {})[0];
+  if (!sourceLayout || loaded.ok !== true || !loaded.publicTemplatePayload || target.demoTarget && loaded.listId !== target.demoTarget.listId
+    || loaded.record?.language && loaded.record.language !== target.sourceLanguage) throw Error("Не удалось прочитать полную выбранную версию шаблона.");
+  return { sourcePayload, sourceLayout, source: { kind: "public-template", itemKey: target.itemKey, listId: loaded.listId,
+    stateRevision: loaded.stateRevision, language: target.sourceLanguage } };
+}
+
 let personalPublicPickerSource = null, personalPublicPickerGeneration = 0;
 async function preparePersonalPublicPickerSource(viewLayoutId, entityType, sourceId, includeContents = false) {
   personalPublicPickerSource = null; const generation = ++personalPublicPickerGeneration;
   if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return;
-  if (!PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error("Копирование отдельных записей шаблона через очередь ещё не включено.");
   personalSaveRecovery.assertRunning();
   if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
   const actorId = String(currentUser.id), layout = findSharedLayout(viewLayoutId), target = personalPublicSourceTarget(layout);
-  const loaded = await apiFetch(publicTemplatePayloadPath(target.itemKey), { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true });
+  if (target.serverListId ? !PERSONAL_SERVER_IMPORT_ENABLED : !PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error(target.serverListId ? "Копирование списка по ссылке через очередь ещё не включено." : "Копирование отдельных записей шаблона через очередь ещё не включено.");
+  const { sourcePayload, sourceLayout, source } = await readPersonalRemoteCopySource(target);
   if (generation !== personalPublicPickerGeneration || String(currentUser?.id) !== actorId || activeReadOnlyLayoutId() !== viewLayoutId
     || !sameJson(target, personalPublicSourceTarget(findSharedLayout(viewLayoutId)))) throw Error("Выбранный шаблон или аккаунт изменился. Копирование остановлено.");
-  const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId] || Object.values(sourcePayload?.layouts || {})[0];
   const owner = sourcePayload?.[entityType === "item" ? "items" : "containers"]?.[sourceId];
-  if (!sourceLayout || owner?.id !== sourceId || loaded.ok !== true || !loaded.publicTemplatePayload
-    || target.demoTarget && loaded.listId !== target.demoTarget.listId || loaded.record?.language && loaded.record.language !== target.sourceLanguage) {
-    throw Error("Не удалось прочитать выбранную запись из полной версии шаблона.");
-  }
+  if (owner?.id !== sourceId) throw Error("Выбранная запись отсутствует в исходной версии.");
   personalPublicPickerSource = clone({ actorId, viewLayoutId, entityType, sourceId, includeContents, sourcePayload, sourceLayoutId: sourceLayout.id,
-    sourceName: owner.name || "", source: { kind: "public-template", itemKey: target.itemKey, listId: loaded.listId,
-      stateRevision: loaded.stateRevision, language: target.sourceLanguage } });
+    sourceName: owner.name || "", source });
   return { sourceIsNestedContainer: entityType === "container" && Boolean(sourceLayout.arrangement
     ? sourceLayout.arrangement.containers?.[sourceId]?.parentId : owner.parentId) };
 }
 
 async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId, targetLayoutId, { includeContents = false, targetIndex = null, catalog = false } = {}) {
   if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit() || isAdminEditablePublishedLayout(targetLayoutId)) return null;
-  if (!PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error("Копирование отдельных записей шаблона через очередь ещё не включено.");
+  const serverCopy = personalPublicPickerSource?.source?.kind === "shared-link";
+  if (serverCopy ? !PERSONAL_SERVER_IMPORT_ENABLED : !PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error(serverCopy ? "Копирование списка по ссылке через очередь ещё не включено." : "Копирование отдельных записей шаблона через очередь ещё не включено.");
+  const prepareSelection = serverCopy ? preparePersonalServerEntitySelection : preparePersonalPublicEntitySelection;
   personalSaveRecovery.assertRunning();
   const chosen = personalPublicPickerSource && clone(personalPublicPickerSource);
   if (!chosen || chosen.actorId !== String(currentUser.id) || chosen.entityType !== entityType || chosen.sourceId !== sourceId
@@ -9568,12 +9652,12 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
   const missingPreview = entityType === "container" && includeContents ? personalPublicMissingPreview({ currentPayload: selectionInput.basePayload,
     sourcePayload: chosen.sourcePayload, sourceLayoutId: chosen.sourceLayoutId, sourceId, targetLayoutId }) : null;
   let independentSelection, missingSelection, independentFailure, missingFailure;
-  try { independentSelection = preparePersonalPublicEntitySelection({ ...selectionInput,
+  try { independentSelection = prepareSelection({ ...selectionInput,
     copy: { version: catalog ? 3 : 1, mode: catalog ? "catalog" : "independent", sourceLayoutId: chosen.sourceLayoutId,
       entries: [{ entityType, sourceId, includeContents }], destination: { layoutId: targetLayoutId, containerId: targetContainerId || "", index: targetIndex } } }); }
   catch (error) { independentFailure = error; }
   if (missingPreview?.canCopyMissingItems) {
-    try { missingSelection = preparePersonalPublicEntitySelection({ ...selectionInput, copy: missingPreview.copy }); }
+    try { missingSelection = prepareSelection({ ...selectionInput, copy: missingPreview.copy }); }
     catch (error) { missingFailure = error; }
   }
   if (!independentSelection && !missingSelection) throw independentFailure || missingFailure;
@@ -9593,9 +9677,9 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
   personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
   let commit;
   try {
-    commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
+    commit = await (serverCopy ? preparePersonalServerImport : preparePersonalPublicImport)({ selection, selectionStore: (serverCopy ? personalServerSelectionStore : personalPublicSelectionStore)(outbox.binding), outbox, store: source.store,
       getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
-      loadFile: loadPersonalPublicCopyFile,
+      loadFile: serverCopy ? loadPersonalServerCopyFile : loadPersonalPublicCopyFile,
       onCaptured(saved) {
         personalSaveRecovery.assertRunning(); replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
         personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source; personalPublicPickerSource = null;
@@ -9608,8 +9692,8 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
     });
     await commit();
   } catch (error) {
-    await retainPersonalPublicPreparationForRecovery(source);
-    reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
+    await (serverCopy ? retainPersonalServerPreparationForRecovery : retainPersonalPublicPreparationForRecovery)(source);
+    reportPersonalPhotoFormError(error, { recovery: error.serverImportRecovery || error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
   }
   finally { personalPhotoFormPreparing--; }
   scheduleRemoteSave(); return { layoutId: targetLayoutId, operationId: selection.operationId, copiedItemId: catalog ? selection.ownerTargets[0].targetId : "" };
@@ -9617,11 +9701,11 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
 
 async function runCausalPublicLayoutCopy(layout, progress) {
   if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return null;
-  if (!PERSONAL_PUBLIC_IMPORT_ENABLED) throw Error("Копирование публичных шаблонов через очередь ещё не включено.");
-  if (layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
+  const serverCopy = Boolean(layout.linkedSharedList);
+  if (serverCopy ? !PERSONAL_SERVER_IMPORT_ENABLED : !PERSONAL_PUBLIC_IMPORT_ENABLED) throw Error(serverCopy ? "Копирование списка по ссылке через очередь ещё не включено." : "Копирование публичных шаблонов через очередь ещё не включено.");
   personalSaveRecovery.assertRunning();
   if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
-  const { demoTarget, sourceLanguage, itemKey } = personalPublicSourceTarget(layout);
+  const target = personalPublicSourceTarget(layout);
   const actorId = String(currentUser.id);
   progress.update(15, "shared.copyStageLoadingPersonal");
   await ensurePrivateStateForSharedCopy();
@@ -9638,19 +9722,11 @@ async function runCausalPublicLayoutCopy(layout, progress) {
   progress.update(30, "shared.copyStageLoading");
   // Read a fresh complete API record. Display metadata/offline previews cannot
   // establish a source version for a private causal copy.
-  const loaded = await apiFetch(publicTemplatePayloadPath(itemKey), { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true });
+  const { sourcePayload, sourceLayout, source: selectedSource } = await readPersonalRemoteCopySource(target);
   if (!sameJson(initial, personalSaveContext())) throw Error("Редактор изменился. Копирование остановлено.");
-  const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId]
-    || Object.values(sourcePayload?.layouts || {})[0];
-  if (!sourceLayout || loaded.ok !== true || !loaded.publicTemplatePayload) throw Error("Не удалось прочитать полную исходную версию шаблона.");
-  if (demoTarget && loaded.listId !== demoTarget.listId || loaded.record?.language && loaded.record.language !== sourceLanguage) {
-    throw Error("Полученный шаблон не совпал с выбранным источником. Копирование остановлено.");
-  }
-  const selection = preparePersonalPublicImportSelection({ binding: outbox.binding, basePayload: personalBusinessPayload(state),
-    baseStateRevision: Number(syncMeta.stateRevision), sourcePayload, layoutIds: [sourceLayout.id],
-    layoutNames: [uniqueLayoutName(sourceLayout.name || layout.name)], editMeta: currentCreateMeta(),
-    source: { kind: "public-template", itemKey, listId: loaded.listId, stateRevision: loaded.stateRevision,
-      language: sourceLanguage } });
+  const selection = (serverCopy ? preparePersonalServerImportSelection : preparePersonalPublicImportSelection)({ binding: outbox.binding,
+    basePayload: personalBusinessPayload(state), baseStateRevision: Number(syncMeta.stateRevision), sourcePayload, layoutIds: [sourceLayout.id],
+    layoutNames: [uniqueLayoutName(sourceLayout.name || layout.name)], editMeta: currentCreateMeta(), source: selectedSource });
   const previous = clone(state), revision = Number(syncMeta.stateRevision);
   const repeated = findCopiedSharedLayout(layout, sourceLayout);
   if (!(await confirmRepeatedSharedLayoutCopy(repeated, sourceLayout.name || layout.name))) return { cancelled: true };
@@ -9662,9 +9738,9 @@ async function runCausalPublicLayoutCopy(layout, progress) {
   let commit;
   try {
     progress.update(45, "shared.copyStageEntities");
-    commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
+    commit = await (serverCopy ? preparePersonalServerImport : preparePersonalPublicImport)({ selection, selectionStore: (serverCopy ? personalServerSelectionStore : personalPublicSelectionStore)(outbox.binding), outbox, store: source.store,
       getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
-      loadFile: loadPersonalPublicCopyFile,
+      loadFile: serverCopy ? loadPersonalServerCopyFile : loadPersonalPublicCopyFile,
       onCaptured(saved) {
         personalSaveRecovery.assertRunning();
         replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
@@ -9673,13 +9749,13 @@ async function runCausalPublicLayoutCopy(layout, progress) {
         syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
         if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
         switchView("packing"); renderPreservingPackingScroll();
-        updateSyncUi("Личная копия шаблона сохранена на устройстве и ждёт подтверждения сервера.");
+        updateSyncUi("Личная копия сохранена на устройстве и ждёт подтверждения сервера.");
       }
     });
     await commit();
   } catch (error) {
-    await retainPersonalPublicPreparationForRecovery(source);
-    reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
+    await (serverCopy ? retainPersonalServerPreparationForRecovery : retainPersonalPublicPreparationForRecovery)(source);
+    reportPersonalPhotoFormError(error, { recovery: error.serverImportRecovery || error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
   } finally { personalPhotoFormPreparing--; }
   scheduleRemoteSave();
   return { layoutId: selection.layoutTargets[0].targetId };

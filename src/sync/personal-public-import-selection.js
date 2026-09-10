@@ -13,13 +13,17 @@ const fail = () => { throw Object.assign(Error("Не удалось зафикс
 
 // All identities and the complete selected API snapshot precede the first
 // file read or confirmation. A public namespace never reuses private IDs.
-export function preparePersonalPublicImportSelection({ binding, basePayload, baseStateRevision, source, sourcePayload,
-  layoutIds, layoutNames, editMeta = {} }, { enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, createUuid = () => crypto.randomUUID() } = {}) {
+export function preparePersonalPublicImportSelection(input, { enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, createUuid = () => crypto.randomUUID() } = {}) {
+  return preparePersonalRemoteLayoutSelection(input, { enabled, createUuid, parseSource: personalPublicImportSource });
+}
+
+export function preparePersonalRemoteLayoutSelection({ binding, basePayload, baseStateRevision, source, sourcePayload,
+  layoutIds, layoutNames, editMeta = {} }, { enabled = false, createUuid = () => crypto.randomUUID(), parseSource } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || !id(binding.actorId) || binding.actorId.length > 36
     || !id(binding.listId) || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4
     || !Number.isSafeInteger(baseStateRevision) || baseStateRevision < 1) fail();
   assertListOperationPayload({ ...binding, kind: "list.import", body: { basePayload, baseStateRevision, source, sourcePayload, layoutIds, layoutNames, editMeta } });
-  const chosenSource = personalPublicImportSource(source), base = personalGuestBusinessPayload(basePayload), frozen = clone(sourcePayload);
+  const chosenSource = parseSource(source), base = personalGuestBusinessPayload(basePayload), frozen = clone(sourcePayload);
   if (chosenSource.listId === binding.listId || !frozen || !["items", "containers", "layouts"].every(key => frozen[key]
     && Object.getPrototypeOf(frozen[key]) === Object.prototype) || !Array.isArray(layoutIds) || !layoutIds.length || layoutIds.length > 50
     || layoutIds.some(value => !id(value)) || new Set(layoutIds).size !== layoutIds.length
@@ -61,13 +65,17 @@ export function preparePersonalPublicImportSelection({ binding, basePayload, bas
     basePayload: base, baseStateRevision, layoutTargets, ownerTargets, photoTargets, editMeta: clone(editMeta) };
 }
 
-export function preparePersonalPublicEntitySelection({ binding, basePayload, baseStateRevision, source, sourcePayload, copy, editMeta = {} },
-  { enabled = PERSONAL_PUBLIC_IMPORT_ENABLED && PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, createUuid = () => crypto.randomUUID() } = {}) {
+export function preparePersonalPublicEntitySelection(input, { enabled = PERSONAL_PUBLIC_IMPORT_ENABLED && PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, createUuid = () => crypto.randomUUID() } = {}) {
+  return preparePersonalRemoteEntitySelection(input, { enabled, createUuid, parseSource: personalPublicImportSource });
+}
+
+export function preparePersonalRemoteEntitySelection({ binding, basePayload, baseStateRevision, source, sourcePayload, copy, editMeta = {} },
+  { enabled = false, createUuid = () => crypto.randomUUID(), parseSource } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || !id(binding.actorId) || binding.actorId.length > 36
     || !id(binding.listId) || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4
     || !Number.isSafeInteger(baseStateRevision) || baseStateRevision < 1) fail();
   assertListOperationPayload({ ...binding, kind: "list.import", body: { basePayload, baseStateRevision, source, sourcePayload, copy, editMeta } });
-  const chosenSource = personalPublicImportSource(source), base = personalGuestBusinessPayload(basePayload), frozen = clone(sourcePayload);
+  const chosenSource = parseSource(source), base = personalGuestBusinessPayload(basePayload), frozen = clone(sourcePayload);
   if (chosenSource.listId === binding.listId) fail();
   const graph = personalPublicEntitySelectionGraph(frozen, copy, base), reserved = new Set(), allocated = new Set();
   for (const payload of [frozen, base]) {

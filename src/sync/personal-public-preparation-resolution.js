@@ -18,9 +18,14 @@ export function personalPublicRecoverablePreparations(entries, outbox, inventory
 // One explicit preparation at a time. Owner cancellation is an exact server
 // fence, followed by every retained stage. No bytes, import POST, replacement
 // ID, outbox rebase, or business snapshot adoption belongs to this controller.
-export async function resolvePersonalPublicPreparation({ entry, selectionStore, outbox, store, queue, staging, getContext, cancel = false,
+export function resolvePersonalPublicPreparation(options) {
+  return resolvePersonalRemotePreparation(options, { manifestKey: "publicImport", assertReceipt: assertPublicPreparationReceipt,
+    assertNativeSettlement: assertPublicPreparationNativeSettlement });
+}
+
+export async function resolvePersonalRemotePreparation({ entry, selectionStore, outbox, store, queue, staging, getContext, cancel = false,
   enabled = PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED,
-  publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }) {
+  publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }, { manifestKey, assertReceipt, assertNativeSettlement }) {
   if (!entry?.selection || !selectionStore || !outbox || !store || cancel && (!enabled || !publicEnabled
     || entry.selection.version === 2 && !publicEntityEnabled)) fail();
   entry = structuredClone(entry);
@@ -54,7 +59,7 @@ export async function resolvePersonalPublicPreparation({ entry, selectionStore, 
     proof = await queue.cancelExact(request); assertCurrent();
   }
   if (!proof) return { outcome: "unknown", fileRetained: true };
-  await assertPublicPreparationReceipt(entry, proof); assertCurrent();
+  await assertReceipt(entry, proof); assertCurrent();
   await selectionStore.confirm({ operationId: entry.action.operationId, proof }); assertCurrent();
   entry.completion = proof;
   if (proof.operation.state === "committed") return { outcome: "committed", fileRetained: true };
@@ -70,8 +75,8 @@ export async function resolvePersonalPublicPreparation({ entry, selectionStore, 
       }
       assertCurrent(); stages.push(stage);
     }
-    const settlement = assertPublicPreparationNativeSettlement(entry, { version: 1, intentHash: saved.intentHash, stages });
+    const settlement = assertNativeSettlement(entry, { version: 1, intentHash: saved.intentHash, stages });
     await selectionStore.confirmNativeSettlement({ operationId: entry.action.operationId, settlement }); assertCurrent();
   }
-  return { outcome: "rejected", fileRetained: true, nativeMissing: !saved && entry.action.body.publicImport.files.length > 0 };
+  return { outcome: "rejected", fileRetained: true, nativeMissing: !saved && entry.action.body[manifestKey].files.length > 0 };
 }

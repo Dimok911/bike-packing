@@ -10,19 +10,26 @@ export const PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED = false;
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
-const fail = cause => { throw Object.assign(Error("Подготовленная копия шаблона требует восстановления. Её исходные данные сохранены."),
-  { code: "public-selection-storage", cause, isPersonalSaveBlocked: true }); };
+const publicAdapter = { prefix: "bike-packing-public-selections-v1", code: "public-selection-storage", manifestKey: "publicImport",
+  parseSource: personalPublicImportSource, assertBody: assertPersonalPublicImportBody, assertHashes: assertPersonalPublicImportHashes,
+  assertNativeSettlement: assertPublicPreparationNativeSettlement };
 
 // Source selection and prepared action are separate immutable records. A full
 // write is atomic; no retry deletes/replaces either original. Locks are scoped
 // to this actor/list, so an unrelated list does not wait for this preparation.
-export function createPersonalPublicImportSelectionStore({ binding, getContext, storage = globalThis.localStorage,
+export function createPersonalPublicImportSelectionStore(options = {}) {
+  return createPersonalRemoteImportSelectionStore(options, publicAdapter);
+}
+
+export function createPersonalRemoteImportSelectionStore({ binding, getContext, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
-  choiceEnabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED, resolutionEnabled = PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } = {}) {
+  choiceEnabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED, resolutionEnabled = PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } = {}, adapter) {
+  const fail = cause => { throw Object.assign(Error("Подготовленная копия требует восстановления. Её исходные данные сохранены."),
+    { code: adapter.code, cause, isPersonalSaveBlocked: true }); };
   if (binding?.environment !== "bike-packing-experiment" || !binding.actorId || binding.actorId.length > 36
     || !binding.listId || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4) fail();
   binding = Object.freeze(clone(binding));
-  const prefix = `bike-packing-public-selections-v1:${encodeURIComponent(personalArchiveJson(binding))}:`;
+  const prefix = `${adapter.prefix}:${encodeURIComponent(personalArchiveJson(binding))}:`;
   const key = id => { if (!uuid(id)) fail(); return `${prefix}${id}:selection`; };
   const context = () => {
     const value = getContext?.();
@@ -36,7 +43,7 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       || !Number.isSafeInteger(selection.baseStateRevision) || selection.baseStateRevision < 1 || !selection.basePayload
       || !selection.sourcePayload || (selection.version === 2 ? !selection.copy : !Array.isArray(selection.layoutTargets) || !selection.layoutTargets.length)
       || !Array.isArray(selection.ownerTargets) || !Array.isArray(selection.photoTargets)) fail();
-    personalPublicImportSource(selection.source);
+    adapter.parseSource(selection.source);
   };
   const lock = (initial, run) => {
     if (!locks?.request) fail();
@@ -55,11 +62,11 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
     assertListOperationPayload(action);
     if (action?.kind !== "list.import" || action.operationId !== selection.operationId
       || Object.keys(binding).some(key => action[key] !== binding[key])) fail();
-    const manifest = action.body?.publicImport;
+    const manifest = action.body?.[adapter.manifestKey];
     if (manifest?.version !== selection.version) fail();
     for (const key of ["source", "sourcePayload", selection.version === 2 ? "copy" : "layoutTargets", "ownerTargets", "photoTargets", "editMeta"]) if (!same(manifest?.[key], selection[key])) fail();
-    assertPersonalPublicImportBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
-    await assertPersonalPublicImportHashes(action.body);
+    adapter.assertBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
+    await adapter.assertHashes(action.body);
   };
   const validateCompletion = async (action, proof) => {
     const operation = proof?.operation;
@@ -110,7 +117,7 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
         if (new TextEncoder().encode(settled).byteLength > 4 * 1024 * 1024) fail();
         const row = JSON.parse(settled);
         if (row.version !== 1 || Object.keys(row).length !== 3 || row.hash !== await personalArchiveHash(row.settlement)) fail();
-        entry.nativeSettlement = assertPublicPreparationNativeSettlement(entry, row.settlement);
+        entry.nativeSettlement = adapter.assertNativeSettlement(entry, row.settlement);
       } catch (cause) { fail(cause); }
     }
     return entry;
@@ -209,7 +216,7 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       const initial = context(); settlement = clone(settlement);
       return lock(initial, async () => {
         const saved = await readEntry(operationId); assertCurrent(initial);
-        assertPublicPreparationNativeSettlement(saved, settlement);
+        adapter.assertNativeSettlement(saved, settlement);
         if (saved.nativeSettlement) {
           if (saved.nativeSettlement.intentHash !== settlement.intentHash) fail();
           return clone(saved.nativeSettlement); // The first exact historical stage proofs remain immutable.

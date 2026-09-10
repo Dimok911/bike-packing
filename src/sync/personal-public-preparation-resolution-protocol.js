@@ -5,10 +5,14 @@ export const PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED = false;
 const fail = () => { throw Object.assign(Error("Подтверждение подготовки не совпало с её исходными данными. Файлы сохранены."),
   { code: "public-preparation-proof", isPersonalSaveBlocked: true }); };
 
-export async function assertPublicPreparationReceipt(entry, proof) {
+export function assertPublicPreparationReceipt(entry, proof) {
+  return assertRemotePreparationReceipt(entry, proof, "publicImport");
+}
+
+export async function assertRemotePreparationReceipt(entry, proof, manifestKey) {
   const action = entry?.action, binding = entry?.selection?.binding, op = proof?.operation;
   if (!action || action.kind !== "list.import" || binding?.environment !== "bike-packing-experiment"
-    || action.operationId !== entry.selection.operationId || action.body.publicImport?.operationId !== action.operationId
+    || action.operationId !== entry.selection.operationId || action.body[manifestKey]?.operationId !== action.operationId
     || Object.keys(binding).some(key => action[key] !== binding[key])
     || proof?.historicalOnly !== true || op?.id !== action.operationId || op.kind !== action.kind
     || ["environment", "actorId", "listId"].some(key => op[key] !== binding[key])
@@ -21,7 +25,11 @@ export async function assertPublicPreparationReceipt(entry, proof) {
 }
 
 export function assertPublicPreparationNativeSettlement(entry, settlement) {
-  const files = entry?.action?.body?.publicImport?.files, binding = entry?.selection?.binding;
+  return assertRemotePreparationNativeSettlement(entry, settlement, "publicImport");
+}
+
+export function assertRemotePreparationNativeSettlement(entry, settlement, manifestKey) {
+  const files = entry?.action?.body?.[manifestKey]?.files, binding = entry?.selection?.binding;
   if (entry?.completion?.operation?.state !== "rejected" || settlement?.version !== 1 || Object.keys(settlement).length !== 3
     || !/^[a-f0-9]{64}$/.test(settlement.intentHash) || !files?.length || !Array.isArray(settlement.stages)
     || settlement.stages.length !== files.length) fail();

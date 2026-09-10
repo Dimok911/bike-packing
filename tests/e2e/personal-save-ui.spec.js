@@ -1,3 +1,5 @@
+import { preparePersonalServerImportSource } from "../../src/sync/personal-server-import-source.js";
+import { assertPersonalServerImportBody, assertPersonalServerImportHashes, personalServerImportReceipt } from "../../src/sync/personal-server-import-protocol.js";
 import { assertPersonalShareLinkBody, personalShareLinkProjection, personalSharePhotoInventory } from "../../src/sync/personal-share-link.js";
 import { assertPersonalPublicImportBody, assertPersonalPublicImportHashes, personalPublicImportReceipt } from "../../src/sync/personal-public-import-protocol.js";
 import { createBackupZip } from "../../src/backup/archive.js";
@@ -265,6 +267,184 @@ for (const mode of ["live", "snapshot"]) for (const scope of ["layout", "list", 
   expect(f.posts).toHaveLength(writes); expect(f.errors).toEqual([]);
 });
 
+for (const mode of ["live", "snapshot"]) test(`actual server import ${mode} layout copies the opened link and recovers its lost ACK`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1" || process.env.BIKE_PERSONAL_SHARE_LINKS !== "1", "Requires isolated server copy bundle");
+  test.setTimeout(120000);
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Исходная сумка по ссылке");
+  await createItemInContainer(page, bag, "Исходная вещь по ссылке");
+  await synchronize(page, () => Object.values(f.payload.items).some(owner => owner.name === "Исходная вещь по ссылке"));
+  await page.locator("#menuBtn").click(); await page.locator("#shareListBtn").click();
+  await page.locator(`#confirmDialog input[name="shareLinkMode"][value="${mode}"]`).check(); await submitForm(page, "#confirmOkBtn");
+  const link = await page.locator("#confirmDialog input[readonly]").inputValue();
+  await page.goto(link); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await expect(page.locator("#packingView")).toContainText("Исходная вещь по ссылке");
+  f.loseFormOwner = true;
+  await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+  if (await page.locator("#confirmDialog").isVisible()) await submitForm(page, "#confirmOkBtn");
+  await expect.poll(() => f.posts.filter(post => post.body.serverImport).length, { timeout: 30000 }).toBe(1);
+  const action = f.posts.find(post => post.body.serverImport), manifest = action.body.serverImport;
+  expect(manifest.source.mode).toBe(mode); expect(manifest.source.kind).toBe("shared-link");
+  expect(manifest.ownerTargets.every(row => row.targetId !== row.sourceId && !row.reuse)).toBe(true);
+  await expect.poll(() => f.hiddenFormOwner).toBe(action.operationId);
+  // The opened shared URL remains a reader after reload. Recovery belongs to
+  // the personal account, whose pending copy keeps its original operation ID.
+  await reloadApp(page); expect(f.posts.filter(post => post.body.serverImport)).toHaveLength(1);
+  f.reloading = true; await page.goto(origin);
+  const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery).toBeVisible({ timeout: 30000 }); f.reloading = false;
+  f.loseFormOwner = false; f.hiddenFormOwner = "";
+  await recovery.locator("[data-resume-photo-upload]").click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  expect(f.posts.filter(post => post.body.serverImport)).toHaveLength(1); expect(f.errors).toEqual([]);
+});
+
+async function openServerSourceUi(page, context, { mode = "live", photos = true } = {}) {
+  const source = guestImportPayload(photos), payload = replacementPayload();
+  source.items.source.name = "Точная вещь по ссылке"; source.containers.bag.name = "Точная сумка по ссылке";
+  if (photos) source.containers.bag.photos = [{ ...source.items.source.photos[0], id: "server-bag-photo" }];
+  payload.items.source.name = "Моя вещь"; payload.containers.bag.name = "Моя сумка";
+  const descriptor = { version: 1, id: `shared-entity-${mode === "live" ? "link" : "snapshot"}-${randomUUID()}`,
+    mode, scope: "list", layoutId: "", entityType: "", entityId: "", title: "Чужой список по ссылке",
+    description: "", includeAuthor: false, authorName: "" };
+  const marker = await preparePersonalServerImportSource({ descriptor, stateRevision: mode === "live" ? 7 : 1 });
+  const f = await setup(page, context, { photoEdit: true, payload, configure: state => {
+    state.serverSharedRecord = { id: descriptor.id, listId: descriptor.id, title: descriptor.title, ownerId: "actor-b",
+      visibility: "shared", sourceType: "user", stateRevision: 1, serverCopySource: marker, payload: structuredClone(source) };
+  } });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const before = structuredClone(f.payload);
+  await page.goto(`${origin}/?sharedList=${descriptor.id}`);
+  await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  return { f, source, before, marker };
+}
+
+for (const mode of ["live", "snapshot"]) for (const kind of ["layout", "item", "tree", "empty", "catalog"])
+test(`actual server import ${mode} ${kind} with photos preserves another owner's source through lost ACK`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires isolated server import bundle"); test.setTimeout(120000);
+  const { f, source, before, marker } = await openServerSourceUi(page, context, { mode });
+  f.loseFormOwner = true;
+  if (kind === "layout") await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+  else if (kind === "catalog") {
+    await page.locator('[data-view="items"]').click();
+    await page.locator('[data-list-item-id="shared-virtual-item-source"], [data-item-id="shared-virtual-item-source"]').filter({ visible: true }).first().locator(".item-title").click();
+    await page.locator("#copySharedItemDialogBtn").click();
+  } else {
+    if (kind === "item") await page.locator('[data-view="items"]').click();
+    if (kind === "empty") await page.locator('[data-view="bags"]').click();
+    await page.locator(kind === "item" ? '[data-copy-layout-item="shared-virtual-item-source"], [data-copy-item="shared-virtual-item-source"]'
+      : '[data-copy-root="shared-virtual-container-bag"]').filter({ visible: true }).first().click();
+    await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+    await page.locator(kind === "item" ? '#containerPickerBoard [data-pick-container="bag"]' : "#containerPickerBoard [data-pick-root-index]").last().click();
+  }
+  await expect.poll(async () => f.posts.some(post => post.body.serverImport) || await page.locator("#confirmDialog").isVisible(), { timeout: 30000 }).toBe(true);
+  if (await page.locator("#confirmDialog").isVisible()) await submitForm(page, "#confirmOkBtn");
+  await expect.poll(() => f.posts.filter(post => post.body.serverImport).length, { timeout: 30000 }).toBe(1);
+  const original = structuredClone(f.posts.find(post => post.body.serverImport)), manifest = original.body.serverImport;
+  expect(manifest.source).toEqual(marker); expect(manifest.sourcePayload).toEqual(source);
+  expect(manifest.files).toHaveLength(["layout", "tree"].includes(kind) ? 2 : 1);
+  expect(manifest.ownerTargets.every(row => row.targetId !== row.sourceId && !row.reuse)).toBe(true);
+  await expect.poll(() => f.hiddenFormOwner).toBe(original.operationId);
+  f.reloading = true; await page.goto(origin); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible({ timeout: 30000 }); f.reloading = false;
+  f.loseFormOwner = false; f.hiddenFormOwner = null; f.serverSharedRecord = null; f.guestPhotoUnavailable = true;
+  await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены");
+  await reloadApp(page);
+  expect(f.posts.filter(post => post.body.serverImport)).toEqual([original]); expect(f.stagePosts).toHaveLength(manifest.files.length);
+  expect(personalBusinessPayload(f.payload).items.source).toEqual(personalBusinessPayload(before).items.source);
+  expect(personalBusinessPayload(f.payload).containers.bag).toEqual(personalBusinessPayload(before).containers.bag);
+  for (const file of manifest.files) {
+    const owner = f.payload[file.entityType === "item" ? "items" : "containers"][file.entityId];
+    expect(owner.photos, JSON.stringify({ owner, posts: f.posts.map(post => ({ id: post.operationId, kind: post.kind, ref: post.body.photoResults })) })).toContainEqual(expect.objectContaining({ id: file.photoId, status: "synced" }));
+  }
+  expect(f.errors).toEqual([]);
+});
+
+for (const kind of ["layout", "item"]) test(`actual server import own OFF keeps ${kind} source and personal journal unchanged`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT === "1", "Requires own server import OFF"); test.setTimeout(90000);
+  const { f, before } = await openServerSourceUi(page, context), posts = f.posts.length;
+  const journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")));
+  if (kind === "layout") await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+  else { await page.locator('[data-view="items"]').click(); await page.locator('[data-copy-item="shared-virtual-item-source"]').filter({ visible: true }).first().click(); }
+  const pausedMessage = "Копирование списка по ссылке через очередь ещё не включено.";
+  if (kind === "layout") await expect(page.locator("main")).toContainText(pausedMessage);
+  else await expect(page.getByText(pausedMessage, { exact: true })).toBeVisible();
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")))).toEqual(journal);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-server-selections-v1:")))).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
+
+for (const phase of ["queue link", "partial files"]) test(`actual server import ${phase} recovers selected bytes after restart`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires isolated server import bundle"); test.setTimeout(120000);
+  const { f, source } = await openServerSourceUi(page, context);
+  if (phase === "queue link") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, text) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(text)?.action?.body?.serverImport) throw new DOMException("Server copy quota", "QuotaExceededError");
+      return original.call(this, key, text);
+    };
+  });
+  else f.loseStageAt = 1;
+  await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+  if (phase === "queue link") await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  else await expect.poll(() => f.hiddenStage, { timeout: 30000 }).toBeTruthy();
+  const selected = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-server-selections-v1:") && key.endsWith(":action")).map(([, text]) => JSON.parse(text)));
+  expect(selected).toHaveLength(1); const original = selected[0].action;
+  expect(original.body.serverImport.sourcePayload).toEqual(source); expect(f.posts.filter(post => post.body.serverImport)).toEqual([]);
+  f.reloading = true; await page.goto(origin); const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery).toBeVisible({ timeout: 30000 }); f.reloading = false;
+  const download = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+  const entries = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+  expect(entries.has("server-import-selections.json")).toBe(true);
+  expect([...entries.keys()].filter(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toHaveLength(2);
+  f.guestPhotoUnavailable = true; f.hiddenStage = null; f.loseStageAt = 0;
+  await recovery.locator("[data-resume-photo-upload]").click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.posts.filter(post => post.body.serverImport)).toHaveLength(1);
+  expect(f.posts.find(post => post.body.serverImport).operationId).toBe(original.operationId);
+  expect(f.posts.find(post => post.body.serverImport).body).toEqual(original.body);
+  expect(new Set(f.stagePosts).size).toBe(2); expect(f.stagePosts).toHaveLength(2);
+  await reloadApp(page); expect(f.errors).toEqual([]);
+});
+
+for (const photos of [false, true]) for (const remove of [false, true])
+test(`actual server import pending ${photos ? "photo" : "fileless"} ${remove ? "deletion" : "fields"} keeps causal order after lost ACK`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_IMPORT !== "1", "Requires isolated server import bundle"); test.setTimeout(120000);
+  const { f } = await openServerSourceUi(page, context, { photos }); let release;
+  const hold = () => new Promise(resolve => { release = resolve; });
+  if (photos) f.beforeStageAck = hold; else f.beforeUpdate = body => body.body?.serverImport || body.kind === "list.import" ? hold() : undefined;
+  f.loseFormOwner = true;
+  try {
+    await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+    await expect.poll(() => Boolean(release), { timeout: 30000 }).toBe(true);
+    const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+      .map(([, text]) => JSON.parse(text)).filter(row => row.action));
+    const root = (await records()).find(row => row.action.body.serverImport), manifest = root.action.body.serverImport;
+    const itemId = manifest.ownerTargets.find(owner => owner.entityType === "item" && owner.sourceId === "source").targetId;
+    await page.locator('[data-view="items"]').click();
+    await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click();
+    await page.locator("#itemWeight").fill("193"); await submitForm(page, "#saveItemBtn", "#itemWeight");
+    await expect(page.locator("#itemDialog")).not.toBeVisible();
+    if (remove) {
+      await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click(); await page.locator("#itemDeleteForeverBtn").click();
+      await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn"); await expect(page.locator("#itemDialog")).not.toBeVisible();
+    }
+    const children = (await records()).filter(row => row.action.body.photoResults?.version === 12);
+    expect(children).toHaveLength(remove ? 2 : 1); expect(children.every(row => row.action.body.photoResults.operationId === root.action.operationId)).toBe(true);
+    f.beforeStageAck = null; f.beforeUpdate = null; release();
+    await expect.poll(() => f.hiddenFormOwner, { timeout: 30000 }).toBe(root.action.operationId);
+    f.reloading = true; await page.goto(origin); const recovery = page.locator("#personalSaveRecoveryDialog");
+    await expect(recovery).toBeVisible({ timeout: 30000 }); f.reloading = false;
+    f.loseFormOwner = false; f.hiddenFormOwner = null;
+    await recovery.locator("[data-resume-photo-upload]").click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    await reloadApp(page);
+    if (remove) expect(f.payload.items[itemId]).toBeUndefined(); else expect(f.payload.items[itemId].weight).toBe(193);
+    expect(f.posts.filter(post => post.body.serverImport)).toHaveLength(1);
+    for (const child of children) expect(f.posts.filter(post => post.operationId === child.action.operationId)).toHaveLength(1);
+    expect(f.stagePosts).toHaveLength(photos ? 2 : 0); expect(f.errors).toEqual([]);
+  } finally { f.beforeStageAck = null; f.beforeUpdate = null; release?.(); }
+});
+
 test("actual causal share own gate off keeps the edited form and old queue", async ({ page, context }) => {
   test.skip(process.env.BIKE_PERSONAL_SHARE_LINKS === "1", "Requires own sharing gate off");
   test.setTimeout(100000);
@@ -450,16 +630,17 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SERVER_IMPORT === "1" ? ["personalCausalServerImportV1"] : []), ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (request.method() === "GET" && /^\/bike-packing\/(?:entity-links|lists)\/shared-entity-(?:link|snapshot)-[a-f0-9-]+$/.test(path)) {
         const id = path.split("/").at(-1), receipt = [...state.receipts.values()].find(value => value.operation.state === "committed" && value.result.payload.sharedLink?.descriptor.id === id);
-        if (!receipt) { data = { ok: false, code: "not_found" }; status = 404; }
+        if (state.serverSharedRecord?.id === id) data = { ok: true, [path.includes("/entity-links/") ? "entityLink" : "list"]: structuredClone(state.serverSharedRecord) };
+        else if (!receipt) { data = { ok: false, code: "not_found" }; status = 404; }
         else {
           const descriptor = receipt.result.payload.sharedLink.descriptor;
           const payload = personalShareLinkProjection(personalBusinessPayload(descriptor.mode === "snapshot" ? receipt.result.payload.list.payload : state.payload), descriptor, receipt.operation.id);
           const record = { id, listId: id, ownerId: "actor-a", visibility: "shared", sourceType: "user", title: descriptor.title,
-            description: descriptor.description, stateRevision: 1, payload, updatedAt: "2026-09-10T12:00:00.000Z" };
+            description: descriptor.description, stateRevision: 1, payload, serverCopySource: await preparePersonalServerImportSource({ descriptor, stateRevision: descriptor.mode === "live" ? state.revision : 1 }), updatedAt: "2026-09-10T12:00:00.000Z" };
           data = { ok: true, [path.includes("/entity-links/") ? "entityLink" : "list"]: record, mode: descriptor.mode, scope: descriptor.scope };
         }
       }
@@ -689,17 +870,21 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             state.migration = false;
           }
           const archivePhotos = [], guestImport = body.kind === "list.import" && body.body.guestImport?.version === 1,
-            publicImport = body.kind === "list.import" && [1, 2].includes(body.body.publicImport?.version);
+            publicImport = body.kind === "list.import" && [1, 2].includes(body.body.publicImport?.version),
+            serverImport = body.kind === "list.import" && [1, 2].includes(body.body.serverImport?.version);
           if (body.kind === "list.import") {
-            if (publicImport || guestImport || body.body.archiveImport.version === 2) {
+            if (serverImport || publicImport || guestImport || body.body.archiveImport.version === 2) {
               expect(photoEdit).toBe(true);
-              if (publicImport) {
+              if (serverImport) {
+                assertPersonalServerImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true });
+                await assertPersonalServerImportHashes(body.body);
+              } else if (publicImport) {
                 assertPersonalPublicImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true });
                 await assertPersonalPublicImportHashes(body.body); expect(body.body.publicImport.sourcePayload).toEqual(publicSource);
               } else if (guestImport) {
                 assertPersonalGuestImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true }); await assertPersonalGuestImportHashes(body.body);
               } else { assertPersonalArchivePhotoBody(body.body, { base: state.payload, listId: body.listId, causal: true }); await assertPersonalArchivePhotoHashes(body.body); }
-              for (const file of (publicImport ? body.body.publicImport : guestImport ? body.body.guestImport : body.body.archiveImport).files) {
+              for (const file of (serverImport ? body.body.serverImport : publicImport ? body.body.publicImport : guestImport ? body.body.guestImport : body.body.archiveImport).files) {
                 const stage = state.stageReceipts.get(file.assetId); expect(stage?.asset.state).toBe("ready");
                 expect(stage.operation.entityId).toBe(file.entityId); expect(stage.operation.photoId).toBe(file.photoId);
                 expect(stage.asset.fileHash).toBe(file.file.hash); expect(stage.asset.thumbHash).toBe(file.thumb?.hash || file.file.hash);
@@ -720,7 +905,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           }
           const shareSource = body.body.shareLink ? personalBusinessPayload(state.payload) : null;
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
-          if (body.kind === "list.import" && (publicImport || guestImport || body.body.archiveImport.version === 2)) {
+          if (body.kind === "list.import" && (serverImport || publicImport || guestImport || body.body.archiveImport.version === 2)) {
             state.payload = structuredClone(state.payload);
             for (const file of archivePhotos) {
               const owner = state.payload[file.entityType === "item" ? "items" : "containers"][file.entityId];
@@ -738,7 +923,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
                 const previous = predecessor.result.payload.list.payload[collection][id];
                 if (owner.photos) owner.photos = owner.photos.map(photo => {
                   if (photo.status !== "pending") return photo;
-                  const file = ([6, 8, 9, 10, 11].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
+                  const file = ([6, 8, 9, 10, 11].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 12 ? copy.result.payload.serverPhotos : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
                   expect(file?.entityId).toBe(id); expect(file?.assetId).toBe(photo.assetId);
                   expect(previous?.photos).toContainEqual(file.photo); return structuredClone(file.photo);
                 });
@@ -753,7 +938,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
-              ...(publicImport ? { stateRevision: state.revision, publicImport: personalPublicImportReceipt(body.body.publicImport), publicPhotos: archivePhotos } : guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
+              ...(serverImport ? { serverImport: personalServerImportReceipt(body.body.serverImport), serverPhotos: archivePhotos } : publicImport ? { stateRevision: state.revision, publicImport: personalPublicImportReceipt(body.body.publicImport), publicPhotos: archivePhotos } : guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
                 archiveImport: (body.body.archiveImport.version === 2 ? personalArchivePhotoReceipt : personalArchiveImportReceipt)(body.body.archiveImport),
                 ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
@@ -792,7 +977,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             .map(file => ({ ...file, fileHash: "a".repeat(64), thumbHash: "b".repeat(64) })) };
         state.receipts.set(body.operationId, data);
         if (state.loseShare && body.body.shareLink) { state.hiddenFormOwner = body.operationId; state.injectedFailure = true; return route.abort("failed"); }
-        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && ([1, 2].includes(body.body.publicImport?.version) || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
+        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && ([1, 2].includes(body.body.serverImport?.version) || [1, 2].includes(body.body.publicImport?.version) || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }

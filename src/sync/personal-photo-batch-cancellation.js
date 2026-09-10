@@ -3,6 +3,7 @@ import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./personal-public-photo-form
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
+import { PERSONAL_SERVER_IMPORT_ENABLED } from "./personal-server-import-source.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
@@ -20,9 +21,10 @@ const paused = () => Object.assign(new Error("Отмена всего фотоп
 export async function cancelPersonalPhotoBatch({ record, binding, queue, store, staging, assertCurrent,
   enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
   publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED }) {
   if (!enabled || typeof assertCurrent !== "function" || record?.photoState?.fileInventoryVersion !== 2
-    || record?.action?.kind === "list.import" && !(Object.hasOwn(record.action.body, "publicImport") ? publicEnabled && (record.action.body.publicImport?.version !== 2 || publicEntityEnabled) : Object.hasOwn(record.action.body, "guestImport") ? guestEnabled : archiveEnabled)
+    || record?.action?.kind === "list.import" && !(Object.hasOwn(record.action.body, "serverImport") ? serverEnabled : Object.hasOwn(record.action.body, "publicImport") ? publicEnabled && (record.action.body.publicImport?.version !== 2 || publicEntityEnabled) : Object.hasOwn(record.action.body, "guestImport") ? guestEnabled : archiveEnabled)
     || record?.action?.body?.action === "form" && !formEnabled
     || [2, 5].includes(record?.action?.body?.ownerResult?.version) && (!publicPhotoFormEnabled || !publicEnabled)
     || [3, 4].includes(record?.action?.body?.ownerResult?.version) && (!importPhotoFormEnabled

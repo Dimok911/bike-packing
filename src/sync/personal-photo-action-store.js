@@ -1,6 +1,9 @@
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
+import { PERSONAL_SERVER_IMPORT_ENABLED } from "./personal-server-import-source.js";
+import { encodePersonalServerImportRecord, decodePersonalServerImportRecord } from "./personal-server-import-record.js";
+import { createPersonalServerImportSelectionStore } from "./personal-server-import-selection-store.js";
 import { encodePersonalPublicImportRecord, decodePersonalPublicImportRecord } from "./personal-public-import-record.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { encodePersonalGuestImportRecord, decodePersonalGuestImportRecord } from "./personal-guest-import-record.js";
@@ -32,7 +35,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
   selectionStorage = globalThis.localStorage, selectionLocks = globalThis.navigator?.locks,
   batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
-  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -83,7 +87,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         if (typeof record.intentJson !== "string" || new TextEncoder().encode(record.intentJson).byteLength > 6 * 1024 * 1024) throw blocked("corrupt-intent");
         const action = JSON.parse(record.intentJson)?.action, form = action?.body?.action === "form", archive = action?.kind === "list.import";
         const guest = archive && Object.hasOwn(action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(action.body || {}, "publicImport");
-        return await (publicCopy ? decodePersonalPublicImportRecord : guest ? decodePersonalGuestImportRecord : archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
+        const serverCopy = archive && Object.hasOwn(action.body || {}, "serverImport");
+        return await (serverCopy ? decodePersonalServerImportRecord : publicCopy ? decodePersonalPublicImportRecord : guest ? decodePersonalGuestImportRecord : archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
       }
       catch (cause) { throw blocked("corrupt-batch", cause); }
     }
@@ -101,6 +106,14 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    serverPreparationEntries() {
+      if (!selectionStorage) return Promise.resolve([]);
+      return createPersonalServerImportSelectionStore({ binding, getContext, storage: selectionStorage, locks: selectionLocks }).entries();
+    },
+    async captureServer(input) {
+      if (input?.action?.kind !== "list.import" || ![1, 2].includes(input.action.body?.serverImport?.version)) throw blocked("invalid-server");
+      return this.captureBatch(input);
+    },
     publicPreparationEntries() {
       if (!selectionStorage) return Promise.resolve([]);
       return createPersonalPublicImportSelectionStore({ binding, getContext, storage: selectionStorage, locks: selectionLocks }).entries();
@@ -135,12 +148,14 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         if (!enabled || !batchEnabled) throw blocked("batch-disabled");
         const form = frozen.action?.body?.action === "form", archive = frozen.action?.kind === "list.import";
         const guest = archive && Object.hasOwn(frozen.action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(frozen.action.body || {}, "publicImport");
+        const serverCopy = archive && Object.hasOwn(frozen.action.body || {}, "serverImport");
+        if (serverCopy && !serverEnabled) throw blocked("server-disabled");
         if (publicCopy && (!publicEnabled || frozen.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-disabled");
         if (guest && !guestEnabled) throw blocked("guest-disabled");
-        if (archive && !guest && !publicCopy && !archiveEnabled) throw blocked("archive-disabled");
+        if (archive && !guest && !publicCopy && !serverCopy && !archiveEnabled) throw blocked("archive-disabled");
         if (form && !formEnabled) throw blocked("form-disabled");
         assertContext(initial);
-        const record = await (publicCopy ? encodePersonalPublicImportRecord : guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
+        const record = await (serverCopy ? encodePersonalServerImportRecord : publicCopy ? encodePersonalPublicImportRecord : guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
         await transaction("readwrite", (store, finish, abort) => {
           assertContext(initial);
           const lookup = store.get(record.key);
@@ -282,6 +297,7 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       const initial = { ...getContext?.() }; assertContext(initial);
       const action = await this.read(operationId); assertContext(initial);
       if (!action) throw blocked("missing-action");
+      if (Object.hasOwn(action.action.body || {}, "serverImport") && !serverEnabled) throw blocked("server-disabled");
       if (action.action.body?.action === "form" && !formEnabled) throw blocked("form-disabled");
       const batch = Array.isArray(action.files);
       if (batch && (!batchEnabled || !uuid(stageOperationId))) throw blocked("batch-stage-disabled-or-missing");

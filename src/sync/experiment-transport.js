@@ -246,10 +246,10 @@ export function createExperimentTransport({
     // stage ACKs is unknown. This marker is local transport metadata; the
     // queue forbids dispatch/resume of a business write from such an entry.
     // Every unrelated stage/legacy write remains a barrier.
-    const imports = ["publicImport", "guestImport", "archiveImport"].filter(key => Object.hasOwn(recovery?.body || {}, key));
+    const imports = ["publicImport", "serverImport", "guestImport", "archiveImport"].filter(key => Object.hasOwn(recovery?.body || {}, key));
     const imported = imports.length === 1 ? recovery.body[imports[0]] : null;
     const importFiles = imported && (imports[0] === "archiveImport" ? imported.version === 2
-      : (imports[0] === "publicImport" ? [1, 2].includes(imported.version) : imported.version === 1)
+      : (["publicImport", "serverImport"].includes(imports[0]) ? [1, 2].includes(imported.version) : imported.version === 1)
         && imported.operationId === recovery.operationId) ? imported.files : null;
     const ownCancelledStage = entry => causal && recovery.cancellationOnly === true && method === "POST"
       && entry.path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/photo-assets` && entry.method === "POST"

@@ -43,8 +43,11 @@ export async function choosePersonalPublicPreparation({ entries, operationId, se
 // Explicit continuation only. Read the immutable journal, use retained native
 // bytes when present, otherwise fetch the original selected file URLs. A saved
 // action can never be replaced by a newly downloaded version of a photo.
-export async function recoverPersonalPublicImportPreparation({ entry, selectionStore, outbox, store, getContext, makeSnapshot, loadFile,
-  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }) {
+export function recoverPersonalPublicImportPreparation(options) { return recoverPersonalRemoteImportPreparation(options,
+  { manifestKey: "publicImport", recoverLink: recoverPersonalPublicImportLink, prepare: preparePersonalPublicImport }); }
+
+export async function recoverPersonalRemoteImportPreparation({ entry, selectionStore, outbox, store, getContext, makeSnapshot, loadFile,
+  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }, adapter) {
   if (!enabled || !entry?.selection || entry.selection.version === 2 && !publicEntityEnabled || entry.completion
     || !selectionStore || !outbox || !store || typeof makeSnapshot !== "function") fail();
   entry = structuredClone(entry);
@@ -61,14 +64,14 @@ export async function recoverPersonalPublicImportPreparation({ entry, selectionS
   if (pending.length !== 1 || !same(pending[0], entry)) fail();
   const saved = await store.read(selection.operationId); assertCurrent();
   if (saved && (!entry.action || !same(saved.action, entry.action))) fail();
-  if (entry.action && (saved || entry.action.body.publicImport.files.length === 0)) {
-    return recoverPersonalPublicImportLink({ entry, outbox, store, getContext, makeSnapshot, enabled, publicEntityEnabled });
+  if (entry.action && (saved || entry.action.body[adapter.manifestKey].files.length === 0)) {
+    return adapter.recoverLink({ entry, outbox, store, getContext, makeSnapshot, enabled, publicEntityEnabled });
   }
   if (!outbox.confirmedBase()) {
     if (outbox.recover()) fail();
     outbox.adoptRemoteBaseline({ snapshot: selection.basePayload, payload: selection.basePayload, stateRevision: selection.baseStateRevision });
   }
-  const commit = await preparePersonalPublicImport({ selection, selectionStore, outbox, store,
+  const commit = await adapter.prepare({ selection, selectionStore, outbox, store,
     getContext,
     getState: () => structuredClone(selection.basePayload), getRevision: () => selection.baseStateRevision,
     makeSnapshot(...args) { assertCurrent(); return makeSnapshot(...args); },

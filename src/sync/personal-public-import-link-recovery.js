@@ -8,8 +8,11 @@ const fail = () => { throw Object.assign(Error("Сохранённая копи�
 
 // Explicit local recovery after selection/action preparation or a native file
 // commit. It links only the original action, without downloads or server writes.
-export async function recoverPersonalPublicImportLink({ entry, outbox, store, getContext, makeSnapshot,
-  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }) {
+export function recoverPersonalPublicImportLink(options) { return recoverPersonalRemoteImportLink(options,
+  { manifestKey: "publicImport", assertBody: assertPersonalPublicImportBody, assertHashes: assertPersonalPublicImportHashes }); }
+
+export async function recoverPersonalRemoteImportLink({ entry, outbox, store, getContext, makeSnapshot,
+  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }, adapter) {
   if (!enabled || entry?.selection.version === 2 && !publicEntityEnabled || !entry?.action || entry.completion || !outbox || !store) fail();
   entry = structuredClone(entry);
   const initial = structuredClone(getContext()), binding = outbox.binding, { selection, action } = entry;
@@ -19,14 +22,14 @@ export async function recoverPersonalPublicImportLink({ entry, outbox, store, ge
   };
   assertCurrent();
   if (action.kind !== "list.import" || action.operationId !== selection.operationId || Object.keys(binding).some(key => action[key] !== binding[key])) fail();
-  if (action.body.publicImport?.version !== selection.version) fail();
+  if (action.body[adapter.manifestKey]?.version !== selection.version) fail();
   for (const key of ["source", "sourcePayload", selection.version === 2 ? "copy" : "layoutTargets", "ownerTargets", "photoTargets", "editMeta"])
-    if (!same(action.body.publicImport?.[key], selection[key])) fail();
-  const compiled = assertPersonalPublicImportBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
-  await assertPersonalPublicImportHashes(action.body); assertCurrent();
+    if (!same(action.body[adapter.manifestKey]?.[key], selection[key])) fail();
+  const compiled = adapter.assertBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
+  await adapter.assertHashes(action.body); assertCurrent();
   const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); assertCurrent();
   if (inventory.entries.some(value => value.state !== "settled-retained" && !(value.operationId === selection.operationId && value.state === "unlinked"))) fail();
-  const files = action.body.publicImport.files.length;
+  const files = action.body[adapter.manifestKey].files.length;
   const saved = files ? await store.read(selection.operationId) : null; assertCurrent();
   if (files && (!saved || !same(saved.action, action))) fail();
   const snapshot = saved?.snapshot || makeSnapshot?.(structuredClone(compiled.payload), structuredClone(selection.basePayload), compiled.activeLayoutId);
