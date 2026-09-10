@@ -8,12 +8,8 @@ printf '\nKernel: '
 uname -srmo
 printf '\nMemory:\n'
 free -b
-printf '\nRunner cgroup:\n'
-cat /proc/self/cgroup
-for metric in current max peak events; do
-  printf '\nRoot cgroup memory.%s:\n' "$metric"
-  cat "/sys/fs/cgroup/memory.$metric" 2>&1 || true
-done
+printf '\nRunner service and ancestor cgroup memory:\n'
+node --input-type=module -e 'import { readLinuxCgroupMemory } from "./tests/fixtures/browser-lifecycle.js"; console.log(JSON.stringify(readLinuxCgroupMemory(), null, 2));' || true
 printf '\nBrowser process names and RSS (KiB):\n'
 ps -eo pid,ppid,comm,rss | awk 'NR == 1 || /WebKit|WebProcess|MiniBrowser|WPE/'
 printf '\nKernel browser crash / memory events since smoke started:\n'
