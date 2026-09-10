@@ -249,6 +249,19 @@ export function createExperimentTransport({
       && /^[a-f0-9]{64}$/.test(value.payloadDigest);
     const accessPath = value => /^\/bike-packing\/access-operations(?:\/[0-9a-f-]{36}\/cancel)?$/.test(value);
     const access = accessMetadata(recovery) && accessPath(path) && method === "POST";
+    const adminMetadata = value => value?.type === "admin-template" && value.protocol === "admin-template-v1"
+      && value.environment === "bike-packing-experiment" && typeof value.actorId === "string" && value.actorId
+      && /^public-(demo-state|shared-layout-)/.test(value.listId) && typeof value.itemKey === "string"
+      && ["template.create", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"].includes(value.kind)
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.operationId)
+      && /^[a-f0-9]{64}$/.test(value.payloadDigest);
+    const adminPath = value => /^\/bike-packing\/admin\/template-operations(?:\/[0-9a-f-]{36}\/cancel)?$/.test(value);
+    const admin = adminMetadata(recovery) && adminPath(path) && method === "POST";
+    const ownAdmin = entry => (causal || access || admin) && entry.method === "POST" && adminPath(entry.path)
+      && adminMetadata(entry.recovery) && entry.id === entry.recovery.operationId && entry.recovery.actorId === recovery.actorId;
+    const adminPeer = entry => admin && entry.recovery?.actorId === recovery.actorId
+      && (entry.recovery.type === "list" && entry.recovery.protocol === "causal-v1"
+        || entry.method === "POST" && accessPath(entry.path) && accessMetadata(entry.recovery) && entry.id === entry.recovery.operationId);
     const ownAccess = entry => (causal || access) && entry.method === "POST" && accessPath(entry.path)
       && accessMetadata(entry.recovery) && entry.id === entry.recovery.operationId && entry.recovery.actorId === recovery.actorId;
     // These handlers serialize against the owner's data head on the server.
@@ -285,7 +298,7 @@ export function createExperimentTransport({
         && (file.thumb?.hash || file.file.hash) === entry.recovery.thumbHash));
     if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
       && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)
-      && !ownCancelledStage(entry) && !ownAccess(entry) && !accessPeer(entry)) && !isReadOnlyRequest(path, method)) {
+      && !ownCancelledStage(entry) && !ownAccess(entry) && !accessPeer(entry) && !ownAdmin(entry) && !adminPeer(entry)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;
@@ -329,7 +342,7 @@ export function createExperimentTransport({
     try {
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
-      if (committed && (entry?.identity || ["list", "photo-stage", "access"].includes(entry?.recovery?.type))) {
+      if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template"].includes(entry?.recovery?.type))) {
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
