@@ -1,3 +1,4 @@
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 import { personalPendingServerUpdateSource } from "./personal-pending-server-update.js";
 import { PERSONAL_SERVER_IMPORT_ENABLED } from "./personal-server-import-source.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
@@ -48,6 +49,7 @@ export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = P
   copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
+  serverPhotoFormEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED, serverNewOwnerFormEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
@@ -56,13 +58,18 @@ export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = P
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, records = [] } = {}) => {
+  if (([6, 7].includes(record?.action?.body?.ownerResult?.version) || [13, 14].includes(record?.action?.body?.photoResults?.version))
+    && (!serverPhotoFormEnabled || !serverEnabled)) return false;
   if (([2, 5].includes(record?.action?.body?.ownerResult?.version) || [8, 11].includes(record?.action?.body?.photoResults?.version))
     && (!publicPhotoFormEnabled || !publicEnabled)) return false;
   if (([3, 4].includes(record?.action?.body?.ownerResult?.version) || [9, 10].includes(record?.action?.body?.photoResults?.version))
     && !importPhotoFormEnabled) return false;
-  if ((record?.action?.body?.ownerResult || [6, 8, 9, 10, 11].includes(record?.action?.body?.photoResults?.version))
+  if ((record?.action?.body?.ownerResult || [6, 8, 9, 10, 11, 13, 14].includes(record?.action?.body?.photoResults?.version))
     && (!formOwnerResultEnabled || !personalPendingPhotoFormChain({ records, operationId: record.action.operationId, listId: record.action.listId }))) return false;
   const importChain = personalPendingPhotoFormChain({ records, operationId: record?.action?.operationId, listId: record?.action?.listId });
+  if (importChain?.serverOperationId && importChain.forms.length > 1 && (!serverPhotoFormEnabled || !serverEnabled)) return false;
+  if (!serverNewOwnerFormEnabled && (record?.action?.body?.ownerResult?.version === 7 || record?.action?.body?.photoResults?.version === 14
+    || importChain?.forms.some(form => form.action.body.ownerResult?.version === 7))) return false;
   if (!publicNewOwnerFormEnabled && (record?.action?.body?.ownerResult?.version === 5 || record?.action?.body?.photoResults?.version === 11
     || importChain?.forms.some(form => form.action.body.ownerResult?.version === 5))) return false;
   if (!importNewOwnerFormEnabled && (record?.action?.body?.ownerResult?.version === 4 || record?.action?.body?.photoResults?.version === 10
@@ -109,6 +116,7 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
   copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
+  serverPhotoFormEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED, serverNewOwnerFormEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
@@ -141,15 +149,15 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
       || pendingGuestUpdateEnabled && guestEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingArchiveUpdateEnabled && archiveEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
     if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, copyBatchEnabled, archiveEnabled, guestEnabled, publicEnabled, publicEntityEnabled, serverEnabled, pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingPublicUpdateEnabled, pendingFormUpdateEnabled, pendingOwnerDeletionEnabled, pendingCopyDeletionEnabled, pendingCopyBatchDeletionEnabled,
-      manufacturerSourceEnabled, formOwnerResultEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled, records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
+      manufacturerSourceEnabled, formOwnerResultEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled, serverPhotoFormEnabled, serverNewOwnerFormEnabled, records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
     const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true,
       photoFormEnabled: formEnabled, photoCopyEnabled: copyEnabled, photoCopyBatchEnabled: copyBatchEnabled, pendingPhotoCopyDeletionEnabled: pendingCopyDeletionEnabled,
       pendingPhotoCopyBatchDeletionEnabled: pendingCopyBatchDeletionEnabled,
       archiveImportEnabled: archiveEnabled, archivePhotoImportEnabled: archiveEnabled,
       guestImportEnabled: guestEnabled, publicImportEnabled: publicEnabled, publicEntityEnabled, serverImportEnabled: serverEnabled,
-      pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingPublicUpdateEnabled, pendingFormUpdateEnabled, manufacturerSourceEnabled, formOwnerResultEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled,
+      pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingPublicUpdateEnabled, pendingFormUpdateEnabled, manufacturerSourceEnabled, formOwnerResultEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled, serverPhotoFormEnabled, serverNewOwnerFormEnabled,
       cancellationEnabled: operationCancellationEnabled });
-    const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled, archiveEnabled, guestEnabled, publicEnabled, publicEntityEnabled, serverEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled });
+    const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled, archiveEnabled, guestEnabled, publicEnabled, publicEntityEnabled, serverEnabled, publicPhotoFormEnabled, publicNewOwnerFormEnabled, importPhotoFormEnabled, importNewOwnerFormEnabled, serverPhotoFormEnabled, serverNewOwnerFormEnabled });
     if (head.photoState || pendingForm) {
       const cancelled = await outbox.cancelPhotoUpload({ queue, getContext, photoStore: store, photoStaging }); assertContext();
       if (cancelled.alreadyPublished) return checkPersonalPhotoRecoveryResult(common);

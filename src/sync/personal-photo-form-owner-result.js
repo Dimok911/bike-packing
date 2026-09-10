@@ -3,6 +3,7 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 import { assertPersonalPublicPhotoFormReference, assertPersonalPublicPhotoFormBase } from "./personal-public-photo-form-result.js";
 import { assertPersonalImportPhotoFormReference, assertPersonalImportPhotoFormBase } from "./personal-import-photo-form-result.js";
+import { assertPersonalServerPhotoFormReference, assertPersonalServerPhotoFormBase } from "./personal-server-photo-form-result.js";
 
 export const PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED = false;
 export const PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY = "personalCausalPhotoFormOwnerResultV1";
@@ -17,11 +18,12 @@ const fail = () => { throw Object.assign(Error("Не подтверждён ис
 
 export function personalPhotoFormOwnerResult(body) {
   assertListOperationJsonValue(body);
-  if ([2, 3, 4, 5].includes(body?.ownerResult?.version)) {
-    const ref = ([2, 5].includes(body.ownerResult.version) ? assertPersonalPublicPhotoFormReference : assertPersonalImportPhotoFormReference)(body);
-    if ([4, 5].includes(ref.version) && body.changes?.some(change => change.action !== "attach")) fail();
+  if ([2, 3, 4, 5, 6, 7].includes(body?.ownerResult?.version)) {
+    const ref = ([6, 7].includes(body.ownerResult.version) ? assertPersonalServerPhotoFormReference
+      : [2, 5].includes(body.ownerResult.version) ? assertPersonalPublicPhotoFormReference : assertPersonalImportPhotoFormReference)(body);
+    if ([4, 5, 7].includes(ref.version) && body.changes?.some(change => change.action !== "attach")) fail();
     personalPhotoFormOwnerResult({ ...body, ownerResult: { version: 1, operationId: ref.operationId,
-      owner: [4, 5].includes(ref.version) ? { id: body.entityId, photos: [] } : ref.owner } });
+      owner: [4, 5, 7].includes(ref.version) ? { id: body.entityId, photos: [] } : ref.owner } });
     return ref;
   }
   const ref = body.ownerResult;
@@ -49,7 +51,7 @@ export function personalPhotoFormOwnerResult(body) {
 // action, its digest, file inventory or a network request.
 export function personalPhotoFormOwnerValidationBody(body) {
   personalPhotoFormOwnerResult(body);
-  const revision = [4, 5].includes(body.ownerResult.version) ? 0 : 1;
+  const revision = [4, 5, 7].includes(body.ownerResult.version) ? 0 : 1;
   const view = clone(body); delete view.ownerResult; view.baseEntityRevision = revision;
   view.changes = view.changes.map(change => ({ ...change, baseEntityRevision: revision,
     ...(change.action === "delete" ? { basePhotoRevision: 1 } : {}) }));
@@ -58,6 +60,7 @@ export function personalPhotoFormOwnerValidationBody(body) {
 
 export function assertPersonalPhotoFormOwnerBase(body, basePayload, listId) {
   const reference = personalPhotoFormOwnerResult(body);
+  if ([6, 7].includes(reference.version)) return assertPersonalServerPhotoFormBase(body, basePayload, listId);
   if ([2, 5].includes(reference.version)) return assertPersonalPublicPhotoFormBase(body, basePayload, listId);
   if ([3, 4].includes(reference.version)) return assertPersonalImportPhotoFormBase(body, basePayload, listId);
   const owner = basePayload?.[body.entityType === "item" ? "items" : "containers"]?.[body.entityId];

@@ -4,6 +4,7 @@ import { assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol
 import { personalFormPhotoResultReference, isPersonalPendingFormUpdate } from "./personal-pending-form-update.js";
 import { personalPublicPendingPhotoFormChain } from "./personal-public-pending-photo-chain.js";
 import { personalImportPendingPhotoFormChain } from "./personal-import-pending-photo-chain.js";
+import { personalServerPendingPhotoFormChain } from "./personal-server-pending-photo-chain.js";
 
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const payloadOf = record => record.photoState?.payload || record.action.body.payload;
@@ -11,6 +12,8 @@ const payloadOf = record => record.photoState?.payload || record.action.body.pay
 // Proves every local step between the original file-owning form and the head.
 // Checkpoints, timestamps, UUID ordering and matching owner IDs are not edges.
 export function personalPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner = false }) {
+  const serverChain = personalServerPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner });
+  if (serverChain) return serverChain;
   const publicChain = personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner });
   if (publicChain) return publicChain;
   const importChain = personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId, allowNewOwner });

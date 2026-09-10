@@ -16,6 +16,13 @@ export function sharedLayoutIdFromUrl(href, { layoutParam, legacyLayoutParam = "
   }
 }
 
+export function personalCopyUrlFromSharedLink(href, { listParam, layoutParam, legacyListParam = "shared", legacyLayoutParam = "layout" } = {}) {
+  if (!sharedListIdFromUrl(href, { listParam, legacyListParam })) return null;
+  const url = new URL(href);
+  for (const key of [listParam, layoutParam, legacyListParam, legacyLayoutParam]) if (key) url.searchParams.delete(key);
+  return url.toString();
+}
+
 export function buildSharedListUrlFromHref(href, { listParam, layoutParam, listId, layoutId } = {}) {
   const url = new URL(href);
   url.search = "";

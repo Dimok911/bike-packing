@@ -7,6 +7,7 @@ import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, personalPublicPendingPhotoInventory } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
@@ -18,21 +19,24 @@ const fail = () => { throw Object.assign(Error("Следующая фотофо�
 // The complete new file set and every new ID are captured once, synchronously.
 export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload, baseStateRevision,
   parentOperationId, entityType, entityId, fields, files, created = false, index = null, photoSelection = null, photoIds = null,
-  formContext = null, containerFormContext = null, publicOperationId = null, importOperationId = null, importKind = null }, { enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
+  formContext = null, containerFormContext = null, publicOperationId = null, importOperationId = null, importKind = null, serverOperationId = null }, { enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
   publicNewOwnerEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED,
   importEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   importNewOwnerEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
+  serverEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED,
+  serverNewOwnerEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), itemContextEnabled = false, containerContextEnabled = false } = {}) {
   if (!enabled || !uuid(parentOperationId) || !["item", "container"].includes(entityType) || !Array.isArray(files)
     || publicOperationId !== null && (!publicEnabled || !uuid(publicOperationId))
     || (importOperationId === null ? importKind !== null : !importEnabled || !uuid(importOperationId) || !["guest", "archive"].includes(importKind) || publicOperationId !== null)
-    || typeof created !== "boolean" || created && (!(publicOperationId ? publicNewOwnerEnabled : importOperationId && importNewOwnerEnabled)
+    || serverOperationId !== null && (!serverEnabled || !uuid(serverOperationId) || publicOperationId !== null || importOperationId !== null)
+    || typeof created !== "boolean" || created && (!(serverOperationId ? serverNewOwnerEnabled : publicOperationId ? publicNewOwnerEnabled : importOperationId && importNewOwnerEnabled)
       || !files.length || photoSelection !== null || photoIds !== null || index !== null)
     || (files.length ? photoIds !== null : !Array.isArray(photoIds) || photoSelection !== null || index !== null)) fail();
   assertListOperationJsonValue({ binding, snapshot, basePayload, baseStateRevision, parentOperationId, entityType, entityId,
-    fields, index, photoSelection, photoIds, formContext, containerFormContext, publicOperationId, importOperationId, importKind });
-  const imported = publicOperationId || importOperationId;
+    fields, index, photoSelection, photoIds, formContext, containerFormContext, publicOperationId, importOperationId, importKind, serverOperationId });
+  const imported = publicOperationId || importOperationId || serverOperationId;
   const collection = entityType === "item" ? "items" : "containers", owner = basePayload?.[collection]?.[entityId];
   if ((created ? basePayload.items?.[entityId] !== undefined || basePayload.containers?.[entityId] !== undefined
     : !isPersonalPhotoPrivateOwner(owner) || !Array.isArray(owner.photos) && !(imported && owner.photos === undefined))
@@ -75,11 +79,11 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
   const options = { enabled: true, snapshotToPayload: grammarProjection, createUuid, itemContextEnabled, containerContextEnabled };
   const plan = files.length ? preparePersonalPhotoFormAttachments(input, options)
     : { version: 1, ...preparePersonalPhotoEditForm({ ...input, photoIds, operationId: createUuid() }, options), files: [] };
-  if ([parentOperationId, publicOperationId, importOperationId].includes(plan.operationId)
-    || plan.files.some(part => [parentOperationId, publicOperationId, importOperationId].includes(part.stage.operationId))) fail();
+  if ([parentOperationId, publicOperationId, importOperationId, serverOperationId].includes(plan.operationId)
+    || plan.files.some(part => [parentOperationId, publicOperationId, importOperationId, serverOperationId].includes(part.stage.operationId))) fail();
   plan.body.baseEntityRevision = null;
-  plan.body.ownerResult = { version: created ? publicOperationId ? 5 : 4 : importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
-    ...(publicOperationId ? { publicOperationId, pendingPhotos } : importOperationId ? { importOperationId, importKind, pendingPhotos } : {}) };
+  plan.body.ownerResult = { version: serverOperationId ? created ? 7 : 6 : created ? publicOperationId ? 5 : 4 : importOperationId ? 3 : publicOperationId ? 2 : 1, operationId: parentOperationId, owner: frozenOwner,
+    ...(serverOperationId ? { serverOperationId, pendingPhotos } : publicOperationId ? { publicOperationId, pendingPhotos } : importOperationId ? { importOperationId, importKind, pendingPhotos } : {}) };
   for (const change of plan.body.changes) {
     change.baseEntityRevision = null;
     if (change.action === "delete") change.basePhotoRevision = null;

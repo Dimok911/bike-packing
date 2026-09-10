@@ -15,6 +15,12 @@ export default defineConfig(({ mode }) => ({
       if (process.env.BIKE_PERSONAL_PENDING_PUBLIC_CREATE === "1") result = result.replace("PERSONAL_PENDING_PUBLIC_CREATE_ENABLED = false", "PERSONAL_PENDING_PUBLIC_CREATE_ENABLED = true");
       return result;
     }
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-server-photo-form-result.js")) {
+      let result = code;
+      if (process.env.BIKE_PERSONAL_SERVER_PHOTO_FORMS === "1") result = result.replace("PERSONAL_SERVER_PHOTO_FORM_ENABLED = false", "PERSONAL_SERVER_PHOTO_FORM_ENABLED = true");
+      if (process.env.BIKE_PERSONAL_SERVER_NEW_OWNERS === "1") result = result.replace("PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED = false", "PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED = true");
+      return result;
+    }
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-import-photo-form-result.js")) {
       let result = code;
       if (process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1") result = result.replace("PERSONAL_IMPORT_PHOTO_FORM_ENABLED = false", "PERSONAL_IMPORT_PHOTO_FORM_ENABLED = true");

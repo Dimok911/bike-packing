@@ -1,3 +1,4 @@
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
@@ -36,7 +37,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   selectionStorage = globalThis.localStorage, selectionLocks = globalThis.navigator?.locks,
   batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
-  serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED } = {}) {
+  serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED, serverPhotoFormEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED,
+  serverNewOwnerFormEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -154,6 +156,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         if (guest && !guestEnabled) throw blocked("guest-disabled");
         if (archive && !guest && !publicCopy && !serverCopy && !archiveEnabled) throw blocked("archive-disabled");
         if (form && !formEnabled) throw blocked("form-disabled");
+        if ([6, 7].includes(action.body.ownerResult?.version) && (!serverEnabled || !serverPhotoFormEnabled
+          || action.body.ownerResult.version === 7 && !serverNewOwnerFormEnabled)) throw blocked("server-form-disabled");
         assertContext(initial);
         const record = await (serverCopy ? encodePersonalServerImportRecord : publicCopy ? encodePersonalPublicImportRecord : guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
         await transaction("readwrite", (store, finish, abort) => {
@@ -299,6 +303,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       if (!action) throw blocked("missing-action");
       if (Object.hasOwn(action.action.body || {}, "serverImport") && !serverEnabled) throw blocked("server-disabled");
       if (action.action.body?.action === "form" && !formEnabled) throw blocked("form-disabled");
+      if ([6, 7].includes(action.action.body.ownerResult?.version) && (!serverEnabled || !serverPhotoFormEnabled
+        || action.action.body.ownerResult.version === 7 && !serverNewOwnerFormEnabled)) throw blocked("server-form-disabled");
       const batch = Array.isArray(action.files);
       if (batch && (!batchEnabled || !uuid(stageOperationId))) throw blocked("batch-stage-disabled-or-missing");
       const stage = batch ? action.files.find(part => part.stage.operationId === stageOperationId)?.stage : action.stage;

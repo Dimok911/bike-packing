@@ -12,5 +12,5 @@ async function serverFixture(input) {
   input.action.body.causal.reads = [{ listId: source.listId, revision: source.stateRevision }];
   return input;
 }
-export const serverImportFixture = async fileless => serverFixture(await publicImportFixture(fileless));
+export const serverImportFixture = async (fileless, options) => serverFixture(await publicImportFixture(fileless, options));
 export const serverEntityFixture = async options => serverFixture(await publicEntityFixture(options));

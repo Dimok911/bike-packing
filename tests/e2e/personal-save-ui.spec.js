@@ -1,3 +1,4 @@
+import { personalServerPhotoFormSummary } from "../../src/sync/personal-server-photo-form-result.js";
 import { preparePersonalLegacyServerImportSource } from "../../src/sync/personal-legacy-server-import-source.js";
 import { preparePersonalServerImportSource } from "../../src/sync/personal-server-import-source.js";
 import { assertPersonalServerImportBody, assertPersonalServerImportHashes, personalServerImportReceipt } from "../../src/sync/personal-server-import-protocol.js";
@@ -635,7 +636,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SERVER_IMPORT === "1" ? ["personalCausalServerImportV1"] : []), ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_SERVER_PHOTO_FORMS === "1" ? ["personalCausalServerPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_SERVER_NEW_OWNERS === "1" ? ["personalCausalServerNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_SERVER_IMPORT === "1" ? ["personalCausalServerImportV1"] : []), ...(process.env.BIKE_PERSONAL_SHARE_LINKS === "1" ? ["personalCausalShareLinksV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_NEW_OWNERS === "1" ? ["personalCausalPublicNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_NEW_OWNERS === "1" ? ["personalCausalImportNewOwnerFormsV1"] : []), ...(process.env.BIKE_PERSONAL_IMPORT_PHOTO_FORMS === "1" ? ["personalCausalImportPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" ? ["personalCausalPublicPhotoFormsV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (request.method() === "GET" && /^\/bike-packing\/(?:entity-links|lists)\/shared-(?:entity-link|entity-snapshot|snapshot)-[a-f0-9-]+$/.test(path)) {
         const id = path.split("/").at(-1), receipt = [...state.receipts.values()].find(value => value.operation.state === "committed" && value.result.payload.sharedLink?.descriptor.id === id);
@@ -803,8 +804,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(predecessor.operation.state).toBe("committed");
             const source = structuredClone(body.body.ownerResult.owner);
             const published = predecessor.result.payload.list.payload[body.body.entityType === "item" ? "items" : "containers"][body.body.entityId];
-            if ([4, 5].includes(body.body.ownerResult.version)) {
-              expect(process.env[body.body.ownerResult.version === 5 ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"]).toBe("1"); expect(source).toBeNull(); expect(published).toBeUndefined();
+            if ([4, 5, 7].includes(body.body.ownerResult.version)) {
+              expect(process.env[body.body.ownerResult.version === 7 ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : body.body.ownerResult.version === 5 ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"]).toBe("1"); expect(source).toBeNull(); expect(published).toBeUndefined();
               expect(state.payload.items[body.body.entityId]).toBeUndefined(); expect(state.payload.containers[body.body.entityId]).toBeUndefined();
             } else {
               source.photos = source.photos.map(photo => photo.status === "pending" ? published.photos.find(p => p.id === photo.id && p.assetId === photo.assetId) : photo);
@@ -851,7 +852,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             changes.push({ index, action: "attach", entityType: change.entityType, entityId: change.entityId, photoId: change.photoId,
               assetId: change.assetId, photoIds: owner.photos.map(photo => photo.id), photo });
           }
-          if (body.body.baseEntityRevision === 0 || [4, 5].includes(body.body.ownerResult?.version)) {
+          if (body.body.baseEntityRevision === 0 || [4, 5, 7].includes(body.body.ownerResult?.version)) {
             for (const key of body.body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) delete owner[key];
           }
           state.payload[body.body.entityType === "item" ? "items" : "containers"][owner.id] = owner;
@@ -860,7 +861,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
-              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 || [4, 5].includes(body.body.ownerResult?.version),
+              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 || [4, 5, 7].includes(body.body.ownerResult?.version),
                 ...(body.body.manufacturerSource && !body.body.changes.length ? { manufacturerCatalogSource: structuredClone(owner.manufacturerCatalogSource) } : {}) } } } };
           if (state.afterFormCommit) await state.afterFormCommit(body);
         } else if (photoRecovery && body.kind === "photos.mutate") {
@@ -922,13 +923,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             const copy = state.receipts.get(ref.operationId);
             expect(copy.operation.state).toBe("committed");
             expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.operationId, listId: state.listId });
-            if ([3, 4, 5, 6, 7, 8, 9, 10, 11].includes(ref.version)) {
-              expect(copy.operation.kind).toBe([5, 6, 8, 9, 10, 11].includes(ref.version) ? "photos.mutate" : "list.import"); expect(predecessor.operation.state).toBe("committed");
+            if ([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(ref.version)) {
+              expect(copy.operation.kind).toBe([5, 6, 8, 9, 10, 11, 13, 14].includes(ref.version) ? "photos.mutate" : "list.import"); expect(predecessor.operation.state).toBe("committed");
               for (const collection of ["items", "containers"]) for (const [id, owner] of Object.entries(state.payload[collection])) {
                 const previous = predecessor.result.payload.list.payload[collection][id];
                 if (owner.photos) owner.photos = owner.photos.map(photo => {
                   if (photo.status !== "pending") return photo;
-                  const file = ([6, 8, 9, 10, 11].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 12 ? copy.result.payload.serverPhotos : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
+                  const file = ([6, 8, 9, 10, 11, 13, 14].includes(ref.version) ? copy.result.payload.list.payload[collection][id].photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, entityId: id, photo })) : ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 12 ? copy.result.payload.serverPhotos : ref.version === 7 ? copy.result.payload.publicPhotos : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
                   expect(file?.entityId).toBe(id); expect(file?.assetId).toBe(photo.assetId);
                   expect(previous?.photos).toContainEqual(file.photo); return structuredClone(file.photo);
                 });
@@ -948,6 +949,19 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
                 ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
+        }
+        if (data.operation.state === "committed" && [6, 7].includes(body.body.ownerResult?.version)) {
+          expect(process.env.BIKE_PERSONAL_SERVER_PHOTO_FORMS).toBe("1");
+          const ref = body.body.ownerResult, root = state.receipts.get(ref.serverOperationId);
+          expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.serverOperationId, listId: state.listId });
+          expect(root.result.payload.serverImport.operationId).toBe(ref.serverOperationId);
+          Object.assign(data.result.payload, { serverPhotoForm: personalServerPhotoFormSummary(body.body, state.listId), serverPhotoFormSourceOperationId: body.operationId });
+        }
+        if (data.operation.state === "committed" && [12, 13, 14].includes(body.body.photoResults?.version) && process.env.BIKE_PERSONAL_SERVER_PHOTO_FORMS === "1") {
+          const ref = body.body.photoResults, source = state.receipts.get(ref.operationId).result.payload;
+          Object.assign(data.result.payload, { serverPhotoFormSourceOperationId: ref.operationId, serverPhotoForm: { version: 1,
+            serverOperationId: ref.version === 12 ? ref.operationId : source.serverPhotoForm.serverOperationId,
+            pendingPhotos: personalPublicPendingPhotoInventory(body.body.payload, state.listId) } });
         }
         if (data.operation.state === "committed" && [2, 5].includes(body.body.ownerResult?.version)) {
           expect(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS).toBe("1");
@@ -5355,6 +5369,137 @@ async function preparePendingPublicUi(page, context, fileless, tree = false) {
     release: () => release?.(), clearHold: () => { f.beforeStageAck = null; f.beforeUpdate = null; } };
 }
 
+async function preparePendingServerUi(page, context, fileless, legacy = false) {
+  const { f } = await openServerSourceUi(page, context, { photos: !fileless, legacy }); let release;
+  const hold = () => new Promise(resolve => { release = resolve; });
+  if (fileless) f.beforeUpdate = body => body.kind === "list.import" ? hold() : undefined;
+  else f.beforeStageAck = hold;
+  await page.locator("[data-copy-shared-layout]").filter({ visible: true }).first().click();
+  await expect.poll(() => Boolean(release), { timeout: 30000 }).toBe(true);
+  await expect(page).not.toHaveURL(/[?&](?:sharedList|shared)=/);
+  const imported = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(record => record.action?.body.serverImport));
+  const target = (entityType, sourceId) => imported.action.body.serverImport.ownerTargets.find(owner => owner.entityType === entityType && owner.sourceId === sourceId).targetId;
+  const layoutId = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")).activeLayoutId);
+  return { f, imported, itemId: target("item", "source"), bagId: target("container", "bag"), layoutId,
+    release: () => release?.(), clearHold: () => { f.beforeStageAck = null; f.beforeUpdate = null; } };
+}
+
+for (const [fileless, outcome] of [[false, "save"], [true, "save"], [false, "delete item"], [false, "quota"],
+  [false, "mixed"], [false, "cancel"], [false, "lost cancellation"]])
+test(`server pending new photo forms ${fileless ? "fileless" : "photos"} ${outcome} retain different owners and original files`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_SERVER_PHOTO_FORMS !== "1", "Server photo forms retain their independent gate");
+  test.setTimeout(150000);
+  const { f, imported, itemId, bagId, release, clearHold } = await preparePendingServerUi(page, context, fileless);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  const image = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 12; canvas.height = 12;
+    const context = canvas.getContext("2d"); context.fillStyle = "#326b47"; context.fillRect(0, 0, 12, 12);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  const server = structuredClone(f.payload), forms = [];
+  try {
+    for (const [type, id, prefix, view] of [["item", itemId, "item", "items"], ["container", bagId, "rootContainer", "bags"]]) {
+      await page.locator(`[data-view="${view}"]`).click();
+      await page.locator(type === "item" ? `#itemsView [data-list-item-id="${id}"] .item-title` : `#bagsView [data-root-card="${id}"] [data-root-title]`).click();
+      const dialog = page.locator(type === "item" ? "#itemDialog" : "#rootContainerDialog"); await expect(dialog).toBeVisible();
+      const mixed = outcome === "mixed" && type === "item";
+      if (mixed) { await page.locator(`#${prefix}PhotoRemoveBtn`).click(); await page.locator("#confirmOkBtn").click(); }
+      await page.locator(`#${prefix}PhotoInput`).setInputFiles(Array.from({ length: mixed ? 2 : 1 }, (_, i) => ({ name: `новое-${type}-${i}.png`, mimeType: "image/png", buffer: image })));
+      await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(fileless ? 1 : 2);
+      if (mixed) {
+        await submitForm(page, `#${prefix}PhotoPreview [data-photo-index="1"]`);
+        await submitForm(page, `#${prefix}PhotoPrimaryBtn`);
+      }
+      await page.locator(`#${prefix}Weight`).fill(type === "item" ? "341" : "562");
+      if (outcome === "quota") await page.evaluate(() => {
+        const write = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+          if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.ownerResult?.version === 6) throw new DOMException("Server photo form quota", "QuotaExceededError");
+          return write.call(this, key, value);
+        };
+      });
+      await submitForm(page, type === "item" ? "#saveItemBtn" : "#saveRootContainerBtn", `#${prefix}Weight`);
+      if (outcome === "quota") {
+        await expect(dialog).toBeVisible(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+        expect((await records()).filter(record => record.action.body.ownerResult?.version === 6)).toEqual([]);
+        expect(f.payload).toEqual(server);
+        const download = page.waitForEvent("download"); await page.locator("[data-download-photo-recovery]").click();
+        const archive = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+        expect([...archive.keys()].filter(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toHaveLength(3);
+        return;
+      }
+      await expect(dialog).not.toBeVisible();
+      const saved = (await records()).find(record => record.action.body.ownerResult?.version === 6 && record.action.body.entityId === id);
+      expect(saved).toBeTruthy(); forms.push(saved);
+      expect(saved.action.body.ownerResult.serverOperationId).toBe(imported.action.operationId);
+      if (!fileless || type === "container") expect(saved.action.body.ownerResult.pendingPhotos.map(row => row.entityId)).toContain(itemId);
+      if (!fileless) expect(saved.action.body.ownerResult.pendingPhotos.map(row => row.entityId)).toContain(bagId);
+      expect(saved.action.body.changes.filter(change => change.action === "attach")).toHaveLength(mixed ? 2 : 1);
+    }
+    if (outcome === "delete item") {
+      await page.locator('[data-view="items"]').click(); await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click();
+      await page.locator("#itemDeleteForeverBtn").click(); await expect(page.locator("#confirmDialog")).toBeVisible({ timeout: 30000 });
+      await submitForm(page, "#confirmOkBtn"); await expect(page.locator("#itemDialog")).not.toBeVisible();
+      expect((await records()).some(record => record.action.body.photoResults?.version === 13)).toBe(true);
+    }
+    expect((await records()).find(record => record.action.operationId === imported.action.operationId)).toEqual(imported);
+    if (outcome === "cancel" || outcome === "lost cancellation") {
+      await context.route(`${origin}/src/**/*.js`, async route => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid native-file reader path");
+        return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+      });
+      const nativeFiles = () => page.evaluate(async () => {
+        const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+        const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+        const store = createPersonalPhotoActionStore(binding), proofs = [];
+        for (const id of await store.ids()) for (const part of (await store.read(id)).files) proofs.push({ ok: true,
+          operation: { id: part.stage.operationId, actorId: binding.actorId, environment: binding.environment, listId: binding.listId,
+            entityType: part.stage.entityType, entityId: part.stage.entityId, photoId: part.stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+          cancellation: { version: 1, stageOperationId: part.stage.operationId, fileHash: part.fileMetadata.hash,
+            thumbHash: part.thumbMetadata?.hash || part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } });
+        return proofs;
+      });
+      const retained = await records(), files = await nativeFiles();
+      expect(files).toHaveLength(4);
+      f.cancelPhotoActions = new Map(retained.map(record => [record.action.operationId, record.action]));
+      f.cancellationReceipts = new Map(files.map(proof => [proof.operation.id, proof]));
+      f.loseStageAt = 1; clearHold(); release(); await expect.poll(() => Boolean(f.hiddenStage)).toBe(true);
+      await reloadApp(page, { recovery: true }); f.loseStageAt = 0; f.hiddenStage = null;
+      const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+      await expect(cancel).toBeVisible();
+      if (outcome === "lost cancellation") {
+        f.loseCancellation = true; f.hideCancellationReceipt = true; await cancel.click(); await expect(cancel).toBeEnabled({ timeout: 30000 });
+        await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
+      }
+      await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible({ timeout: 30000 }); await page.locator("#confirmCancelBtn").click();
+      await expect(recovery).toContainText("Выбор отложен"); expect(f.payload).toEqual(server);
+      expect(new Set(f.ownerCancellationPosts)).toEqual(new Set([imported, ...forms].map(record => record.action.operationId)));
+      await reloadApp(page, { recovery: true }); await cancel.click(); await page.locator("#confirmOkBtn").click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+      expect(f.payload).toEqual(server); expect(f.stagePosts).toHaveLength(1); expect(await nativeFiles()).toEqual(files);
+      await reloadApp(page); expect(f.errors).toEqual([]); return;
+    }
+    clearHold(); release(); await reloadApp(page, { recovery: true });
+    const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+    await expect(resume).toBeVisible();
+    f.beforePhotoWrite = action => { f.loseFormOwner = action.operationId === forms[1].action.operationId; };
+    await resume.click(); await expect(resume).toBeEnabled({ timeout: 30000 }); await expect.poll(() => f.injectedFailure).toBe(true);
+    f.beforePhotoWrite = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+    await reloadApp(page, { recovery: true }); await resume.click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+    if (outcome === "delete item") expect(f.payload.items[itemId]).toBeUndefined();
+    else { expect(f.payload.items[itemId].weight).toBe(341); expect(f.payload.items[itemId].photos).toHaveLength(fileless ? 1 : 2); }
+    expect(f.payload.containers[bagId].weight).toBe(562); expect(f.payload.containers[bagId].photos).toHaveLength(fileless ? 1 : 2);
+    if (outcome === "mixed") expect(f.payload.items[itemId].photos.map(photo => photo.id)).toEqual(forms[0].photoState.payload.items[itemId].photos.map(photo => photo.id));
+    expect(f.stagePosts).toHaveLength(outcome === "mixed" ? 5 : fileless ? 2 : 4); expect(new Set(f.stagePosts).size).toBe(f.stagePosts.length);
+    for (const saved of [imported, ...forms]) expect(f.posts.filter(post => post.operationId === saved.action.operationId)).toHaveLength(1);
+    expect(f.errors).toEqual([]);
+  } finally { clearHold(); release(); }
+});
+
 for (const [fileless, outcome] of [[false, "save"], [true, "save"], [false, "delete item"], [false, "quota"],
   [false, "mixed"], [false, "cancel"], [false, "lost cancellation"]])
 test(`public pending new photo forms ${fileless ? "fileless" : "photos"} ${outcome} retain different owners and original files`, async ({ page, context }) => {
@@ -5470,9 +5615,10 @@ test(`public pending new photo forms ${fileless ? "fileless" : "photos"} ${outco
   } finally { clearHold(); release(); }
 });
 
-for (const type of ["item", "container"]) test(`public pending new photo writer disabled retains the ${type} form without fallback`, async ({ page, context }) => {
-  test.skip(process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" || process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1", "Checks the independent public-photo writer gate");
-  const { f, itemId, bagId, release, clearHold } = await preparePendingPublicUi(page, context, false);
+for (const family of ["public", "server"]) for (const type of ["item", "container"]) test(family + " pending new photo writer disabled retains the " + type + " form without fallback", async ({ page, context }) => {
+  const gatePrefix = family === "server" ? "BIKE_PERSONAL_SERVER" : "BIKE_PERSONAL_PUBLIC";
+  test.skip(process.env[gatePrefix + "_PHOTO_FORMS"] === "1" || process.env[gatePrefix + "_IMPORT"] !== "1", "Checks the independent photo writer gate");
+  const { f, itemId, bagId, release, clearHold } = await (family === "server" ? preparePendingServerUi : preparePendingPublicUi)(page, context, false);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
     .map(([, value]) => JSON.parse(value)).filter(record => record.action));
   const before = await records(), server = structuredClone(f.payload), posts = f.posts.length;
@@ -6357,11 +6503,11 @@ for (const importKind of ["guest", "archive"]) for (const type of ["item", "cont
 });
 
 async function preparePendingOwnerUi(page, context, fileless, importKind) {
-  return importKind.startsWith("public") ? preparePendingPublicUi(page, context, fileless, importKind === "public-tree") : preparePendingImportUi(page, context, fileless, importKind);
+  return importKind === "server" ? preparePendingServerUi(page, context, fileless) : importKind.startsWith("public") ? preparePendingPublicUi(page, context, fileless, importKind === "public-tree") : preparePendingImportUi(page, context, fileless, importKind);
 }
 
-for (const importKind of ["guest", "archive", "public"]) test(`${importKind} atomic owner photo gate off keeps the entire new form`, async ({ page, context }) => {
-  test.skip(process.env[importKind.startsWith("public") ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"] === "1", "Checks the independent atomic owner creation gate");
+for (const importKind of ["guest", "archive", "public", "server"]) test(`${importKind} atomic owner photo gate off keeps the entire new form`, async ({ page, context }) => {
+  test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"] === "1", "Checks the independent atomic owner creation gate");
   const { f, release, clearHold } = await preparePendingOwnerUi(page, context, false, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
     .map(([, value]) => JSON.parse(value)).filter(record => record.action));
@@ -6382,11 +6528,11 @@ for (const importKind of ["guest", "archive", "public"]) test(`${importKind} ato
   } finally { clearHold(); release(); }
 });
 
-for (const importKind of ["guest", "archive", "public", "public-tree"]) for (const [fileless, outcome] of (importKind === "public-tree" ? [[false, "lost ACK"]] : [[false, "lost ACK"], [true, "lost ACK"], [false, "quota"], [false, "cancel"]]))
+for (const importKind of ["guest", "archive", "public", "public-tree", "server"]) for (const [fileless, outcome] of (importKind === "public-tree" ? [[false, "lost ACK"]] : [[false, "lost ACK"], [true, "lost ACK"], [false, "quota"], [false, "cancel"]]))
 test(`${importKind} atomic owner photo creation ${fileless ? "fileless" : "photos"} ${outcome} preserves complete forms`, async ({ page, context }) => {
-  test.skip(process.env[importKind.startsWith("public") ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"] !== "1", "Checks the independent new-owner photo form gate");
+  test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PUBLIC_NEW_OWNERS" : "BIKE_PERSONAL_IMPORT_NEW_OWNERS"] !== "1", "Checks the independent new-owner photo form gate");
   test.setTimeout(150000);
-  const quota = outcome === "quota", newOwnerVersion = importKind.startsWith("public") ? 5 : 4;
+  const quota = outcome === "quota", newOwnerVersion = importKind === "server" ? 7 : importKind.startsWith("public") ? 5 : 4;
   const { f, imported, release, clearHold } = await preparePendingOwnerUi(page, context, fileless, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
     .map(([, value]) => JSON.parse(value)).filter(record => record.action));
@@ -6439,7 +6585,7 @@ test(`${importKind} atomic owner photo creation ${fileless ? "fileless" : "photo
     await page.locator('[data-view="items"]').click(); await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click();
     await page.locator("#itemWeight").fill("128"); await submitForm(page, "#saveItemBtn", "#itemWeight");
     await expect(page.locator("#itemDialog")).not.toBeVisible();
-    const all = await records(), update = all.find(record => record.action.body.photoResults?.version === (importKind.startsWith("public") ? 11 : 10));
+    const all = await records(), update = all.find(record => record.action.body.photoResults?.version === (importKind === "server" ? 14 : importKind.startsWith("public") ? 11 : 10));
     expect(update).toBeTruthy();
     for (const old of [imported, bagForm, itemForm]) expect(all.find(record => record.action.operationId === old.action.operationId)).toEqual(old);
     if (outcome === "cancel") {
@@ -6500,8 +6646,8 @@ test(`${importKind} atomic owner photo creation ${fileless ? "fileless" : "photo
   } finally { clearHold(); release(); }
 });
 
-for (const importKind of ["guest", "archive", "public"]) test(`${importKind} pending owner creation gate off preserves the form and original import`, async ({ page, context }) => {
-  test.skip(process.env[importKind.startsWith("public") ? "BIKE_PERSONAL_PENDING_PUBLIC_CREATE" : "BIKE_PERSONAL_PENDING_CREATE"] === "1", "Checks the independent fileless owner creation gate");
+for (const importKind of ["guest", "archive", "public", "server"]) test(`${importKind} pending owner creation gate off preserves the form and original import`, async ({ page, context }) => {
+  test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PENDING_PUBLIC_CREATE" : "BIKE_PERSONAL_PENDING_CREATE"] === "1", "Checks the independent fileless owner creation gate");
   const { f, release, clearHold } = await preparePendingOwnerUi(page, context, false, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
     .map(([, value]) => JSON.parse(value)).filter(record => record.action));
@@ -6518,9 +6664,9 @@ for (const importKind of ["guest", "archive", "public"]) test(`${importKind} pen
   } finally { clearHold(); release(); }
 });
 
-for (const importKind of ["guest", "archive", "public"]) for (const [fileless, quota] of [[false, false], [true, false], [false, true]])
+for (const importKind of ["guest", "archive", "public", "server"]) for (const [fileless, quota] of [[false, false], [true, false], [false, true]])
 test(`${importKind} pending owner creation ${fileless ? "fileless" : "photos"} ${quota ? "quota" : "save then photo"} keeps the original import and placements`, async ({ page, context }) => {
-  test.skip(process.env[importKind.startsWith("public") ? "BIKE_PERSONAL_PENDING_PUBLIC_CREATE" : "BIKE_PERSONAL_PENDING_CREATE"] !== "1", "Checks the separately enabled owner creation adapter");
+  test.skip(process.env[importKind === "server" ? "BIKE_PERSONAL_SERVER_NEW_OWNERS" : importKind.startsWith("public") ? "BIKE_PERSONAL_PENDING_PUBLIC_CREATE" : "BIKE_PERSONAL_PENDING_CREATE"] !== "1", "Checks the separately enabled owner creation adapter");
   test.setTimeout(150000);
   const { f, imported, release, clearHold } = await preparePendingOwnerUi(page, context, fileless, importKind);
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
@@ -6530,7 +6676,7 @@ test(`${importKind} pending owner creation ${fileless ? "fileless" : "photos"} $
     const bag = await createRootContainer(page, "Новая сумка во время переноса");
     const bagId = await bag.getAttribute("data-root-container-id"), afterBag = await records();
     const bagAction = afterBag.find(record => record.action.body.payload?.containers?.[bagId]);
-    expect(bagAction.action.body.photoResults.version).toBe(importKind.startsWith("public") ? 7 : importKind === "guest" ? 4 : 3);
+    expect(bagAction.action.body.photoResults.version).toBe(importKind === "server" ? 12 : importKind.startsWith("public") ? 7 : importKind === "guest" ? 4 : 3);
     expect(f.payload.containers[bagId]).toBeUndefined();
     if (quota) await page.evaluate(() => {
       const write = Storage.prototype.setItem;
@@ -6568,7 +6714,7 @@ test(`${importKind} pending owner creation ${fileless ? "fileless" : "photos"} $
     await expect(page.locator("#itemPhotoPreview img")).toHaveCount(1); await submitForm(page, "#saveItemBtn");
     await expect(page.locator("#itemDialog")).not.toBeVisible();
     const all = await records(), photo = all.find(record => record.action.body.entityId === itemId);
-    expect(photo.action.body.ownerResult.version).toBe(importKind.startsWith("public") ? 2 : 3);
+    expect(photo.action.body.ownerResult.version).toBe(importKind === "server" ? 6 : importKind.startsWith("public") ? 2 : 3);
     for (const old of [imported, bagAction, itemAction]) expect(all.find(record => record.action.operationId === old.action.operationId)).toEqual(old);
     clearHold(); release(); await reloadApp(page, { recovery: true });
     const recovery = page.locator("#personalSaveRecoveryDialog");

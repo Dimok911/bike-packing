@@ -5,27 +5,31 @@ import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventor
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 
 const fail = () => { throw Object.assign(Error("Исходная фотоформа требует проверки. Новые поля и файлы сохранены."), { code: "pending-photo-form-session" }); };
 
 export function createPersonalPendingPhotoFormSession({ outbox, store, getContext, enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   publicNewOwnerEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED,
-  importNewOwnerEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED, ...options }) {
+  importNewOwnerEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED,
+  serverEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED, serverNewOwnerEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED, ...options }) {
   const submitter = createPersonalPhotoFormSubmitter({ ...options, outbox, store, getContext, enabled,
     prepareForm(input, compilerOptions) {
-      if (input.created !== false && !(input.created === true && (importNewOwnerEnabled || publicNewOwnerEnabled))) fail();
+      if (input.created !== false && !(input.created === true && (importNewOwnerEnabled || publicNewOwnerEnabled || serverNewOwnerEnabled))) fail();
       const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: input.parentOperationId, listId: outbox.binding.listId,
         entityType: input.entityType, entityId: input.entityId, allowNewOwner: input.created });
-      if (!chain || input.publicOperationId && input.publicOperationId !== chain.publicOperationId
+      if (!chain || input.serverOperationId && input.serverOperationId !== chain.serverOperationId
+        || input.publicOperationId && input.publicOperationId !== chain.publicOperationId
         || input.importOperationId && input.importOperationId !== chain.importOperationId || input.importKind && input.importKind !== chain.importKind) fail();
       return preparePersonalPendingPhotoForm({ ...input, publicOperationId: chain.publicOperationId || null,
-        importOperationId: chain.importOperationId || null, importKind: chain.importKind || null }, { ...compilerOptions, publicEnabled, importEnabled, importNewOwnerEnabled, publicNewOwnerEnabled });
+        importOperationId: chain.importOperationId || null, importKind: chain.importKind || null, serverOperationId: chain.serverOperationId || null },
+      { ...compilerOptions, publicEnabled, importEnabled, importNewOwnerEnabled, publicNewOwnerEnabled, serverEnabled, serverNewOwnerEnabled });
     },
     async beforeStore(plan) {
       const parent = plan.action.body.ownerResult.operationId;
       const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: parent, listId: outbox.binding.listId,
-        entityType: plan.action.body.entityType, entityId: plan.action.body.entityId, allowNewOwner: [4, 5].includes(plan.action.body.ownerResult.version) });
+        entityType: plan.action.body.entityType, entityId: plan.action.body.entityId, allowNewOwner: [4, 5, 7].includes(plan.action.body.ownerResult.version) });
       if (!chain || chain.entityType !== plan.action.body.entityType || chain.entityId !== plan.action.body.entityId) fail();
       const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext });
       if (inventory.entries.some(entry => entry.state !== "settled-retained"

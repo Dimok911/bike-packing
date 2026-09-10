@@ -1,6 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { validatePersonalPublicPhotoFormResult } from "./personal-public-photo-form-result.js";
 import { validatePersonalImportPhotoFormResult } from "./personal-import-photo-form-result.js";
+import { validatePersonalServerPhotoFormResult } from "./personal-server-photo-form-result.js";
 import { personalManufacturerPhotoFormSource } from "./personal-manufacturer-photo-source.js";
 import { personalPhotoFormOwnerResult, personalPhotoFormOwnerValidationBody, assertPersonalPhotoFormOwnerBase } from "./personal-photo-form-owner-result.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
@@ -145,6 +146,8 @@ export function validatePersonalPhotoFormResult(payload, expected) {
       || !validatePersonalPublicPhotoFormResult(payload, expected.body, expected.listId))) return false;
     if ([3, 4].includes(manifest.ownerResult?.version) && (payload.importPhotoFormSourceOperationId !== expected.operationId
       || !validatePersonalImportPhotoFormResult(payload, expected.body, expected.listId))) return false;
+    if ([6, 7].includes(manifest.ownerResult?.version) && (payload.serverPhotoFormSourceOperationId !== expected.operationId
+      || !validatePersonalServerPhotoFormResult(payload, expected.body, expected.listId))) return false;
     if (manifest.ownerResult) {
       if (!isPersonalPhotoPrivateOwner(owner) || payload.stateRevision <= expected.body.baseStateRevision) return false;
       let frozen = manifest.created ? { id: manifest.entityId, photos: [], ...(manifest.entityType === "item" ? { quantity: 1 } : {}) }

@@ -7,6 +7,7 @@ import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js
 import { personalPendingPhotoFormChain } from "./personal-pending-photo-form-chain.js";
 import { personalPublicPhotoFormSummary, assertPersonalPublicPhotoFormSummary, personalPublicPendingPhotoInventory } from "./personal-public-photo-form-result.js";
 import { personalImportPhotoFormSummary, assertPersonalImportPhotoFormSummary } from "./personal-import-photo-form-result.js";
+import { personalServerPhotoFormSummary, assertPersonalServerPhotoFormSummary } from "./personal-server-photo-form-result.js";
 
 export const PERSONAL_PENDING_FORM_UPDATE_ENABLED = false;
 export const PERSONAL_PENDING_FORM_UPDATE_CAPABILITY = "personalCausalPhotoFormDescendantsV1";
@@ -19,6 +20,10 @@ export function personalFormPhotoBodyResultReference(body, operationId, listId) 
   const form = personalPhotoFormManifest(body);
   // Copies retain their existing separate protocol and ancestry rules.
   if (form.copySource) throw Error("A copied photo owner requires its copy protocol");
+  if ([6, 7].includes(form.ownerResult?.version)) {
+    const summary = personalServerPhotoFormSummary(body, listId);
+    return { version: form.created ? 14 : 13, operationId, owners: summary.pendingPhotos.map(({ entityType, entityId }) => ({ entityType, entityId })) };
+  }
   if ([2, 3, 4, 5].includes(form.ownerResult?.version)) {
     const imported = [3, 4].includes(form.ownerResult.version), summary = (imported ? personalImportPhotoFormSummary : personalPublicPhotoFormSummary)(body, listId);
     return { version: form.created ? imported ? 10 : 11 : imported ? 9 : 8, operationId, owners: summary.pendingPhotos.map(({ entityType, entityId }) => ({ entityType, entityId })) };
@@ -36,8 +41,8 @@ export function personalFormPhotoResultReference(source) {
 export function validatePersonalPendingFormUpdateResult(result, expected) {
   try {
     const body = expected.body, reference = body.photoResults, list = result?.list;
-    if (expected.kind !== "list.update" || ![5, 6, 8, 9, 10, 11].includes(reference?.version) || !Array.isArray(reference.owners)
-      || ![8, 9, 10, 11].includes(reference.version) && reference.owners.length !== 1
+    if (expected.kind !== "list.update" || ![5, 6, 8, 9, 10, 11, 13, 14].includes(reference?.version) || !Array.isArray(reference.owners)
+      || ![8, 9, 10, 11, 13, 14].includes(reference.version) && reference.owners.length !== 1
       || list?.id !== expected.listId || result.ok !== true || !Number.isSafeInteger(result.stateRevision)
       || result.stateRevision <= body.baseStateRevision || list.stateRevision !== result.stateRevision) return false;
     const allowed = new Set();
@@ -49,6 +54,13 @@ export function validatePersonalPendingFormUpdateResult(result, expected) {
       allowed.add(`${collection}:${selected.entityId}`);
     }
     const frozen = personalBusinessPayload(body.payload), actual = personalBusinessPayload(list.payload);
+    if ([13, 14].includes(reference.version)) {
+      const summary = assertPersonalServerPhotoFormSummary(result.serverPhotoForm, expected.listId);
+      if (result.serverPhotoFormSourceOperationId !== reference.operationId
+        || ["publicPhotoForm", "importPhotoForm"].some(key => Object.hasOwn(result, key))
+        || !body.causal?.dependsOn?.some(dep => dep.operationId === summary.serverOperationId && dep.listId === expected.listId)
+        || !same(summary.pendingPhotos, personalPublicPendingPhotoInventory(frozen, expected.listId))) return false;
+    }
     if ([8, 11].includes(reference.version)) {
       const summary = assertPersonalPublicPhotoFormSummary(result.publicPhotoForm, expected.listId);
       if (result.publicPhotoFormSourceOperationId !== reference.operationId
@@ -92,7 +104,7 @@ export function isPersonalPendingFormUpdate({ source, basePayload, payload, user
         || Object.keys(initial[collection]).some(id => !Object.hasOwn(base[collection], id) && Object.hasOwn(actual[collection], id))) return false;
     }
     const attached = new Map(source.action.body.changes.filter(change => change.action === "attach").map(change => [change.photoId, change]));
-    const inherited = [2, 3, 4, 5].includes(source.action.body.ownerResult?.version) ? source.action.body.ownerResult.pendingPhotos
+    const inherited = [2, 3, 4, 5, 6, 7].includes(source.action.body.ownerResult?.version) ? source.action.body.ownerResult.pendingPhotos
       : [{ entityType: source.action.body.entityType, entityId: source.action.body.entityId, photos: source.action.body.ownerResult?.owner.photos || [] }];
     for (const owner of inherited) for (const photo of owner.photos) if (photo.status === "pending") {
       if (attached.has(photo.id)) return false;
@@ -130,7 +142,7 @@ export function personalPendingFormUpdateSource({ records, operationId, listId, 
     while (record && record.action.kind !== "photos.mutate") {
       const action = record.action, parent = action.body.causal?.baseOperationId;
       if (seen.has(action.operationId) || action.kind !== "list.update" || action.listId !== listId || record.photoState
-        || !parent || !byId.has(parent) || ![5, 6, 8, 9, 10, 11].includes(action.body.photoResults?.version)) return null;
+        || !parent || !byId.has(parent) || ![5, 6, 8, 9, 10, 11, 13, 14].includes(action.body.photoResults?.version)) return null;
       seen.add(action.operationId); steps.push(record); record = byId.get(parent);
     }
     if (!record || !steps.length && !includeSource) return null;

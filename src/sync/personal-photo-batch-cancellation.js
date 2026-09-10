@@ -1,3 +1,4 @@
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./personal-import-photo-form-result.js";
@@ -22,10 +23,13 @@ export async function cancelPersonalPhotoBatch({ record, binding, queue, store, 
   enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
+  serverPhotoFormEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED, serverNewOwnerFormEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED }) {
   if (!enabled || typeof assertCurrent !== "function" || record?.photoState?.fileInventoryVersion !== 2
     || record?.action?.kind === "list.import" && !(Object.hasOwn(record.action.body, "serverImport") ? serverEnabled : Object.hasOwn(record.action.body, "publicImport") ? publicEnabled && (record.action.body.publicImport?.version !== 2 || publicEntityEnabled) : Object.hasOwn(record.action.body, "guestImport") ? guestEnabled : archiveEnabled)
     || record?.action?.body?.action === "form" && !formEnabled
+    || [6, 7].includes(record?.action?.body?.ownerResult?.version) && (!serverPhotoFormEnabled || !serverEnabled
+      || record.action.body.ownerResult.version === 7 && !serverNewOwnerFormEnabled)
     || [2, 5].includes(record?.action?.body?.ownerResult?.version) && (!publicPhotoFormEnabled || !publicEnabled)
     || [3, 4].includes(record?.action?.body?.ownerResult?.version) && (!importPhotoFormEnabled
       || (record.action.body.ownerResult.importKind === "guest" ? !guestEnabled : !archiveEnabled))

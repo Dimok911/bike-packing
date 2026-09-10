@@ -1,3 +1,5 @@
+import { personalServerPendingPhotoFormChain } from "./personal-server-pending-photo-chain.js";
+import { PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
 import { personalArchiveJson } from "./personal-archive-import-protocol.js";
 import { personalPhotoFormOwner } from "./personal-photo-form-protocol.js";
@@ -46,7 +48,7 @@ export function preparePersonalPendingImportCreate(input, { enabled = PERSONAL_P
 
 export function createPersonalPendingImportCreateSession({ outbox, store, getContext, onDurable,
   enabled = PERSONAL_PENDING_IMPORT_CREATE_ENABLED, snapshotToPayload = value => value,
-  publicEnabled = PERSONAL_PENDING_PUBLIC_CREATE_ENABLED,
+  publicEnabled = PERSONAL_PENDING_PUBLIC_CREATE_ENABLED, serverEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   itemContextEnabled = false, containerContextEnabled = false, createUuid = () => crypto.randomUUID() }) {
   let attempt;
   return {
@@ -56,7 +58,7 @@ export function createPersonalPendingImportCreateSession({ outbox, store, getCon
       const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
       attempt = { promise, request: null, plan: null, operationId: null };
       try {
-        if (!(enabled || publicEnabled) || !outbox || !store || typeof onDurable !== "function") fail();
+        if (!(enabled || publicEnabled || serverEnabled) || !outbox || !store || typeof onDurable !== "function") fail();
         assertListOperationJsonValue(input);
         const frozen = clone(input), initial = clone(getContext()), head = outbox.recover();
         const assertCurrent = () => {
@@ -66,7 +68,7 @@ export function createPersonalPendingImportCreateSession({ outbox, store, getCon
         };
         assertCurrent();
         const selection = { records: outbox.list(), operationId: head?.action.operationId, listId: outbox.binding.listId };
-        const chain = enabled && personalImportPendingPhotoFormChain(selection) || publicEnabled && personalPublicPendingPhotoFormChain(selection);
+        const chain = serverEnabled && personalServerPendingPhotoFormChain(selection) || enabled && personalImportPendingPhotoFormChain(selection) || publicEnabled && personalPublicPendingPhotoFormChain(selection);
         if (!chain || !outbox.hasPending() || frozen.parentOperationId !== head.action.operationId
           || frozen.baseStateRevision !== head.action.body.baseStateRevision || !same(frozen.basePayload, payloadOf(head))
           || chain.steps.some(step => payloadOf(step).items?.[frozen.entityId] || payloadOf(step).containers?.[frozen.entityId])) fail();

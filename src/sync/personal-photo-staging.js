@@ -1,3 +1,4 @@
+import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED, personalServerPhotoFormCapabilities } from "./personal-server-photo-form-result.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, personalPublicPhotoFormCapabilities } from "./personal-public-photo-form-result.js";
 import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, personalImportPhotoFormCapabilities, PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } from "./personal-import-photo-form-result.js";
@@ -53,6 +54,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
   batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   serverEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
+  serverPhotoFormEnabled = PERSONAL_SERVER_PHOTO_FORM_ENABLED, serverNewOwnerFormEnabled = PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED,
   publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, publicNewOwnerFormEnabled = PERSONAL_PUBLIC_NEW_OWNER_FORM_ENABLED, importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   importNewOwnerFormEnabled = PERSONAL_IMPORT_NEW_OWNER_FORM_ENABLED } = {}) {
   const request = async (path, form, json = false) => {
@@ -89,6 +91,8 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       assertCurrent();
       if (!record?.stage || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
       const ownerForm = record.action?.body?.action === "form", archive = record.action?.kind === "list.import";
+      const serverForm = ownerForm && [6, 7].includes(record.action.body.ownerResult?.version);
+      if (serverForm && !inspectOnly && (!serverEnabled || !serverPhotoFormEnabled || record.action.body.ownerResult.version === 7 && !serverNewOwnerFormEnabled)) throw paused(null, "Фото до подтверждения серверной копии ещё не включены.");
       const publicForm = ownerForm && [2, 5].includes(record.action.body.ownerResult?.version);
       const importedForm = ownerForm && [3, 4].includes(record.action.body.ownerResult?.version);
       if (publicForm && !inspectOnly && (!publicPhotoFormEnabled || !publicEnabled
@@ -132,6 +136,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       if (inspectOnly) return acknowledge(await read(statusPath));
       const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
       if (!capabilities?.capabilities?.includes(STAGED_PHOTO_ASSET_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает отдельное подтверждение файла. Фото не отправлено.");
+      if (serverForm && !personalServerPhotoFormCapabilities(record.action.body.ownerResult).every(capability => capabilities.capabilities?.includes(capability))) throw paused(stageId, "Сервер ещё не поддерживает фото до подтверждения серверной копии.");
       if (publicForm && ![PERSONAL_PUBLIC_IMPORT_CAPABILITY, ...personalPublicPhotoFormCapabilities(record.action.body.ownerResult)].every(capability => capabilities.capabilities.includes(capability))) throw paused(stageId, "Сервер ещё не поддерживает фото до подтверждения публичной копии.");
       if (importedForm && !personalImportPhotoFormCapabilities(record.action.body.ownerResult).every(capability => capabilities.capabilities.includes(capability))) throw paused(stageId, "Сервер ещё не поддерживает фото до подтверждения переноса или архива.");
       if (guest && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает гостевой перенос с фотографиями.");
