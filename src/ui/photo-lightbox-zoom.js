@@ -3,6 +3,14 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+export function resolvePhotoLightboxWheelScale({ scale = 1, deltaY = 0, deltaMode = 0, ctrlKey = false, pageHeight = 800 } = {}) {
+  const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? Math.max(1, finiteNumber(pageHeight, 800)) : 1;
+  // Trackpad pinch emits small Ctrl+wheel deltas. Preserve their magnitude:
+  // dividing one gesture into more events must not make it zoom faster.
+  const exponent = -finiteNumber(deltaY) * unit * (ctrlKey ? 0.01 : 0.002);
+  return Math.max(1, Math.min(4, finiteNumber(scale, 1) * Math.exp(exponent)));
+}
+
 export function resolvePhotoLightboxPinchPan({
   startScale,
   nextScale,

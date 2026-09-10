@@ -29,7 +29,7 @@ import {
   photoLightboxSizingPresentation,
   updatePhotoLightboxAutoSize
 } from "./photo-lightbox-sizing.js";
-import { resolvePhotoLightboxPinchPan } from "./photo-lightbox-zoom.js";
+import { resolvePhotoLightboxPinchPan, resolvePhotoLightboxWheelScale } from "./photo-lightbox-zoom.js";
 import { bindNativePhotoGalleryVerticalScroll } from "./photo-gallery-native-scroll.js";
 import {
   bindSharedPhotoGalleries,
@@ -1215,8 +1215,14 @@ export async function openPhotoLightbox(sourceImage, {
       panY = 0;
       return;
     }
-    const maxX = Math.max(0, ((image.offsetWidth || image.clientWidth || 0) * scale - overlay.clientWidth) / 2);
-    const maxY = Math.max(0, ((image.offsetHeight || image.clientHeight || 0) * scale - overlay.clientHeight) / 2);
+    const width = image.offsetWidth || image.clientWidth || 0;
+    const height = image.offsetHeight || image.clientHeight || 0;
+    // A small desktop photo must be able to follow the zoom anchor before it
+    // fills the screen. Keep its original footprint covered while zooming.
+    const panWidth = directDesktop ? Math.min(width, overlay.clientWidth) : overlay.clientWidth;
+    const panHeight = directDesktop ? Math.min(height, overlay.clientHeight) : overlay.clientHeight;
+    const maxX = Math.max(0, (width * scale - panWidth) / 2);
+    const maxY = Math.max(0, (height * scale - panHeight) / 2);
     panX = Math.max(-maxX, Math.min(maxX, panX));
     panY = Math.max(-maxY, Math.min(maxY, panY));
   };
@@ -1952,13 +1958,23 @@ export async function openPhotoLightbox(sourceImage, {
   });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
-    cancelPanInertia();
-    const delta = event.deltaY < 0 ? 0.18 : -0.18;
-    scale = Math.max(1, Math.min(4, scale + delta));
-    if (scale === 1) {
-      panX = 0;
-      panY = 0;
-    }
+    if (!event.deltaY || pinching) return;
+    cancelPanInertia(false);
+    const nextScale = resolvePhotoLightboxWheelScale({
+      scale, deltaMode: event.deltaMode, deltaY: event.deltaY,
+      ctrlKey: event.ctrlKey, pageHeight: overlay.clientHeight
+    });
+    if (nextScale === scale) return;
+    const rect = image.getBoundingClientRect();
+    const nextPan = resolvePhotoLightboxPinchPan({
+      startScale: scale, nextScale, startPanX: panX, startPanY: panY,
+      startCenterX: event.clientX, startCenterY: event.clientY,
+      originX: rect.left + rect.width / 2 - panX,
+      originY: rect.top + rect.height / 2 - panY
+    });
+    scale = nextScale;
+    panX = nextPan.x;
+    panY = nextPan.y;
     apply();
   }, { passive: false });
   let pinchDistance = 0;
@@ -2022,7 +2038,7 @@ export async function openPhotoLightbox(sourceImage, {
     }
     if (event.touches.length !== 2 || !pinchDistance) return;
     event.preventDefault();
-    cancelPanInertia();
+    cancelPanInertia(false);
     const center = touchCenter(event.touches[0], event.touches[1]);
     const nextDistance = touchDistance(event.touches[0], event.touches[1]);
     const nextScale = Math.max(1, Math.min(4, pinchScale * (nextDistance / pinchDistance)));

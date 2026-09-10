@@ -1,7 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolvePhotoLightboxPinchPan } from "../../src/ui/photo-lightbox-zoom.js";
+import { resolvePhotoLightboxPinchPan, resolvePhotoLightboxWheelScale } from "../../src/ui/photo-lightbox-zoom.js";
+
+test("wheel zoom respects gesture magnitude regardless of event frequency", () => {
+  const combined = resolvePhotoLightboxWheelScale({ scale: 1.5, deltaY: -20, ctrlKey: true });
+  let divided = 1.5;
+  for (let i = 0; i < 10; i++) divided = resolvePhotoLightboxWheelScale({ scale: divided, deltaY: -2, ctrlKey: true });
+  assert.ok(Math.abs(combined - divided) < 1e-12);
+  const small = resolvePhotoLightboxWheelScale({ deltaY: -0.2, ctrlKey: true });
+  assert.ok(small > 1 && small < 1.01);
+  assert.equal(resolvePhotoLightboxWheelScale({ scale: combined, deltaY: 0 }), combined);
+});
+
+test("wheel zoom normalizes units and reverses without drift", () => {
+  const pixels = resolvePhotoLightboxWheelScale({ scale: 2, deltaY: -16 });
+  assert.equal(resolvePhotoLightboxWheelScale({ scale: 2, deltaY: -1, deltaMode: 1 }), pixels);
+  assert.equal(resolvePhotoLightboxWheelScale({ scale: 2, deltaY: -0.02, deltaMode: 2, pageHeight: 800 }), pixels);
+  assert.ok(Math.abs(resolvePhotoLightboxWheelScale({ scale: pixels, deltaY: 16 }) - 2) < 1e-12);
+  assert.equal(resolvePhotoLightboxWheelScale({ scale: 2, deltaY: -10000 }), 4);
+  assert.equal(resolvePhotoLightboxWheelScale({ scale: 2, deltaY: 10000 }), 1);
+});
 
 function transformedPoint({ origin, pan, scale, point }) {
   return origin + pan + point * scale;
