@@ -4097,3 +4097,95 @@ for (const { shared, shape, mode } of pendingRemovalCases) {
     expect(Object.keys(server.payload.containers).sort()).toEqual(Object.keys(expectedContainers).sort()); expect(server.errors).toEqual([]);
   });
 }
+
+for (const shared of [false, true]) for (const shape of ["item-link", "item-replace", "bag-link", "bag-replace", "temporary-replace"])
+  for (const mode of ["data", "metadata"]) {
+  test(`pending admin existing ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const itemAction = shape.startsWith("item"), replace = shape.endsWith("replace"), temporary = shape === "temporary-replace";
+    const server = await fixture(page, context, { shared, hydrate: true, withContainers: true, catalogPair: true,
+      detachedTree: "tree", nestableTree: true, replacementTarget: shape === "item-replace" ? "pocket" : "",
+      bagReplacement: temporary ? "temporary" : shape === "bag-replace" ? "root" : "" });
+    server.blockBusiness = true;
+    const pumpName = mode === "metadata" ? "Насос шаблона" : "Правка перед выбором существующего";
+    if (mode === "metadata") await capturePendingSourceLabel(page, "Метка перед выбором существующего");
+    else await editItem(page, pumpName, "Насос шаблона");
+    await expect(page.locator("body")).toContainText(mode === "metadata" ? "Не удалось сохранить метку шаблона:" : "Сохранение шаблона приостановлено:");
+    const before = await page.evaluate(({ itemAction, temporary, pumpName }) => {
+      const current = __adminUiTest.state(), layout = current.layouts[current.activeLayoutId];
+      const find = (collection, name) => Object.values(current[collection]).find(row => row.publicCatalogLayoutId === layout.id && row.name === name).id;
+      const parent = JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:")
+        && JSON.parse(value).plan.id === layout.adminCausalSource.planId)[1]).plan;
+      return { layoutId: layout.id, parent, parentId: layout.adminCausalSource.base.operationId,
+        sourceId: itemAction ? find("items", "Вторая вещь шаблона") : find("containers", "Запасная сумка"),
+        targetId: find("containers", itemAction || temporary ? "Карман шаблона" : "Сумка шаблона"), pumpId: find("items", pumpName),
+        snapshot: __adminUiTest.snapshot(layout.id) };
+    }, { itemAction, temporary, pumpName });
+    await page.locator('[data-view="packing"]').click();
+    const dialog = itemAction ? "#addToContainerDialog" : "#layoutRootDialog";
+    if (itemAction) {
+      if (replace) { await page.evaluate(id => __adminUiTest.openItem(id), before.pumpId); await page.locator("#itemReplaceBtn").click(); }
+      else await page.locator(`#packingView [data-subcontainer-id="${before.targetId}"] [data-add-to-container]`).first().click();
+    } else if (replace) {
+      await page.evaluate(id => __adminUiTest.openContainer(id), before.targetId); await page.locator("#rootContainerReplaceBtn").click();
+    } else await page.locator("[data-add-packing-root]").click();
+    await expect(page.locator(dialog)).toBeVisible();
+    await page.locator(itemAction ? `[data-add-existing-item="${before.sourceId}"]` : `[data-add-layout-root="${before.sourceId}"]`).click();
+    await expect(page.locator(dialog)).not.toBeVisible();
+    await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).not.toBe(before.parent.id);
+    const chosen = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    const plan = await page.evaluate(id => {
+      const planId = __adminUiTest.state().layouts[id].adminCausalSource.planId;
+      return JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan.id === planId)[1]).plan;
+    }, before.layoutId);
+    expect(plan.operations[0].body.base).toEqual({ operationId: before.parentId });
+    expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true);
+    server.blockBusiness = false; await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 9);
+    const childPosts = server.posts.filter(post => post.operationId === plan.id);
+    expect(childPosts).toHaveLength(1); expect(childPosts[0].body).toEqual(plan.operations[0].body);
+    expect(server.posts.filter(post => post.operationId === before.parentId).every(post => canonicalTemplateJson(post.body)
+      === canonicalTemplateJson(before.parent.operations.at(-1).body))).toBe(true);
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+    const original = before.snapshot.payload, find = (rows, name) => Object.values(rows).find(row => row.name === name);
+    const source = find(itemAction ? original.items : original.containers, itemAction ? "Вторая вещь шаблона" : "Запасная сумка");
+    const target = find(original.containers, itemAction || temporary ? "Карман шаблона" : "Сумка шаблона"), pump = find(original.items, pumpName);
+    const prior = Object.values(original.layouts)[0].arrangement, arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(original.items).sort());
+    expect(Object.keys(server.payload.containers).sort()).toEqual(Object.keys(original.containers).filter(id => !temporary || id !== target.id).sort());
+    for (const [id, row] of Object.entries(original.items)) for (const field of ["name", "weight", "note", "notes", "photos"])
+      expect(server.payload.items[id][field]).toEqual(row[field]);
+    if (itemAction) {
+      const expected = structuredClone(prior), placement = expected.containers[target.id];
+      if (replace) {
+        placement.itemIds = placement.itemIds.map(id => id === pump.id ? source.id : id);
+        placement.order = placement.order.map(row => row.type === "item" && row.id === pump.id ? { type: "item", id: source.id } : row);
+        for (const field of ["items", "itemQuantities", "packedItems"]) delete expected[field][pump.id];
+        expect(server.payload.items[pump.id]).toEqual({ ...pump, containerId: "" });
+      } else { placement.itemIds.push(source.id); placement.order.push({ type: "item", id: source.id }); }
+      expected.items[source.id] = target.id; expected.itemQuantities[source.id] = replace ? prior.itemQuantities[pump.id] : source.quantity;
+      delete expected.packedItems[source.id];
+      expect(arrangement).toEqual(expected); expect(server.payload.items[source.id].quantity).toBe(1);
+    } else if (replace) {
+      const expected = structuredClone(prior), placement = expected.containers[target.id];
+      expected.containers[source.id] = structuredClone(placement); delete expected.containers[target.id];
+      for (const id of placement.itemIds) expected.items[id] = source.id;
+      for (const id of placement.childIds) expected.containers[id].parentId = source.id;
+      if (placement.parentId) {
+        const parent = expected.containers[placement.parentId]; parent.childIds = parent.childIds.map(id => id === target.id ? source.id : id);
+        parent.order = parent.order.map(row => row.type === "container" && row.id === target.id ? { type: "container", id: source.id } : row);
+      } else expected.rootContainerIds = expected.rootContainerIds.map(id => id === target.id ? source.id : id);
+      expect(arrangement).toEqual(expected);
+      if (!temporary) expect(server.payload.containers[target.id]).toEqual({ ...target, parentId: null, childIds: [], itemIds: [], order: [] });
+    } else {
+      expect(arrangement.rootContainerIds).toEqual([...prior.rootContainerIds, source.id]);
+      for (const [id, row] of Object.entries(prior.containers)) expect(arrangement.containers[id]).toEqual(row);
+      for (const [id, parentId] of Object.entries(prior.items)) { expect(arrangement.items[id]).toBe(parentId); expect(arrangement.itemQuantities[id]).toBe(prior.itemQuantities[id]); }
+      const pocket = find(original.containers, "Запасной карман"), item = find(original.items, "Запасная вещь");
+      expect(arrangement.containers[source.id].parentId).toBe(""); expect(arrangement.containers[pocket.id].parentId).toBe(source.id);
+      expect(arrangement.items[item.id]).toBe(pocket.id); expect(arrangement.itemQuantities[item.id]).toBe(item.quantity);
+    }
+    await editItem(page, "Правка после ожидающего выбора", pumpName, before.layoutId); await confirmedRevision(page, 10);
+    expect(server.posts.at(-1).body.base).toEqual({ stateRevision: 9 }); expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement);
+    await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 10);
+    expect(server.posts.filter(post => post.operationId === plan.id)).toHaveLength(1); expect(server.errors).toEqual([]);
+  });
+}
