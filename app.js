@@ -833,6 +833,7 @@ import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { recoverPersonalAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
+import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView, restoreAdminTemplatePhotoReferences } from "./src/sync/admin-template-photo-view.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
@@ -10477,9 +10478,10 @@ function repairActiveEmptyAdminDemoDraft() {
   return true;
 }
 
-function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true, preserveCatalog = false, recordAction = true } = {}) {
-  return importDemoStateAsEditableLayoutValue(state, demoState, {
-    activate,
+function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true, preserveCatalog = false, recordAction = true, onMappedEntity, targetState = state } = {}) {
+  const isolated = targetState !== state;
+  return importDemoStateAsEditableLayoutValue(targetState, demoState, {
+    activate: isolated ? false : activate,
     applyLayoutArrangement,
     categories,
     clone,
@@ -10500,7 +10502,8 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, lis
     render,
     renderAfter,
     preserveCatalog,
-    saveState: options => saveState({ ...options, recordAction }),
+    onMappedEntity,
+    saveState: isolated ? () => true : options => saveState({ ...options, recordAction }),
     setActivePrivateScope,
     switchView
   });
@@ -11099,16 +11102,24 @@ async function finishCausalAdminTemplateOrder(work) {
   }
 }
 function adminTemplateEditorSnapshot(layoutId, options = {}) {
+  const source = state.layouts[layoutId]?.adminCausalSource;
+  if (source?.binding) assertAdminTemplatePhotoView({ binding: source.binding, layoutId, baseline: source.photoView, state });
   return withLayoutArrangementApplied(layoutId, () => {
     const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
     const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
     const originalLayoutId = layout.adminCausalSource && layout.adminTemplateCopy && isCausalCopyLayoutId(layout.sharedSourceId) ? layout.sharedSourceId : null;
-    let payload = exportLayoutAsDemoState(layoutId, { ...options, preserveEntityIds: Boolean(originalLayoutId) });
+    const mappings = { items: {}, containers: {} };
+    const preservedEntityIds = { items: {}, containers: {} };
+    for (const owner of source?.photoView?.owners || []) preservedEntityIds[owner.type][owner.localId] = owner.serverId;
+    let payload = exportLayoutAsDemoState(layoutId, { ...options, preserveEntityIds: Boolean(originalLayoutId),
+      preservedEntityIds,
+      onMappedEntity: entry => { mappings[entry.type][entry.sourceId] = entry.targetId; options.onMappedEntity?.(entry); } });
     if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
     if (originalLayoutId) {
       const exported = Object.values(payload.layouts)[0]; exported.id = originalLayoutId;
       payload.layouts = { [originalLayoutId]: exported }; payload.activeLayoutId = originalLayoutId;
     }
+    if (source?.binding) payload = restoreAdminTemplatePhotoReferences({ binding: source.binding, layoutId, baseline: source.photoView, state, payload, mappings });
     return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
       description: String(layout.note || "").trim(), language } };
   });
@@ -11124,7 +11135,7 @@ function adminTemplateRecoveryFor(binding, layoutId, preparing = false) {
 }
 function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId) {
   return createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, enabled: adminTemplateUiEnabled(),
-    projectServer: (server, id) => projectAdminTemplateServerVariant(state.layouts[layoutId], server, id),
+    projectServer: (server, id) => projectAdminTemplateServerVariant(state.layouts[layoutId], server, id, { photoBinding: binding }),
     getContext: () => adminTemplateOperationContext(binding, layoutId), getSource: () => state.layouts?.[layoutId]?.adminCausalSource,
     snapshot: () => adminTemplateEditorSnapshot(layoutId), client: adminTemplateClient(binding, layoutId),
     plans: adminTemplatePlansFor(binding, layoutId), recovery: adminTemplateRecoveryFor(binding, layoutId) });
@@ -11209,7 +11220,7 @@ function materializeCausalAdminTemplate(target, prepared) {
     // The legacy public-copy path normalizes away detached quantities and
     // rebuilds placement. Open the exact prepared catalog with its own IDs.
     const id = `layout-admin-shared-${target.sharedId}-${crypto.randomUUID()}`;
-    const projection = projectAdminTemplateServerVariant({ id, adminSharedSourceId: target.sharedId }, prepared, crypto.randomUUID());
+    const projection = projectAdminTemplateServerVariant({ id, adminSharedSourceId: target.sharedId }, prepared, crypto.randomUUID(), { photoBinding: binding });
     if (state.layouts[id] || ["items", "containers"].some(kind => Object.keys(projection[kind]).some(key => state.items[key] || state.containers[key] || state.layouts[key]))) {
       throw Error("Идентификатор редактора уже используется.");
     }
@@ -11217,14 +11228,37 @@ function materializeCausalAdminTemplate(target, prepared) {
     Object.assign(state.items, projection.items); Object.assign(state.containers, projection.containers);
     return projection.layout;
   }
+  const editorState = clone(state);
   const before = { items: new Set(Object.keys(state.items || {})), containers: new Set(Object.keys(state.containers || {})) };
   const copiedLayoutId = adminTemplateCopiedLayoutId(prepared.payload), payload = clone(prepared.payload);
+  // Only the editable view gets an ID alias; the prepared raw references stay
+  // byte-for-byte representable for the server's preservation check.
+  for (const type of ["items", "containers"]) for (const row of Object.values(payload[type] || {})) {
+    for (const photo of row.photos || []) if (photo && photo.id == null && photo.photoId) photo.id = photo.photoId;
+  }
   if (copiedLayoutId) for (const type of ["items", "containers"]) for (const row of Object.values(payload[type])) row.sharedSourceId = row.id;
-  const layout = importDemoStateAsEditableLayout(payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true, recordAction: false });
+  const mappings = { items: {}, containers: {} };
+  const layout = importDemoStateAsEditableLayout(payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true, recordAction: false,
+    targetState: editorState,
+    onMappedEntity: ({ type, sourceId, targetId }) => { mappings[type][targetId] = sourceId; } });
   if (layout && copiedLayoutId) { layout.adminTemplateCopy = true; layout.sharedSourceId = copiedLayoutId; }
-  if (layout) for (const kind of ["items", "containers"]) for (const [id, record] of Object.entries(state[kind] || {})) {
+  if (layout) for (const kind of ["items", "containers"]) for (const [id, record] of Object.entries(editorState[kind] || {})) {
     if (!before[kind].has(id)) record.publicCatalogLayoutId = layout.id;
   }
+  if (layout && ["items", "containers"].some(kind => Object.values(prepared.payload[kind] || {}).some(row => row.photos?.length))) {
+    for (const kind of ["items", "containers"]) for (const id of Object.keys(mappings[kind])) normalizeItemPhotos(editorState[kind][id]);
+    layout.adminCausalSource = { photoView: captureAdminTemplatePhotoView({ binding, layoutId: layout.id,
+      sourcePayload: prepared.payload, state: editorState, mappings }) };
+  }
+  if (!layout) return null;
+  const occupied = id => state.layouts[id] || state.items[id] || state.containers[id];
+  if (occupied(layout.id) || ["items", "containers"].some(kind => Object.keys(mappings[kind]).some(occupied))) {
+    throw Error("Идентификатор редактора уже используется.");
+  }
+  // Merge only after every source photo and owner has passed validation. An
+  // invalid prepared template must not leave a partial draft in the mirror.
+  state.layouts[layout.id] = layout;
+  for (const kind of ["items", "containers"]) for (const id of Object.keys(mappings[kind])) state[kind][id] = editorState[kind][id];
   return layout;
 }
 async function runCausalAdminTemplateCommand(target, layout, kind) {
@@ -11260,7 +11294,7 @@ async function reconcileLegacyAdminTemplate(layout, binding) {
   const plans = createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client, getContext });
   const choice = createAdminTemplateLegacyChoice({ binding, layoutId: layout.id, enabled: adminTemplateUiEnabled(),
     getContext, snapshot: () => adminTemplateEditorSnapshot(layout.id), client, plans,
-    projectServer: (server, id) => projectAdminTemplateServerVariant(layout, server, id) });
+    projectServer: (server, id) => projectAdminTemplateServerVariant(layout, server, id, { photoBinding: binding }) });
   const opened = await choice.open();
   if (!opened.saved) {
     const describe = value => `«${value.metadata.title}»: вещей ${Object.keys(value.payload.items || {}).length}, сумок ${Object.keys(value.payload.containers || {}).length}`;
@@ -11312,7 +11346,8 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
     const editorSource = adminTemplateEditorSource(binding, prepared);
     const layout = materializeCausalAdminTemplate(target, prepared);
     if (!layout) throw Error("Не удалось открыть шаблон.");
-    layout.adminCausalSource = editorSource; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
+    layout.adminCausalSource = { ...editorSource, ...(layout.adminCausalSource?.photoView ? { photoView: layout.adminCausalSource.photoView } : {}) };
+    layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
     await rememberAdminTemplateSourceBaseline(layout, prepared);
@@ -11394,11 +11429,12 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, option
   });
 }
 
-function exportLayoutAsDemoState(layoutId = state.activeLayoutId, { onMappedEntity, preserveEntityIds = false } = {}) {
+function exportLayoutAsDemoState(layoutId = state.activeLayoutId, { onMappedEntity, preserveEntityIds = false, preservedEntityIds } = {}) {
   captureActiveLayoutArrangement();
   return exportLayoutAsPublishedState(state, layoutId, {
     onMappedEntity,
     preserveEntityIds,
+    preservedEntityIds,
     categories,
     clone,
     createLayoutArrangementFromCurrentState,

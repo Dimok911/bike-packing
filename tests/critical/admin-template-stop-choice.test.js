@@ -11,6 +11,8 @@ import { applyLayoutArrangementToState, createLayoutArrangementFromCurrentState 
 import { normalizeLayoutArrangement, normalizeLayoutFields } from "../../src/state/layout-normalize.js";
 import { repairContainerMembershipFromItemLinks } from "../../src/state/repair.js";
 import { exportLayoutAsPublishedState } from "../../src/public/published-state-export.js";
+import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView } from "../../src/sync/admin-template-photo-view.js";
+import { normalizeItemPhotos } from "../../src/state/item-photos.js";
 
 async function fixture({ stop = true } = {}) {
   const f = adminClientFixture(), body = f.action().body;
@@ -70,6 +72,47 @@ test("reload between decision and plan capture retains its UUID and original com
   await f.makeFlow().recover("editor"); assert.equal(f.layout.adminCausalSource.planId, saved.id);
   await f.makeFlow().flush("editor"); assert.equal(f.prepares, 1);
   assert.deepEqual(JSON.parse(f.businessPosts()[0].options.body).body.base, { stateRevision: 7 });
+});
+
+test("local stop resolution retains the frozen photo view through quota and reload for the next snapshot", async () => {
+  const f = await fixture(), raw = { id: "existing-photo", photoId: "existing-photo", listId: f.binding.listId, status: "synced",
+    url: "https://example.test/original.jpg", thumbUrl: "https://example.test/thumb.jpg", fileName: "original.jpg", metadata: { credit: "Original" } };
+  const sourcePayload = { items: { "server-item": { id: "server-item", photos: [raw] } }, containers: {} };
+  const state = { layouts: { editor: f.layout }, containers: {},
+    items: { "local-item": { id: "local-item", publicCatalogLayoutId: "editor", photos: [structuredClone(raw)] } } };
+  normalizeItemPhotos(state.items["local-item"]);
+  f.layout.adminCausalSource.photoView = captureAdminTemplatePhotoView({ binding: f.binding, layoutId: "editor", sourcePayload, state,
+    mappings: { items: { "local-item": "server-item" }, containers: {} } });
+  f.local.payload.items = structuredClone(sourcePayload.items);
+  f.server.payload.items = structuredClone(sourcePayload.items);
+  const original = structuredClone(f.layout.adminCausalSource.photoView), choice = f.choice();
+  await choice.choose(await choice.open()); const saved = structuredClone(f.savedChoice());
+  f.failPrefix = "bike-packing-admin-save-plans-v1:";
+  await assert.rejects(f.choice().resume(), /Quota/);
+  assert.deepEqual(f.layout.adminCausalSource.photoView, original); assert.equal(f.businessPosts().length, 0);
+  f.failPrefix = null; f.server.stateRevision = 99;
+  f.server.payload.items["server-item"].photos[0].metadata.credit = "Unreviewed newer server";
+  const resumed = await f.choice().resume();
+  assert.deepEqual(resumed.photoView, original); assert.deepEqual(resumed.base, { operationId: saved.id });
+  assert.equal(assertAdminTemplatePhotoView({ binding: f.binding, layoutId: "editor", baseline: resumed.photoView, state }), true);
+  const plan = (await f.plans.list()).find(row => row.plan.id === saved.id).plan;
+  assert.deepEqual(plan.operations[0].body.base, { stateRevision: 7 });
+  assert.deepEqual(plan.operations[0].body.payload.items["server-item"].photos, [raw]);
+  resumed.photoView.owners[0].rawPhotos[0].metadata.credit = "Caller mutation";
+  assert.deepEqual(f.savedChoice(), saved); assert.deepEqual(f.layout.adminCausalSource.photoView, original);
+  const again = await f.choice().resume(); assert.deepEqual(again.photoView, original); assert.equal(f.prepares, 1);
+});
+
+test("a local stop choice cannot retain a photo view belonging to another binding or editor", async () => {
+  for (const change of [value => { value.binding.actorId = "other"; }, value => { value.binding.environment = "production"; },
+    value => { value.binding.listId = "public-demo-state-other"; }, value => { value.layoutId = "another-editor"; }]) {
+    const f = await fixture();
+    f.layout.adminCausalSource.photoView = { version: 1, binding: structuredClone(f.binding), layoutId: "editor", owners: [] };
+    change(f.layout.adminCausalSource.photoView);
+    const choice = f.choice(); await assert.rejects(choice.choose(await choice.open()), { code: "admin-template-stop-choice-paused" });
+    assert.equal(f.businessPosts().length, 0);
+    assert.ok(![...f.values.keys()].some(key => key.startsWith("bike-packing-admin-stop-choice-v1:")));
+  }
 });
 
 test("a lost editor mirror after new save acceptance discovers the approved plan without repeating a write", async () => {

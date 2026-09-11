@@ -62,6 +62,9 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
       || !validTemplateOperationId(choice.id) || choice.id === previousId || !same(choice.binding, binding) || choice.layoutId !== layoutId
       || choice.priorPlanId !== previousId || choice.priorSource?.planId !== previousId || !same(choice.priorSource.binding, binding)
       || !exact(choice.local, ["payload", "metadata"])) throw paused();
+    const photoView = choice.priorSource.photoView;
+    if (Object.hasOwn(choice.priorSource, "photoView") && (photoView?.version !== 1 || photoView.layoutId !== layoutId
+      || !same(photoView.binding, binding))) throw paused();
     if (serverChoice && (choice.variant !== "server" || !exact(choice.projection, ["layoutId", "layout", "items", "containers"])
       || choice.projection.layoutId !== layoutId || choice.projection.layout?.id !== layoutId || !Array.isArray(choice.knownPlans)
       || !choice.knownPlans.some(row => row?.id === previousId) || new Set(choice.knownPlans.map(row => row?.id)).size !== choice.knownPlans.length
@@ -148,7 +151,10 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
         await plans.capture(input(choice)); unchanged(opened);
         // Point directly at the approved plan: cancelled plans may share its
         // server base, so generic orphan discovery must not pick a successor.
+        // The chosen local editor keeps its already frozen photo representation;
+        // the freshly compared server source does not describe that local view.
         return { ...source(choice.server), ...(choice.priorSource.adoptedStop ? { adoptedStop: clone(choice.priorSource.adoptedStop) } : {}),
+          ...(Object.hasOwn(choice.priorSource, "photoView") ? { photoView: clone(choice.priorSource.photoView) } : {}),
           base: { operationId: choice.id }, planId: choice.id };
       });
     },

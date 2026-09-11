@@ -22,6 +22,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
   render,
   renderAfter = true,
   preserveCatalog = false,
+  onMappedEntity = () => {},
   saveState,
   setActivePrivateScope,
   switchView
@@ -44,6 +45,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
     if (!container) return "";
     const nextId = `admin-demo-container-${stamp}-${containerId}`;
     containerMap[containerId] = nextId;
+    onMappedEntity({ type: "containers", sourceId: containerId, targetId: nextId });
     targetState.containers[nextId] = {
       ...clone(container),
       id: nextId,
@@ -65,6 +67,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
     const nextContainerId = item.containerId ? containerMap[item.containerId] : "";
     const nextId = `admin-demo-item-${stamp}-${item.id}`;
     itemMap[item.id] = nextId;
+    onMappedEntity({ type: "items", sourceId: item.id, targetId: nextId });
     targetState.items[nextId] = {
       ...clone(item),
       id: nextId,

@@ -64,7 +64,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false, personalEdits = false, emptySource = false, emptyPersonal = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, confirmedPhotos = false, deferEditor = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false, personalEdits = false, emptySource = false, emptyPersonal = false } = {}) {
   const fixtureBundle = reverseImport ? path.resolve("test-results/admin-personal-import-ui-build") : bundleRoot;
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   state.privatePosts = []; state.privateReceipts = new Map();
@@ -189,6 +189,15 @@ async function fixture(page, context, { published = false, shared = false, hydra
     state.privatePayload.layouts["layout-a"].arrangement = { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 };
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
+  if (confirmedPhotos) {
+    const ids = ["12345678-1234-4234-8234-123456789001", "12345678-1234-4234-8234-123456789002", "12345678-1234-4234-8234-123456789003"];
+    const reference = id => ({ id, listId, url: `${origin}/existing-photo/${id}/file`, thumbUrl: `${origin}/existing-photo/${id}/thumb`,
+      fileName: `${id}.jpg`, width: 4, height: 3, metadata: { credit: "Original", order: [2, 1] } });
+    const second = reference(ids[1]); second.photoId = second.id; delete second.id;
+    second.fileUrl = second.url; second.thumb_url = second.thumbUrl; delete second.url; delete second.thumbUrl;
+    state.payload.items.pump.photos = [reference(ids[0]), second];
+    state.payload.containers.bag.photos = [{ ...reference(ids[2]), photoId: ids[2], status: "synced" }];
+  }
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
   state.visibility = published ? "public" : "private";
   page.on("pageerror", error => state.errors.push(error.message));
@@ -265,7 +274,10 @@ async function fixture(page, context, { published = false, shared = false, hydra
             state.receipts.set(id, receipt); return route.fulfill({ headers, json: { ok: true, ...receipt } });
           }
           state.revision++;
-          if (intent.kind === "template.save") state.payload = structuredClone(intent.body.payload);
+          if (intent.kind === "template.save") {
+            if (confirmedPhotos) expect(templatePhotoReferences(intent.body.payload)).toEqual(templatePhotoReferences(state.payload));
+            state.payload = structuredClone(intent.body.payload);
+          }
           if (intent.kind === "template.publication") state.visibility = intent.body.published ? "public" : "private";
           if (intent.kind === "template.archive") { state.visibility = "private"; state.archived = true; }
           if (intent.kind === "template.metadata") Object.assign(metadata, intent.body.metadata);
@@ -285,12 +297,19 @@ async function fixture(page, context, { published = false, shared = false, hydra
       return route.fulfill({ status, headers, json: data });
     }
     if (url.origin !== origin) return route.fulfill({ status: 404, body: "" });
+    if (confirmedPhotos && url.pathname.startsWith("/existing-photo/")) return route.fulfill({ contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"><path fill="#468" d="M0 0h4v3H0z"/></svg>' });
     const file = path.resolve(fixtureBundle, url.pathname === "/" ? "index.html" : "." + url.pathname);
     if (!file.startsWith(fixtureBundle + path.sep)) throw Error("Outside UI fixture");
     try { return route.fulfill({ body: await readFile(file), contentType: file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".html") ? "text/html" : "application/octet-stream" }); }
     catch { return route.fulfill({ status: 404, body: "" }); }
   });
   await page.goto(origin);
+  if (deferEditor) {
+    await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");
+    return state;
+  }
   if (hydrate || shared) {
     await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
     await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");
@@ -321,6 +340,81 @@ async function submitItem(page) {
 async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
+
+function templatePhotoReferences(payload) {
+  return Object.fromEntries(["items", "containers"].map(type => [type, Object.fromEntries(Object.entries(payload[type])
+    .filter(([, row]) => row.photos?.length).map(([id, row]) => [id, row.photos]))]));
+}
+
+for (const shared of [false, true]) for (const lost of [false, true]) test(`admin existing photos field save ${shared} lost=${lost}`, async ({ page, context }) => {
+  const server = await fixture(page, context, { shared, confirmedPhotos: true, withContainers: true, hydrate: true });
+  const photos = structuredClone(templatePhotoReferences(server.payload));
+  const before = await page.evaluate(() => ({ privatePayload: __adminUiTest.privatePayload(),
+    layoutId: Object.values(__adminUiTest.state().layouts).find(layout => layout.adminCausalSource)?.id }));
+  expect(templatePhotoReferences((await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).payload)).toEqual(photos);
+  server.lose = lost;
+  await editItem(page, "Название с сохранёнными фото", "Насос шаблона", before.layoutId);
+  if (lost) await expect.poll(() => server.hidden).toBe(true);
+  else await confirmedRevision(page, 8);
+  expect(server.posts).toHaveLength(1); const action = structuredClone(server.posts[0]);
+  expect(action.body.base).toEqual({ stateRevision: 7 });
+  expect(templatePhotoReferences(action.body.payload)).toEqual(photos);
+  expect(JSON.stringify(action.body.payload)).not.toContain("photoView");
+  server.lose = false; server.hidden = false;
+  await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 8);
+  expect(server.posts).toEqual([action]); expect(templatePhotoReferences(server.payload)).toEqual(photos);
+  expect(templatePhotoReferences((await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).payload)).toEqual(photos);
+  await editItem(page, "Следующая правка с теми же фото", "Название с сохранёнными фото", before.layoutId);
+  await confirmedRevision(page, 9);
+  expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+  expect(templatePhotoReferences(server.payload)).toEqual(photos);
+  expect(await page.evaluate(() => __adminUiTest.privatePayload())).toEqual(before.privatePayload);
+  expect(server.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) for (const variant of ["local", "server"]) test(`admin existing photos recovery ${shared} ${variant}`, async ({ page, context }) => {
+  const server = await fixture(page, context, { shared, confirmedPhotos: true, withContainers: true, hydrate: true });
+  const photos = structuredClone(templatePhotoReferences(server.payload)); server.blockBusiness = true;
+  await editItem(page, "Местная правка с фото", "Насос шаблона"); await expect.poll(() => server.posts.length).toBeGreaterThan(0);
+  await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+  await dialog.locator("[data-admin-stop]").click(); await page.locator("#confirmOkBtn").click();
+  await expect(dialog).toContainText("Отправка остановлена"); const attempts = server.posts.length;
+  server.blockBusiness = false; server.payload.items.pump.name = "Серверная правка с фото";
+  await dialog.locator("[data-admin-compare]").click(); await expect(page.locator("#confirmDialog")).toContainText("Серверная правка с фото");
+  await page.locator(variant === "server" ? "#confirmAlternateBtn" : "#confirmOkBtn").click();
+  const revision = variant === "server" ? 7 : 8;
+  await confirmedRevision(page, revision);
+  await expect(dialog).toContainText("Нет действий, ожидающих отправки");
+  expect(server.posts).toHaveLength(attempts + (variant === "local" ? 1 : 0));
+  expect(templatePhotoReferences(server.payload)).toEqual(photos);
+  await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, revision);
+  await editItem(page, "Правка после сверки с фото", variant === "server" ? "Серверная правка с фото" : "Местная правка с фото");
+  await confirmedRevision(page, revision + 1);
+  expect(server.posts.at(-1).body.base).toEqual({ stateRevision: revision });
+  expect(templatePhotoReferences(server.payload)).toEqual(photos); expect(server.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) test(`admin existing photos invalid source leaves no draft ${shared}`, async ({ page, context }) => {
+  const server = await fixture(page, context, { shared, confirmedPhotos: true, withContainers: true, deferEditor: true });
+  const before = await page.evaluate(() => ({ layouts: structuredClone(__adminUiTest.state().layouts),
+    items: structuredClone(__adminUiTest.state().items), containers: structuredClone(__adminUiTest.state().containers) }));
+  const listId = server.payload.items.pump.photos[0].listId;
+  server.payload.items.pump.photos[0].listId = "public-demo-state-foreign";
+  const target = shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" };
+  await page.evaluate(target => __adminUiTest.openPrepared(target), target);
+  await expect(page.locator("body")).toContainText("Фотографии шаблона изменены или требуют сверки");
+  expect(await page.evaluate(() => ({ layouts: __adminUiTest.state().layouts,
+    items: __adminUiTest.state().items, containers: __adminUiTest.state().containers }))).toEqual(before);
+  expect(server.posts).toEqual([]);
+  await page.reload();
+  await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+  expect(await page.evaluate(() => Object.values(__adminUiTest.state().layouts).some(row => row.adminDemo || row.adminSharedSourceId))).toBe(false);
+  server.payload.items.pump.photos[0].listId = listId;
+  await page.evaluate(target => __adminUiTest.openPrepared(target), target);
+  await editItem(page, "Правка после исправления исходника", "Насос шаблона"); await confirmedRevision(page, 8);
+  expect(server.posts).toHaveLength(1); expect(server.errors).toEqual([]);
+});
 
 const personalAdminCases = [];
 test.describe("admin reverse personal import", () => {

@@ -33,7 +33,8 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
     if (findLocalAdminTemplateDraft(getLayouts(), record)) continue;
     const layout = materialize(record, prepared); guard();
     if (!layout) continue;
-    layout.adminCausalSource = source; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
+    layout.adminCausalSource = { ...source, ...(layout.adminCausalSource?.photoView ? { photoView: layout.adminCausalSource.photoView } : {}) };
+    layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = false; layout.templateDraftServerHydrated = true;
     delete layout.templateDraftSyncPending; delete layout.templateUnpublishPending;
     await rememberSource?.(layout, prepared); guard();

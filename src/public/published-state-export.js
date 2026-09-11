@@ -9,6 +9,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   locations = [],
   categories = [],
   preserveEntityIds = false,
+  preservedEntityIds = null,
   normalizePublishedStatePayload,
   stripPublishedPublicOriginMarkers,
   onMappedEntity = () => {}
@@ -19,11 +20,20 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   const items = {};
   const containerIdMap = new Map();
   const itemIdMap = new Map();
+  const preservedId = (type, localId) => {
+    const entries = preservedEntityIds?.[type];
+    if (!entries || !Object.hasOwn(entries, localId)) return null;
+    const value = entries[localId];
+    if (typeof value !== "string" || !value || value.length > 191 || !/^[\p{L}\p{N}][\p{L}\p{N}._:-]*$/u.test(value)
+      || ["__proto__", "prototype", "constructor"].includes(value)) throw new Error("Исходный идентификатор владельца фотографии требует сверки.");
+    return value;
+  };
   const mapContainerId = (containerId) => {
     if (containerIdMap.has(containerId)) return containerIdMap.get(containerId);
     const container = targetState.containers?.[containerId];
-    const preferredId = cleanPublishedEntityId("container", container, containerId, { cssSafeId, preserveEntityIds });
-    if (preserveEntityIds && Object.hasOwn(containers, preferredId)) throw new Error("Повторный идентификатор сумки шаблона требует сверки.");
+    const exactId = preservedId("containers", containerId);
+    const preferredId = exactId ?? cleanPublishedEntityId("container", container, containerId, { cssSafeId, preserveEntityIds });
+    if ((preserveEntityIds || exactId) && Object.hasOwn(containers, preferredId)) throw new Error("Повторный идентификатор сумки шаблона требует сверки.");
     const nextId = uniquePublishedRecordId(containers, preferredId);
     containerIdMap.set(containerId, nextId);
     onMappedEntity({ type: "containers", sourceId: containerId, targetId: nextId });
@@ -32,8 +42,9 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   const mapItemId = (itemId) => {
     if (itemIdMap.has(itemId)) return itemIdMap.get(itemId);
     const item = targetState.items?.[itemId];
-    const preferredId = cleanPublishedEntityId("item", item, itemId, { cssSafeId, preserveEntityIds });
-    if (preserveEntityIds && Object.hasOwn(items, preferredId)) throw new Error("Повторный идентификатор вещи шаблона требует сверки.");
+    const exactId = preservedId("items", itemId);
+    const preferredId = exactId ?? cleanPublishedEntityId("item", item, itemId, { cssSafeId, preserveEntityIds });
+    if ((preserveEntityIds || exactId) && Object.hasOwn(items, preferredId)) throw new Error("Повторный идентификатор вещи шаблона требует сверки.");
     const nextId = uniquePublishedRecordId(items, preferredId);
     itemIdMap.set(itemId, nextId);
     onMappedEntity({ type: "items", sourceId: itemId, targetId: nextId });
