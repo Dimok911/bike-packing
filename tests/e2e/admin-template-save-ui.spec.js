@@ -12,6 +12,7 @@ import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../
 import { assertPersonalPublicImportBody, assertPersonalPublicImportHashes, personalPublicImportReceipt } from "../../src/sync/personal-public-import-protocol.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalBusinessPayload } from "../../src/sync/personal-server-payload.js";
+import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 
 const origin = "https://experiment.vniipo-help.ru", bundleRoot = path.resolve("test-results/admin-template-ui-build");
 const personal = () => ({ locations: ["Велосипед"], categories: ["Ремонт"], containers: {}, items: {},
@@ -39,7 +40,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false, emptySource = false } = {}) {
   const fixtureBundle = reverseImport ? path.resolve("test-results/admin-personal-import-ui-build") : bundleRoot;
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   state.privatePosts = []; state.privateReceipts = new Map();
@@ -142,6 +143,22 @@ async function fixture(page, context, { published = false, shared = false, hydra
       }
     }
   }
+  if (reverseImport && missingItems) {
+    const arrangement = state.privatePayload.layouts["layout-a"].arrangement;
+    state.privatePayload.items.pump.name = "Подтверждённая вещь";
+    for (const id of ["missing-root", "missing-pocket"]) {
+      delete state.privatePayload.items[id];
+      for (const key of ["items", "itemQuantities", "packedItems"]) delete arrangement[key][id];
+      for (const row of [...Object.values(state.privatePayload.containers), ...Object.values(arrangement.containers)]) {
+        row.itemIds = row.itemIds.filter(key => key !== id); row.order = (row.order || []).filter(entry => entry.id !== id);
+      }
+    }
+  }
+  if (emptySource) {
+    state.payload.containers = {}; state.payload.items.pump.containerId = "";
+    state.payload.layouts["layout-a"].rootContainerIds = [];
+    state.payload.layouts["layout-a"].arrangement = { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 };
+  }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
   state.visibility = published ? "public" : "private";
@@ -159,20 +176,25 @@ async function fixture(page, context, { published = false, shared = false, hydra
         capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1", ...(reverseImport ? ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPublicImportV1", "personalCausalPublicEntitiesV1", "personalCausalAdminTemplateImportV1"] : [])] };
       else if (reverseImport && suffix === "/bike-packing/list-operations") {
         const action = request.postDataJSON(), binding = { environment: action.environment, actorId: action.expectedActorId, kind: action.kind, listId: action.listId, body: action.body };
-        expect(action.kind).toBe("list.import"); state.privatePosts.push(action);
+        expect(["list.import", "list.update"]).toContain(action.kind); state.privatePosts.push(action);
         if (!state.privateReceipts.has(action.operationId)) {
           const base = personalBusinessPayload(state.privatePayload), manifest = action.body.publicImport;
-          expect(manifest.source.kind).toBe("admin-template");
-          await assertPersonalPublicImportHashes(action.body);
-          assertPersonalPublicImportBody(action.body, { base, operationId: action.operationId, listId: action.listId, causal: true });
-          expect(manifest.sourcePayload).toEqual(state.payload); expect(manifest.source.stateRevision).toBe(state.revision);
+          if (action.kind === "list.import") {
+            expect(manifest.source.kind).toBe("admin-template");
+            await assertPersonalPublicImportHashes(action.body);
+            assertPersonalPublicImportBody(action.body, { base, operationId: action.operationId, listId: action.listId, causal: true });
+            expect(manifest.sourcePayload).toEqual(state.payload); expect(manifest.source.stateRevision).toBe(state.revision);
+          } else {
+            expect(state.privateRevision).toBe(4); expect(state.privatePosts[0].kind).toBe("list.import");
+            expect(manifest).toBeUndefined(); expect(action.body.force).toBe(false);
+          }
           expect(action.body.baseStateRevision).toBe(state.privateRevision);
           state.privatePayload = structuredClone(action.body.payload); state.privateRevision++;
           state.privateReceipts.set(action.operationId, { ok: true, operation: { id: action.operationId, ...binding,
             payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex"), state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.privateRevision,
               list: { id: "personal-list", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: state.privateRevision, payload: structuredClone(state.privatePayload) },
-              publicImport: personalPublicImportReceipt(manifest), publicPhotos: [] } } });
+              ...(manifest ? { publicImport: personalPublicImportReceipt(manifest), publicPhotos: [] } : {}) } } });
         }
         if (state.privateLose) { state.privateHidden = true; return route.abort("failed"); }
         data = state.privateReceipts.get(action.operationId);
@@ -188,8 +210,11 @@ async function fixture(page, context, { published = false, shared = false, hydra
       else if (suffix === "/bike-packing/admin/template-operations/prepare" && request.postDataJSON()?.personalListId) data = {
         ok: true, actorId: "admin-a", environment: "bike-packing-experiment", listId: "personal-list", stateRevision: state.privateRevision,
         payload: state.privatePayload, payloadDigest: await adminTemplateCopyPayloadDigest(state.privatePayload) };
-      else if (suffix === "/bike-packing/admin/template-operations/prepare") data = { ok: true, actorId: "admin-a", environment: "bike-packing-experiment", itemKey, listId,
-        sourceType: "public-template", exists: true, deleted: false, stateRevision: state.revision, visibility: state.visibility, metadata, payload: state.payload, indexes: [] };
+      else if (suffix === "/bike-packing/admin/template-operations/prepare") {
+        if (state.onAdminPrepare) await state.onAdminPrepare();
+        data = { ok: true, actorId: "admin-a", environment: "bike-packing-experiment", itemKey, listId,
+          sourceType: "public-template", exists: true, deleted: false, stateRevision: state.revision, visibility: state.visibility, metadata, payload: state.payload, indexes: [] };
+      }
       else if (suffix === "/bike-packing/admin/template-operations" || suffix.endsWith("/cancel")) {
         const input = request.postDataJSON(), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input }), { id, ...binding } = intent;
         const cancel = suffix.endsWith("/cancel"); (cancel ? state.cancels : state.posts).push(input);
@@ -275,10 +300,11 @@ test.describe("admin reverse personal import", () => {
       { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
     expect(result.status, result.stderr).toBe(0);
   });
-  for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested"]) for (const mode of ["confirmed", "lost", "cancel", ...(shape === "tree" ? ["changed-source", "changed-target", "changed-account", "pending-source"] : [])]) {
+  for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing"]) for (const mode of ["confirmed", "lost", "cancel",
+    ...(shape === "item" ? ["edit"] : []), ...(shape === "tree" ? ["changed-source", "changed-target", "changed-account", "pending-source", "selection-quota", "action-quota", "queue-quota"] : [])]) {
     test(`${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
-      const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true });
-      await editItem(page, "Подтверждённая вещь"); await confirmedRevision(page, 8);
+      const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true, missingItems: shape === "missing" });
+      await editItem(page, "Подтверждённая вещь", "Насос шаблона"); await confirmedRevision(page, 8);
       const before = await page.evaluate(() => {
         const s = __adminUiTest.state(), layout = Object.values(s.layouts).find(row => row.adminCausalSource);
         return { sourceLayout: layout.id, source: __adminUiTest.snapshot(layout.id), private: __adminUiTest.privatePayload(),
@@ -301,7 +327,21 @@ test.describe("admin reverse personal import", () => {
         if (mode === "changed-account") __adminUiTest.user().id = "admin-b";
         if (mode === "pending-source") __adminUiTest.state().layouts[before.sourceLayout].templateDraftSyncPending = true;
       }, { mode, before });
-      await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+      if (shape === "missing") await expect(page.locator("#confirmAlternateBtn")).toHaveText("Только недостающие");
+      if (mode.endsWith("quota")) await page.evaluate(mode => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+          const selection = String(key).startsWith("bike-packing-public-selections-v1:");
+          const outbox = String(key).startsWith("bike-packing-personal-save-v1:");
+          if (mode === "selection-quota" && selection && String(key).endsWith(":selection")
+            || mode === "action-quota" && selection && String(key).endsWith(":action")
+            || mode === "queue-quota" && outbox && JSON.parse(value)?.action?.body?.publicImport) {
+            throw new DOMException("Admin copy preparation quota", "QuotaExceededError");
+          }
+          return original.call(this, key, value);
+        };
+      }, mode);
+      await page.locator(mode === "cancel" ? "#confirmCancelBtn" : shape === "missing" ? "#confirmAlternateBtn" : "#confirmOkBtn").click();
       if (mode.startsWith("changed-") || mode === "pending-source") {
         await expect.poll(() => page.evaluate(() => globalThis.__adminUiLastError)).toContain("Шаблон или личный список изменился");
         expect(server.privatePosts).toEqual([]); expect(personalBusinessPayload(server.privatePayload)).toEqual(originalPrivate);
@@ -312,18 +352,59 @@ test.describe("admin reverse personal import", () => {
         expect(await page.evaluate(() => __adminUiTest.scope())).toBe("admin-public-edit");
         expect(server.payload).toEqual(source); expect(server.errors).toEqual([]); return;
       }
+      let retainedSelection;
+      if (mode.endsWith("quota")) {
+        await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+        // The outbox can show its blocking screen before the caller has
+        // retained the frozen form and finished reporting the storage error.
+        await expect.poll(() => page.evaluate(() => globalThis.__adminUiLastError)).toContain(mode === "queue-quota"
+          ? "Не хватило места" : "Подготовленная копия требует восстановления");
+        expect(server.privatePosts).toEqual([]); expect(personalBusinessPayload(server.privatePayload)).toEqual(originalPrivate);
+        const records = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:")));
+        if (mode === "selection-quota") {
+          expect(records).toEqual([]);
+          expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(originalPrivate);
+          const recovery = page.locator("#personalSaveRecoveryDialog");
+          await expect(recovery.locator("[data-resume-photo-upload]")).toBeHidden();
+          expect(await page.evaluate(() => [...document.querySelectorAll("dialog:modal")].at(-1)?.id)).toBe("personalSaveRecoveryDialog");
+          const downloaded = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+          const bytes = await readFile(await (await downloaded).path()), entries = await readZipEntries(new Blob([bytes]));
+          const manifest = JSON.parse(zipText(entries.get("recovery-manifest.json"))), form = JSON.parse(zipText(entries.get("opened-form/form.json")));
+          expect(manifest.openedFormIncluded).toBe(true); expect(manifest.automaticImportAllowed).toBe(false);
+          expect(form.dispatchable).toBe(false); expect(form.request.selection.sourcePayload).toEqual(source);
+          expect(form.request.selection.source.kind).toBe("admin-template");
+          expect(form.request.selection.basePayload).toEqual(originalPrivate);
+          expect(form.request.selection.ownerTargets).toHaveLength(3);
+          expect(server.privatePosts).toEqual([]); expect(server.payload).toEqual(source); expect(server.posts).toHaveLength(1);
+          expect(server.errors).toEqual([]); return;
+        }
+        retainedSelection = JSON.parse(records.find(([key]) => key.endsWith(":selection"))[1]).selection;
+        expect(retainedSelection.sourcePayload).toEqual(source);
+        expect(records.some(([key]) => key.endsWith(":action"))).toBe(mode === "queue-quota");
+        await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+        expect(server.privatePosts).toEqual([]);
+        expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:")))).toEqual(records);
+        const recovery = page.locator("#personalSaveRecoveryDialog");
+        await recovery.getByRole("button", { name: "Продолжить сохранённую форму", exact: true }).click();
+        await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+      }
       await expect.poll(async () => await page.evaluate(() => globalThis.__adminUiLastError) || server.privatePosts.length).toBe(1);
       if (mode === "lost") await expect.poll(() => server.privateHidden).toBe(true);
       const action = server.privatePosts[0], copied = structuredClone(action.body.payload);
+      if (retainedSelection) {
+        expect(action.operationId).toBe(retainedSelection.operationId);
+        for (const key of ["source", "copy", "ownerTargets", "photoTargets"]) expect(action.body.publicImport[key]).toEqual(retainedSelection[key]);
+      }
       expect(action.body.publicImport.source.itemKey).toBe(shared ? "shared-layout:ui" : "demo-state:ui");
       expect(action.body.publicImport.source.stateRevision).toBe(8);
-      expect(Object.keys(copied.items).length).toBe(Object.keys(originalPrivate.items).length + (shape === "shell" ? 0 : 1));
-      expect(Object.keys(copied.containers).length).toBe(Object.keys(originalPrivate.containers).length + (item ? 0 : shape === "tree" ? 2 : 1));
+      expect(Object.keys(copied.items).length).toBe(Object.keys(originalPrivate.items).length + (shape === "shell" ? 0 : shape === "missing" ? 2 : 1));
+      expect(Object.keys(copied.containers).length).toBe(Object.keys(originalPrivate.containers).length + (item || shape === "missing" ? 0 : shape === "tree" ? 2 : 1));
+      for (const [id, row] of Object.entries(originalPrivate.items)) expect(copied.items[id]).toEqual(row);
       for (const entry of action.body.publicImport.ownerTargets.filter(row => row.entityType === "item")) {
         expect(copied.items[entry.targetId].quantity).toBe(1);
-        expect(copied.layouts["layout-a"].arrangement.itemQuantities[entry.targetId]).toBe(2);
+        expect(copied.layouts["layout-a"].arrangement.itemQuantities[entry.targetId]).toBe(shape === "missing" ? copied.items[entry.targetId].name === "Недостающее в сумке" ? 3 : 4 : 2);
       }
-      if (mode === "confirmed") await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
+      if (["confirmed", "edit"].includes(mode)) await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
       server.privateLose = false; server.privateHidden = false;
       await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
       if (mode === "lost") {
@@ -335,9 +416,112 @@ test.describe("admin reverse personal import", () => {
       await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
       expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(copied);
       expect(server.privatePosts).toHaveLength(1); expect(server.payload).toEqual(source); expect(server.posts).toHaveLength(1);
+      if (mode === "edit") {
+        const id = action.body.publicImport.ownerTargets.find(row => row.entityType === "item").targetId;
+        await page.evaluate(id => __adminUiTest.openItem(id), id);
+        await page.locator("#itemName").fill("Правка личной копии"); await submitItem(page);
+        await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 5 && !__adminUiTest.privateMeta().dirty);
+        expect(server.privatePosts).toHaveLength(2); expect(server.privatePosts[1].kind).toBe("list.update");
+        expect(server.privatePosts[1].body.baseStateRevision).toBe(4); expect(server.privatePosts[1].operationId).not.toBe(action.operationId);
+        const edited = structuredClone(server.privatePayload);
+        expect(edited.items[id].name).toBe("Правка личной копии");
+        for (const [originalId, row] of Object.entries(originalPrivate.items)) expect(edited.items[originalId]).toEqual(row);
+        expect(edited.layouts["layout-a"].arrangement).toEqual(copied.layouts["layout-a"].arrangement);
+        await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+        await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 5 && !__adminUiTest.privateMeta().dirty);
+        expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(personalBusinessPayload(edited));
+        expect(server.privatePosts).toHaveLength(2); expect(server.payload).toEqual(source); expect(server.posts).toHaveLength(1);
+      }
       expect(server.errors).toEqual([]);
     });
   }
+  for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "queue-quota", "cancel", "pending-source", "changed-name", "changed-mode", "closed", "empty"])
+    test(`${shared ? "shared" : "demo"} whole layout (${mode})`, async ({ page, context }) => {
+      const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true, emptySource: mode === "empty" });
+      await editItem(page, "Подтверждённая вещь", "Насос шаблона"); await confirmedRevision(page, 8);
+      const source = structuredClone(server.payload), original = personalBusinessPayload(server.privatePayload);
+      const sourceId = await page.evaluate(() => Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource).id);
+      await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
+      await page.locator("#layoutCreateMode").selectOption("from-template-layout");
+      await page.locator("#layoutCopyFrom").selectOption("template-draft:" + sourceId);
+      await page.locator("#layoutName").fill("Моя укладка из шаблона"); await page.locator("#layoutName").blur();
+      if (mode === "cancel") {
+        await page.locator("#layoutDialog").getByRole("button", { name: "Закрыть", exact: true }).click();
+        expect(server.privatePosts).toEqual([]); expect(server.payload).toEqual(source);
+        expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(original);
+        expect(server.errors).toEqual([]); return;
+      }
+      if (mode === "pending-source") await page.evaluate(id => { __adminUiTest.state().layouts[id].templateDraftSyncPending = true; }, sourceId);
+      if (mode === "queue-quota") await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+          if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.publicImport) {
+            throw new DOMException("Admin layout queue quota", "QuotaExceededError");
+          }
+          return original.call(this, key, value);
+        };
+      });
+      let release, preparing = false;
+      if (["changed-name", "changed-mode", "closed"].includes(mode)) server.onAdminPrepare = () => { preparing = true; return new Promise(resolve => { release = resolve; }); };
+      server.privateLose = mode === "lost";
+      if (test.info().project.name === "mobile-webkit") await page.locator("#saveLayoutBtn").tap();
+      else await page.locator("#saveLayoutBtn").click();
+      if (["changed-name", "changed-mode", "closed"].includes(mode)) {
+        await expect.poll(() => preparing).toBe(true);
+        if (mode === "changed-name") await page.locator("#layoutName").fill("Другое название");
+        else if (mode === "changed-mode") await page.locator("#layoutCreateMode").selectOption("empty");
+        else await page.locator("#layoutDialog").getByRole("button", { name: "Закрыть", exact: true }).click();
+        release();
+        if (mode === "closed") { await expect(page.locator("#saveLayoutBtn")).toBeEnabled(); await expect(page.locator("#layoutDialog")).not.toBeVisible(); }
+        else await expect(page.locator("body")).toContainText("Выбор шаблона или название изменились");
+      } else if (mode === "pending-source") await expect(page.locator("body")).toContainText("Шаблон или личный список изменился");
+      if (["changed-name", "changed-mode", "closed", "pending-source"].includes(mode)) {
+        expect(server.privatePosts).toEqual([]); expect(server.payload).toEqual(source);
+        expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(original);
+        expect(await page.evaluate(() => __adminUiTest.scope())).toBe("admin-public-edit");
+        expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
+        expect(server.errors).toEqual([]); return;
+      }
+      let selection;
+      if (mode === "queue-quota") {
+        await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+        await expect.poll(() => page.evaluate(() => globalThis.__adminUiLastError)).toContain("Не хватило места");
+        selection = await page.evaluate(() => JSON.parse(Object.entries(localStorage).find(([key]) => key.startsWith("bike-packing-public-selections-v1:") && key.endsWith(":selection"))[1]).selection);
+        expect(selection.sourcePayload).toEqual(source); expect(server.privatePosts).toEqual([]);
+        expect(personalBusinessPayload(server.privatePayload)).toEqual(original);
+        await page.reload(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+        expect(server.privatePosts).toEqual([]);
+        await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+        await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены");
+      }
+      await expect.poll(() => server.privatePosts.length).toBe(1);
+      const action = server.privatePosts[0], copied = action.body.payload, target = action.body.publicImport.layoutTargets[0];
+      expect(action.kind).toBe("list.import"); expect(action.body.baseStateRevision).toBe(3);
+      expect(action.body.publicImport.sourcePayload).toEqual(source); expect(target.name).toBe("Моя укладка из шаблона");
+      expect(Object.keys(copied.layouts)).toHaveLength(Object.keys(original.layouts).length + 1);
+      expect(Object.keys(copied.items)).toHaveLength(Object.keys(original.items).length + (mode === "empty" ? 0 : 1));
+      expect(Object.keys(copied.containers)).toHaveLength(Object.keys(original.containers).length + (mode === "empty" ? 0 : 2));
+      for (const field of ["items", "containers", "layouts"]) for (const [id, row] of Object.entries(original[field])) expect(copied[field][id]).toEqual(row);
+      for (const owner of action.body.publicImport.ownerTargets.filter(row => row.entityType === "item")) {
+        expect(copied.items[owner.targetId].quantity).toBe(1); expect(copied.layouts[target.targetId].arrangement.itemQuantities[owner.targetId]).toBe(2);
+      }
+      if (selection) { expect(action.operationId).toBe(selection.operationId); expect(action.body.publicImport.layoutTargets).toEqual(selection.layoutTargets); }
+      if (mode === "lost") await expect.poll(() => server.privateHidden).toBe(true);
+      if (["confirmed", "empty"].includes(mode)) await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
+      server.privateLose = false; server.privateHidden = false;
+      await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      if (mode === "lost") {
+        await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+        await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены");
+        await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      }
+      await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
+      expect(personalBusinessPayload(await page.evaluate(() => __adminUiTest.privatePayload()))).toEqual(copied);
+      await expect(page.locator(`#layoutSelect option[value="${target.targetId}"]`)).toHaveText(target.name);
+      // A failure before applying the copy never changed the remembered tab.
+      expect(await page.evaluate(() => __adminUiTest.state().activeLayoutId)).toBe(mode === "queue-quota" ? "layout-a" : target.targetId);
+      expect(server.privatePosts).toHaveLength(1); expect(server.payload).toEqual(source); expect(server.posts).toHaveLength(1); expect(server.errors).toEqual([]);
+    });
 });
 for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing"]) for (const mode of ["confirmed", "lost", "mirror-quota", "plan-quota", "pointer-quota"]) personalAdminCases.push({ shared, shape, mode });
 for (const shared of [false, true]) for (const shape of ["item-detached", "item-detached-parent"]) for (const mode of ["confirmed", "lost"]) personalAdminCases.push({ shared, shape, mode });

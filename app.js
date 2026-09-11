@@ -5186,7 +5186,7 @@ function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = s
   }
 }
 
-function switchActiveLayout(layoutId, { remember = true, recordAction = remember } = {}) {
+function switchActiveLayout(layoutId, { remember = true, recordAction = remember, renderAfter = true } = {}) {
   if (!canUsePrivateState() && !isGuestDemoCopyLayout(layoutId)) {
     enterSignedOutPublicMode(currentPublicTemplateStatusMessage()).catch(() => {
       setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
@@ -5202,7 +5202,7 @@ function switchActiveLayout(layoutId, { remember = true, recordAction = remember
       if (remember) rememberActiveLayoutChoice(layoutId);
       persistActiveLayoutSelection({ sync: remember, recordAction });
     }
-    render();
+    if (renderAfter) render();
     return;
   }
   if (canUsePrivateState()) setActivePrivateScope();
@@ -5216,7 +5216,7 @@ function switchActiveLayout(layoutId, { remember = true, recordAction = remember
   if (!(state.layouts[layoutId]?.rootContainerIds || []).length) {
     rootContainerUsageFilter = "all";
   }
-  render();
+  if (renderAfter) render();
 }
 
 function openPrivateLayout(layoutId, options = {}) {
@@ -10701,11 +10701,14 @@ async function prepareCausalAdminToPersonalCopy(request) {
       || canonicalTemplateJson(personalBusinessPayload(stripAdminTemplateEditorMetadata(observed.payload))) !== canonicalTemplateJson(personalBusinessPayload(sourcePrepared.payload))) {
       throw Error("Шаблон отличается от подтверждённой серверной версии. Сначала сверьте его изменения.");
     }
-    sourceId = ids[request.type === "item" ? "items" : "containers"][request.sourceId || request.rootId];
+    sourceId = request.type === "layout" ? Object.keys(sourcePrepared.payload.layouts)[0]
+      : ids[request.type === "item" ? "items" : "containers"][request.sourceId || request.rootId];
     if (!sourceId) fail();
     const source = personalAdminTemplateImportSource({ kind: "admin-template", listId: original.binding.listId, itemKey: original.binding.itemKey,
       stateRevision: sourcePrepared.stateRevision, language: sourcePrepared.metadata.language, payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) });
-    guard(); switchActiveLayout(request.targetLayoutId, { remember: false, recordAction: false });
+    // Keep the submitted creation form intact while preparing its private
+    // context; rendering here would replace its template-source selector.
+    guard(); switchActiveLayout(request.targetLayoutId, { remember: false, recordAction: false, renderAfter: request.type !== "layout" });
     if (!personalPhotoFormUiEnabled()) fail();
     personalSaveRecovery.assertRunning(); outbox = personalSaveOutboxForScope();
     if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) fail();
@@ -10714,7 +10717,9 @@ async function prepareCausalAdminToPersonalCopy(request) {
     if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, basePayload)) throw Error("Сначала подтвердите текущую личную укладку.");
     const input = { binding: outbox.binding, basePayload, baseStateRevision: Number(syncMeta.stateRevision), source, sourcePayload: sourcePrepared.payload, editMeta: currentCreateMeta() };
     const sourceLayoutId = Object.keys(sourcePrepared.payload.layouts)[0];
-    selection = preparePersonalPublicEntitySelection({ ...input, copy: { version: 1, mode: "independent", sourceLayoutId,
+    selection = request.type === "layout" ? preparePersonalPublicImportSelection({ ...input,
+      layoutIds: [sourceLayoutId], layoutNames: [uniqueLayoutName(request.requestedName)] })
+      : preparePersonalPublicEntitySelection({ ...input, copy: { version: 1, mode: "independent", sourceLayoutId,
       entries: [{ entityType: request.type === "item" ? "item" : "container", sourceId, includeContents: request.includeContents === true }],
       destination: { layoutId: request.targetLayoutId, containerId: request.targetParentId || "", index: request.targetIndex ?? null } } });
     if (request.includeContents) {
@@ -10733,7 +10738,7 @@ async function prepareCausalAdminToPersonalCopy(request) {
       if (!chosen) return false;
       for (const [type, entityType] of [["items", "item"], ["containers", "container"]]) {
         const count = chosen.ownerTargets.filter(row => row.entityType === entityType).length;
-        if (count && !requireUsageCapacity(type, count)) return false;
+        if (count && !requireUsageCapacity(type, count)) { restoreSourceView(); return false; }
       }
       used = true; source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext: personalSaveContext }), inventory: null };
       personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
@@ -10744,12 +10749,13 @@ async function prepareCausalAdminToPersonalCopy(request) {
         onCaptured(saved) {
           guard(chosen.operationId); personalSaveRecovery.assertRunning(); replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
           personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source;
-          rememberActiveLayoutChoice(request.targetLayoutId); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+          rememberActiveLayoutChoice(chosen.layoutTargets?.[0]?.targetId || request.targetLayoutId); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
           updateSyncUi("Личная копия шаблона сохранена и ждёт подтверждения сервера.");
         }
       });
       await commit(); scheduleRemoteSave();
-      return chosen.ownerTargets.find(row => row.sourceId === sourceId)?.targetId || request.targetParentId || state.layouts[request.targetLayoutId].rootContainerIds[0];
+      return chosen.layoutTargets?.[0]?.targetId || chosen.ownerTargets.find(row => row.sourceId === sourceId)?.targetId
+        || request.targetParentId || state.layouts[request.targetLayoutId].rootContainerIds[0];
     } catch (error) {
       if (source) await retainPersonalPublicPreparationForRecovery(source);
       else restoreSourceView();

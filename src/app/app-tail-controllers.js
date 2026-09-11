@@ -6866,6 +6866,14 @@ function layoutCreateCopySourceOptions({ templates = false, includeTemplates = f
       canView: true
     })
     : [];
+  if (templates && adminTemplateUiEnabled() && canOpenAdminPublishedEdit()) {
+    const choices = new Set(publicOptions.map(([value]) => value));
+    for (const layout of Object.values(state.layouts)) {
+      if (!layout.adminCausalSource || !isAdminEditablePublishedLayout(layout.id)) continue;
+      const value = "template-draft:" + layout.id;
+      if (!choices.has(value)) { choices.add(value); publicOptions.push([value, copyPickerLayoutLabel(layout), "public"]); }
+    }
+  }
   return getLayoutCreateCopySourceOptions({
     adminPublicLayoutOptions: publicOptions,
     canUsePrivateState: canUsePrivateState(),
@@ -7182,6 +7190,36 @@ async function saveNewLayout(event) {
     return;
   }
   if (shouldCreateFromTemplate) {
+    if (adminTemplateUiEnabled()) {
+      if (templateCopyCreationPending) return;
+      // A second copy waiting for this new layout needs its own confirmed
+      // predecessor; it cannot fall through to the legacy creation path.
+      if (pendingCopyTargetLayoutCreation) {
+        showToast("Сначала создайте личную укладку отдельно и дождитесь подтверждения, затем повторите копирование.", "warning"); return;
+      }
+      templateCopyCreationPending = true; refs.saveLayoutBtn.disabled = true;
+      try {
+        const sourceChoice = refs.layoutCopyFrom.value;
+        const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
+        const targetLayoutId = Object.values(state.layouts).find(layout => isPrivateUserLayoutId(layout.id))?.id;
+        if (!sourceLayout || !targetLayoutId) {
+          showToast("Для этой копии нужны подтверждённый шаблон и загруженный личный список.", "warning"); return;
+        }
+        const commit = await prepareCausalAdminToPersonalCopy({ type: "layout", sourceLayoutId: sourceLayout.id, targetLayoutId, requestedName });
+        if (!commit) return;
+        if (!refs.layoutDialog.open || refs.layoutCreateMode.value !== mode
+          || sourceChoice !== refs.layoutCopyFrom.value || requestedName !== refs.layoutName.value.trim()) {
+          commit.cancel();
+          if (refs.layoutDialog.open) showToast("Выбор шаблона или название изменились. Повторите создание укладки.", "warning");
+          return;
+        }
+        const createdId = await commit(); if (!createdId) return;
+        refs.layoutDialog.close(); switchView("packing"); render();
+        showToast("Личная укладка создана и ждёт подтверждения сервера.", "success");
+      } catch (error) { showToast(error.message || "Не удалось подготовить личную копию шаблона.", "error"); }
+      finally { templateCopyCreationPending = false; refs.saveLayoutBtn.disabled = false; }
+      return;
+    }
     const templateSource = await resolveLayoutCreateTemplateCopySource(refs.layoutCopyFrom.value);
     if (!templateSource) {
       showToast(localText("Template source not found.", "Источник шаблона не найден."), "error");
