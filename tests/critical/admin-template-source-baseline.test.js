@@ -63,3 +63,29 @@ test("metadata based on a server revision consumes only that editor's exact prep
   const forged = { ...saved, plan: { ...plan, editorSnapshot: changed } };
   await assert.rejects(pendingAdminTemplateCopySource(source, forged, changed, [], { baseline }));
 });
+
+for (const kind of ["template.publication", "template.archive"]) for (const predecessor of ["prepared", "pending-metadata"]) {
+  test(`${kind} from ${predecessor} retains exact source data and rejects unrecorded changes`, async () => {
+    const f = fixture(); await f.make().capture(f.prepared, f.editor); const baseline = await f.make().read();
+    const editorSnapshot = structuredClone(f.editor), records = [];
+    let base = { stateRevision: 7 };
+    if (predecessor === "pending-metadata") {
+      editorSnapshot.metadata.title = "Earlier label"; editorSnapshot.payload.layouts.main.name = "Earlier label";
+      editorSnapshot.payload.layouts.main.language = "ru";
+      const parent = adminTemplateCommandPlan({ binding: f.binding, operationId: randomUUID(), kind: "template.metadata", editorSnapshot,
+        body: { version: 1, base, metadata: { title: "Earlier label", language: "ru" } } });
+      records.push({ plan: parent, cancelRequested: false }); base = { operationId: parent.id };
+    }
+    const body = { version: 1, base, indexes: [], ...(kind === "template.publication" ? { published: false } : {}) };
+    const plan = adminTemplateCommandPlan({ binding: f.binding, operationId: randomUUID(), kind, editorSnapshot, body });
+    const saved = { plan, cancelRequested: false }, source = { exists: true, binding: f.binding, planId: plan.id, base: { operationId: plan.id } };
+    const result = await pendingAdminTemplateCopySource(source, saved, editorSnapshot, records, { baseline });
+    assert.deepEqual(result.payload, f.prepared.payload); assert.deepEqual(result.source.base, source.base);
+    const changed = structuredClone(editorSnapshot); changed.payload.items.extra = { id: "extra" };
+    await assert.rejects(pendingAdminTemplateCopySource(source, { ...saved, plan: { ...plan, editorSnapshot: changed } }, changed, records, { baseline }));
+    await assert.rejects(pendingAdminTemplateCopySource(source, { ...saved, cancelRequested: true }, editorSnapshot, records, { baseline }));
+    const deleted = adminTemplateCommandPlan({ binding: f.binding, operationId: plan.id, kind: "template.delete", editorSnapshot,
+      body: { version: 1, base, indexes: [] } });
+    await assert.rejects(pendingAdminTemplateCopySource(source, { ...saved, plan: deleted }, editorSnapshot, records, { baseline }));
+  });
+}

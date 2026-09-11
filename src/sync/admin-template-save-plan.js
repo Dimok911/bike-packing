@@ -105,7 +105,7 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
   visiting.add(plan.id);
   if (plan.version === 2) {
     const operation = plan.operations[0];
-    if (operation.kind !== "template.metadata") throw paused();
+    if (!["template.metadata", "template.publication", "template.archive"].includes(operation.kind)) throw paused();
     let previous;
     if (operation.body.base.stateRevision && baseline?.stateRevision === operation.body.base.stateRevision && same(baseline.binding, plan.binding)) {
       previous = clone({ payload: baseline.payload, metadata: baseline.metadata, editorSnapshot: baseline.editorSnapshot });
@@ -121,13 +121,15 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
       previous = adminTemplateDataSourceSnapshot(parents[0].plan, records, { baseline, receipts }, visiting);
     }
     const choice = operation.body.metadata;
-    const metadata = { title: choice.title, description: previous.metadata.description, language: choice.language };
+    const metadata = choice ? { title: choice.title, description: previous.metadata.description, language: choice.language } : clone(previous.metadata);
     const editorSnapshot = clone(plan.editorSnapshot), expected = clone(previous.editorSnapshot || { payload: previous.payload, metadata: previous.metadata });
     const layout = Object.values(expected.payload.layouts || {}), selected = Object.values(editorSnapshot.payload.layouts || {});
     if (layout.length !== 1 || selected.length !== 1) throw paused();
-    expected.metadata = { ...expected.metadata, title: choice.title, language: choice.language };
-    layout[0].name = choice.title; layout[0].language = choice.language;
-    if (Object.hasOwn(choice, "layoutOrder")) layout[0].layoutOrder = choice.layoutOrder;
+    if (choice) {
+      expected.metadata = { ...expected.metadata, title: choice.title, language: choice.language };
+      layout[0].name = choice.title; layout[0].language = choice.language;
+      if (Object.hasOwn(choice, "layoutOrder")) layout[0].layoutOrder = choice.layoutOrder;
+    }
     // Touching the label changes only the editor's audit fields. SQL metadata
     // preserves the underlying data snapshot, including its old layout title.
     for (const field of ["updatedAt", "updatedByDeviceId", "updatedByDeviceName"]) {
@@ -135,7 +137,7 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
     }
     if (!same(expected, editorSnapshot)) throw paused();
     const payload = clone(previous.payload);
-    if (Object.hasOwn(choice, "layoutOrder")) {
+    if (choice && Object.hasOwn(choice, "layoutOrder")) {
       const layouts = Object.values(payload.layouts || {}); if (layouts.length !== 1) throw paused();
       layouts[0].layoutOrder = choice.layoutOrder;
     }
