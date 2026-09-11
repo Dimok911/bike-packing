@@ -10661,17 +10661,20 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
-  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof;
+  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState;
+  const privateSnapshot = () => canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true })));
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
     if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
       || layout.adminCausalCopyPlan || layout.templateDraftSyncPending
       || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true)) !== initial
-      || state.layouts[sourceLayout.id] !== sourceLayout || sourceLayout.adminCausalCopyPlan || sourceLayout.templateDraftSyncPending
-      || coordinator.hasPendingCapture(sourceLayout.id) || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(sourceOriginal)
-      || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot
-      || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error("Шаблон изменился. Повторите действие.");
+      || state.layouts[sourceLayout.id] !== sourceLayout
+      || (personalSource ? hasPendingPersonalSave() || syncMeta.dirty || canonicalTemplateJson(personalSaveContext()) !== personalInitial || privateSnapshot() !== sourceSnapshot
+        : sourceLayout.adminCausalCopyPlan || sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id)
+          || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(sourceOriginal)
+          || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot)
+      || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error(personalSource ? "Шаблон или исходный список изменился. Повторите действие." : "Шаблон изменился. Повторите действие.");
   };
   const capacity = () => ["items", "containers"].every(type => {
     const count = prepared.entries.filter(entry => entry.type === type).length;
@@ -10680,15 +10683,43 @@ async function prepareCausalAdminPlacementCopy(request) {
   try {
     layout = state.layouts[request.targetLayoutId]; original = clone(layout?.adminCausalSource || null);
     sourceLayout = state.layouts[request.sourceLayoutId]; sourceOriginal = clone(sourceLayout?.adminCausalSource || null);
+    personalSource = Boolean(sourceLayout && !isAdminEditablePublishedLayout(sourceLayout.id));
     if (!layout || !original?.exists || original.planId || !original.base?.stateRevision || layout.adminCausalCopyPlan
       || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id) || !isAdminEditablePublishedLayout(layout.id)
-      || !sourceOriginal?.exists || sourceOriginal.planId || !sourceOriginal.base?.stateRevision || getPublishedEditLayoutId() !== sourceLayout.id
-      || [original, sourceOriginal].some(value => value.binding.actorId !== String(currentUser?.id || ""))
-      || sourceLayout !== layout && sourceOriginal.binding.listId === original.binding.listId) throw Error("Сначала дождитесь подтверждения исходного и целевого шаблонов.");
+      || original.binding.actorId !== String(currentUser?.id || "") || !sourceLayout) throw Error("Сначала дождитесь подтверждения целевого шаблона.");
+    if (personalSource) {
+      if (sourceOriginal || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState) || state.activeLayoutId !== sourceLayout.id
+        || localStorageScopeKey !== `id:${currentUser.id}` || !currentPackingListId || hasPendingPersonalSave() || syncMeta.dirty
+        || !Number.isSafeInteger(Number(syncMeta.stateRevision)) || Number(syncMeta.stateRevision) < 1
+        || ![undefined, "item"].includes(request.type) || request.mode && request.mode !== "copy") throw Error("Сначала подтвердите исходную личную укладку.");
+      personalInitial = canonicalTemplateJson(personalSaveContext()); sourceSnapshot = privateSnapshot();
+    } else {
+      if (!sourceOriginal?.exists || sourceOriginal.planId || !sourceOriginal.base?.stateRevision || getPublishedEditLayoutId() !== sourceLayout.id
+        || sourceOriginal.binding.actorId !== String(currentUser?.id || "")
+        || sourceLayout !== layout && sourceOriginal.binding.listId === original.binding.listId) throw Error("Сначала дождитесь подтверждения исходного шаблона.");
+      sourceSnapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id));
+    }
     initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true));
-    sourceSnapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id));
     snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)); guard();
-    if (sourceLayout !== layout) {
+    planningState = state;
+    if (personalSource) {
+      sourcePrepared = await apiFetch("/bike-packing/admin/template-operations/prepare", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ personalListId: currentPackingListId }), timeoutMs: LIST_API_TIMEOUT_MS }); guard();
+      const digest = await adminTemplateCopyPayloadDigest(sourcePrepared.payload); guard();
+      if (sourcePrepared.ok !== true || sourcePrepared.actorId !== String(currentUser.id) || sourcePrepared.environment !== "bike-packing-experiment"
+        || sourcePrepared.listId !== currentPackingListId || sourcePrepared.stateRevision !== Number(syncMeta.stateRevision)
+        || sourcePrepared.payloadDigest !== digest || canonicalTemplateJson(personalBusinessPayload(sourcePrepared.payload)) !== sourceSnapshot) {
+        throw Error("Личная укладка отличается от подтверждённой серверной версии. Сначала сверьте список.");
+      }
+      sourceProof = { kind: "personal-list", listId: sourcePrepared.listId, base: { stateRevision: sourcePrepared.stateRevision }, payloadDigest: digest };
+      planningState = clone(state);
+      for (const type of ["items", "containers", "layouts"]) for (const [id, row] of Object.entries(sourcePrepared.payload[type])) {
+        if (planningState[type][id] && (type === "layouts" ? isAdminEditablePublishedLayout(id) : hasPrivateSyncBlockedPublicOrigin(planningState[type][id], id))) {
+          throw Error("Идентификаторы личного источника пересекаются с шаблоном.");
+        }
+        planningState[type][id] = clone(row);
+      }
+    } else if (sourceLayout !== layout) {
       sourcePrepared = await adminTemplateClient(sourceOriginal.binding, sourceLayout.id, true).prepare(); guard();
       const verified = adminTemplateEditorSource(sourceOriginal.binding, sourcePrepared);
       if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(sourceOriginal.base)) throw Error("Серверная версия источника изменилась. Сначала сверьте исходный шаблон.");
@@ -10703,14 +10734,14 @@ async function prepareCausalAdminPlacementCopy(request) {
       : request.type === "placement-group" ? prepareAdminTemplatePlacementGroup
       : request.type === "placement-remove" ? prepareAdminTemplatePlacementRemoval
       : request.type === "catalog-delete" ? prepareAdminTemplateCatalogDeletion : prepareAdminTemplateTreeCopy;
-    prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
+    prepared = await prepareCopy(planningState, request, { operationId, changedAt, currentEditMeta, markEdited, sourceKind: personalSource ? "personal" : "template",
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove", "catalog-delete"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = personalSource || ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove", "catalog-delete"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
-    try { missingPrepared = request.includeContents === true ? await prepareAdminTemplateMissingItems(state, request, {
-      operationId, changedAt, currentEditMeta, markEdited, normalizeContainerColor,
+    try { missingPrepared = request.includeContents === true ? await prepareAdminTemplateMissingItems(planningState, request, {
+      operationId, changedAt, currentEditMeta, markEdited, normalizeContainerColor, sourceKind: personalSource ? "personal" : "template",
       hasPhotos: row => normalizeItemPhotos(row).length > 0
     }) : null; } catch { missingPrepared = null; }
     guard(); if (!linked && !missingPrepared && !capacity()) return false;

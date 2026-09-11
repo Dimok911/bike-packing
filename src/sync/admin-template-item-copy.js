@@ -5,6 +5,7 @@ import { normalizeLayoutArrangement } from "../state/layout-normalize.js";
 import { normalizeItemQuantity } from "../state/normalize.js";
 import { isItemUnavailableForPacking } from "../state/layout-locks.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "./admin-template-protocol.js";
+import { adminCopySourceOwner } from "./admin-template-copy-source.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const fail = () => { throw Error("Не подтверждены исходная вещь и место копии. Исходные данные сохранены."); };
@@ -12,13 +13,14 @@ const fail = () => { throw Error("Не подтверждены исходная
 // The caller freezes both editor revisions and persists the source-checked
 // save. This planner produces only the new catalog record and its placement.
 export function prepareAdminTemplateItemCopy(state, request, { operationId, changedAt = "", currentEditMeta = () => ({}),
-  hasPhotos = row => Boolean(row.photos?.length) } = {}) {
+  hasPhotos = row => Boolean(row.photos?.length), sourceKind = "template" } = {}) {
   const frozen = clone(state), { sourceId, sourceLayoutId, targetLayoutId, targetParentId, mode = "copy" } = clone(request);
   const source = frozen.items?.[sourceId], from = frozen.layouts?.[sourceLayoutId], to = frozen.layouts?.[targetLayoutId];
-  if (!validTemplateOperationId(operationId) || !from?.adminCausalSource?.exists || !to?.adminCausalSource?.exists
+  const owner = adminCopySourceOwner(frozen, sourceLayoutId, targetLayoutId, sourceKind);
+  if (!validTemplateOperationId(operationId) || !owner || !to?.adminCausalSource?.exists
     || !from.arrangement || !to.arrangement || to.locked || !["copy", "link"].includes(mode)
     || (mode === "copy" ? sourceLayoutId === targetLayoutId : sourceLayoutId !== targetLayoutId)
-    || !source || source.id !== sourceId || source.publicCatalogLayoutId !== sourceLayoutId
+    || !source || source.id !== sourceId || !owner(source)
     || hasPhotos(source) || isItemUnavailableForPacking(source)
     || frozen.containers?.[targetParentId]?.publicCatalogLayoutId !== targetLayoutId
     || !to.arrangement.containers?.[targetParentId]) fail();

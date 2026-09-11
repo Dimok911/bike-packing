@@ -4,6 +4,7 @@ import { normalizeLayoutArrangement } from "../state/layout-normalize.js";
 import { normalizeItemQuantity } from "../state/normalize.js";
 import { isItemUnavailableForPacking } from "../state/layout-locks.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "./admin-template-protocol.js";
+import { adminCopySourceOwner } from "./admin-template-copy-source.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const fail = () => { throw Error("Не подтверждены состав сумки и место копии. Исходные данные сохранены."); };
@@ -13,15 +14,15 @@ const ids = value => Array.isArray(value) && value.every(id => typeof id === "st
 // different source additionally requires the source-checked save protocol.
 export async function prepareAdminTemplateTreeCopy(state, request, { operationId, changedAt = "", currentEditMeta = () => ({}),
   markEdited = () => {}, copyContainerName = name => `${name} копия`, normalizeContainerColor = value => value,
-  hasPhotos = row => Boolean(row.photos?.length) } = {}) {
+  hasPhotos = row => Boolean(row.photos?.length), sourceKind = "template" } = {}) {
   const frozen = clone(state), { rootId, sourceLayoutId, targetLayoutId, includeContents, targetParentId = "", targetIndex = null, mode = "copy" } = clone(request);
   const layout = frozen.layouts?.[targetLayoutId], arrangement = layout?.arrangement;
   const sourceLayout = frozen.layouts?.[sourceLayoutId], sourceArrangement = sourceLayout?.arrangement;
+  const owner = adminCopySourceOwner(frozen, sourceLayoutId, targetLayoutId, sourceKind);
   if (!validTemplateOperationId(operationId) || !["copy", "link"].includes(mode) || typeof includeContents !== "boolean"
-    || sourceLayoutId !== targetLayoutId && mode !== "copy" || !sourceLayout?.adminCausalSource?.exists || !sourceArrangement
+    || sourceLayoutId !== targetLayoutId && mode !== "copy" || !owner || !sourceArrangement
     || !layout?.adminCausalSource?.exists || layout.locked || !arrangement?.containers || !arrangement.items
     || targetIndex !== null && (!Number.isSafeInteger(targetIndex) || targetIndex < 0)) fail();
-  const owner = row => row?.publicCatalogLayoutId === sourceLayoutId;
   if (targetParentId && (frozen.containers?.[targetParentId]?.publicCatalogLayoutId !== targetLayoutId || !arrangement.containers[targetParentId])) fail();
   const placedSource = Object.hasOwn(sourceArrangement.containers, rootId), source = { rootId, containers: {}, items: {} };
   const visited = new Set(), seenItems = new Set();

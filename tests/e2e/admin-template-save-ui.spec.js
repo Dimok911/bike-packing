@@ -34,7 +34,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
@@ -114,6 +114,27 @@ async function fixture(page, context, { published = false, shared = false, hydra
     const source = state.payload.containers.bag;
     Object.assign(state.payload.containers.spare, { name: source.name, weight: source.weight, location: source.location, categories: [...source.categories] });
   }
+  state.privatePayload = personalSource ? structuredClone(state.payload) : personal(); state.privateRevision = personalSource ? 3 : 1;
+  if (personalSource) {
+    state.privatePayload.layouts["layout-a"].name = "Личная исходная укладка";
+    state.privatePayload.customLocations = [...state.privatePayload.locations]; state.privatePayload.customCategories = [...state.privatePayload.categories];
+    state.privatePayload.collapseDefaultsVersion = 2;
+    for (const row of Object.values(state.privatePayload.containers)) Object.assign(row, { weight: row.weight || 0, volume: 0, note: "", categories: row.categories || [], location: row.location || "Велосипед", category: row.categories?.[0] || "", color: "", photos: [] });
+    // The personal catalog stores one unit; layout quantities live separately.
+    // The legacy fixture below deliberately keeps the unprepared server value.
+    for (const row of Object.values(state.privatePayload.items)) Object.assign(row, { quantity: personalSource === "detached-legacy" ? row.quantity || 1 : 1,
+      color: "", photos: [], categories: row.categories || [], location: row.location || "Велосипед", category: row.categories?.[0] || "" });
+    Object.assign(state.privatePayload.layouts["layout-a"], { locations: [], categories: [], customLocations: [], customCategories: [] });
+  }
+  if (personalSource === "missing") {
+    const arrangement = state.payload.layouts["layout-a"].arrangement;
+    for (const id of ["missing-root", "missing-pocket"]) {
+      delete state.payload.items[id]; for (const key of ["items", "itemQuantities", "packedItems"]) delete arrangement[key][id];
+      for (const row of [...Object.values(state.payload.containers), ...Object.values(arrangement.containers)]) {
+        row.itemIds = row.itemIds.filter(key => key !== id); row.order = (row.order || []).filter(entry => entry.id !== id);
+      }
+    }
+  }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
   state.visibility = published ? "public" : "private";
@@ -128,12 +149,15 @@ async function fixture(page, context, { published = false, shared = false, hydra
       if (["/auth/me", "/auth/experiment-share-session"].includes(suffix)) data = { ok: true, user: { id: "admin-a", email: "admin@example.test" } };
       else if (suffix === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "admin", capabilities: ["templates:write", "templates:history:read", "reports:read", "catalog:review"] } };
       else if (suffix === "/bike-packing/capabilities") data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1"] };
-      else if (suffix === "/bike-packing/lists") data = { ok: true, lists: [{ id: "personal-list", title: "Личный тест", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: 1, payload: personal() }] };
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1"] };
+      else if (suffix === "/bike-packing/lists") data = { ok: true, lists: [{ id: "personal-list", title: "Личный тест", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: state.privateRevision, payload: state.privatePayload }] };
       else if (suffix === "/bike-packing/admin/template-records") data = { ok: true, lists: state.hydrate ? [{ id: listId, listId,
         publicTemplateKind: shared ? "shared-layout" : "demo", language: "ru", title: "Catalog title", published: false,
         visibility: "private", adminPayloadEndpoint: "/legacy-read-must-not-be-used" }] : [] };
-      else if (suffix.startsWith("/bike-packing/lists/personal-list")) data = { ok: true, list: { id: "personal-list", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: 1, payload: personal() }, payload: personal(), stateRevision: 1 };
+      else if (suffix.startsWith("/bike-packing/lists/personal-list")) data = { ok: true, list: { id: "personal-list", ownerId: "admin-a", role: "owner", canEdit: true, stateRevision: state.privateRevision, payload: state.privatePayload }, payload: state.privatePayload, stateRevision: state.privateRevision };
+      else if (suffix === "/bike-packing/admin/template-operations/prepare" && request.postDataJSON()?.personalListId) data = {
+        ok: true, actorId: "admin-a", environment: "bike-packing-experiment", listId: "personal-list", stateRevision: state.privateRevision,
+        payload: state.privatePayload, payloadDigest: await adminTemplateCopyPayloadDigest(state.privatePayload) };
       else if (suffix === "/bike-packing/admin/template-operations/prepare") data = { ok: true, actorId: "admin-a", environment: "bike-packing-experiment", itemKey, listId,
         sourceType: "public-template", exists: true, deleted: false, stateRevision: state.revision, visibility: state.visibility, metadata, payload: state.payload, indexes: [] };
       else if (suffix === "/bike-packing/admin/template-operations" || suffix.endsWith("/cancel")) {
@@ -147,7 +171,10 @@ async function fixture(page, context, { published = false, shared = false, hydra
               result: { status: 409, payload: { ok: false, code: "operation_cancelled", cancellation: { version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } } });
           } else {
           const base = intent.body.base.stateRevision ?? state.receipts.get(intent.body.base.operationId)?.result.payload.stateRevision;
-          if (base !== state.revision) {
+          const personalProof = intent.body.source?.kind === "personal-list";
+          const privateConflict = personalProof && (intent.body.source.listId !== "personal-list" || intent.body.source.base.stateRevision !== state.privateRevision
+            || intent.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(state.privatePayload));
+          if (base !== state.revision || privateConflict) {
             const { body, ...identity } = binding;
             const receipt = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
               result: { status: 409, payload: { ok: false, code: "template_revision_conflict" } } };
@@ -210,6 +237,95 @@ async function submitItem(page) {
 async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
+
+const personalAdminCases = [];
+for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing"]) for (const mode of ["confirmed", "lost", "mirror-quota", "plan-quota", "pointer-quota"]) personalAdminCases.push({ shared, shape, mode });
+for (const shared of [false, true]) for (const shape of ["item-detached", "item-detached-parent"]) for (const mode of ["confirmed", "lost"]) personalAdminCases.push({ shared, shape, mode });
+for (const shared of [false, true]) personalAdminCases.push({ shared, shape: "item-detached", mode: "unprepared-source" });
+for (const mode of ["cancel", "changed-source", "changed-target", "changed-account", "pending-source", "source-conflict", "target-conflict"]) personalAdminCases.push({ shared: true, shape: "tree", mode });
+for (const { shared, shape, mode } of personalAdminCases) test(`admin personal source ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+  const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: mode === "unprepared-source" ? "detached-legacy" : shape === "missing" ? "missing" : true, missingItems: shape === "missing",
+    catalogPair: shape === "item-detached", detachedTree: shape === "item-detached-parent" ? "tree" : "" });
+  const before = await page.evaluate(() => {
+    const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource);
+    __adminUiTest.openPrivate("layout-a");
+    return { targetId: target.id, targetBag: Object.values(current.containers).find(row => row.publicCatalogLayoutId === target.id && row.name === "Сумка шаблона").id,
+      target: __adminUiTest.snapshot(target.id), source: __adminUiTest.privatePayload(), ids: { items: Object.keys(current.items), containers: Object.keys(current.containers) }, meta: __adminUiTest.privateMeta() };
+  });
+  await test.info().attach("private-source-before", { body: JSON.stringify({ server: server.privatePayload, client: before.source, meta: before.meta }), contentType: "application/json" });
+  const item = shape.startsWith("item"), sourceId = shape === "item-detached" ? "second" : shape === "item-detached-parent" ? "spare-item" : item ? "pump" : shape === "nested" ? "pocket" : "bag";
+  if (shape === "shell") { await page.locator('[data-view="bags"]').click(); await page.locator('#bagsView [data-root-card="bag"] [data-root-title]').click(); }
+  else await page.evaluate(({ item, sourceId }) => item ? __adminUiTest.openItem(sourceId) : __adminUiTest.openContainer(sourceId), { item, sourceId });
+  await expect(page.locator(item ? "#itemDialog" : "#rootContainerDialog")).toBeVisible();
+  await page.locator(item ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
+  await expect(page.locator("#containerPickerDialog")).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption(before.targetId);
+  if (item) await page.locator(`#containerPickerBoard [data-pick-container="${before.targetBag}"]`).click();
+  else if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.targetBag}"][data-pick-container-index="0"]`).click();
+  else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
+  if (mode === "unprepared-source") {
+    await expect(page.locator("body")).toContainText("Личная укладка отличается от подтверждённой серверной версии");
+    expect(server.posts).toEqual([]);
+    expect(server.privatePayload.items.second.quantity).toBe(3);
+    expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId)).toEqual(before.target);
+    expect(await page.evaluate(() => __adminUiTest.privatePayload())).toEqual(before.source);
+    expect(server.errors).toEqual([]); return;
+  }
+  await expect(page.locator("#confirmDialog")).toContainText(item ? "Скопировать вещь" : shape === "shell" ? "пустую копию" : "со всем содержимым");
+  if (shape === "missing") await expect(page.locator("#confirmAlternateBtn")).toHaveText("Только недостающие");
+  if (mode.startsWith("changed-") || mode === "pending-source") await page.evaluate(({ mode, before }) => {
+    if (mode === "changed-source") __adminUiTest.state().items.pump.name = "Поздняя личная правка";
+    if (mode === "changed-target") __adminUiTest.state().containers[before.targetBag].name = "Поздняя цель";
+    if (mode === "changed-account") __adminUiTest.user().id = "admin-b";
+    if (mode === "pending-source") __adminUiTest.privateMeta().dirty = true;
+  }, { mode, before });
+  if (mode.endsWith("quota")) await page.evaluate(mode => {
+    const set = Storage.prototype.setItem; let mirrored = false;
+    Storage.prototype.setItem = function(key, value) {
+      const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+      if (mode === "mirror-quota" && mirror && marker || mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+        || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Personal template copy quota", "QuotaExceededError");
+      const result = set.call(this, key, value); if (mirror && marker) mirrored = true; return result;
+    };
+  }, mode);
+  if (mode === "source-conflict") server.privateRevision++;
+  if (mode === "target-conflict") server.revision++;
+  server.lose = mode === "lost";
+  await page.locator(mode === "cancel" ? "#confirmCancelBtn" : shape === "missing" ? "#confirmAlternateBtn" : "#confirmOkBtn").click();
+  if (mode === "cancel" || mode === "mirror-quota" || mode.startsWith("changed-") || mode === "pending-source") {
+    if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Personal template copy quota" : "исходный список изменился");
+    expect(server.posts).toEqual([]);
+    expect(await page.evaluate(() => ({ items: Object.keys(__adminUiTest.state().items), containers: Object.keys(__adminUiTest.state().containers) }))).toEqual(before.ids);
+    if (mode === "cancel" || mode === "mirror-quota") expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId)).toEqual(before.target);
+    expect(server.errors).toEqual([]); return;
+  }
+  const snapshot = async () => { const value = await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId); value.payload = stripAdminTemplateEditorMetadata(value.payload); return value; };
+  const addedItems = shape === "shell" ? 0 : shape === "missing" ? 2 : 1;
+  const addedBags = item || shape === "missing" ? 0 : shape === "tree" ? 2 : 1;
+  await expect.poll(async () => Object.keys((await snapshot()).payload.items).length).toBe(Object.keys(before.target.payload.items).length + addedItems);
+  const chosen = await snapshot(); let planId;
+  if (["plan-quota", "pointer-quota"].includes(mode)) {
+    planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.targetId); expect(server.posts).toEqual([]);
+  } else { await expect.poll(() => server.posts.length).toBe(1); planId = server.posts[0].operationId; }
+  if (mode === "lost") await expect.poll(() => server.hidden).toBe(true);
+  server.lose = false; server.hidden = false;
+  await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+  await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), shared);
+  expect(server.posts).toHaveLength(1); const action = server.posts[0]; expect(action.operationId).toBe(planId);
+  expect(action.body.base).toEqual({ stateRevision: 7 }); expect(action.body.source).toEqual({ kind: "personal-list", listId: "personal-list", base: { stateRevision: 3 }, payloadDigest: await adminTemplateCopyPayloadDigest(server.privatePayload) });
+  expect(action.body.payload).toEqual(chosen.payload);
+  if (mode.endsWith("conflict")) { expect(server.receipts.get(planId).operation.state).toBe("rejected"); return; }
+  await confirmedRevision(page, 8); expect(server.payload).toEqual(chosen.payload);
+  expect(Object.keys(server.payload.containers).length).toBe(Object.keys(before.target.payload.containers).length + addedBags);
+  expect(await page.evaluate(() => __adminUiTest.privatePayload())).toEqual(before.source);
+  const arrangement = Object.values(server.payload.layouts)[0].arrangement;
+  for (const row of Object.values(server.payload.items).filter(row => !before.target.payload.items[row.id])) {
+    expect(row.quantity).toBe(1); expect(arrangement.itemQuantities[row.id]).toBe(item ? 1 : shape === "missing" ? row.name === "Недостающее в сумке" ? 3 : 4 : 2);
+  }
+  await editItem(page, "Правка после личной копии", "Насос шаблона", before.targetId); await confirmedRevision(page, 9);
+  expect(server.posts[1].body.base).toEqual({ stateRevision: 8 }); expect(server.posts[1].body.source).toBeUndefined();
+  expect(server.errors).toEqual([]);
+});
 
 async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false) {
   const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });

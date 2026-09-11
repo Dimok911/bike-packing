@@ -99,3 +99,14 @@ test("source-checked save requires its own capability and retains the exact sour
   assert.deepEqual(await f.make().client.run(action.operationId), receipt); assert.equal(f.posts().length, 1);
   assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.source, action.body.source);
 });
+
+test("personal source needs explicit server capability; terminal replay works after it is disabled", async () => {
+  const f = fixture(), action = f.action(), client = f.make().client;
+  action.body.source = { kind: "personal-list", listId: "personal-source", base: { stateRevision: 3 }, payloadDigest: "b".repeat(64) };
+  f.state.sourceSaveCapability = true; await client.capture(action);
+  await assert.rejects(client.run(action.operationId)); assert.equal(f.posts().length, 0);
+  f.state.personalSourceCapability = true; f.state.lose = true;
+  const receipt = await client.run(action.operationId); f.state.personalSourceCapability = false;
+  assert.deepEqual(await f.make().client.run(action.operationId), receipt);
+  assert.equal(f.posts().length, 1); assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.source, action.body.source);
+});

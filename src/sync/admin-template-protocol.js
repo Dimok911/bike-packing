@@ -3,6 +3,7 @@ export const ADMIN_TEMPLATE_OPERATIONS_ENABLED = false;
 export const TEMPLATE_OPERATION_CAPABILITY = "adminTemplateCausalOperationsV1";
 export const TEMPLATE_COPY_CAPABILITY = "adminTemplateCopyV1";
 export const TEMPLATE_SOURCE_SAVE_CAPABILITY = "adminTemplateSourceSaveV1";
+export const TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY = "adminTemplatePersonalSourceSaveV1";
 export const TEMPLATE_OPERATION_KINDS = Object.freeze(["template.create", "template.copy", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"]);
 export { canonicalOperationJson as canonicalTemplateJson, validListOperationId as validTemplateOperationId };
 
@@ -14,6 +15,10 @@ const text = (value, max, empty = false) => typeof value === "string" && value.l
 const fail = () => { throw Object.assign(Error("Invalid immutable administrative template intent"), { code: "invalid_template_operation" }); };
 const validBase = (base, operationId) => exact(base, ["stateRevision"]) && Number.isSafeInteger(base.stateRevision) && base.stateRevision > 0
   || exact(base, ["operationId"]) && validListOperationId(base.operationId) && base.operationId !== operationId;
+
+export const validTemplatePersonalSourceId = value => text(value, 64)
+  && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
+  && !["public-demo-state", "public-shared-layout-", "shared-snapshot-", "shared-entity-"].some(prefix => value.toLowerCase().startsWith(prefix));
 
 export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listId, body }) {
   if (!text(actorId, 36) || !text(listId, 64) || !text(itemKey, 191) || !validListOperationId(operationId)
@@ -32,10 +37,13 @@ export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listI
   } else if (!validBase(body.base, operationId)) fail();
   if (kind === "template.copy" || extra.includes("source")) {
     const source = body.source;
-    if (!exact(source, ["itemKey", "listId", "base", "payloadDigest"])
-      || !text(source.itemKey, 191) || !/^(demo-state(?:[:-].+)?|shared-layout:.+)$/.test(source.itemKey)
-      || !text(source.listId, 64) || !/^(public-demo-state(?:-.+)?|public-shared-layout-.+)$/.test(source.listId)
-      || source.listId === listId || !exact(source.base, ["stateRevision"])
+    const personal = source?.kind === "personal-list";
+    if (personal ? kind !== "template.save" || !exact(source, ["kind", "listId", "base", "payloadDigest"])
+        || !validTemplatePersonalSourceId(source.listId)
+      : !exact(source, ["itemKey", "listId", "base", "payloadDigest"])
+        || !text(source.itemKey, 191) || !/^(demo-state(?:[:-].+)?|shared-layout:.+)$/.test(source.itemKey)
+        || !text(source.listId, 64) || !/^(public-demo-state(?:-.+)?|public-shared-layout-.+)$/.test(source.listId)) fail();
+    if (source.listId === listId || !exact(source.base, ["stateRevision"])
       || !Number.isSafeInteger(source.base.stateRevision) || source.base.stateRevision < 1
       || typeof source.payloadDigest !== "string" || !/^[a-f0-9]{64}$/.test(source.payloadDigest)) fail();
   }

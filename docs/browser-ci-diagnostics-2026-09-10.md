@@ -228,3 +228,28 @@ their current artifact/lifecycle has not yet been correlated, so this does not
 close the native WebKit issue or establish the cause of every assertion failure.
 Newer checkpoints 5692f0d/6f965f4/a79a50a/b0890ed were still running at this check.
 No publication, flags OFF.
+
+## Completed baseline a79a50a and four native failures, 2026-09-11
+
+Run `34559179335` completed successfully. Chromium job `103138194545`:
+1107 passed / 260 skipped in 55.5 min; disabled-owner checks 4/4. Mobile job
+`103138194381`: 1059 passed / 278 skipped / 4 flaky in 1.6 h; disabled-owner 4/4.
+Logs: `resume-ci-a79a50a-{chromium,mobile}.txt`. Mobile artifact `10185780975`
+is retained as `ci-a79a50a-mobile.zip`; derived evidence is
+`ci-a79a50a-lifecycle-analysis.json` and `ci-a79a50a-linux-browser.txt`.
+
+All four first failed attempts have an explicit `page-crash` lifecycle event,
+including the two later reported as enabled/visible assertion failures. Cases:
+ordinary item photo copy after source change; selected item photo batch/lost ACK;
+pending container photo batch deletion/cancel-both/lost ACK; explicit cancellation
+with batch postponement. They are not four established application regressions.
+
+Kernel diagnostics record four `ThreadedCompositor` segfaults in the same bundled
+`libWPEWebKit-2.0.so.1.10.2`, at module offset `5fd556a`, during those attempts:
+04:45:00, 04:46:39, 04:56:26 and 05:10:54 UTC. Service and ancestor cgroups report
+zero OOM kills/events. High-water memory values are 15,689,388,032 bytes for the
+runner service and 16,244,039,680 bytes for its parent. This evidence identifies
+native crashes; it does not establish the source function, memory lifetime bug,
+or a fix. Successful retries do not close native WebKit acceptance.
+
+Checkpoints b0890ed/0957f89/fc72cbc/4921d46 were still running at this inspection.
