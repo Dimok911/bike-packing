@@ -10905,32 +10905,48 @@ async function prepareCausalAdminPlacementCopy(request) {
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   }, { canLink: Boolean(linked), canMissing: Boolean(missingPrepared), missingItemCount: missingPrepared?.missingItemCount || 0 });
 }
-async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "" } = {}) {
+async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
   const observed = clone(sourceLayout?.adminCausalSource || null), coordinator = adminTemplateSaveCoordinator();
-  if (!adminTemplateUiEnabled() || !observed?.exists || observed.planId || !observed.base?.stateRevision
-    || sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id)) {
+  const pendingSource = Boolean(observed?.planId && observed.base?.operationId);
+  if (!adminTemplateUiEnabled() || !observed?.exists || sourceLayout.adminCausalCopyPlan
+    || !pendingSource && (observed.planId || !observed.base?.stateRevision || sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id))) {
     throw Error("Сначала дождитесь подтверждения изменений исходного шаблона и откройте его для копирования.");
   }
   const initial = canonicalTemplateJson(adminTemplateOperationContext(observed.binding, sourceLayout.id, true));
   const snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id));
   const guard = () => {
+    if (validateSelection?.() === false) throw Error("Выбор шаблона или название изменились. Повторите создание.");
     if (!canOpenAdminPublishedEdit() || state.layouts[sourceLayout.id] !== sourceLayout
-      || coordinator.hasPendingCapture(sourceLayout.id) || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(observed)
+      || sourceLayout.adminCausalCopyPlan || !pendingSource && (coordinator.hasPendingCapture(sourceLayout.id) || sourceLayout.templateDraftSyncPending)
+      || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(observed)
       || canonicalTemplateJson(adminTemplateOperationContext(observed.binding, sourceLayout.id, true)) !== initial
       || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== snapshot) throw Error("Источник копии изменился. Откройте копирование заново.");
   };
   guard();
-  const prepared = await adminTemplateClient(observed.binding, sourceLayout.id, true).prepare(); guard();
-  const verified = adminTemplateEditorSource(observed.binding, prepared);
-  if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(observed.base)) throw Error("Серверная версия источника изменилась. Сначала сверьте исходный шаблон.");
+  let prepared, sourceProof;
+  if (pendingSource) {
+    // Read the chosen draft without activating it or dispatching its writes.
+    const plans = createAdminTemplateSavePlans({ binding: observed.binding, enabled: adminTemplateUiEnabled(),
+      client: adminTemplateClient(observed.binding, sourceLayout.id, true),
+      getContext: () => adminTemplateOperationContext(observed.binding, sourceLayout.id, true) });
+    const saved = await plans.read(observed.planId); guard();
+    const current = JSON.parse(snapshot); current.payload = stripAdminTemplateEditorMetadata(current.payload);
+    const captured = await pendingAdminTemplateCopySource(observed, saved, current); guard();
+    prepared = { payload: captured.payload, metadata: current.metadata }; sourceProof = captured.source;
+  } else {
+    prepared = await adminTemplateClient(observed.binding, sourceLayout.id, true).prepare(); guard();
+    const verified = adminTemplateEditorSource(observed.binding, prepared);
+    if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(observed.base)) throw Error("Серверная версия источника изменилась. Сначала сверьте исходный шаблон.");
+    sourceProof = { itemKey: observed.binding.itemKey, listId: observed.binding.listId,
+      base: observed.base, payloadDigest: await adminTemplateCopyPayloadDigest(prepared.payload) }; guard();
+  }
   const operationId = crypto.randomUUID(), targetId = crypto.randomUUID();
   const kind = sourceKind || (sourceLayout.adminSharedSourceId ? "shared" : "demo");
   if (!["demo", "shared"].includes(kind)) throw Error("Выберите тип копии шаблона.");
   const binding = { actorId: observed.binding.actorId, environment: observed.binding.environment,
     listId: (kind === "demo" ? "public-demo-state-" : "public-shared-layout-") + targetId,
     itemKey: (kind === "demo" ? "demo-state:" : "shared-layout:") + targetId };
-  const body = { version: 1, base: null, source: { itemKey: observed.binding.itemKey, listId: observed.binding.listId,
-    base: observed.base, payloadDigest: await adminTemplateCopyPayloadDigest(prepared.payload) },
+  const body = { version: 1, base: null, source: sourceProof,
     metadata: { ...prepared.metadata, title: requestedName.trim() } }; guard();
   const plan = adminTemplateCopyPlan({ binding, operationId, body, sourceSnapshot: prepared.payload });
   const payload = plan.editorSnapshot.payload, id = payload.activeLayoutId;

@@ -7004,9 +7004,9 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
   return id;
 }
 
-async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind = "" } = {}) {
+async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
-  if (adminTemplateUiEnabled()) return createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind });
+  if (adminTemplateUiEnabled()) return createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind, validateSelection });
   const language = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
   const createdId = await createTemplateCopyFromSource(sourceLayout, requestedName, {
     language,
@@ -7198,7 +7198,10 @@ async function saveNewLayout(event) {
         state,
         templateDraftLayoutId
       });
-      const createdId = await createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind });
+      const validateSelection = () => refs.layoutDialog.open && refs.layoutCreateMode.value === mode
+        && refs.layoutCopyFrom.value === sourceChoice && refs.layoutName.value.trim() === requestedName;
+      if (!validateSelection()) return;
+      const createdId = await createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind, validateSelection });
       if (!createdId) return;
       refs.layoutDialog.close();
       switchView("packing");

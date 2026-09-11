@@ -1060,12 +1060,19 @@ async function newDraftFixture(page, context, options = {}) {
     const input = request.postDataJSON(), intent = adminTemplateIntent({ ...input, actorId: input.expectedActorId }), { id, ...binding } = intent;
     if (!["template.copy", "template.create"].includes(input.kind) && !created.has(input.listId)) return route.fallback();
     state.posts.push(input);
-    if (!state.receipts.has(id)) {
+    if (!state.receipts.has(id) || state.receipts.get(id).operation.state === "waiting") {
       if (input.kind === "template.copy") {
         expect(created.has(input.listId)).toBe(false); expect(input.body.base).toBeNull();
         expect(input.body.source.listId).toBe(options.shared ? "public-shared-layout-ui" : "public-demo-state-ui");
-        expect(input.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(state.payload));
-        if (state.copyConflict) {
+        const sourceParent = input.body.source.base.operationId && state.receipts.get(input.body.source.base.operationId);
+        if (input.body.source.base.operationId && (!sourceParent || sourceParent.operation.state === "waiting")) {
+          const { body, ...identity } = binding;
+          state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "waiting" },
+            result: null, waiting: { code: "template_dependency_not_committed", operationIds: [input.body.source.base.operationId], retrySameOperation: true } });
+          return route.fulfill({ headers, json: { ok: true, ...state.receipts.get(id) } });
+        }
+        const sourceRevision = input.body.source.base.stateRevision ?? (sourceParent?.operation.state === "committed" && sourceParent.operation.listId === input.body.source.listId ? sourceParent.result.payload.stateRevision : null);
+        if (state.copyConflict || sourceRevision !== state.revision || input.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(state.payload)) {
           const { body, ...identity } = binding;
           state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
             result: { status: 409, payload: { ok: false, code: "template_copy_source_changed" } } });
@@ -2274,6 +2281,117 @@ for (const shared of [false, true]) for (const type of ["item", "container"]) fo
   });
 }
 
+for (const shared of [false, true]) for (const pending of [false, true]) for (const change of ["name", "mode", "closed"]) {
+  test(`whole admin copy form ${shared ? "shared" : "demo"} ${pending ? "pending" : "confirmed"} cancels changed ${change}`, async ({ page, context }) => {
+    const state = await newDraftFixture(page, context, { shared, withContainers: true });
+    if (pending) {
+      state.blockBusiness = true; await editItem(page, "Ожидающая версия формы", "Насос шаблона");
+      await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    }
+    const before = await page.evaluate(() => {
+      const current = __adminUiTest.state(), source = Object.values(current.layouts).find(row => row.adminCausalSource);
+      return { ids: Object.keys(current.layouts), sourceId: source.id, snapshot: __adminUiTest.snapshot(source.id) };
+    });
+    let release, preparing = false;
+    if (pending) await page.evaluate(() => {
+      const original = crypto.subtle.digest.bind(crypto.subtle);
+      const gate = new Promise(resolve => { globalThis.__releaseWholeCopyDigest = resolve; });
+      globalThis.__wholeCopyDigestWaiting = false;
+      crypto.subtle.digest = async (...args) => {
+        if (document.querySelector("#layoutDialog")?.open && document.querySelector("#saveLayoutBtn")?.disabled
+          && document.querySelector("#layoutCreateMode")?.value === "template-copy") {
+          globalThis.__wholeCopyDigestWaiting = true; await gate;
+        }
+        return original(...args);
+      };
+    });
+    else state.onAdminPrepare = () => { preparing = true; return new Promise(resolve => { release = resolve; }); };
+    await submitAdminTemplateCopy(page, "Копия с изменённой формой");
+    if (pending) await expect.poll(() => page.evaluate(() => globalThis.__wholeCopyDigestWaiting)).toBe(true);
+    else await expect.poll(() => preparing).toBe(true);
+    if (change === "name") await page.locator("#layoutName").fill("Другое имя копии");
+    else if (change === "mode") await page.locator("#layoutCreateMode").selectOption("empty");
+    else await page.locator("#layoutDialog").getByRole("button", { name: "Закрыть", exact: true }).click();
+    if (pending) await page.evaluate(() => globalThis.__releaseWholeCopyDigest()); else release();
+    await expect(page.locator("#saveLayoutBtn")).toBeEnabled();
+    if (change === "closed") await expect(page.locator("#layoutDialog")).not.toBeVisible();
+    else await expect(page.locator("#layoutDialog")).toBeVisible();
+    expect(state.posts.filter(post => post.kind === "template.copy")).toEqual([]); expect(state.created.size).toBe(0);
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().layouts))).toEqual(before.ids);
+    expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.sourceId)).toEqual(before.snapshot);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "conflict", "inactive"]) {
+  test(`whole pending admin template ${shared ? "shared" : "demo"} (${mode})`, async ({ page, context }) => {
+    const state = await newDraftFixture(page, context, { shared, withContainers: true, catalogPair: true, layoutOrder: 17 });
+    state.blockBusiness = true;
+    await editItem(page, "Ожидающая целая копия", "Насос шаблона");
+    await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    const before = await page.evaluate(() => {
+      const source = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
+      return { id: source.id, snapshot: __adminUiTest.snapshot(source.id), parentId: source.adminCausalSource.planId };
+    });
+    expect(before.parentId).toBeTruthy();
+    const sourceBefore = structuredClone(state.payload);
+    if (mode === "inactive") await page.evaluate(() => __adminUiTest.openPrivate("layout-a"));
+    if (mode === "plan-quota") await page.evaluate(() => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-save-plans-v1:") && value.includes('"kind":"template.copy"')) throw new DOMException("Pending whole copy quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    });
+    await submitAdminTemplateCopy(page, "Копия ожидающего шаблона");
+    await expect(page.locator("#layoutDialog")).not.toBeVisible();
+    const copy = await page.evaluate(() => Object.values(__adminUiTest.state().layouts).find(row => row.name === "Копия ожидающего шаблона"));
+    expect(copy).toBeTruthy(); const binding = copy.adminCausalSource.binding;
+    const posts = () => state.posts.filter(post => post.kind === "template.copy");
+    let action;
+    if (mode === "plan-quota") {
+      const { id, actorId, ...wire } = copy.adminCausalCopyPlan.operations[0];
+      action = { ...wire, expectedActorId: actorId, operationId: id }; expect(posts()).toEqual([]);
+    } else {
+      await expect.poll(() => posts().length).toBe(1); action = structuredClone(posts()[0]);
+      expect(state.receipts.get(action.operationId).operation.state).toBe("waiting");
+    }
+    expect(action.body.source.base).toEqual({ operationId: before.parentId });
+    expect(state.created.size).toBe(0); expect(state.payload).toEqual(sourceBefore);
+    state.blockBusiness = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" }
+      : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), shared);
+    await confirmedRevision(page, 8);
+    expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(state.payload));
+    const expected = projectAdminTemplateCopy(state.payload, action.operationId, action.body.metadata);
+    state.createLose = mode === "lost"; state.copyConflict = mode === "conflict";
+    await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+      ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), binding);
+    if (mode === "lost") {
+      await expect.poll(() => state.createHidden.size).toBe(1); state.createLose = false; state.createHidden.clear();
+      await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+      await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+        ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), binding);
+    }
+    if (mode === "conflict") {
+      expect(state.receipts.get(action.operationId).operation.state).toBe("rejected"); expect(state.created.size).toBe(0);
+    } else {
+      await confirmedRevision(page, 1); expect(state.created.size).toBe(1);
+      expect(state.created.get(binding.listId).payload).toEqual(expected);
+      const current = await page.evaluate(id => __adminUiTest.state().layouts[id], copy.id);
+      expect(current.templatePublished).toBe(false); expect(current.layoutOrder).toBe(17);
+    }
+    expect(posts()).toHaveLength(mode === "plan-quota" ? 1 : 2); for (const post of posts()) expect(post).toEqual(action);
+    const sourceAfter = await page.evaluate(id => __adminUiTest.snapshot(id), before.id);
+    expect(sourceAfter.metadata).toEqual(before.snapshot.metadata);
+    expect(stripAdminTemplateEditorMetadata(sourceAfter.payload)).toEqual(stripAdminTemplateEditorMetadata(before.snapshot.payload));
+    expect(state.errors).toEqual([]);
+  });
+}
+
 for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "mirror-quota", "conflict"]) {
   test(`whole admin template copy ${shared ? "shared" : "demo"} preserves the prepared source and target (${mode})`, async ({ page, context }) => {
     const state = await newDraftFixture(page, context, { shared, withContainers: true, layoutOrder: 17 });
@@ -2340,13 +2458,14 @@ for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "pl
   });
 }
 
-for (const shared of [false, true]) test(`whole admin template copy ${shared ? "shared" : "demo"} cannot use an unconfirmed source`, async ({ page, context }) => {
+for (const shared of [false, true]) test(`whole admin template copy ${shared ? "shared" : "demo"} cannot use an unsaved edit beyond its pending source`, async ({ page, context }) => {
   const state = await newDraftFixture(page, context, { shared }); state.blockBusiness = true;
   await page.evaluate(() => { Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource).adminTemplateCopy = true; });
   await editItem(page, "Неподтверждённая правка источника"); await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+  await page.evaluate(() => { Object.values(__adminUiTest.state().items).find(row => row.publicCatalogLayoutId).name = "Ещё не записанная правка"; });
   const before = state.posts.length;
   await submitAdminTemplateCopy(page, "Копия неподтверждённого источника");
-  await expect(page.locator("#layoutDialog")).toBeVisible(); await expect(page.locator("body")).toContainText("дождитесь подтверждения изменений исходного шаблона");
+  await expect(page.locator("#layoutDialog")).toBeVisible(); await expect(page.locator("body")).toContainText("не совпадает с сохранённым действием");
   expect(state.posts).toHaveLength(before); expect(state.created.size).toBe(0);
   expect(state.posts.every(row => row.kind !== "template.copy")).toBe(true); expect(state.errors).toEqual([]);
 });
