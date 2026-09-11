@@ -98,5 +98,10 @@ export async function prepareAdminTemplateTreeCopy(state, request, { operationId
     previous.containers[targetParentId].order = previous.containers[targetParentId].order.filter(entry => entry.id !== copied.rootId);
   }
   if (canonicalTemplateJson(previous) !== canonicalTemplateJson(arrangement)) fail();
+  // The active editor captures its live parent record before exporting the
+  // plan. Preserve the newly linked child there as well as in arrangement.
+  if (targetParentId) Object.assign(snapshot.containers[targetParentId], {
+    childIds: [...result.containers[targetParentId].childIds], order: clone(result.containers[targetParentId].order)
+  });
   return { snapshot, entries: mode === "link" ? [] : entries, rootId: copied.rootId, source };
 }

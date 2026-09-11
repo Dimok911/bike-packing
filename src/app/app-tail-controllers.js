@@ -966,10 +966,18 @@ function renderLayoutRootResults() {
   });
 }
 
-function selectRootContainerFromPicker(containerId) {
+async function selectRootContainerFromPicker(containerId) {
   if (replacingPackingContainerId) {
     replaceExistingContainerInLayout(containerId);
     return;
+  }
+  const layoutId = getLayoutRootTargetLayoutId();
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !pendingCopyTargetContainerSetup
+    && !state.layouts[layoutId]?.arrangement?.containers?.[containerId]) {
+    const commit = await prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: "" });
+    if (!commit || !await commit()) return;
+    refs.layoutRootDialog.close(); render(); return;
   }
   addRootContainerToActiveLayout(containerId);
 }
@@ -1432,11 +1440,20 @@ async function addExistingItemToContainer(itemId) {
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
 }
 
-function addExistingContainerToContainer(containerId) {
+async function addExistingContainerToContainer(containerId) {
   const parentId = runtime.addToContainerTargetId;
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const changedAt = nowIso();
-  if (!placeExistingContainerInLayout(containerId, parentId, layoutId, { changedAt, renderAfter: false })) {
+  let placed;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)
+    && !state.layouts[layoutId]?.arrangement?.containers?.[containerId]) {
+    if (warnLockedLayoutMutation(layoutId) || state.containers[containerId]?.nestable !== true) return;
+    const commit = await prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: parentId });
+    if (!commit || !await commit()) return;
+    placed = true;
+  } else placed = placeExistingContainerInLayout(containerId, parentId, layoutId, { changedAt, renderAfter: false });
+  if (!placed) {
     showToast(localText("Could not add the bag to this layout.", "Не удалось добавить сумку в эту укладку."), "error");
     return;
   }

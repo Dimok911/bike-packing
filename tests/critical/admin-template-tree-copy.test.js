@@ -78,7 +78,7 @@ test("admin tree rejects foreign owners, photos, dangling and duplicate links, t
   }
 });
 
-for (const nested of [false, true]) test(`admin link places an existing catalog tree at ${nested ? "nested" : "root"} position without changing catalog records`, async () => {
+for (const nested of [false, true]) test(`admin link places an existing catalog tree at ${nested ? "nested" : "root"} position and survives editor capture`, async () => {
   const f = fixture(), layout = f.state.layouts.layout;
   layout.rootContainerIds = []; layout.arrangement = createEmptyLayoutArrangement();
   f.state.items.item.quantity = 3;
@@ -89,7 +89,13 @@ for (const nested of [false, true]) test(`admin link places an existing catalog 
   const original = structuredClone(f.state);
   const linked = await prepareAdminTemplateTreeCopy(f.state, { ...f.request, mode: "link", targetParentId: nested ? "target" : "" }, options);
   assert.deepEqual(f.state, original); assert.deepEqual(linked.snapshot.items, original.items);
-  assert.deepEqual(linked.snapshot.containers, original.containers); assert.deepEqual(linked.entries, []);
+  for (const id of ["root", "child"]) assert.deepEqual(linked.snapshot.containers[id], original.containers[id]);
+  assert.deepEqual(linked.entries, []);
+  const captured = createLayoutArrangementFromCurrentState(linked.snapshot, linked.snapshot.layouts.layout.rootContainerIds,
+    { itemQuantities: linked.snapshot.layouts.layout.arrangement.itemQuantities });
+  assert.deepEqual(captured.containers, linked.snapshot.layouts.layout.arrangement.containers);
+  assert.deepEqual(captured.items, linked.snapshot.layouts.layout.arrangement.items);
+  assert.deepEqual(captured.itemQuantities, linked.snapshot.layouts.layout.arrangement.itemQuantities);
   assert.equal(linked.rootId, "root"); assert.equal(linked.snapshot.layouts.layout.arrangement.itemQuantities.item, 3);
   assert.equal(linked.snapshot.layouts.layout.arrangement.packedItems.item, undefined);
   assert.equal(linked.snapshot.layouts.layout.arrangement.containers.root.parentId, nested ? "target" : "");
