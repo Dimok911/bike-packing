@@ -233,7 +233,11 @@ export function isManagedDemoTemplateLayout(layout, demoSharedLayoutId = "") {
 }
 
 export function isDisposableManagedPublicDraft(layout) {
-  return Boolean(isManagedPublicLayout(layout) && !isManagedPublicTemplateDraft(layout));
+  // A causal editor owns durable intent even before its save-plan pointer is
+  // captured. Startup fallback must retain it for recovery, including malformed
+  // markers which require inspection rather than deletion.
+  return Boolean(isManagedPublicLayout(layout) && !isManagedPublicTemplateDraft(layout)
+    && !Object.hasOwn(layout, "adminCausalSource") && !Object.hasOwn(layout, "adminCausalCopyPlan"));
 }
 
 export function collectManagedPublicDraftRecords(sourceState) {

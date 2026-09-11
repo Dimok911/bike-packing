@@ -833,6 +833,7 @@ import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { recoverPersonalAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
+import { pendingPersonalTemplateSource } from "./src/sync/admin-template-pending-personal-source.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView, restoreAdminTemplatePhotoReferences } from "./src/sync/admin-template-photo-view.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -9130,7 +9131,8 @@ function personalReconciledSnapshot(payload, previous) {
   if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), business)) {
     throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");
   }
-  return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+  return recoverPersonalAdminDrafts(personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous)), JSON.stringify(state),
+    { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() });
 }
 
 async function recoverStalePersonalDraft() {
@@ -10808,6 +10810,7 @@ async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
   let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState, pendingSource = false, pendingTarget = false;
+  let pendingPersonalSource = false, personalOutbox, personalAction;
   const privateSnapshot = () => canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true })));
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
@@ -10817,7 +10820,9 @@ async function prepareCausalAdminPlacementCopy(request) {
       || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true)) !== initial
       || state.layouts[sourceLayout.id] !== sourceLayout
-      || (personalSource ? hasPendingPersonalSave() || syncMeta.dirty || canonicalTemplateJson(personalSaveContext()) !== personalInitial || privateSnapshot() !== sourceSnapshot
+      || (personalSource ? !pendingPersonalSource && (hasPendingPersonalSave() || syncMeta.dirty)
+        || pendingPersonalSource && canonicalTemplateJson(personalOutbox.recover()?.action || null) !== canonicalTemplateJson(personalAction)
+        || canonicalTemplateJson(personalSaveContext()) !== personalInitial || privateSnapshot() !== sourceSnapshot
         : sourceLayout.adminCausalCopyPlan || !pendingSource && (sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id))
           || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(sourceOriginal)
           || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot)
@@ -10851,11 +10856,19 @@ async function prepareCausalAdminPlacementCopy(request) {
       || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) || layout.adminCausalCopyPlan || !isAdminEditablePublishedLayout(layout.id)
       || original.binding.actorId !== String(currentUser?.id || "") || !sourceLayout) throw Error("Сначала дождитесь подтверждения целевого шаблона.");
     if (personalSource) {
+      personalOutbox = personalSaveOutboxForScope(); pendingPersonalSource = Boolean(personalOutbox?.hasPending());
       if (sourceOriginal || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState) || state.activeLayoutId !== sourceLayout.id
-        || localStorageScopeKey !== `id:${currentUser.id}` || !currentPackingListId || hasPendingPersonalSave() || syncMeta.dirty
+        || localStorageScopeKey !== `id:${currentUser.id}` || !currentPackingListId || !pendingPersonalSource && (hasPendingPersonalSave() || syncMeta.dirty)
         || !Number.isSafeInteger(Number(syncMeta.stateRevision)) || Number(syncMeta.stateRevision) < 1
         || ![undefined, "item"].includes(request.type) || request.mode && request.mode !== "copy") throw Error("Сначала подтвердите исходную личную укладку.");
       personalInitial = canonicalTemplateJson(personalSaveContext()); sourceSnapshot = privateSnapshot();
+      if (pendingPersonalSource) {
+        if (!personalSavePilotEnabled() || personalSaveContext().scope !== "personal"
+          || ["actorId", "listId", "scopeKey", "environment"].some(key => personalOutbox.binding[key] !== personalSaveContext()[key])) {
+          throw Error("Ожидающая правка не принадлежит текущему личному списку.");
+        }
+        personalAction = clone(personalOutbox.recover()?.action || null);
+      }
     } else {
       pendingSource = Boolean(sourceOriginal?.planId && sourceOriginal.base?.operationId);
       if (!sourceOriginal?.exists || !pendingSource && (sourceOriginal.planId || !sourceOriginal.base?.stateRevision) || getPublishedEditLayoutId() !== sourceLayout.id
@@ -10868,7 +10881,12 @@ async function prepareCausalAdminPlacementCopy(request) {
     await verifyPendingTarget();
     planningState = state;
     if (personalSource) {
-      sourcePrepared = await adminTemplateClient(original.binding, layout.id, true).preparePersonalSource(currentPackingListId); guard();
+      if (pendingPersonalSource) {
+        const chosen = await pendingPersonalTemplateSource({ binding: personalOutbox.binding,
+          record: personalOutbox.recover(), snapshot: JSON.parse(sourceSnapshot) }); guard();
+        sourcePrepared = { payload: chosen.payload }; sourceProof = chosen.source;
+      } else {
+        sourcePrepared = await adminTemplateClient(original.binding, layout.id, true).preparePersonalSource(currentPackingListId); guard();
       const digest = await adminTemplateCopyPayloadDigest(sourcePrepared.payload); guard();
       if (sourcePrepared.ok !== true || sourcePrepared.actorId !== String(currentUser.id) || sourcePrepared.environment !== "bike-packing-experiment"
         || sourcePrepared.listId !== currentPackingListId || sourcePrepared.stateRevision !== Number(syncMeta.stateRevision)
@@ -10876,6 +10894,7 @@ async function prepareCausalAdminPlacementCopy(request) {
         throw Error("Личная укладка отличается от подтверждённой серверной версии. Сначала сверьте список.");
       }
       sourceProof = { kind: "personal-list", listId: sourcePrepared.listId, base: { stateRevision: sourcePrepared.stateRevision }, payloadDigest: digest };
+      }
       planningState = clone(state);
       for (const type of ["items", "containers", "layouts"]) for (const [id, row] of Object.entries(sourcePrepared.payload[type])) {
         if (planningState[type][id] && (type === "layouts" ? isAdminEditablePublishedLayout(id) : hasPrivateSyncBlockedPublicOrigin(planningState[type][id], id))) {
@@ -10957,6 +10976,32 @@ async function prepareCausalAdminPlacementCopy(request) {
         for (const key of Object.keys(layout)) if (!Object.hasOwn(priorLayout, key)) delete layout[key];
         Object.assign(layout, priorLayout); if (parentId) state.containers[parentId] = priorParent;
         throw error;
+      }
+      if (pendingPersonalSource) {
+        // The selected target is durable BEFORE waiting for the private writer.
+        // Its actual personal context stays active; an admin view cannot write
+        // the private queue by relabelling itself as a personal editor.
+        const selectedPlan = canonicalTemplateJson(layout.adminCausalCopyPlan), targetId = layout.id;
+        const assertChosen = () => {
+          const current = personalSaveContext(), initialPersonal = JSON.parse(personalInitial);
+          const chosenLayout = state.layouts[targetId];
+          if (["actorId", "environment", "listId", "scopeKey", "scope"].some(key => current[key] !== initialPersonal[key])
+            || state.activeLayoutId !== sourceLayout.id || privateSnapshot() !== sourceSnapshot
+            || canonicalTemplateJson(personalOutbox.recover()?.action || null) !== canonicalTemplateJson(personalAction)
+            || canonicalTemplateJson(chosenLayout?.adminCausalCopyPlan || null) !== selectedPlan) {
+            throw Error("Копия сохранена, но исходная личная правка изменилась. Перед продолжением нужна сверка.");
+          }
+          return chosenLayout;
+        };
+        await queuedPersonalSave({ notify: false }); layout = assertChosen();
+        if (personalOutbox.hasPending() || syncMeta.dirty) {
+          throw Error("Копия сохранена и ждёт подтверждения личного списка. Сначала завершите его синхронизацию, затем откройте целевой шаблон.");
+        }
+        const queue = createListOperationQueue({ transport: experimentTransport, getContext: personalSaveContext, readOnly: true });
+        const proof = await queue.inspect({ path: `/bike-packing/lists/${encodeURIComponent(personalOutbox.binding.listId)}`, method: "PUT",
+          body: JSON.stringify(personalAction.body), operationId: personalAction.operationId });
+        layout = assertChosen();
+        if (proof.operation.state !== "committed") throw Error("Исходная личная правка ещё не подтверждена. Выбранная копия сохранена.");
       }
       if (sourceLayout !== layout && !activateAdminPublishedLayout(layout.id)) throw Error("Копия сохранена. Откройте целевой шаблон для продолжения.");
       try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(layout.id); }

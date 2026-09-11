@@ -1999,6 +1999,19 @@ test("demo and shared templates share the persistent draft contract", () => {
   }), "template-draft:layout-demo-draft");
 });
 
+test("startup cleanup retains causal shared editors and incomplete copy markers for recovery", () => {
+  const legacy = { id: "shared-editor", adminSharedSourceId: "source" };
+  assert.equal(isDisposableManagedPublicDraft(legacy), true);
+  const editors = [
+    { ...legacy, adminCausalSource: { version: 1, base: { stateRevision: 7 } } },
+    { ...legacy, adminCausalCopyPlan: { id: "selected-before-private-confirmation" } },
+    { ...legacy, adminCausalSource: null },
+    { ...legacy, adminCausalCopyPlan: null }
+  ];
+  assert.deepEqual([legacy, ...editors].filter(isDisposableManagedPublicDraft), [legacy]);
+  assert.equal(isDisposableManagedPublicDraft({ id: "personal" }), false);
+});
+
 test("admin shared edit context prefers the managed template over a private active layout", () => {
   const targetState = {
     activeLayoutId: "layout-private",

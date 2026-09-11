@@ -3,17 +3,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { planPersonalPayloadReconciliation } from "../../src/sync/personal-save-reconciliation.js";
 import { personalBusinessPayload } from "../../src/sync/personal-server-payload.js";
+import { recoverPersonalAdminDrafts } from "../../src/sync/personal-admin-draft-recovery.js";
+import { personalSnapshotWithUiPreferences } from "../../src/sync/personal-snapshot-codec.js";
+import { adminTemplateSavePlan } from "../../src/sync/admin-template-save-plan.js";
 import { cloneStateForSyncPayload } from "../../src/sync/serialize.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 
-test("actual reconciled snapshot still rejects business repairs after projecting display mirrors", () => {
+function actualReconciledSnapshot({ state, localStorageScopeKey = "id:admin-a", normalizeRemoteState }) {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function personalReconciledSnapshot\([^]*?\n\}/)[0];
+  const deps = { personalBusinessPayload, recoverPersonalAdminDrafts, personalSnapshotWithUiPreferences,
+    cloneStateForSync: cloneStateForSyncPayload,
+    sameJson: (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b),
+    state, localStorageScopeKey, adminTemplateUiEnabled: () => true, normalizeRemoteState };
+  return new Function(...Object.keys(deps), `return (${source});`)(...Object.values(deps));
+}
+
+test("actual reconciled snapshot still rejects business repairs after projecting display mirrors", () => {
   const payload = { containers: { bag: { id: "bag", name: "Exact", weight: 10 } }, items: {}, layouts: {},
     locations: ["Bike"], categories: ["Tools"], activeLayoutId: "", packedItems: {} };
   for (const repair of ["none", "delete", "add", "edit", "dictionary"]) {
-    const deps = { personalBusinessPayload, cloneStateForSync: cloneStateForSyncPayload,
-      sameJson: (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b),
-      personalSnapshotWithUiPreferences: value => value,
+    const make = actualReconciledSnapshot({ state: structuredClone(payload),
       normalizeRemoteState: value => {
         const result = structuredClone(value); result.collapsedContainers = {};
         if (repair === "delete") delete result.containers.bag;
@@ -21,12 +30,56 @@ test("actual reconciled snapshot still rejects business repairs after projecting
         if (repair === "edit") result.containers.bag.weight = 99;
         if (repair === "dictionary") result.categories = [];
         return result;
-      } };
-    const make = new Function(...Object.keys(deps), `return (${source});`)(...Object.values(deps));
+      } });
     if (repair === "none") assert.equal(make(payload, { activeLayoutId: "" }).containers.bag.weight, 10);
     else assert.throws(() => make(payload, { activeLayoutId: "" }), /проверки структуры/);
   }
   assert.equal(payload.containers.bag.weight, 10);
+});
+
+test("actual personal reconciliation retains the current actor's administrative draft and immutable plan", () => {
+  const payload = { containers: {}, items: { personal: { id: "personal", name: "Reconciled personal edit" } },
+    layouts: { personal: { id: "personal", rootContainerIds: [], arrangement: {
+      rootContainerIds: [], containers: {}, items: { personal: "" }, itemQuantities: { personal: 2 }, packedItems: { personal: true } } } },
+    locations: ["Reconciled"], categories: ["Tools"] };
+  const previous = { ...structuredClone(payload), activeLayoutId: "personal", showItemMeta: true };
+  const binding = { actorId: "admin-a", environment: "bike-packing-experiment",
+    listId: "public-demo-state-ui", itemKey: "demo-state:ui" };
+  const adminPayload = { items: { copy: { id: "copy", name: "Chosen administrative copy" },
+    detached: { id: "detached", name: "Unplaced administrative record" } },
+    containers: { adminBag: { id: "adminBag", itemIds: ["copy"] } },
+    layouts: { admin: { id: "admin", rootContainerIds: ["adminBag"], arrangement: { rootContainerIds: ["adminBag"],
+      containers: { adminBag: { parentId: "", itemIds: ["copy"], childIds: [], order: [] } },
+      items: { copy: "adminBag" }, itemQuantities: { copy: 1 }, packedItems: {} } } } };
+  const plan = adminTemplateSavePlan({ binding, operationId: "12345678-1234-4234-8234-123456789abc", exists: true,
+    visibility: "private", base: { stateRevision: 7 }, payload: adminPayload,
+    metadata: { title: "Admin draft", description: "", language: "ru" } });
+  const state = structuredClone(previous);
+  state.items.personal.name = "Stale private mirror";
+  state.items.deletedPersonal = { id: "deletedPersonal", name: "Must stay deleted" };
+  state.locations = ["Stale mirror"]; state.categories = ["Stale mirror"];
+  state.items.copy = { ...adminPayload.items.copy, publicCatalogLayoutId: "admin" };
+  state.items.detached = { ...adminPayload.items.detached, publicCatalogLayoutId: "admin" };
+  state.containers.adminBag = { ...adminPayload.containers.adminBag, publicCatalogLayoutId: "admin" };
+  state.layouts.admin = { ...structuredClone(adminPayload.layouts.admin), adminDemo: true, adminDemoListId: binding.listId,
+    adminCausalSource: { version: 1, binding, base: { stateRevision: 7 }, planId: null },
+    templateDraftSyncPending: true, adminCausalCopyPlan: plan };
+  state.layouts.foreign = { id: "foreign", adminDemo: true, adminDemoListId: "public-demo-state-other",
+    adminCausalSource: { version: 1, binding: { ...binding, actorId: "other", listId: "public-demo-state-other", itemKey: "demo-state:other" },
+      base: { stateRevision: 9 }, planId: null } };
+  state.items.foreign = { id: "foreign", publicCatalogLayoutId: "foreign" };
+  const before = structuredClone({ payload, previous, state });
+  const make = actualReconciledSnapshot({ state, normalizeRemoteState: value => structuredClone(value) });
+  const result = make(payload, previous);
+  assert.deepEqual(result.layouts, { ...payload.layouts, admin: state.layouts.admin });
+  assert.deepEqual(result.items, { ...payload.items, copy: state.items.copy, detached: state.items.detached });
+  assert.deepEqual(result.containers, { adminBag: state.containers.adminBag });
+  assert.deepEqual(result.locations, payload.locations); assert.deepEqual(result.categories, payload.categories);
+  assert.equal(result.activeLayoutId, "personal"); assert.equal(result.showItemMeta, true);
+  assert.deepEqual(result.layouts.admin.adminCausalCopyPlan, plan);
+  assert.deepEqual({ payload, previous, state }, before);
+  result.layouts.admin.adminCausalCopyPlan.operations[0].body.payload.items.copy.name = "Changed returned copy";
+  assert.deepEqual(state, before.state);
 });
 
 test("assembled server projection removes only display mirrors and never rewrites arrangement, files or unknown data", () => {

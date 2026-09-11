@@ -211,10 +211,12 @@ async function fixture(page, context, { published = false, shared = false, hydra
       if (["/auth/me", "/auth/experiment-share-session"].includes(suffix)) data = { ok: true, user: { id: "admin-a", email: "admin@example.test" } };
       else if (suffix === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "admin", capabilities: ["templates:write", "templates:history:read", "reports:read", "catalog:review"] } };
       else if (suffix === "/bike-packing/capabilities") data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1", "adminTemplatePendingSourceV1", ...(reverseImport ? ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPublicImportV1", "personalCausalPublicEntitiesV1", "personalCausalAdminTemplateImportV1"] : [])] };
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1", "adminTemplatePendingSourceV1", "adminTemplatePendingPersonalSourceV1", ...(reverseImport ? ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPublicImportV1", "personalCausalPublicEntitiesV1", "personalCausalAdminTemplateImportV1"] : [])] };
       else if (reverseImport && suffix === "/bike-packing/list-operations") {
         const action = request.postDataJSON(), binding = { environment: action.environment, actorId: action.expectedActorId, kind: action.kind, listId: action.listId, body: action.body };
         expect(["list.import", "list.update"]).toContain(action.kind); state.privatePosts.push(action);
+        if (state.privateDispatchWait) await state.privateDispatchWait;
+        if (state.privateBlock) return route.abort("failed");
         if (!state.privateReceipts.has(action.operationId)) {
           const base = personalBusinessPayload(state.privatePayload), manifest = action.body.publicImport;
           if (action.kind === "list.import") {
@@ -257,7 +259,7 @@ async function fixture(page, context, { published = false, shared = false, hydra
         const input = request.postDataJSON(), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input }), { id, ...binding } = intent;
         const cancel = suffix.endsWith("/cancel"); (cancel ? state.cancels : state.posts).push(input);
         if (!cancel && state.blockBusiness) return route.abort("failed");
-        if (!state.receipts.has(id)) {
+        if (!state.receipts.has(id) || state.receipts.get(id).operation.state === "waiting") {
           if (cancel) {
             const { body, ...identity } = binding;
             state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
@@ -265,8 +267,18 @@ async function fixture(page, context, { published = false, shared = false, hydra
           } else {
           const base = intent.body.base.stateRevision ?? state.receipts.get(intent.body.base.operationId)?.result.payload.stateRevision;
           const personalProof = intent.body.source?.kind === "personal-list";
-          const privateConflict = personalProof && (intent.body.source.listId !== "personal-list" || intent.body.source.base.stateRevision !== state.privateRevision
-            || intent.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(state.privatePayload));
+          const privateParentId = personalProof && intent.body.source.base.operationId;
+          const privateParent = privateParentId && state.privateReceipts.get(privateParentId);
+          if (privateParentId && !privateParent) {
+            const { body, ...identity } = binding;
+            const waiting = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "waiting" },
+              result: null, waiting: { code: "template_dependency_not_committed", operationIds: [privateParentId], retrySameOperation: true } };
+            state.receipts.set(id, waiting); return route.fulfill({ headers, json: { ok: true, ...waiting } });
+          }
+          const privateRevision = privateParentId ? privateParent?.operation.state === "committed" && privateParent.operation.listId === "personal-list"
+            ? privateParent.result.payload.stateRevision : null : intent.body.source?.base.stateRevision;
+          const privateConflict = personalProof && (intent.body.source.listId !== "personal-list" || privateRevision !== state.privateRevision
+            || intent.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(privateParentId ? personalBusinessPayload(state.privatePayload) : state.privatePayload));
           if (base !== state.revision || privateConflict) {
             const { body, ...identity } = binding;
             const receipt = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
@@ -422,6 +434,91 @@ test.describe("admin reverse personal import", () => {
     const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)), "build", "--config", "tests/e2e/admin-template-ui.vite.config.js", "--mode", "personal-import"],
       { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
     expect(result.status, result.stderr).toBe(0);
+  });
+  const pendingPersonalCases = ["live", "lost", "plan-quota", "changed-source", "unknown"].map(mode => ({ mode, shape: "item" }));
+  pendingPersonalCases.push({ mode: "live", shape: "tree" });
+  for (const shared of [false, true]) for (const { mode, shape } of pendingPersonalCases) test(`pending personal source administrative copy ${shared} ${shape} ${mode}`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true, personalEdits: true });
+    const target = await page.evaluate(() => {
+      const layout = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
+      return { id: layout.id, before: __adminUiTest.snapshot(layout.id),
+        bagId: Object.values(__adminUiTest.state().containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Сумка шаблона").id };
+    });
+    await page.evaluate(() => __adminUiTest.openPrivate("layout-a"));
+    let releasePrivate;
+    server.privateDispatchWait = new Promise(resolve => { releasePrivate = resolve; });
+    await page.evaluate(() => __adminUiTest.openItem("pump")); await page.locator("#itemName").fill("Ожидающая личная правка"); await submitItem(page);
+    await expect.poll(() => server.privatePosts.length).toBeGreaterThan(0);
+    const parent = structuredClone(server.privatePosts[0]);
+    expect(parent.kind).toBe("list.update"); expect(parent.body.payload.activeLayoutId).toBeUndefined(); expect(parent.body.payload.packedItems).toBeUndefined();
+    await page.evaluate(shape => shape === "item" ? __adminUiTest.openItem("pump") : __adminUiTest.openContainer("bag"), shape);
+    await page.locator(shape === "item" ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
+    await page.locator("#containerPickerLayoutSelect").selectOption(target.id);
+    if (shape === "item") await page.locator(`#containerPickerBoard [data-pick-container="${target.bagId}"]`).click();
+    else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
+    await expect(page.locator("#confirmDialog")).toContainText(shape === "item" ? "Скопировать вещь" : "со всем содержимым");
+    if (mode === "changed-source") await page.evaluate(() => { __adminUiTest.state().items.pump.name = "Поздняя несохранённая правка"; });
+    if (mode === "plan-quota") await page.evaluate(() => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-save-plans-v1:")) throw new DOMException("Pending private/admin plan quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    });
+    server.privateLose = mode === "lost"; server.privateBlock = mode === "unknown";
+    await page.locator("#confirmOkBtn").click();
+    if (mode === "changed-source") {
+      server.privateBlock = true; releasePrivate();
+      await expect(page.locator("body")).toContainText("Шаблон или исходный список изменился");
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), target.id)).toEqual(target.before);
+      expect(server.posts).toEqual([]); expect(server.privateReceipts.size).toBe(0); expect(server.errors).toEqual([]); return;
+    }
+    const copiedName = shape === "item" ? "Ожидающая личная правка копия" : "Ожидающая личная правка";
+    await expect.poll(() => page.evaluate(({ id, name }) => Object.values(__adminUiTest.snapshot(id).payload.items).some(row => row.name === name), { id: target.id, name: copiedName })).toBe(true);
+    releasePrivate();
+    if (["lost", "unknown"].includes(mode)) {
+      if (mode === "lost") await expect.poll(() => server.privateHidden).toBe(true);
+      await expect(page.locator("body")).toContainText("Копия сохранена и ждёт подтверждения личного списка"); expect(server.posts).toEqual([]);
+    } else if (mode === "plan-quota") await expect(page.locator("body")).toContainText("Pending private/admin plan quota");
+    else await confirmedRevision(page, 8);
+    const chosen = await page.evaluate(id => ({ snapshot: __adminUiTest.snapshot(id),
+      plan: __adminUiTest.state().layouts[id].adminCausalCopyPlan }), target.id);
+    const originalPlanId = chosen.plan?.id || server.posts[0].operationId;
+    server.privateLose = false; server.privateHidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    if (mode === "unknown") {
+      expect(await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan, target.id)).toEqual(chosen.plan);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), target.id)).toEqual(chosen.snapshot);
+      await page.locator("#syncBtn").click();
+      await expect(page.locator("body")).toContainText("Повтор приостановлен, изменения остались на устройстве");
+      expect(server.privatePosts).toHaveLength(1); expect(server.privateReceipts.size).toBe(0);
+      expect(server.posts).toEqual([]); expect(server.revision).toBe(7); expect(server.privateRevision).toBe(3);
+      expect(server.errors).toEqual([]); return;
+    }
+    if (mode === "lost") {
+      await page.locator("#syncBtn").click();
+      await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
+    }
+    await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" }
+      : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), shared);
+    await confirmedRevision(page, 8);
+    expect(server.posts).toHaveLength(1); const action = server.posts[0]; expect(action.operationId).toBe(originalPlanId);
+    expect(action.body.source).toEqual({ kind: "personal-list", listId: "personal-list", base: { operationId: parent.operationId },
+      payloadDigest: await adminTemplateCopyPayloadDigest(personalBusinessPayload(parent.body.payload)) });
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.snapshot.payload));
+    expect(server.privateReceipts.size).toBe(1); expect(server.privatePayload).toEqual(parent.body.payload);
+    expect(server.privatePosts.every(row => canonicalListOperationJson(row) === canonicalListOperationJson(parent))).toBe(true);
+    if (shape === "tree") {
+      const added = Object.values(server.payload.items).filter(row => !target.before.payload.items[row.id]);
+      expect(added).toHaveLength(1);
+      const arrangement = Object.values(server.payload.layouts)[0].arrangement;
+      expect(arrangement.itemQuantities[added[0].id]).toBe(2);
+      expect(arrangement.packedItems[added[0].id]).toBeUndefined();
+      expect(Object.keys(server.payload.containers)).toHaveLength(Object.keys(target.before.payload.containers).length + 2);
+    }
+    await editItem(page, "Следующая правка после ожидающего источника", copiedName, target.id); await confirmedRevision(page, 9);
+    expect(server.posts[1].body.source).toBeUndefined(); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 }); expect(server.errors).toEqual([]);
   });
   for (const shared of [false, true]) for (const quota of [false, true]) test(`personal outbox administrative copy survives reload ${shared} quota=${quota}`, async ({ page, context }) => {
     const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true, personalEdits: true });
