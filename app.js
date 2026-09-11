@@ -64,6 +64,7 @@ import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
 import { prepareAdminTemplateTreeCopy } from "./src/sync/admin-template-tree-copy.js";
 import { prepareAdminTemplateItemCopy } from "./src/sync/admin-template-item-copy.js";
 import { prepareAdminTemplateItemReplacement } from "./src/sync/admin-template-item-replace.js";
+import { prepareAdminTemplateContainerReplacement } from "./src/sync/admin-template-container-replace.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10691,12 +10692,13 @@ async function prepareCausalAdminPlacementCopy(request) {
     }
     operationId = crypto.randomUUID(); changedAt = nowIso();
     const prepareCopy = request.type === "item" ? prepareAdminTemplateItemCopy
-      : request.type === "item-replace" ? prepareAdminTemplateItemReplacement : prepareAdminTemplateTreeCopy;
+      : request.type === "item-replace" ? prepareAdminTemplateItemReplacement
+      : request.type === "container-replace" ? prepareAdminTemplateContainerReplacement : prepareAdminTemplateTreeCopy;
     prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = ["item", "item-replace"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = ["item", "item-replace", "container-replace"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
@@ -10716,6 +10718,11 @@ async function prepareCausalAdminPlacementCopy(request) {
           if (!["items", "containers"].includes(type) || !state[type][id] || state[type][id].publicCatalogLayoutId !== layout.id) throw Error("Исходная запись размещения изменилась.");
           priorUpdates.push({ type, id, value: state[type][id] });
           state[type][id] = clone(prepared.snapshot[type][id]);
+        }
+        for (const { type, id } of prepared.removals || []) {
+          if (type !== "containers" || !state[type][id] || state[type][id].publicCatalogLayoutId !== layout.id
+            || Object.hasOwn(prepared.snapshot[type], id)) throw Error("Исходная запись удаления изменилась.");
+          priorUpdates.push({ type, id, value: state[type][id] }); delete state[type][id];
         }
         layout.arrangement = clone(prepared.snapshot.layouts[layout.id].arrangement);
         layout.rootContainerIds = [...prepared.snapshot.layouts[layout.id].rootContainerIds]; markEdited(layout, changedAt);

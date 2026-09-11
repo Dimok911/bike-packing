@@ -1,9 +1,67 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareAdminTemplateTreeCopy } from "../../src/sync/admin-template-tree-copy.js";
+import { prepareAdminTemplateContainerReplacement } from "../../src/sync/admin-template-container-replace.js";
 import { createEmptyLayoutArrangement, createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 
 const options = { operationId: "8ad83878-2144-455e-b0ce-8b8cce033fdc", changedAt: "2026-09-11T01:00:00Z" };
+
+function replacementFixture(kind = "root", occupied = false) {
+  const f = fixture(), own = row => ({ ...row, publicCatalogLayoutId: "layout", photos: [] });
+  f.state.containers.replacement = own({ id: "replacement", name: "New bag", nestable: true, parentId: null,
+    itemIds: occupied ? ["spare-item"] : [], childIds: occupied ? ["spare-child"] : [],
+    order: occupied ? [{ type: "item", id: "spare-item" }, { type: "container", id: "spare-child" }] : [] });
+  if (occupied) {
+    f.state.items["spare-item"] = own({ id: "spare-item", name: "Spare", containerId: "replacement", quantity: 4 });
+    f.state.containers["spare-child"] = own({ id: "spare-child", name: "Detached tree", parentId: "replacement", itemIds: ["spare-nested"], childIds: [], order: [{ type: "item", id: "spare-nested" }] });
+    f.state.items["spare-nested"] = own({ id: "spare-nested", name: "Nested spare", containerId: "spare-child", quantity: 5 });
+  }
+  if (kind === "reusable") f.state.containers.child.nestable = true;
+  f.request = { rootId: "replacement", replacedId: kind === "root" ? "root" : "child", sourceLayoutId: "layout", targetLayoutId: "layout" };
+  return f;
+}
+for (const kind of ["root", "reusable", "temporary"]) for (const occupied of [false, true]) {
+  test(`admin bag replacement preserves ${kind} contents and ${occupied ? "occupied" : "empty"} replacement catalog`, () => {
+    const f = replacementFixture(kind, occupied), original = structuredClone(f.state);
+    const result = prepareAdminTemplateContainerReplacement(f.state, f.request, options), layout = result.snapshot.layouts.layout;
+    assert.deepEqual(f.state, original); assert.deepEqual(result.entries, []);
+    const arrangement = structuredClone(original.layouts.layout.arrangement), old = arrangement.containers[f.request.replacedId];
+    arrangement.containers.replacement = structuredClone(old); delete arrangement.containers[f.request.replacedId];
+    if (kind === "root") { arrangement.rootContainerIds = ["replacement"]; arrangement.containers.child.parentId = "replacement"; }
+    else { arrangement.items.item = "replacement"; arrangement.containers.root.childIds = ["replacement"]; arrangement.containers.root.order = [{ type: "container", id: "replacement" }]; }
+    assert.deepEqual(layout.arrangement, arrangement);
+    assert.equal(layout.arrangement.itemQuantities.item, 3); assert.equal(layout.arrangement.packedItems.item, true);
+    assert.deepEqual(Object.keys(result.snapshot.items).sort(), Object.keys(original.items).sort());
+    assert.equal(Boolean(result.snapshot.containers[f.request.replacedId]), kind !== "temporary");
+    if (kind !== "temporary") assert.deepEqual(result.snapshot.containers[f.request.replacedId], { ...original.containers[f.request.replacedId], parentId: null, childIds: [], itemIds: [], order: [] });
+    assert.deepEqual(result.removals, kind === "temporary" ? [{ type: "containers", id: "child" }] : []);
+    if (occupied) {
+      assert.deepEqual(result.snapshot.items["spare-item"], { ...original.items["spare-item"], containerId: "" });
+      assert.deepEqual(result.snapshot.containers["spare-child"], { ...original.containers["spare-child"], parentId: null });
+      assert.deepEqual(result.snapshot.items["spare-nested"], original.items["spare-nested"]);
+    }
+    const captured = createLayoutArrangementFromCurrentState(result.snapshot, layout.rootContainerIds, { itemQuantities: arrangement.itemQuantities });
+    assert.deepEqual(captured, arrangement);
+  });
+}
+test("admin bag replacement rejects ambiguous ownership, membership, quantities and occupied positions", () => {
+  const mutations = [
+    f => { f.state.containers.replacement.publicCatalogLayoutId = "foreign"; },
+    f => { f.state.containers.replacement.nestable = false; },
+    f => { f.state.containers.child.photos = [{ id: "photo" }]; },
+    f => { f.state.items["spare-item"].containerId = "unknown"; },
+    f => { f.state.containers.replacement.childIds.push("spare-child"); },
+    f => { f.state.items.orphan = { id: "orphan", containerId: "replacement", publicCatalogLayoutId: "layout" }; },
+    f => { f.state.containers["spare-child"].itemIds.push("item"); },
+    f => { delete f.state.layouts.layout.arrangement.itemQuantities.item; },
+    f => { f.state.layouts.layout.arrangement.containers.root.childIds.push("child"); },
+    f => { f.state.layouts.other = { arrangement: { containers: { child: {} } } }; }
+  ];
+  for (const mutate of mutations) {
+    const f = replacementFixture("temporary", true); mutate(f); const original = structuredClone(f.state);
+    assert.throws(() => prepareAdminTemplateContainerReplacement(f.state, f.request, options)); assert.deepEqual(f.state, original);
+  }
+});
 function fixture() {
   const owned = row => ({ ...row, publicCatalogLayoutId: "layout", sharedSourceId: "old-" + row.id, photos: [] });
   const state = { items: { item: owned({ id: "item", name: "Pump", containerId: "child", quantity: 3 }) },

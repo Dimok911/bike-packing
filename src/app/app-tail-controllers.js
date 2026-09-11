@@ -1384,7 +1384,7 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   if (renderAfter) render();
 }
 
-function replaceExistingContainerInLayout(replacementContainerId) {
+async function replaceExistingContainerInLayout(replacementContainerId) {
   const sourceContainerId = replacingPackingContainerId;
   const layoutId = getPublishedEditLayoutId();
   const source = state.containers?.[sourceContainerId];
@@ -1393,9 +1393,13 @@ function replaceExistingContainerInLayout(replacementContainerId) {
   const temporaryNestedSource = isTemporaryContainerInLayoutState(state, layout, sourceContainerId);
   const changedAt = nowIso();
   if (!source || !replacement || warnLockedLayoutMutation(layoutId)) return;
-  const commit = preparePersonalPlacementAction({ layoutId, action: "replace-container", ids: [sourceContainerId], replacementId: replacementContainerId });
+  const administrative = adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId);
+  const commit = administrative ? await prepareCausalAdminPlacementCopy({ type: "container-replace", replacedId: sourceContainerId,
+    rootId: replacementContainerId, sourceLayoutId: layoutId, targetLayoutId: layoutId,
+    targetParentId: layout.arrangement?.containers?.[sourceContainerId]?.parentId || "" })
+    : preparePersonalPlacementAction({ layoutId, action: "replace-container", ids: [sourceContainerId], replacementId: replacementContainerId });
   if (commit === false) return;
-  const replaced = commit ? commit() : replaceContainerInLayoutState(state, layoutId, sourceContainerId, replacementContainerId, {
+  const replaced = commit ? await commit() : replaceContainerInLayoutState(state, layoutId, sourceContainerId, replacementContainerId, {
     activeLayoutId: state.activeLayoutId,
     applyLayoutArrangement,
     beforeRemoveSource: deleteContainerPhotos,
