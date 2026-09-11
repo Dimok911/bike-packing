@@ -536,6 +536,69 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell", "neste
   });
 }
 
+for (const shared of [false, true]) for (const nested of [false, true])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"]) {
+  test(`admin existing item placement ${shared ? "shared" : "demo"} ${nested ? "nested" : "root"} (${mode})`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true });
+    const before = await page.evaluate(nested => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const item = Object.values(current.items).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Вторая вещь шаблона");
+      const bag = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === (nested ? "Карман шаблона" : "Сумка шаблона"));
+      return { layoutId: layout.id, itemId: item.id, bagId: bag.id, snapshot: __adminUiTest.snapshot(layout.id), ids: Object.keys(current.items) };
+    }, nested);
+    await page.locator('[data-view="packing"]').click();
+    const bag = page.locator(nested ? `#packingView [data-subcontainer-id="${before.bagId}"]` : `#packingView [data-root-container-id="${before.bagId}"]`);
+    await bag.locator("[data-add-to-container]").first().click(); await expect(page.locator("#addToContainerDialog")).toBeVisible();
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Existing item quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    server.lose = mode === "lost";
+    await page.locator(`[data-add-existing-item="${before.itemId}"]`).click();
+    if (mode === "mirror-quota") {
+      await expect(page.locator("body")).toContainText("Existing item quota");
+      await expect(page.locator("#addToContainerDialog")).toBeVisible(); expect(server.posts).toEqual([]);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(await page.evaluate(() => Object.keys(__adminUiTest.state().items))).toEqual(before.ids);
+      expect(server.errors).toEqual([]); return;
+    }
+    await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
+    if (["plan-quota", "pointer-quota"].includes(mode)) await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+    else { await expect.poll(() => server.posts.length).toBe(1); if (mode === "lost") await expect.poll(() => server.hidden).toBe(true); }
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().items))).toEqual(before.ids);
+    server.lose = false; server.hidden = false;
+    const priorAction = server.posts[0] && structuredClone(server.posts[0]);
+    const planId = priorAction?.operationId || await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1);
+    if (priorAction) expect(server.posts[0]).toEqual(priorAction);
+    expect(server.posts[0].operationId).toBe(planId);
+    expect(server.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    const item = Object.values(server.payload.items).find(row => row.name === "Вторая вещь шаблона"), target = Object.values(server.payload.containers)
+      .find(row => row.name === (nested ? "Карман шаблона" : "Сумка шаблона"));
+    const previousItem = Object.values(before.snapshot.payload.items).find(row => row.name === item.name);
+    expect(item.id).toBe(previousItem.id); expect(item.quantity).toBe(1);
+    const arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    expect(arrangement.items[item.id]).toBe(target.id); expect(arrangement.itemQuantities[item.id]).toBe(3);
+    expect(arrangement.packedItems[item.id]).toBeUndefined();
+    expect(arrangement.containers[target.id].order.at(-1)).toEqual({ type: "item", id: item.id });
+    await editItem(page, "Правка после добавления", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(Object.values(server.payload.layouts)[0].arrangement.itemQuantities[item.id]).toBe(3);
+    expect(server.errors).toEqual([]);
+  });
+}
+
 async function submitAdminTemplateCopy(page, name) {
   const sourceId = await page.evaluate(() => {
     const layout = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);

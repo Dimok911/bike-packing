@@ -13,24 +13,27 @@ const fail = () => { throw Error("Не подтверждены исходная
 // save. This planner produces only the new catalog record and its placement.
 export function prepareAdminTemplateItemCopy(state, request, { operationId, changedAt = "", currentEditMeta = () => ({}),
   hasPhotos = row => Boolean(row.photos?.length) } = {}) {
-  const frozen = clone(state), { sourceId, sourceLayoutId, targetLayoutId, targetParentId } = clone(request);
+  const frozen = clone(state), { sourceId, sourceLayoutId, targetLayoutId, targetParentId, mode = "copy" } = clone(request);
   const source = frozen.items?.[sourceId], from = frozen.layouts?.[sourceLayoutId], to = frozen.layouts?.[targetLayoutId];
   if (!validTemplateOperationId(operationId) || !from?.adminCausalSource?.exists || !to?.adminCausalSource?.exists
-    || !from.arrangement || !to.arrangement || to.locked || sourceLayoutId === targetLayoutId
+    || !from.arrangement || !to.arrangement || to.locked || !["copy", "link"].includes(mode)
+    || (mode === "copy" ? sourceLayoutId === targetLayoutId : sourceLayoutId !== targetLayoutId)
     || !source || source.id !== sourceId || source.publicCatalogLayoutId !== sourceLayoutId
     || hasPhotos(source) || isItemUnavailableForPacking(source)
     || frozen.containers?.[targetParentId]?.publicCatalogLayoutId !== targetLayoutId
     || !to.arrangement.containers?.[targetParentId]) fail();
-  const itemId = `item-template-copy-${operationId}`;
+  if (mode === "link" && (Object.hasOwn(from.arrangement.items || {}, sourceId) || source.containerId)) fail();
+  const itemId = mode === "link" ? sourceId : `item-template-copy-${operationId}`;
   // Match the existing item-copy UI: placed catalog records copy one unit;
   // detached records retain their catalog quantity, independent of packing.
   const quantity = Object.hasOwn(from.arrangement.items || {}, sourceId) ? 1 : normalizeItemQuantity(source.quantity);
   const copySource = { ...frozen, items: { ...frozen.items, [sourceId]: { ...source, quantity } } };
-  const { snapshot } = preparePersonalCopyBatch(copySource, { type: "copy", version: 1, keepPlacement: false, layoutId: "",
+  const { snapshot } = mode === "link" ? { snapshot: clone(frozen) } : preparePersonalCopyBatch(copySource, { type: "copy", version: 1, keepPlacement: false, layoutId: "",
     entries: [{ type: "item", sourceId, targetId: itemId }] }, { changedAt, currentEditMeta, hasPhotos });
   snapshot.items[sourceId] = clone(source);
-  snapshot.items[itemId] = { ...cloneIsolatedPublicEntity(snapshot.items[itemId]), containerId: targetParentId,
+  if (mode === "copy") snapshot.items[itemId] = { ...cloneIsolatedPublicEntity(snapshot.items[itemId]),
     publicCatalogLayoutId: targetLayoutId, adminDemo: Boolean(to.adminDemo) };
+  snapshot.items[itemId].containerId = targetParentId;
   const layout = snapshot.layouts[targetLayoutId];
   if (!addItemToLayoutArrangement(snapshot, layout, itemId, targetParentId)) fail();
   normalizeLayoutArrangement(layout, snapshot);
@@ -43,5 +46,5 @@ export function prepareAdminTemplateItemCopy(state, request, { operationId, chan
   Object.assign(snapshot.containers[targetParentId], { itemIds: [...arrangement.containers[targetParentId].itemIds],
     order: clone(arrangement.containers[targetParentId].order) });
   snapshot.items[itemId].quantity = 1;
-  return { snapshot, entries: [{ type: "items", sourceId, targetId: itemId }], itemId };
+  return { snapshot, entries: mode === "link" ? [] : [{ type: "items", sourceId, targetId: itemId }], itemId };
 }

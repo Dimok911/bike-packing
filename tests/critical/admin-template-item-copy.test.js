@@ -46,3 +46,19 @@ test("cross-template item rejects unavailable sources, foreign placement and sil
     assert.throws(() => prepareAdminTemplateItemCopy(f.state, f.request, options)); assert.deepEqual(f.state, before);
   }
 });
+
+
+test("existing standalone catalog item keeps its ID, quantity and durable placement without a copy", () => {
+  const f = fixture(true), before = structuredClone(f.state), request = { ...f.request, mode: "link", targetLayoutId: "from", targetParentId: "from-bag" };
+  const result = prepareAdminTemplateItemCopy(f.state, request, options);
+  assert.deepEqual(f.state, before); assert.deepEqual(result.entries, []); assert.equal(result.itemId, "source");
+  assert.deepEqual(Object.keys(result.snapshot.items), Object.keys(before.items));
+  assert.equal(result.snapshot.items.source.sharedSourceId, before.items.source.sharedSourceId);
+  assert.equal(result.snapshot.layouts.from.arrangement.itemQuantities.source, 3);
+  assert.equal(result.snapshot.layouts.from.arrangement.packedItems.source, undefined);
+  assert.deepEqual(result.snapshot.layouts.to, before.layouts.to);
+  assert.throws(() => prepareAdminTemplateItemCopy(result.snapshot, request, options));
+  assert.throws(() => prepareAdminTemplateItemCopy(f.state, { ...f.request, mode: "link" }, options));
+  f.state.items.source.containerId = "detached-catalog-bag";
+  assert.throws(() => prepareAdminTemplateItemCopy(f.state, request, options));
+});

@@ -1401,7 +1401,7 @@ function replaceExistingContainerInLayout(replacementContainerId) {
   }), "success");
 }
 
-function addExistingItemToContainer(itemId) {
+async function addExistingItemToContainer(itemId) {
   if (replacingPackingItemId) {
     replaceExistingItemInLayout(itemId);
     return;
@@ -1410,6 +1410,13 @@ function addExistingItemToContainer(itemId) {
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const changedAt = nowIso();
   if (warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(itemId)) return;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    const commit = await prepareCausalAdminPlacementCopy({ type: "item", mode: "link", sourceId: itemId,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: containerId });
+    if (!commit || !await commit()) return;
+    state.collapsedContainers[containerId] = false; saveLocalUiState(); markRecentlyAddedItem(itemId, layoutId);
+    refs.addToContainerDialog.close(); render(); requestAnimationFrame(() => focusRecentlyAddedItem(itemId)); return;
+  }
   const commit = preparePersonalPlacementAction({ layoutId, action: "link-item", ids: [itemId], targetContainerId: containerId });
   if (commit === false) return;
   if (commit ? !commit() : !placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
