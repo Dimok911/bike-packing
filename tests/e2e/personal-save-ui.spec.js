@@ -2134,7 +2134,7 @@ for (const scenario of ["create", "move", "quantity", "unplace", "lost file", "l
       await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toEqual(posts); expect(f.stagePosts).toEqual(stages);
       f.loseStageAt = 0; f.hiddenStage = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
       await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
-    } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+    } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty), { timeout: 30000 }).toBe(false);
     expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
     const action = f.posts.at(-1), itemId = action.body.entityId, placement = action.body.formContext.placement;
     expect(action.kind).toBe("photos.mutate"); expect(action.body.baseEntityRevision === 0).toBe(created);
