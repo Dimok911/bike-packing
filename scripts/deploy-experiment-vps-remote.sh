@@ -74,6 +74,39 @@ unlink_changed() {
 }
 
 case "$mode" in
+  code-stage)
+    assert_release_paths
+    frontend_count=$3; frontend_bytes=$4
+    [[ "$frontend_count" =~ ^[0-9]+$ && "$frontend_bytes" =~ ^[0-9]+$ ]]
+    [[ -d "$live" && -L "$live/assets" && -d "$shared_assets" && ! -e "$stage" ]]
+    [[ "$(readlink -f "$live/assets")" == "$shared_assets" ]]
+    [[ ! -s "$upload/assets.changed" ]]
+    # Do not follow or modify the photograph directory, even during rollback.
+    mkdir -- "$stage"
+    cp -al "$live/." "$stage/"
+    unlink_changed "$stage" "$upload/frontend.changed"
+    tar -xf "$upload/frontend.tar" -C "$stage"
+    LC_ALL=C sort -o "$upload/frontend.paths" "$upload/frontend.paths"
+    remove_extra_files "$stage" "$upload/frontend.paths"
+    verify_tree "$stage" "$upload/frontend.sha256" "$upload/frontend.paths" "$frontend_count" "$frontend_bytes" no
+    echo CODE_STAGE_VERIFIED
+    ;;
+  code-activate)
+    assert_release_paths
+    [[ -d "$live" && -d "$stage" && ! -e "$backup" ]]
+    [[ "$(readlink -f "$stage/assets")" == "$shared_assets" ]]
+    verify_tree "$stage" "$upload/frontend.sha256" "$upload/frontend.paths" "$3" "$4" no
+    mv "$live" "$backup"
+    if ! mv "$stage" "$live"; then mv "$backup" "$live"; exit 53; fi
+    echo CODE_ACTIVATED
+    ;;
+  code-rollback)
+    assert_release_paths
+    [[ -d "$live" && -d "$backup" && ! -e "$failed" ]]
+    mv "$live" "$failed"
+    mv "$backup" "$live"
+    echo CODE_ROLLED_BACK
+    ;;
   stage)
     assert_release_paths
     frontend_count=$3; frontend_bytes=$4; assets_count=$5; assets_bytes=$6

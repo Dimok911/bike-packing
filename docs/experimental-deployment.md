@@ -30,15 +30,15 @@ Vite публикует изображения глобального катал
 `assets/`. Весь build-каталог `assets/` хранится в persistent shared directory
 `/var/www/experiment-shared/assets`, а release-каталог содержит только symlink
 на него. Пользовательские фото API/БД в build не входят. Поэтому frontend backup
-не архивирует фотографии. Assets stage заполняется через hard links, затем links
-изменившихся путей удаляются перед распаковкой. Передаются only new or changed
-files; совпадение по имени без совпадения фактического SHA-256 не считается
-повторным использованием. Старый catalog stage существует только до внешнего
-smoke/rollback gate и удаляется после успешного релиза.
+не архивирует фотографии. Для приложения stage заполняется через hard links
+только из текущего release, не переходя по symlink assets. Передаются only new or changed
+files приложения. Изменение или отсутствие любого assets-файла останавливает этот
+режим публикации. Каталог фотографий не перемещается и не удаляется, в том числе
+при rollback. Точный список дельты сохраняется в ftp-upload/release-evidence.
 
 Перед atomic directory rename сценарий выполняет full file-count, byte-count,
 and SHA-256 verification stage, а после активации сверяет ключевые HTTPS-файлы и
-образцы повторно использованных/новых фотографий. При несовпадении публичной
+образец повторно использованного assets-файла. При несовпадении публичной
 проверки предыдущий каталог автоматически возвращается на место. FTPS и хост
 `88.212.206.188` для Experiment не используются.
 
@@ -55,7 +55,7 @@ pwsh -File scripts/deploy-experiment-vps.ps1 -ExpectedCommit <40-char-sha> -Expe
 
 ## Изоляция API
 
-Frontend на `experiment.vniipo-help.ru` выбирает одноимённый API origin и через
+Frontend на `experiment.vniipo-help.ru` выбирает `https://api.vniipo-help.ru/experiment/letters-vniipo/api` и через
 nginx обращается только к отдельному процессу `bikepacking-api-experiment` на
 локальном порту 4312. Все остальные frontend-хосты продолжают использовать
 `https://api.vniipo-help.ru`; экспериментальное повышение версии API не должно
@@ -66,3 +66,11 @@ nginx обращается только к отдельному процессу
 проверки вернуть сохранённый web-каталог. Аварийный откат к ранее опубликованной
 и уже проверенной резервной версии не требует нового workflow, но результат
 отката нужно проверить снаружи.
+
+Общая cookie: personal_tags_session, host-only api.vniipo-help.ru. Auth subpath
+нового prefix идёт напрямую на 4315; private API остаётся на 4312. Для CI сохранён
+публичный read-only alias capabilities на experiment-host без передачи Cookie.
+Сам deploy проверяет контракт по новому prefix. Старые клиентские API-запросы
+получают 409 experiment_update_required; обновление не удаляет локальные данные.
+Сначала требуется подтверждение опубликованного Shared Auth, затем API/routing,
+затем этот frontend. См. docs/canonical-session-release.md.

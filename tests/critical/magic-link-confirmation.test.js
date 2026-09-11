@@ -49,12 +49,12 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(apiContractSource, /adminTemplateDraftSync/);
   assert.match(apiContractSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1604"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1607"/);
 });
 
 test("experiment admin compatibility requires the catalog review contract", () => {
   const options = {
-    appVersion: "v1604",
+    appVersion: "v1607",
     requiredVersion: "2026-08-30.catalog-review-v1",
     requiredCapabilities: ["manufacturerCatalogReview"],
     localText: (en) => en
@@ -82,7 +82,7 @@ test("production shell has no experimental banner and only the experiment host s
   assert.doesNotMatch(indexSource, /id="experimentBanner"/);
   assert.equal(resolveApiBase({ hostname: "vniipo-help.ru" }), "https://api.vniipo-help.ru/letters-vniipo/api");
   assert.equal(resolveApiBase({ hostname: "dimok911.github.io" }), "https://api.vniipo-help.ru/letters-vniipo/api");
-  assert.equal(resolveApiBase({ hostname: "experiment.vniipo-help.ru" }), "https://experiment.vniipo-help.ru/letters-vniipo/api");
+  assert.equal(resolveApiBase({ hostname: "experiment.vniipo-help.ru" }), "https://api.vniipo-help.ru/experiment/letters-vniipo/api");
   assert.match(constantsSource, /PRODUCTION_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api"/);
-  assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api"/);
+  assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/experiment\/letters-vniipo\/api"/);
 });

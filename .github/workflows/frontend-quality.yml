@@ -34,10 +34,16 @@ jobs:
       - name: Critical contracts
         run: npm run test:critical
 
+      - name: Code-only release rollback
+        run: bash scripts/test-experiment-code-release.sh
+
       - name: Production build
         run: npm run build
 
       - name: Live Experiment API contract
+        env:
+          # Public compatibility alias survives the cookie cutover; release checks the new prefix separately.
+          BIKE_PACKING_API_BASE: https://experiment.vniipo-help.ru/letters-vniipo/api
         run: npm run check:live-api-contract
 
       - name: Install browsers
