@@ -658,8 +658,8 @@ async function capturePendingSourceVisibility(page, server, shared, hiding, next
   }
 }
 
-async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false, sourcePublished = false) {
-  const server = await fixture(page, context, { shared: sourceShared, published: sourcePublished, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });
+async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false, sourcePublished = false, intermediateCopy = false) {
+  const server = await (intermediateCopy ? newDraftFixture : fixture)(page, context, { shared: sourceShared, published: sourcePublished, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });
   const target = { payload: structuredClone(server.payload), revision: 19, visibility: "private",
     listId: targetShared ? "public-shared-layout-cross" : "public-demo-state-cross",
     itemKey: targetShared ? "shared-layout:cross" : "demo-state:cross",
@@ -701,8 +701,9 @@ async function crossTemplateFixture(page, context, sourceShared, targetShared, d
         return route.fulfill({ headers, json: { ok: true, ...waiting } });
       }
       const base = body.base.stateRevision ?? server.receipts.get(body.base.operationId)?.result.payload.stateRevision;
-      const sourceChanged = body.source && (body.source.listId !== (sourceShared ? "public-shared-layout-ui" : "public-demo-state-ui")
-        || (body.source.base.stateRevision ?? (predecessor?.operation.state === "committed" && predecessor.operation.listId === body.source.listId ? predecessor.result.payload.stateRevision : null)) !== server.revision || body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(server.payload));
+      const source = body.source?.listId === (sourceShared ? "public-shared-layout-ui" : "public-demo-state-ui") ? server : server.created?.get(body.source?.listId);
+      const sourceChanged = body.source && (!source
+        || (body.source.base.stateRevision ?? (predecessor?.operation.state === "committed" && predecessor.operation.listId === body.source.listId ? predecessor.result.payload.stateRevision : null)) !== source.revision || body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(source.payload));
       const code = base !== target.revision ? "template_source_changed" : sourceChanged ? "template_copy_source_changed" : null;
       if (!code) {
         target.revision++; if (intent.kind === "template.save") target.payload = structuredClone(body.payload);
@@ -1083,7 +1084,6 @@ async function newDraftFixture(page, context, options = {}) {
     if (!state.receipts.has(id) || state.receipts.get(id).operation.state === "waiting") {
       if (input.kind === "template.copy") {
         expect(created.has(input.listId)).toBe(false); expect(input.body.base).toBeNull();
-        expect(input.body.source.listId).toBe(options.shared ? "public-shared-layout-ui" : "public-demo-state-ui");
         const sourceParent = input.body.source.base.operationId && state.receipts.get(input.body.source.base.operationId);
         if (input.body.source.base.operationId && (!sourceParent || sourceParent.operation.state === "waiting")) {
           const { body, ...identity } = binding;
@@ -1092,13 +1092,14 @@ async function newDraftFixture(page, context, options = {}) {
           return route.fulfill({ headers, json: { ok: true, ...state.receipts.get(id) } });
         }
         const sourceRevision = input.body.source.base.stateRevision ?? (sourceParent?.operation.state === "committed" && sourceParent.operation.listId === input.body.source.listId ? sourceParent.result.payload.stateRevision : null);
-        if (state.copyConflict || sourceRevision !== state.revision || input.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(state.payload)) {
+        const source = input.body.source.listId === (options.shared ? "public-shared-layout-ui" : "public-demo-state-ui") ? state : created.get(input.body.source.listId);
+        if (state.copyConflict || !source || sourceRevision !== source.revision || input.body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(source.payload)) {
           const { body, ...identity } = binding;
           state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
             result: { status: 409, payload: { ok: false, code: "template_copy_source_changed" } } });
           return route.fulfill({ headers, json: { ok: true, ...state.receipts.get(id) } });
         }
-        created.set(input.listId, { revision: 0, payload: projectAdminTemplateCopy(state.payload, id, input.body.metadata), metadata: input.body.metadata });
+        created.set(input.listId, { revision: 0, payload: projectAdminTemplateCopy(source.payload, id, input.body.metadata), metadata: input.body.metadata });
       }
       if (input.kind === "template.create") {
         expect(created.has(input.listId)).toBe(false); expect(input.body.base).toBeNull();
@@ -2128,8 +2129,8 @@ for (const shared of [false, true]) for (const target of ["root", "bag", "pocket
   });
 }
 
-async function submitAdminTemplateCopy(page, name) {
-  const sourceId = await page.evaluate(() => {
+async function submitAdminTemplateCopy(page, name, selectedSourceId = null) {
+  const sourceId = selectedSourceId || await page.evaluate(() => {
     const layout = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
     return layout.id;
   });
@@ -2339,6 +2340,99 @@ for (const shared of [false, true]) for (const pending of [false, true]) for (co
     expect(state.posts.filter(post => post.kind === "template.copy")).toEqual([]); expect(state.created.size).toBe(0);
     expect(await page.evaluate(() => Object.keys(__adminUiTest.state().layouts))).toEqual(before.ids);
     expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.sourceId)).toEqual(before.snapshot);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"]) for (const mode of ["confirmed", "lost", "plan-quota", "source-conflict"]) {
+  test(`pending copied source ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const state = await crossTemplateFixture(page, context, shared, !shared, true, false, false, true);
+    state.blockBusiness = true;
+    await editItem(page, "Правка перед двумя копиями", "Насос шаблона");
+    const sourceId = await page.evaluate(shared => Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource?.binding.listId ===
+      (shared ? "public-shared-layout-ui" : "public-demo-state-ui")).id, shared);
+    await submitAdminTemplateCopy(page, "Промежуточная копия", sourceId);
+    await expect(page.locator("#layoutDialog")).not.toBeVisible();
+    await expect.poll(() => state.posts.filter(post => post.kind === "template.copy").length).toBe(1);
+    const parent = structuredClone(state.posts.find(post => post.kind === "template.copy"));
+    expect(state.receipts.get(parent.operationId).operation.state).toBe("waiting");
+    const before = await page.evaluate(({ parentList, targetList }) => {
+      const current = __adminUiTest.state(), source = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === parentList);
+      const target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetList);
+      return { sourceId: source.id, targetId: target.id, source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id),
+        item: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === "Правка перед двумя копиями").id,
+        bag: source.rootContainerIds[0], targetBag: target.rootContainerIds[0] };
+    }, { parentList: parent.listId, targetList: state.target.listId });
+    if (mode === "plan-quota") await page.evaluate(({ shape, listId }) => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-save-plans-v1:") && (shape === "whole" ? value.includes("Завершающая копия")
+          : JSON.parse(value).plan?.binding.listId === listId)) throw new DOMException("Copy chain quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, { shape, listId: state.target.listId });
+    if (shape === "whole") {
+      await submitAdminTemplateCopy(page, "Завершающая копия", before.sourceId);
+      await expect(page.locator("#layoutDialog")).not.toBeVisible();
+    } else {
+      await page.evaluate(({ shape, before }) => shape === "item" ? __adminUiTest.openItem(before.item) : __adminUiTest.openContainer(before.bag), { shape, before });
+      await page.locator(shape === "item" ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
+      await page.locator("#containerPickerLayoutSelect").selectOption(before.targetId);
+      await page.locator(shape === "item" ? `#containerPickerBoard [data-pick-container="${before.targetBag}"]` : '#containerPickerBoard [data-pick-root-index="0"]').click();
+      await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+    }
+    const childLayout = await page.evaluate(({ shape, id }) => shape === "whole" ? Object.values(__adminUiTest.state().layouts).find(row => row.name === "Завершающая копия")
+      : __adminUiTest.state().layouts[id], { shape, id: before.targetId });
+    expect(childLayout).toBeTruthy();
+    const childPosts = () => state.posts.filter(post => post.listId === childLayout.adminCausalSource.binding.listId);
+    let action;
+    if (mode === "plan-quota") {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), childLayout.id)).toBe(true);
+      const { id, actorId, ...wire } = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.operations[0], childLayout.id);
+      action = { ...wire, expectedActorId: actorId, operationId: id }; expect(childPosts()).toEqual([]);
+    } else {
+      await expect.poll(() => childPosts().length).toBe(1); action = structuredClone(childPosts()[0]);
+      expect(state.receipts.get(action.operationId).operation.state).toBe("waiting");
+    }
+    expect(action.body.source.listId).toBe(parent.listId); expect(action.body.source.base).toEqual({ operationId: parent.operationId });
+    expect(state.created.size).toBe(0);
+    const chosen = await page.evaluate(id => __adminUiTest.snapshot(id), childLayout.id), targetBefore = structuredClone(state.target.payload);
+    state.blockBusiness = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    const open = binding => page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+      ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), binding);
+    await open({ itemKey: shared ? "shared-layout:ui" : "demo-state:ui", listId: shared ? "public-shared-layout-ui" : "public-demo-state-ui" });
+    await confirmedRevision(page, 8);
+    state.createLose = mode === "lost";
+    await open(parent);
+    if (mode === "lost") await expect.poll(() => state.createHidden.has(parent.operationId)).toBe(true);
+    else await confirmedRevision(page, 1);
+    const parentPayload = structuredClone(state.created.get(parent.listId).payload);
+    expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(parentPayload));
+    expect(action.body.source.payloadDigest).not.toBe(await adminTemplateCopyPayloadDigest(state.payload));
+    if (mode === "source-conflict") state.created.get(parent.listId).revision++;
+    state.createLose = false;
+    await open(childLayout.adminCausalSource.binding);
+    if (mode === "source-conflict") {
+      await expect.poll(() => state.receipts.get(action.operationId)?.operation.state).toBe("rejected");
+      expect(state.created.size).toBe(1); expect(state.target.payload).toEqual(targetBefore);
+    } else {
+      await confirmedRevision(page, shape === "whole" ? 1 : 20);
+      if (shape === "whole") expect(state.created.get(action.listId).payload).toEqual(projectAdminTemplateCopy(parentPayload, action.operationId, action.body.metadata));
+      else {
+        expect(state.target.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+        const added = Object.values(state.target.payload.items).filter(row => !before.target.payload.items[row.id]);
+        expect(added).toHaveLength(1); expect(added[0].name).toBe("Правка перед двумя копиями" + (shape === "item" ? " копия" : ""));
+      }
+    }
+    expect(state.created.get(parent.listId).payload).toEqual(parentPayload);
+    expect(childPosts()).toHaveLength(mode === "plan-quota" ? 1 : 2); for (const post of childPosts()) expect(post).toEqual(action);
+    if (mode === "lost") {
+      state.createHidden.clear(); await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a"); await open(parent); await confirmedRevision(page, 1);
+      expect(state.posts.filter(post => post.listId === parent.listId)).toEqual([parent, parent]);
+    }
     expect(state.errors).toEqual([]);
   });
 }

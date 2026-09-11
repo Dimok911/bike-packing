@@ -101,6 +101,9 @@ function validatePlan(plan) {
 // the saved choice, including publication after save or hiding before save.
 export function adminTemplateDataSourceSnapshot(plan) {
   validatePlan(plan);
+  if (plan.version === 3) return { operationId: plan.id,
+    payload: projectAdminTemplateCopy(plan.sourceSnapshot, plan.id, plan.operations[0].body.metadata),
+    metadata: clone(plan.operations[0].body.metadata), editorSnapshot: clone(plan.editorSnapshot) };
   if (![1, 4].includes(plan.version)) throw paused();
   const write = plan.operations.find(operation => ["template.create", "template.save"].includes(operation.kind));
   return { operationId: plan.operations.at(-1).id, payload: clone(write.body.payload), metadata: clone(write.body.metadata) };

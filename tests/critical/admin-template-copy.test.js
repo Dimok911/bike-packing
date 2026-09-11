@@ -5,7 +5,7 @@ import { adminTemplateIntent } from "../../src/sync/admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { adminClientFixture } from "../fixtures/admin-template-client-fixture.js";
 import { validateAdminTemplateReceipt } from "../../src/sync/admin-template-client.js";
-import { createAdminTemplateSavePlans, adminTemplateSavePlan } from "../../src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSavePlans, adminTemplateSavePlan, adminTemplateCopyPlan } from "../../src/sync/admin-template-save-plan.js";
 import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 
 const metadata = { title: "Copy", description: "Retained", language: "ru" };
@@ -66,6 +66,30 @@ for (const published of [false, true]) test(`pending source preserves the final 
   await assert.rejects(pendingAdminTemplateCopySource(source, reordered, snapshot));
   const altered = structuredClone(saved); altered.plan.operations[1].body.base = { stateRevision: 77 };
   await assert.rejects(pendingAdminTemplateCopySource(source, altered, snapshot));
+});
+
+test("pending whole copy uses its own server projection while guarding the separate editor snapshot", async () => {
+  const f = adminClientFixture(), copy = action(), original = snapshot();
+  copy.body.source.payloadDigest = await adminTemplateCopyPayloadDigest(original);
+  const projected = projectAdminTemplateCopy(original, copy.operationId, metadata);
+  const editorSnapshot = { payload: structuredClone(projected), metadata };
+  const layoutId = editorSnapshot.payload.activeLayoutId;
+  editorSnapshot.payload.layouts["layout-main"] = { ...editorSnapshot.payload.layouts[layoutId], id: "layout-main" };
+  delete editorSnapshot.payload.layouts[layoutId]; editorSnapshot.payload.activeLayoutId = "layout-main";
+  const plan = adminTemplateCopyPlan({ binding: f.binding, ...copy, sourceSnapshot: original, editorSnapshot });
+  const source = { exists: true, binding: f.binding, planId: plan.id, base: { operationId: plan.id } };
+  const prepared = await pendingAdminTemplateCopySource(source, { plan, cancelRequested: false }, editorSnapshot);
+  assert.deepEqual(prepared.payload, projected); assert.deepEqual(prepared.source.base, source.base);
+  assert.equal(prepared.source.payloadDigest, await adminTemplateCopyPayloadDigest(projected));
+  assert.notEqual(prepared.source.payloadDigest, copy.body.source.payloadDigest);
+  assert.notEqual(prepared.source.payloadDigest, await adminTemplateCopyPayloadDigest(editorSnapshot.payload));
+  const next = projectAdminTemplateCopy(prepared.payload, randomUUID(), metadata);
+  assert.notEqual(Object.keys(next.items)[0], Object.keys(projected.items)[0]);
+  await assert.rejects(pendingAdminTemplateCopySource(source, { plan, cancelRequested: true }, editorSnapshot));
+  await assert.rejects(pendingAdminTemplateCopySource(source, { plan, cancelRequested: false }, { payload: projected, metadata }));
+  Object.values(editorSnapshot.payload.items)[0].name = "Later local change";
+  await assert.rejects(pendingAdminTemplateCopySource(source, { plan, cancelRequested: false }, editorSnapshot));
+  assert.deepEqual(prepared.payload, projected);
 });
 
 test("whole template copy freezes exact confirmed source, new target and private metadata", () => {
