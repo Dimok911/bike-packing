@@ -10561,7 +10561,7 @@ async function resumeCausalAdminTemplateCopy(layout) {
   if (!pending) return;
   const original = layout.adminCausalSource, binding = original?.binding, wasPending = layout.templateDraftSyncPending;
   const catalog = [1, 4].includes(pending.version), sourceChecked = pending.version === 4, operation = pending.operations?.[0];
-  const pendingCatalog = catalog && !sourceChecked && Boolean(original?.planId && original.base?.operationId);
+  const pendingCatalog = catalog && Boolean(original?.planId && original.base?.operationId);
   if (!binding || original.planId && !pendingCatalog || canonicalTemplateJson(binding) !== canonicalTemplateJson(pending.binding)
     || (catalog ? !original.exists || original.deleted || !original.base?.stateRevision && !pendingCatalog || operation?.kind !== "template.save"
       || canonicalTemplateJson(original.base) !== canonicalTemplateJson(operation.body.base)
@@ -10800,12 +10800,13 @@ async function rememberAdminTemplateSourceBaseline(layout, prepared) {
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
-  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState, pendingSource = false;
+  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState, pendingSource = false, pendingTarget = false;
   const privateSnapshot = () => canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true })));
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
-    if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
-      || layout.adminCausalCopyPlan || layout.templateDraftSyncPending
+    if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout
+      || !pendingTarget && (coordinator.hasPendingCapture(layout.id) || layout.templateDraftSyncPending)
+      || layout.adminCausalCopyPlan
       || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true)) !== initial
       || state.layouts[sourceLayout.id] !== sourceLayout
@@ -10819,12 +10820,24 @@ async function prepareCausalAdminPlacementCopy(request) {
     const count = prepared.entries.filter(entry => entry.type === type).length;
     return !count || requireUsageCapacity(type, count);
   });
+  const verifyPendingTarget = async () => {
+    if (!pendingTarget) return;
+    const plans = adminTemplatePlansFor(original.binding, layout.id, true);
+    await adminTemplateRecoveryFor(original.binding, layout.id, true).assertCanAppend(original.planId); guard();
+    const saved = await plans.read(original.planId); guard();
+    const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
+    const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(original.binding, layout.id).read() : null; guard();
+    const receipts = saved?.plan.version === 2 ? await adminTemplateClient(original.binding, layout.id, true).list() : []; guard();
+    const observed = JSON.parse(snapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
+    await pendingAdminTemplateCopySource(original, saved, observed, records, { baseline, receipts }); guard();
+  };
   try {
     layout = state.layouts[request.targetLayoutId]; original = clone(layout?.adminCausalSource || null);
     sourceLayout = state.layouts[request.sourceLayoutId]; sourceOriginal = clone(sourceLayout?.adminCausalSource || null);
     personalSource = Boolean(sourceLayout && !isAdminEditablePublishedLayout(sourceLayout.id));
-    if (!layout || !original?.exists || original.planId || !original.base?.stateRevision || layout.adminCausalCopyPlan
-      || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id) || !isAdminEditablePublishedLayout(layout.id)
+    pendingTarget = Boolean(original?.planId && original.base?.operationId);
+    if (!layout || !original?.exists || original.deleted || !pendingTarget && (original.planId || !original.base?.stateRevision
+      || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) || layout.adminCausalCopyPlan || !isAdminEditablePublishedLayout(layout.id)
       || original.binding.actorId !== String(currentUser?.id || "") || !sourceLayout) throw Error("Сначала дождитесь подтверждения целевого шаблона.");
     if (personalSource) {
       if (sourceOriginal || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState) || state.activeLayoutId !== sourceLayout.id
@@ -10833,7 +10846,7 @@ async function prepareCausalAdminPlacementCopy(request) {
         || ![undefined, "item"].includes(request.type) || request.mode && request.mode !== "copy") throw Error("Сначала подтвердите исходную личную укладку.");
       personalInitial = canonicalTemplateJson(personalSaveContext()); sourceSnapshot = privateSnapshot();
     } else {
-      pendingSource = Boolean(sourceLayout !== layout && sourceOriginal?.planId && sourceOriginal.base?.operationId);
+      pendingSource = Boolean(sourceOriginal?.planId && sourceOriginal.base?.operationId);
       if (!sourceOriginal?.exists || !pendingSource && (sourceOriginal.planId || !sourceOriginal.base?.stateRevision) || getPublishedEditLayoutId() !== sourceLayout.id
         || sourceOriginal.binding.actorId !== String(currentUser?.id || "")
         || sourceLayout !== layout && sourceOriginal.binding.listId === original.binding.listId) throw Error("Сначала дождитесь подтверждения исходного шаблона.");
@@ -10841,6 +10854,7 @@ async function prepareCausalAdminPlacementCopy(request) {
     }
     initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true));
     snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)); guard();
+    await verifyPendingTarget();
     planningState = state;
     if (personalSource) {
       sourcePrepared = await apiFetch("/bike-packing/admin/template-operations/prepare", { method: "POST",
@@ -10859,7 +10873,7 @@ async function prepareCausalAdminPlacementCopy(request) {
         }
         planningState[type][id] = clone(row);
       }
-    } else if (pendingSource) {
+    } else if (pendingSource && sourceLayout !== layout) {
       const plans = adminTemplatePlansFor(sourceOriginal.binding, sourceLayout.id);
       const saved = await plans.read(sourceOriginal.planId); guard();
       const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
@@ -10901,6 +10915,7 @@ async function prepareCausalAdminPlacementCopy(request) {
     const priorUpdates = [];
     try {
       if (used) return false; guard();
+      await verifyPendingTarget();
       prepared = mode === "copy" ? copyPrepared : mode === "link" ? linked : mode === "missing" ? missingPrepared : null;
       if (!prepared || !capacity()) return false;
       if (prepared.entries.some(({ targetId }) => state.items[targetId] || state.containers[targetId] || state.layouts[targetId])) throw Error("Идентификатор копии уже занят.");
@@ -11086,14 +11101,14 @@ function adminTemplateEditorSnapshot(layoutId, options = {}) {
       description: String(layout.note || "").trim(), language } };
   });
 }
-function adminTemplatePlansFor(binding, layoutId) {
-  return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client: adminTemplateClient(binding, layoutId),
-    getContext: () => adminTemplateOperationContext(binding, layoutId),
-    shouldCancel: id => adminTemplateRecoveryFor(binding, layoutId).requiresCancellation(id) });
+function adminTemplatePlansFor(binding, layoutId, preparing = false) {
+  return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client: adminTemplateClient(binding, layoutId, preparing),
+    getContext: () => adminTemplateOperationContext(binding, layoutId, preparing),
+    shouldCancel: id => adminTemplateRecoveryFor(binding, layoutId, preparing).requiresCancellation(id) });
 }
-function adminTemplateRecoveryFor(binding, layoutId) {
-  return createAdminTemplateRecovery({ binding, enabled: adminTemplateUiEnabled(), plans: adminTemplatePlansFor(binding, layoutId),
-    client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) });
+function adminTemplateRecoveryFor(binding, layoutId, preparing = false) {
+  return createAdminTemplateRecovery({ binding, enabled: adminTemplateUiEnabled(), plans: adminTemplatePlansFor(binding, layoutId, preparing),
+    client: adminTemplateClient(binding, layoutId, preparing), getContext: () => adminTemplateOperationContext(binding, layoutId, preparing) });
 }
 function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId) {
   return createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, enabled: adminTemplateUiEnabled(),
