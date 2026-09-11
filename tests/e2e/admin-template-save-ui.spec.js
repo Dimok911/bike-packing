@@ -28,9 +28,33 @@ test.beforeAll(() => {
     { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
 });
-test.beforeEach(async ({ page }) => { page.adminBrowserDiagnostics = trackBrowserLifecycle(page); });
+test.beforeEach(async ({ page }) => {
+  page.adminBrowserDiagnostics = trackBrowserLifecycle(page);
+  if (process.env.BIKE_ADMIN_LIFECYCLE_DIAGNOSTIC === "1") {
+    page.adminLifecycleDiagnostics = [];
+    page.on("console", message => { if (message.text().startsWith("ADMIN_LIFECYCLE ")) page.adminLifecycleDiagnostics.push(message.text()); });
+    await page.addInitScript(() => {
+      const report = data => console.log("ADMIN_LIFECYCLE " + JSON.stringify({ time: performance.now(), ...data }));
+      for (const type of ["beforeunload", "pagehide", "pageshow"]) addEventListener(type, event => report({ event: type, persisted: event.persisted }));
+      const original = globalThis.fetch; let serial = 0;
+      globalThis.fetch = async (url, options) => {
+        if (!String(url).includes("/auth/me")) return original(url, options);
+        const id = ++serial, signal = options?.signal;
+        const abort = () => report({ id, event: "abort", aborted: signal.aborted });
+        signal?.addEventListener("abort", abort, { once: true });
+        report({ id, event: "fetch", hasSignal: Boolean(signal), aborted: signal?.aborted });
+        try { const response = await original(url, options); report({ id, event: "response", status: response.status }); return response; }
+        catch (error) { report({ id, event: "reject", aborted: signal?.aborted, name: error.name, message: error.message }); throw error; }
+        finally { signal?.removeEventListener("abort", abort); }
+      };
+    });
+  }
+});
 test.afterEach(async ({ page }, info) => {
+  if (page.adminLifecycleDiagnostics) await info.attach("admin-network-lifecycle", {
+    body: page.adminLifecycleDiagnostics.join("\n"), contentType: "text/plain" });
   if (info.status !== info.expectedStatus) {
+    if (page.adminLifecycleDiagnostics) console.log(page.adminLifecycleDiagnostics.join("\n"));
     const diagnostics = await page.evaluate(() => ({ helper: Boolean(window.__adminUiTest), user: window.__adminUiTest?.user()?.id,
       scope: window.__adminUiTest?.scope(), layouts: window.__adminUiTest?.state()?.layouts,
       privateMeta: window.__adminUiTest?.privateMeta(), privatePayload: window.__adminUiTest?.privatePayload(), captureCalls: globalThis.__adminUiCaptureCalls,
@@ -2514,6 +2538,132 @@ for (const shared of [false, true]) for (const type of ["item", "container"])
   });
 }
 
+const pendingPlacementCases = [];
+for (const shared of [false, true]) {
+  for (const shape of ["item", "container", "group-same", "group-different"])
+    for (const mode of ["data", "metadata"]) pendingPlacementCases.push({ shared, shape, mode });
+  for (const mode of ["lost-parent", "plan-quota", "mirror-quota", "stop-parent"])
+    pendingPlacementCases.push({ shared, shape: "group-different", mode });
+}
+for (const { shared, shape, mode } of pendingPlacementCases) {
+  test(`pending admin placement ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true,
+      placementMove: shape === "group-same" ? shape : true });
+    server.blockBusiness = true;
+    const itemName = mode === "metadata" ? "Насос шаблона" : "Ожидающее имя перед размещением";
+    if (mode === "metadata") await capturePendingSourceLabel(page, "Ожидающее название размещения");
+    else await editItem(page, itemName, "Насос шаблона");
+    await expect(page.locator("body")).toContainText(mode === "metadata" ? "Не удалось сохранить метку шаблона:" : "Сохранение шаблона приостановлено:");
+    const before = await page.evaluate(({ shape, itemName }) => {
+      const current = __adminUiTest.state(), layout = current.layouts[current.activeLayoutId];
+      const find = (collection, name) => Object.values(current[collection]).find(row => row.publicCatalogLayoutId === layout.id && row.name === name).id;
+      const parentPlan = JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:")
+        && JSON.parse(value).plan.id === layout.adminCausalSource.planId)[1]).plan;
+      return { layoutId: layout.id, parentPlan, parentId: layout.adminCausalSource.base.operationId,
+        sourceId: shape === "container" ? find("containers", "Карман шаблона") : find("items", itemName),
+        targetId: shape.startsWith("group") ? find("items", "Вторая вещь шаблона") : find("containers", "Вторая сумка шаблона"),
+        snapshot: __adminUiTest.snapshot(layout.id), ids: [Object.keys(current.containers).sort(), Object.keys(current.items).sort()] };
+    }, { shape, itemName });
+    if (mode === "stop-parent") {
+      await page.locator("#syncBtn").click();
+      const recovery = page.locator("#adminTemplateRecoveryDialog");
+      await recovery.locator("[data-admin-stop]").click(); await page.locator("#confirmOkBtn").click();
+      await expect(recovery).toContainText("Отправка остановлена");
+      await recovery.locator("[data-admin-recovery-close]").click();
+    }
+    await page.locator('[data-view="packing"]').click();
+    let finish;
+    if (shape.startsWith("group")) finish = await beginAdminItemGroup(page, before.sourceId, before.targetId);
+    else {
+      const handle = page.locator(shape === "item" ? `#packingView [data-item-drag="${before.sourceId}"]`
+        : `#packingView [data-subcontainer-id="${before.sourceId}"] .subcontainer-title`).first();
+      const transfer = await page.evaluateHandle(() => new DataTransfer());
+      await handle.dispatchEvent("dragstart", { dataTransfer: transfer });
+      const zone = page.locator(`#packingView .dropzone[data-container-id="${before.targetId}"]`).first(); await zone.scrollIntoViewIfNeeded();
+      const box = await zone.boundingBox(), point = { clientX: box.x + box.width / 2, clientY: box.y + box.height - 2, dataTransfer: transfer };
+      await zone.dispatchEvent("dragover", point); await expect(zone.locator(":scope > .drop-placeholder")).toHaveCount(1);
+      finish = async () => { await zone.dispatchEvent("drop", point); await transfer.dispose(); };
+    }
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && key.startsWith("bike-packing-prototype-state-v1") && value.includes('"adminCausalCopyPlan"'))
+          throw new DOMException("Pending placement quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    await finish();
+    const snapshot = () => page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    if (["mirror-quota", "stop-parent"].includes(mode)) {
+      await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Pending placement quota" : "Сохранённая цепочка шаблона требует сверки");
+      expect(await snapshot()).toEqual(before.snapshot);
+      expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers).sort(), Object.keys(__adminUiTest.state().items).sort()])).toEqual(before.ids);
+      expect(await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).toBe(before.parentPlan.id);
+      expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true); expect(server.errors).toEqual([]); return;
+    }
+    let plan;
+    if (mode === "plan-quota") {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), before.layoutId)).toBe(true);
+      plan = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan, before.layoutId);
+    } else {
+      await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).not.toBe(before.parentPlan.id);
+      plan = await page.evaluate(id => {
+        const currentId = __adminUiTest.state().layouts[id].adminCausalSource.planId;
+        return JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan.id === currentId)[1]).plan;
+      }, before.layoutId);
+    }
+    expect(plan.operations[0].body.base).toEqual({ operationId: before.parentId });
+    expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true);
+    const chosen = await snapshot();
+    server.blockBusiness = false; server.lose = mode === "lost-parent";
+    await page.reload(); await openEditorForTarget(page, shared);
+    if (mode === "lost-parent") {
+      await expect.poll(() => server.hidden).toBe(true);
+      expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true);
+      server.lose = false; server.hidden = false; await page.reload(); await openEditorForTarget(page, shared);
+    }
+    await confirmedRevision(page, 9);
+    const childPosts = server.posts.filter(post => post.operationId === plan.id);
+    expect(childPosts).toHaveLength(1); expect(childPosts[0].body).toEqual(plan.operations[0].body);
+    expect(server.posts.filter(post => post.operationId === before.parentId).every(post => canonicalTemplateJson(post.body)
+      === canonicalTemplateJson(before.parentPlan.operations.at(-1).body))).toBe(true);
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+    const original = before.snapshot.payload, prior = Object.values(original.layouts)[0].arrangement;
+    const arrangement = Object.values(server.payload.layouts)[0].arrangement, expected = structuredClone(prior);
+    const item = Object.values(server.payload.items).find(row => row.name === itemName);
+    const source = shape === "container" ? Object.values(server.payload.containers).find(row => row.name === "Карман шаблона") : item;
+    const target = Object.values(shape.startsWith("group") ? server.payload.items : server.payload.containers)
+      .find(row => row.name === (shape.startsWith("group") ? "Вторая вещь шаблона" : "Вторая сумка шаблона"));
+    const groupId = `container-template-group-${plan.id}`;
+    if (shape.startsWith("group")) {
+      const parentId = prior.items[target.id], oldParentId = prior.items[source.id];
+      for (const id of new Set([parentId, oldParentId])) {
+        expected.containers[id].itemIds = expected.containers[id].itemIds.filter(id => ![source.id, target.id].includes(id));
+        expected.containers[id].order = expected.containers[id].order.filter(row => row.type !== "item" || ![source.id, target.id].includes(row.id));
+      }
+      expected.containers[groupId] = { parentId, childIds: [], itemIds: [target.id, source.id], order: [{ type: "item", id: target.id }, { type: "item", id: source.id }] };
+      expected.containers[parentId].childIds.push(groupId); expected.containers[parentId].order.push({ type: "container", id: groupId });
+      expected.items[source.id] = groupId; expected.items[target.id] = groupId;
+      delete expected.packedItems[source.id]; delete expected.packedItems[target.id];
+    } else {
+      const oldParentId = shape === "item" ? prior.items[source.id] : prior.containers[source.id].parentId;
+      const membership = shape === "item" ? "itemIds" : "childIds", oldParent = expected.containers[oldParentId], nextParent = expected.containers[target.id];
+      oldParent[membership] = oldParent[membership].filter(id => id !== source.id); oldParent.order = oldParent.order.filter(row => row.type !== shape || row.id !== source.id);
+      nextParent[membership].push(source.id); nextParent.order.push({ type: shape, id: source.id });
+      if (shape === "item") { expected.items[source.id] = target.id; delete expected.packedItems[source.id]; }
+      else expected.containers[source.id].parentId = target.id;
+    }
+    expect(arrangement).toEqual(expected); expect(arrangement.itemQuantities).toEqual(prior.itemQuantities);
+    expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(original.items).sort());
+    expect(Object.keys(server.payload.containers).sort()).toEqual([...Object.keys(original.containers), ...(shape.startsWith("group") ? [groupId] : [])].sort());
+    for (const [id, row] of Object.entries(original.items)) expect(server.payload.items[id]).toEqual({ ...row, containerId: expected.items[id] ?? row.containerId });
+    await editItem(page, "Правка после ожидающего размещения", itemName, before.layoutId); await confirmedRevision(page, 10);
+    expect(server.posts.at(-1).body.base).toEqual({ stateRevision: 9 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement); expect(server.errors).toEqual([]);
+  });
+}
+
 const pendingCatalogCases = [];
 for (const shared of [false, true]) {
   for (const shape of ["item", "bag", "bulk-item", "bulk-bag", "root", "nested"]) pendingCatalogCases.push({ shared, shape, mode: "confirmed" });
@@ -3835,3 +3985,115 @@ for (const shared of [false, true]) test(`hydrating a ${shared ? "shared" : "dem
   expect(Object.values(state.payload.items).some(item => item.name === "Изменение загруженного черновика")).toBe(true);
   expect(state.errors).toEqual([]);
 });
+
+const pendingRemovalCases = [];
+for (const shared of [false, true]) {
+  for (const shape of ["unplace-item", "unplace-root", "delete-item", "delete-root"]) pendingRemovalCases.push({ shared, shape, mode: "data" });
+  for (const mode of ["metadata", "lost-parent", "plan-quota", "mirror-quota", "cancel", "changed-target"])
+    pendingRemovalCases.push({ shared, shape: "delete-root", mode });
+  pendingRemovalCases.push({ shared, shape: "delete-item", mode: "lost-parent" });
+}
+for (const { shared, shape, mode } of pendingRemovalCases) {
+  test(`pending admin removal ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, hydrate: true, withContainers: true, catalogPair: true, placementMove: true });
+    server.blockBusiness = true;
+    const itemName = mode === "metadata" ? "Насос шаблона" : "Правка перед удалением";
+    if (mode === "metadata") await capturePendingSourceLabel(page, "Метка перед удалением");
+    else await editItem(page, itemName, "Насос шаблона");
+    await expect(page.locator("body")).toContainText(mode === "metadata" ? "Не удалось сохранить метку шаблона:" : "Сохранение шаблона приостановлено:");
+    const itemOnly = shape.endsWith("item"), deletion = shape.startsWith("delete");
+    const before = await page.evaluate(({ itemOnly, itemName }) => {
+      const current = __adminUiTest.state(), layout = current.layouts[current.activeLayoutId];
+      const source = Object.values(itemOnly ? current.items : current.containers).find(row => row.publicCatalogLayoutId === layout.id
+        && row.name === (itemOnly ? itemName : "Сумка шаблона"));
+      const parent = JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:")
+        && JSON.parse(value).plan.id === layout.adminCausalSource.planId)[1]).plan;
+      return { layoutId: layout.id, sourceId: source.id, parent, parentId: layout.adminCausalSource.base.operationId,
+        snapshot: __adminUiTest.snapshot(layout.id), ids: [Object.keys(current.containers).sort(), Object.keys(current.items).sort()] };
+    }, { itemOnly, itemName });
+    await page.evaluate(({ id, itemOnly }) => itemOnly ? __adminUiTest.openItem(id) : __adminUiTest.openContainer(id), { id: before.sourceId, itemOnly });
+    const button = itemOnly ? deletion ? "#itemDeleteForeverBtn" : "#itemRemoveFromLayoutBtn"
+      : deletion ? "#rootContainerDeleteForeverBtn" : "#rootContainerRemoveFromLayoutBtn";
+    await page.locator(button).click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+    if (mode === "changed-target") await page.evaluate(id => {
+      const row = Object.values(__adminUiTest.state().items).find(row => row.publicCatalogLayoutId === id && row.name === "Вторая вещь шаблона"); row.weight = 987;
+    }, before.layoutId);
+    const snapshot = () => page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    const atConfirm = await snapshot();
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && key.startsWith("bike-packing-prototype-state-v1") && value.includes('"adminCausalCopyPlan"'))
+          throw new DOMException("Pending removal quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    if (["cancel", "changed-target", "mirror-quota"].includes(mode)) {
+      if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Pending removal quota" : "Шаблон изменился");
+      await expect(page.locator(itemOnly ? "#itemDialog" : "#rootContainerDialog")).toBeVisible();
+      expect(await snapshot()).toEqual(atConfirm);
+      expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers).sort(), Object.keys(__adminUiTest.state().items).sort()])).toEqual(before.ids);
+      expect(await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).toBe(before.parent.id);
+      expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true); expect(server.errors).toEqual([]); return;
+    }
+    let plan;
+    if (mode === "plan-quota") {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), before.layoutId)).toBe(true);
+      plan = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan, before.layoutId);
+    } else {
+      await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).not.toBe(before.parent.id);
+      plan = await page.evaluate(id => {
+        const planId = __adminUiTest.state().layouts[id].adminCausalSource.planId;
+        return JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan.id === planId)[1]).plan;
+      }, before.layoutId);
+    }
+    await expect(page.locator(itemOnly ? "#itemDialog" : "#rootContainerDialog")).not.toBeVisible();
+    expect(plan.operations[0].body.base).toEqual({ operationId: before.parentId });
+    expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true);
+    const chosen = await snapshot();
+    server.blockBusiness = false; server.lose = mode === "lost-parent";
+    await page.reload(); await openEditorForTarget(page, shared);
+    if (mode === "lost-parent") {
+      await expect.poll(() => server.hidden).toBe(true);
+      expect(server.posts.every(post => post.operationId === before.parentId)).toBe(true);
+      server.lose = false; server.hidden = false; await page.reload(); await openEditorForTarget(page, shared);
+    }
+    await confirmedRevision(page, 9);
+    const childPosts = server.posts.filter(post => post.operationId === plan.id);
+    expect(childPosts).toHaveLength(1); expect(childPosts[0].body).toEqual(plan.operations[0].body);
+    expect(server.posts.filter(post => post.operationId === before.parentId).every(post => canonicalTemplateJson(post.body)
+      === canonicalTemplateJson(before.parent.operations.at(-1).body))).toBe(true);
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+    const original = before.snapshot.payload, expectedItems = structuredClone(original.items), expectedContainers = structuredClone(original.containers);
+    const prior = Object.values(original.layouts)[0].arrangement, expected = structuredClone(prior);
+    const source = Object.values(itemOnly ? original.items : original.containers).find(row => row.name === (itemOnly ? itemName : "Сумка шаблона"));
+    const containers = new Set(), items = new Set();
+    const walk = id => { containers.add(id); prior.containers[id].itemIds.forEach(id => items.add(id)); prior.containers[id].childIds.forEach(walk); };
+    if (itemOnly) items.add(source.id); else walk(source.id);
+    for (const id of items) {
+      for (const field of ["items", "itemQuantities", "packedItems"]) delete expected[field][id];
+      if (deletion && itemOnly) delete expectedItems[id]; else expectedItems[id].containerId = "";
+    }
+    expected.rootContainerIds = expected.rootContainerIds.filter(id => !containers.has(id));
+    for (const id of containers) {
+      delete expected.containers[id];
+      if (deletion && id === source.id || !prior.rootContainerIds.includes(id) && original.containers[id].nestable !== true) delete expectedContainers[id];
+      else Object.assign(expectedContainers[id], { parentId: null, childIds: [], itemIds: [], order: [] });
+    }
+    for (const row of [...Object.values(expectedContainers), ...Object.values(expected.containers)]) {
+      row.itemIds = row.itemIds.filter(id => !items.has(id)); row.childIds = row.childIds.filter(id => !containers.has(id));
+      row.order = row.order.filter(row => row.type === "item" ? !items.has(row.id) : !containers.has(row.id));
+    }
+    expect(server.payload.items).toEqual(expectedItems); expect(server.payload.containers).toEqual(expectedContainers);
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(expected);
+    await editItem(page, "Правка после ожидающего удаления", "Вторая вещь шаблона", before.layoutId); await confirmedRevision(page, 10);
+    expect(server.posts.at(-1).body.base).toEqual({ stateRevision: 9 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(expected);
+    await page.reload(); await openEditorForTarget(page, shared); await confirmedRevision(page, 10);
+    expect(server.posts.filter(post => post.operationId === plan.id)).toHaveLength(1);
+    expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(expectedItems).sort());
+    expect(Object.keys(server.payload.containers).sort()).toEqual(Object.keys(expectedContainers).sort()); expect(server.errors).toEqual([]);
+  });
+}
