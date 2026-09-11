@@ -65,6 +65,7 @@ import { prepareAdminTemplateTreeCopy } from "./src/sync/admin-template-tree-cop
 import { prepareAdminTemplateItemCopy } from "./src/sync/admin-template-item-copy.js";
 import { prepareAdminTemplateItemReplacement } from "./src/sync/admin-template-item-replace.js";
 import { prepareAdminTemplateContainerReplacement } from "./src/sync/admin-template-container-replace.js";
+import { prepareAdminTemplatePlacementMove } from "./src/sync/admin-template-placement-move.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10666,7 +10667,7 @@ async function prepareCausalAdminPlacementCopy(request) {
       || state.layouts[sourceLayout.id] !== sourceLayout || sourceLayout.adminCausalCopyPlan || sourceLayout.templateDraftSyncPending
       || coordinator.hasPendingCapture(sourceLayout.id) || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(sourceOriginal)
       || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot
-      || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error("Шаблон изменился. Выберите сумку для копирования заново.");
+      || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error("Шаблон изменился. Повторите действие.");
   };
   const capacity = () => ["items", "containers"].every(type => {
     const count = prepared.entries.filter(entry => entry.type === type).length;
@@ -10693,12 +10694,13 @@ async function prepareCausalAdminPlacementCopy(request) {
     operationId = crypto.randomUUID(); changedAt = nowIso();
     const prepareCopy = request.type === "item" ? prepareAdminTemplateItemCopy
       : request.type === "item-replace" ? prepareAdminTemplateItemReplacement
-      : request.type === "container-replace" ? prepareAdminTemplateContainerReplacement : prepareAdminTemplateTreeCopy;
+      : request.type === "container-replace" ? prepareAdminTemplateContainerReplacement
+      : request.type === "placement-move" ? prepareAdminTemplatePlacementMove : prepareAdminTemplateTreeCopy;
     prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = ["item", "item-replace", "container-replace"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = ["item", "item-replace", "container-replace", "placement-move"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }

@@ -1359,10 +1359,12 @@ function applyRootContainerDialogPlacement() {
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
   const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
-  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !pendingCopyTargetContainerSetup
-    && !state.layouts[layoutId]?.arrangement?.containers?.[containerId]) {
-    return prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
-      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: "", targetIndex }).then(async commit => {
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !pendingCopyTargetContainerSetup) {
+    const placement = state.layouts[layoutId]?.arrangement?.containers?.[containerId];
+    const request = placement ? { type: "placement-move", action: placement.parentId ? "lift-container" : "move-root", sourceId: containerId,
+      targetIndex: targetIndex ?? state.layouts[layoutId].rootContainerIds.length } : { mode: "link", rootId: containerId, includeContents: true, targetIndex };
+    return prepareCausalAdminPlacementCopy({ ...request,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: "" }).then(async commit => {
       if (!commit || !await commit()) return false;
       if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
       if (renderAfter) render(); return true;
@@ -1465,7 +1467,7 @@ async function addExistingContainerToContainer(containerId) {
       sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: parentId });
     if (!commit || !await commit()) return;
     placed = true;
-  } else placed = placeExistingContainerInLayout(containerId, parentId, layoutId, { changedAt, renderAfter: false });
+  } else placed = await placeExistingContainerInLayout(containerId, parentId, layoutId, { changedAt, renderAfter: false });
   if (!placed) {
     showToast(localText("Could not add the bag to this layout.", "Не удалось добавить сумку в эту укладку."), "error");
     return;
@@ -5341,6 +5343,11 @@ function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
   const layout = state.layouts?.[layoutId];
   if (!state.items[itemId] || !layout || !state.containers[targetContainerId]) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    if (options.captureScroll !== false) capturePackingScroll();
+    return prepareCausalAdminPlacementCopy({ type: "placement-move", action: "move-item", sourceId: itemId, targetContainerId, targetIndex,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId }).then(async commit => { if (commit && await commit()) { render(); return true; } return false; });
+  }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-item", ids: [itemId], targetContainerId, targetIndex });
   if (prepared === false) return;
   if (prepared) { if (options.captureScroll !== false) capturePackingScroll(); if (prepared()) render(); return; }
@@ -5359,6 +5366,11 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
   const layout = state.layouts?.[layoutId];
   if (!layout || !state.containers[containerId] || !state.containers[targetParentId]) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    capturePackingScroll();
+    return prepareCausalAdminPlacementCopy({ type: "placement-move", action: "move-container", sourceId: containerId, targetContainerId: targetParentId, targetIndex,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId }).then(async commit => { if (commit && await commit()) { render(); return true; } return false; });
+  }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-container", ids: [containerId], targetContainerId: targetParentId, targetIndex });
   if (prepared === false) return;
   if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
@@ -5470,8 +5482,11 @@ function placeExistingContainerInLayout(containerId, parentId, layoutId = state.
   if (parentId && container.nestable !== true) return false;
   if (!parentId && !currentParentId) return false;
   if (warnLockedLayoutMutation(layoutId)) return false;
-  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !layout.arrangement?.containers?.[containerId]) {
-    return prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    const request = layout.arrangement?.containers?.[containerId]
+      ? { type: "placement-move", action: parentId ? "move-container" : "lift-container", sourceId: containerId, targetContainerId: parentId }
+      : { mode: "link", rootId: containerId, includeContents: true };
+    return prepareCausalAdminPlacementCopy({ ...request,
       sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: parentId, targetIndex }).then(async commit => {
       if (!commit || !await commit()) return false;
       if (renderAfter) render(); return true;
@@ -5956,6 +5971,11 @@ function moveRootColumn(containerId, targetIndex) {
   const layoutId = getPublishedEditLayoutId();
   if (!state.layouts[layoutId]?.rootContainerIds?.includes(containerId)) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    capturePackingScroll();
+    return prepareCausalAdminPlacementCopy({ type: "placement-move", action: "move-root", sourceId: containerId, targetIndex,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId }).then(async commit => { if (commit && await commit()) { render(); return true; } return false; });
+  }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-root", ids: [containerId], targetIndex });
   if (prepared === false) return;
   if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
