@@ -33,9 +33,15 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   assert.match(remoteScript, /mv "\$stage" "\$live"/);
   assert.match(remoteScript, /rm -rf -- "\$assets_backup" "\$migration_old" "\$upload"/);
   assert.match(remoteScript, /abort\)[\s\S]*rm -rf -- "\$stage" "\$assets_stage"/);
+  assert.match(script, /changedShared.Count -gt 0/);
+  assert.match(script, /Invoke-SshChecked @\("code-stage"/);
+  assert.match(script, /Invoke-SshChecked @\("code-activate"/);
+  assert.match(script, /Invoke-SshChecked @\("code-rollback"/);
+  const codeMode = remoteScript.slice(remoteScript.indexOf("  code-stage)"), remoteScript.indexOf("  stage)"));
+  assert.doesNotMatch(codeMode, /mv "\$shared_assets"|unlink_changed "\$assets_stage"|rm -rf/);
   assert.match(script, /Experiment deployment failed; the previous release was restored/);
   assert.match(script, /\$sharedPrefix\*/);
-  assert.match(script, /\$ApiCapabilitiesUrl\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/capabilities"/);
+  assert.match(script, /\$ApiCapabilitiesUrl\s*=\s*"https:\/\/api\.vniipo-help\.ru\/experiment\/letters-vniipo\/api\/bike-packing\/capabilities"/);
   assert.match(script, /function Assert-ExperimentApiContract/);
   assert.match(script, /requiredApiCompatibilityVersion/);
   assert.match(script, /requiredApiCapabilities/);

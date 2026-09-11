@@ -1,3 +1,4 @@
+import { isExperimentHost, migrateExperimentSession, clearLegacyExperimentCookie } from "./src/sync/experiment-shared-auth.js";
 import {
   STORAGE_KEY,
   APP_VERSION,
@@ -3496,6 +3497,7 @@ async function init() {
   }));
   refs.forceOfflineBtn.addEventListener("click", toggleForcedOfflineMode);
   refs.authForm.addEventListener("submit", submitAuthDialog);
+  document.getElementById("authMigrateExperimentBtn")?.addEventListener("click", transferExperimentSignIn);
   refs.authConfirmTitle?.addEventListener("click", () => revealAuthMagicLinkConfirmation());
   refs.authConfirmBtn?.addEventListener("click", confirmAuthMagicLink);
   refs.authMagicLink?.addEventListener("keydown", (event) => {
@@ -6615,13 +6617,13 @@ async function handleSignOutButton() {
     cancelText: localText("Stay signed in", "Остаться")
   });
   if (!confirmed) return;
-  if (currentUser) {
-    try {
-      updateSyncUi(localText("Signing out...", "Выходим..."));
-      await apiFetch("/auth/logout", { method: "POST" });
-    } catch {
-      // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
-    }
+  try {
+    updateSyncUi(localText("Signing out...", "Выходим..."));
+    await apiFetch("/auth/logout", { method: "POST" });
+    await clearLegacyExperimentCookie().catch(() => null);
+  } catch {
+    showToast(localText("Sign-out failed. Check your connection and try again.", "Не удалось выйти. Проверьте соединение и повторите."), "error");
+    return;
   }
   currentUser = null;
   clearOfflineRememberedSession();
@@ -6710,6 +6712,14 @@ function openAuthDialog() {
   const authTitle = refs.authDialog?.querySelector("h2");
   if (authTitle) authTitle.textContent = t("auth.dialogTitle");
   refs.authRequestNote.textContent = t("auth.requestNote");
+  const migration = document.getElementById("authMigrateExperiment");
+  if (migration) {
+    migration.hidden = !isExperimentHost();
+    migration.querySelector("p").textContent = localText(
+      "Experiment now uses the shared VNIIPO sign-in. Transfer your previous sign-in or request a new email link. Your layouts and photos are saved.",
+      "Experiment теперь использует общий вход VNIIPO. Перенесите прежний вход или запросите новую ссылку по почте. Ваши укладки и фотографии сохранены.");
+    migration.querySelector("button").textContent = localText("Transfer previous Experiment sign-in", "Перенести прежний вход Experiment");
+  }
   refs.authEmailLabel.textContent = t("auth.emailLabel");
   refs.authConfirmTitle.textContent = t("auth.confirmTitle");
   refs.authConfirmTitle.hidden = false;
@@ -6732,6 +6742,30 @@ function openAuthDialog() {
     refs.authEmail.focus();
     refs.authEmail.select();
   }, 0);
+}
+
+async function transferExperimentSignIn() {
+  if (isForcedOffline()) return;
+  const button = document.getElementById("authMigrateExperimentBtn");
+  button.disabled = true;
+  refs.authDialogStatus.className = "dialog-status";
+  refs.authDialogStatus.textContent = localText("Checking previous sign-in...", "Проверяем прежний вход...");
+  try {
+    const result = await migrateExperimentSession({ explicitIntent: true });
+    if (!result.handled) {
+      refs.authDialogStatus.textContent = localText(
+        "Previous sign-in could not be transferred. Request a new email link below. Your data is saved.",
+        "Прежний вход не удалось перенести. Запросите новую ссылку по почте ниже. Ваши данные сохранены.");
+      return;
+    }
+    setExplicitlySignedOut(false);
+    refs.authDialog.close();
+    await checkAuthAndLoad();
+  } catch {
+    refs.authDialogStatus.textContent = localText("Server unavailable. Try again later.", "Сервер недоступен. Попробуйте позже.");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function submitAuthDialog(event) {

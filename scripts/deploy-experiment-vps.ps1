@@ -7,7 +7,7 @@ param(
   [string]$ArtifactRoot = "",
   [string]$IdentityFile = "",
   [string]$PublicUrl = "https://experiment.vniipo-help.ru/",
-  [string]$ApiCapabilitiesUrl = "https://experiment.vniipo-help.ru/letters-vniipo/api/bike-packing/capabilities"
+  [string]$ApiCapabilitiesUrl = "https://api.vniipo-help.ru/experiment/letters-vniipo/api/bike-packing/capabilities"
 )
 
 Set-StrictMode -Version Latest
@@ -169,6 +169,13 @@ try {
   $reusedEntries = @($entries | Where-Object { $remoteHashes.ContainsKey($_.Path) -and $remoteHashes[$_.Path] -eq $_.Hash })
   $changedFrontend = @($changedEntries | Where-Object Path -notlike "$sharedPrefix*")
   $changedShared = @($changedEntries | Where-Object Path -like "$sharedPrefix*")
+  if ($changedShared.Count -gt 0) {
+    throw "Application releases reuse published assets. Changed/missing assets require a separate explicit image release: $($changedShared.Path -join ', ')"
+  }
+  $evidenceRoot = Join-Path $projectRoot "ftp-upload\release-evidence\$releaseId"
+  New-Item -Path $evidenceRoot -ItemType Directory -Force | Out-Null
+  $changedFrontend | Select-Object Path, Hash, Size | ConvertTo-Json -Depth 3 |
+    Set-Content -LiteralPath (Join-Path $evidenceRoot "transfer.json") -Encoding utf8
 
   Write-Utf8Lines (Join-Path $temporaryRoot "all.sha256") @($entries | ForEach-Object { "$($_.Hash)  $($_.Path)" })
   Write-Utf8Lines (Join-Path $temporaryRoot "all.paths") @($entries.Path)
@@ -191,8 +198,8 @@ try {
   $frontendBytes = ($frontendEntries | Measure-Object Size -Sum).Sum
   $sharedBytes = ($sharedEntries | Measure-Object Size -Sum).Sum
   $allBytes = ($entries | Measure-Object Size -Sum).Sum
-  Invoke-SshChecked @("stage", $releaseId, "$($frontendEntries.Count)", "$frontendBytes", "$($sharedEntries.Count)", "$sharedBytes")
-  Invoke-SshChecked @("activate", $releaseId, "$($entries.Count)", "$allBytes")
+  Invoke-SshChecked @("code-stage", $releaseId, "$($frontendEntries.Count)", "$frontendBytes")
+  Invoke-SshChecked @("code-activate", $releaseId, "$($frontendEntries.Count)", "$frontendBytes")
   $activated = $true
 
   $publicDir = Join-Path $temporaryRoot "https"
@@ -211,26 +218,26 @@ try {
   $indexName = Https-TemporaryFileName "index.html"
   $publicHtml = Get-Content -LiteralPath (Join-Path $publicDir $indexName) -Raw
   if ($publicHtml -notmatch ('app\.js\?v=' + [regex]::Escape($versionNumber))) { throw "Public Experiment exposes the wrong version." }
-  Invoke-SshChecked @("cleanup", $releaseId)
+  Copy-Item -LiteralPath (Join-Path $temporaryRoot "frontend.sha256") -Destination $evidenceRoot
 }
 catch {
   $deploymentError = $_
   if ($activated) {
     try {
-      Invoke-SshChecked @("rollback", $releaseId)
+      Invoke-SshChecked @("code-rollback", $releaseId)
       $rollbackDir = Join-Path $temporaryRoot "rollback"
       New-Item -Path $rollbackDir -ItemType Directory -Force | Out-Null
       foreach ($relative in @("index.html", "app.js", "styles.css", "sw.js")) {
         Receive-HttpsFile $relative (Join-Path $rollbackDir $relative) "rollback-$timestamp"
       }
-      Invoke-SshChecked @("cleanup-rollback", $releaseId)
+      # Keep remote upload and both releases for recovery and audit.
       $rollbackVerified = $true
     } catch {
       throw "Experiment deployment failed and automatic rollback could not be verified. Original error: $deploymentError"
     }
   }
   if (-not $activated) {
-    try { Invoke-SshChecked @("abort", $releaseId) } catch { }
+    # No live paths were activated; retain staging for inspection.
   }
   if ($rollbackVerified) { throw "Experiment deployment failed; the previous release was restored. Original error: $deploymentError" }
   throw $deploymentError
