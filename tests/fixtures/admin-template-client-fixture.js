@@ -21,6 +21,7 @@ export function adminClientFixture() {
     else if (url.endsWith("/authorization")) data = { ok: true, authorization: { version: 1, role: state.admin ? "admin" : "user", capabilities: state.admin ? ["templates:write"] : [] } };
     else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1", ...(state.copyCapability ? ["adminTemplateCopyV1"] : []),
       ...(state.sourceSaveCapability ? ["adminTemplateSourceSaveV1"] : []),
+      ...(state.pendingSourceCapability ? ["adminTemplatePendingSourceV1"] : []),
       ...(state.personalSourceCapability ? ["adminTemplatePersonalSourceSaveV1"] : [])] : [] };
     else if (options.method === "POST") {
       const input = JSON.parse(options.body), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input });
@@ -33,6 +34,11 @@ export function adminClientFixture() {
         receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(bound)).digest("hex"), state: cancel ? "rejected" : "committed" },
           result: { status: cancel ? 409 : 200, payload: cancel ? { ok: false, code: "operation_cancelled",
             cancellation: { version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } : payload } });
+      }
+      if (state.pendingSource && !url.endsWith("/cancel")) {
+        const committed = receipts.get(id);
+        receipts.set(id, { operation: { ...committed.operation, state: "waiting" }, result: null,
+          waiting: { code: "template_dependency_not_committed", operationIds: [body.source.base.operationId], retrySameOperation: true } });
       }
       data = { ok: true, ...receipts.get(id) }; state.afterPost?.(); if (state.lose) throw Error("Lost ACK");
     } else data = { ok: true, ...(!state.hidden && receipts.get(url.split("/").at(-1)) || { operation: { id: url.split("/").at(-1), state: "unknown" } }) };

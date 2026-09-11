@@ -110,3 +110,40 @@ test("personal source needs explicit server capability; terminal replay works af
   assert.deepEqual(await f.make().client.run(action.operationId), receipt);
   assert.equal(f.posts().length, 1); assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.source, action.body.source);
 });
+
+test("pending template source waits for its captured predecessor across reload and cannot accept unrelated waiting receipts", async () => {
+  const f = fixture(), action = f.action(), parentId = randomUUID();
+  action.body.source = { itemKey: "shared-layout:source", listId: "public-shared-layout-source",
+    base: { operationId: parentId }, payloadDigest: "c".repeat(64) };
+  f.state.sourceSaveCapability = true;
+  const client = f.make().client, saved = await client.capture(action);
+  await assert.rejects(client.run(action.operationId)); assert.equal(f.posts().length, 0);
+  f.state.pendingSourceCapability = true; f.state.pendingSource = true;
+  const waiting = await client.run(action.operationId);
+  assert.equal(waiting.operation.state, "waiting");
+  assert.deepEqual(waiting.waiting.operationIds, [parentId]);
+  assert.equal(validateAdminTemplateReceipt(waiting, saved), true);
+  assert.equal(validateAdminTemplateReceipt({ ...waiting, waiting: { ...waiting.waiting, operationIds: [randomUUID()] } }, saved), false);
+  assert.deepEqual(await f.make().client.run(action.operationId), waiting);
+  f.state.pendingSource = false; f.state.lose = true;
+  const receipt = await f.make().client.run(action.operationId);
+  assert.equal(receipt.operation.state, "committed");
+  f.state.pendingSourceCapability = false;
+  assert.deepEqual(await f.make().client.run(action.operationId), receipt);
+  assert.equal(f.posts().length, 3);
+  for (const post of f.posts()) assert.deepEqual(JSON.parse(post.options.body).body.source, action.body.source);
+});
+
+test("pending source cancellation freezes rejection without waiting for the source", async () => {
+  const f = fixture(), action = f.action();
+  action.body.source = { itemKey: "shared-layout:source", listId: "public-shared-layout-source",
+    base: { operationId: randomUUID() }, payloadDigest: "d".repeat(64) };
+  f.state.sourceSaveCapability = true; f.state.pendingSourceCapability = true; f.state.pendingSource = true;
+  const client = f.make().client; await client.capture(action);
+  assert.equal((await client.run(action.operationId)).operation.state, "waiting");
+  const receipt = await f.make().client.cancel(action.operationId);
+  assert.equal(receipt.result.payload.code, "operation_cancelled");
+  f.state.pendingSource = false;
+  assert.deepEqual(await f.make().client.run(action.operationId), receipt);
+  assert.equal(f.posts().length, 2);
+});

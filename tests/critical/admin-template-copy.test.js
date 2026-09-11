@@ -6,6 +6,7 @@ import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../
 import { adminClientFixture } from "../fixtures/admin-template-client-fixture.js";
 import { validateAdminTemplateReceipt } from "../../src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
+import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 
 const metadata = { title: "Copy", description: "Retained", language: "ru" };
 const action = () => ({ operationId: randomUUID(), kind: "template.copy", body: { version: 1, base: null, metadata,
@@ -17,13 +18,45 @@ const snapshot = () => ({ locations: ["Bicycle"], categories: ["Repair"], active
   layouts: { source: { id: "source", name: "Original", rootContainerIds: [], adminCausalSource: { private: true },
     arrangement: { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {} } } } });
 
+test("template source predecessor is immutable and rejects ambiguous, self and malformed bases", () => {
+  const f = adminClientFixture(), input = action(), parentId = randomUUID();
+  input.body.source.base = { operationId: parentId };
+  const frozen = adminTemplateIntent({ ...f.binding, ...input });
+  input.body.source.base.operationId = randomUUID();
+  assert.deepEqual(frozen.body.source.base, { operationId: parentId });
+  for (const base of [{ operationId: input.operationId }, { operationId: "bad" }, { operationId: parentId, stateRevision: 7 }, {}, null]) {
+    assert.throws(() => adminTemplateIntent({ ...f.binding, ...input, body: { ...input.body, source: { ...input.body.source, base } } }));
+  }
+});
+
+test("pending copy source must match the durable data plan and exact displayed snapshot", async () => {
+  const f = adminClientFixture(), client = f.make().client;
+  const plans = createAdminTemplateSavePlans({ binding: f.binding, client, getContext: () => f.context,
+    storage: { get length() { return f.values.size; }, key: i => [...f.values.keys()][i], getItem: key => f.values.get(key) ?? null,
+      setItem: (key, value) => f.values.set(key, value) }, locks: { request: (_key, run) => run() }, enabled: true });
+  const action = f.action(), saved = await plans.capture({ ...action.body, operationId: action.operationId, exists: true, visibility: "private" });
+  const source = { exists: true, binding: f.binding, planId: action.operationId, base: { operationId: action.operationId } };
+  const snapshot = { payload: action.body.payload, metadata: action.body.metadata };
+  const prepared = await pendingAdminTemplateCopySource(source, await plans.read(saved.plan.id), snapshot);
+  assert.deepEqual(prepared.source.base, source.base); assert.deepEqual(prepared.payload, snapshot.payload);
+  assert.equal(prepared.source.payloadDigest, await adminTemplateCopyPayloadDigest(snapshot.payload));
+  snapshot.payload.items.a.name = "A later unsaved edit";
+  assert.equal(prepared.payload.items.a.name, "Captured name");
+  await assert.rejects(pendingAdminTemplateCopySource(source, saved, snapshot));
+  for (const altered of [{ ...saved, cancelRequested: true }, { ...saved, plan: { ...saved.plan, operations: [] } },
+    { ...saved, plan: { ...saved.plan, binding: { ...f.binding, actorId: "other-admin" } } }]) {
+    await assert.rejects(pendingAdminTemplateCopySource(source, altered, { payload: saved.plan.operations[0].body.payload, metadata: action.body.metadata }));
+  }
+  await assert.rejects(pendingAdminTemplateCopySource({ ...source, base: { operationId: randomUUID() } }, saved, snapshot));
+});
+
 test("whole template copy freezes exact confirmed source, new target and private metadata", () => {
   const f = adminClientFixture(), input = action(), frozen = adminTemplateIntent({ ...f.binding, ...input });
   input.body.source.base.stateRevision = 99;
   assert.equal(frozen.body.source.base.stateRevision, 7); assert.equal(frozen.body.base, null);
   for (const patch of [{ base: { stateRevision: 7 } }, { payload: {} }, { published: true },
     { source: { ...frozen.body.source, listId: f.binding.listId } },
-    { source: { ...frozen.body.source, base: { operationId: randomUUID() } } },
+    { source: { ...frozen.body.source, base: { operationId: input.operationId } } },
     { source: { ...frozen.body.source, payloadDigest: "bad" } }]) {
     assert.throws(() => adminTemplateIntent({ ...f.binding, ...input, body: { ...frozen.body, ...patch } }));
   }

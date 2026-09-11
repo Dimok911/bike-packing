@@ -206,6 +206,7 @@ import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-sav
 import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "./src/sync/admin-template-protocol.js";
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans, adminTemplateCopyPlan, adminTemplateSavePlan, adminTemplateSourceSavePlan } from "./src/sync/admin-template-save-plan.js";
+import { pendingAdminTemplateCopySource } from "./src/sync/admin-template-copy-source.js";
 import { adminTemplateCopyPayloadDigest } from "./src/sync/admin-template-copy-projection.js";
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
@@ -10768,7 +10769,7 @@ async function prepareCausalAdminToPersonalCopy(request) {
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
-  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState;
+  let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof, personalSource, personalInitial, planningState, pendingSource = false;
   const privateSnapshot = () => canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true })));
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
@@ -10778,7 +10779,7 @@ async function prepareCausalAdminPlacementCopy(request) {
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id, true)) !== initial
       || state.layouts[sourceLayout.id] !== sourceLayout
       || (personalSource ? hasPendingPersonalSave() || syncMeta.dirty || canonicalTemplateJson(personalSaveContext()) !== personalInitial || privateSnapshot() !== sourceSnapshot
-        : sourceLayout.adminCausalCopyPlan || sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id)
+        : sourceLayout.adminCausalCopyPlan || !pendingSource && (sourceLayout.templateDraftSyncPending || coordinator.hasPendingCapture(sourceLayout.id))
           || canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(sourceOriginal)
           || canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot)
       || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) throw Error(personalSource ? "Шаблон или исходный список изменился. Повторите действие." : "Шаблон изменился. Повторите действие.");
@@ -10801,7 +10802,8 @@ async function prepareCausalAdminPlacementCopy(request) {
         || ![undefined, "item"].includes(request.type) || request.mode && request.mode !== "copy") throw Error("Сначала подтвердите исходную личную укладку.");
       personalInitial = canonicalTemplateJson(personalSaveContext()); sourceSnapshot = privateSnapshot();
     } else {
-      if (!sourceOriginal?.exists || sourceOriginal.planId || !sourceOriginal.base?.stateRevision || getPublishedEditLayoutId() !== sourceLayout.id
+      pendingSource = Boolean(sourceLayout !== layout && sourceOriginal?.planId && sourceOriginal.base?.operationId);
+      if (!sourceOriginal?.exists || !pendingSource && (sourceOriginal.planId || !sourceOriginal.base?.stateRevision) || getPublishedEditLayoutId() !== sourceLayout.id
         || sourceOriginal.binding.actorId !== String(currentUser?.id || "")
         || sourceLayout !== layout && sourceOriginal.binding.listId === original.binding.listId) throw Error("Сначала дождитесь подтверждения исходного шаблона.");
       sourceSnapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id));
@@ -10826,6 +10828,11 @@ async function prepareCausalAdminPlacementCopy(request) {
         }
         planningState[type][id] = clone(row);
       }
+    } else if (pendingSource) {
+      const saved = await adminTemplatePlansFor(sourceOriginal.binding, sourceLayout.id).read(sourceOriginal.planId); guard();
+      const observed = JSON.parse(sourceSnapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
+      const captured = await pendingAdminTemplateCopySource(sourceOriginal, saved, observed); guard();
+      sourcePrepared = { payload: captured.payload }; sourceProof = captured.source;
     } else if (sourceLayout !== layout) {
       sourcePrepared = await adminTemplateClient(sourceOriginal.binding, sourceLayout.id, true).prepare(); guard();
       const verified = adminTemplateEditorSource(sourceOriginal.binding, sourcePrepared);

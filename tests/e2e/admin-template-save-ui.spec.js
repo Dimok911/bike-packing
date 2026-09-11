@@ -178,7 +178,7 @@ async function fixture(page, context, { published = false, shared = false, hydra
       if (["/auth/me", "/auth/experiment-share-session"].includes(suffix)) data = { ok: true, user: { id: "admin-a", email: "admin@example.test" } };
       else if (suffix === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "admin", capabilities: ["templates:write", "templates:history:read", "reports:read", "catalog:review"] } };
       else if (suffix === "/bike-packing/capabilities") data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1", ...(reverseImport ? ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPublicImportV1", "personalCausalPublicEntitiesV1", "personalCausalAdminTemplateImportV1"] : [])] };
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1", "adminTemplatePendingSourceV1", ...(reverseImport ? ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPublicImportV1", "personalCausalPublicEntitiesV1", "personalCausalAdminTemplateImportV1"] : [])] };
       else if (reverseImport && suffix === "/bike-packing/list-operations") {
         const action = request.postDataJSON(), binding = { environment: action.environment, actorId: action.expectedActorId, kind: action.kind, listId: action.listId, body: action.body };
         expect(["list.import", "list.update"]).toContain(action.kind); state.privatePosts.push(action);
@@ -675,10 +675,17 @@ async function crossTemplateFixture(page, context, sourceShared, targetShared, d
     if (input.listId !== target.listId) return route.fallback();
     server.posts.push(input);
     const intent = adminTemplateIntent({ ...input, actorId: input.expectedActorId }), { id, ...binding } = intent, { body, ...identity } = binding;
-    if (!server.receipts.has(id)) {
+    if (!server.receipts.has(id) || server.receipts.get(id).operation.state === "waiting") {
+      const predecessor = body.source?.base?.operationId && server.receipts.get(body.source.base.operationId);
+      if (body.source?.base?.operationId && (!predecessor || predecessor.operation.state === "waiting")) {
+        const waiting = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "waiting" },
+          result: null, waiting: { code: "template_dependency_not_committed", operationIds: [body.source.base.operationId], retrySameOperation: true } };
+        server.receipts.set(id, waiting);
+        return route.fulfill({ headers, json: { ok: true, ...waiting } });
+      }
       const base = body.base.stateRevision ?? server.receipts.get(body.base.operationId)?.result.payload.stateRevision;
       const sourceChanged = body.source && (body.source.listId !== (sourceShared ? "public-shared-layout-ui" : "public-demo-state-ui")
-        || body.source.base.stateRevision !== server.revision || body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(server.payload));
+        || (body.source.base.stateRevision ?? (predecessor?.operation.state === "committed" && predecessor.operation.listId === body.source.listId ? predecessor.result.payload.stateRevision : null)) !== server.revision || body.source.payloadDigest !== await adminTemplateCopyPayloadDigest(server.payload));
       const code = base !== target.revision ? "template_source_changed" : sourceChanged ? "template_copy_source_changed" : null;
       if (!code) {
         target.revision++; if (intent.kind === "template.save") target.payload = structuredClone(body.payload);
@@ -696,6 +703,95 @@ async function crossTemplateFixture(page, context, sourceShared, targetShared, d
   await page.evaluate(target => __adminUiTest.openPrepared(target), sourceShared ? { type: "shared", sharedId: "ui" }
     : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
   return server;
+}
+
+for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) for (const mode of ["confirmed", "lost", "cancel", "changed-source", "plan-quota", "source-conflict"]) {
+  test(`admin pending source ${sourceShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const server = await crossTemplateFixture(page, context, sourceShared, !sourceShared), target = server.target;
+    server.blockBusiness = true;
+    await editItem(page, "Ожидающая правка источника", "Насос шаблона");
+    const before = await page.evaluate(targetListId => {
+      const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetListId);
+      const source = Object.values(current.layouts).find(row => row.adminCausalSource && row !== target);
+      return { sourceId: source.id, targetId: target.id, source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id),
+        item: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === "Ожидающая правка источника").id,
+        bag: source.rootContainerIds[0], targetBag: target.rootContainerIds[0] };
+    }, target.listId);
+    await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.sourceId)).toBeTruthy();
+    const parentId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.sourceId);
+    const originalSourcePayload = structuredClone(server.payload), originalTargetPayload = structuredClone(target.payload);
+    await page.evaluate(({ shape, before }) => shape === "item" ? __adminUiTest.openItem(before.item) : __adminUiTest.openContainer(before.bag), { shape, before });
+    await page.locator(shape === "item" ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
+    await page.locator("#containerPickerLayoutSelect").selectOption(before.targetId);
+    await page.locator(shape === "item" ? `#containerPickerBoard [data-pick-container="${before.targetBag}"]` : '#containerPickerBoard [data-pick-root-index="0"]').click();
+    await expect(page.locator("#confirmDialog")).toBeVisible();
+    if (mode === "changed-source") await page.evaluate(id => { __adminUiTest.state().items[id].name = "Более поздняя правка"; }, before.item);
+    if (mode === "plan-quota") await page.evaluate(listId => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan?.binding.listId === listId) throw new DOMException("Pending source target quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, target.listId);
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    const targetPosts = () => server.posts.filter(post => post.listId === target.listId);
+    if (mode === "cancel" || mode === "changed-source") {
+      if (mode === "changed-source") await expect(page.locator("body")).toContainText("Шаблон изменился");
+      expect(targetPosts()).toEqual([]); expect(target.payload).toEqual(originalTargetPayload);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId)).toEqual(before.target);
+      expect(server.payload).toEqual(originalSourcePayload); return;
+    }
+    let action;
+    if (mode === "plan-quota") {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), before.targetId)).toBe(true);
+      const operation = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.operations[0], before.targetId);
+      const { id, actorId, ...wire } = operation;
+      action = { ...wire, expectedActorId: actorId, operationId: id };
+      expect(targetPosts()).toEqual([]);
+    } else {
+      await expect.poll(() => targetPosts().length).toBe(1); action = structuredClone(targetPosts()[0]);
+      expect(server.receipts.get(action.operationId).operation.state).toBe("waiting");
+    }
+    const chosen = await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId);
+    expect(action.body.source.base).toEqual({ operationId: parentId });
+    expect(action.body.base).toEqual({ stateRevision: 19 });
+    expect(target.payload).toEqual(originalTargetPayload); expect(server.payload).toEqual(originalSourcePayload);
+    server.blockBusiness = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(sourceShared => __adminUiTest.openPrepared(sourceShared ? { type: "shared", sharedId: "ui" }
+      : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), sourceShared);
+    await confirmedRevision(page, 8);
+    expect(server.receipts.get(parentId).operation.state).toBe("committed");
+    expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(server.payload));
+    if (mode === "source-conflict") server.revision++;
+    server.lose = mode === "lost";
+    await page.evaluate(target => __adminUiTest.openPrepared(target), !sourceShared ? { type: "shared", sharedId: "cross" }
+      : { type: "demo", demoListId: target.listId, language: "ru" });
+    if (mode === "lost") {
+      await expect.poll(() => server.hidden).toBe(true); server.lose = false; server.hidden = false;
+      await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+      await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+      await page.evaluate(target => __adminUiTest.openPrepared(target), !sourceShared ? { type: "shared", sharedId: "cross" }
+        : { type: "demo", demoListId: target.listId, language: "ru" });
+    }
+    if (mode === "source-conflict") {
+      await expect.poll(() => server.receipts.get(action.operationId)?.operation.state).toBe("rejected");
+      expect(server.receipts.get(action.operationId).result.payload.code).toBe("template_copy_source_changed");
+      expect(targetPosts()).toHaveLength(2); for (const post of targetPosts()) expect(post).toEqual(action);
+      expect(target.payload).toEqual(originalTargetPayload); return;
+    }
+    await confirmedRevision(page, 20);
+    expect(targetPosts()).toHaveLength(mode === "plan-quota" ? 1 : 2); for (const post of targetPosts()) expect(post).toEqual(action);
+    expect(target.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+    const added = Object.values(target.payload.items).filter(row => !before.target.payload.items[row.id]);
+    expect(added).toHaveLength(1); expect(added[0].name).toBe(shape === "item" ? "Ожидающая правка источника копия" : "Ожидающая правка источника");
+    expect(Object.values(target.payload.layouts)[0].arrangement.itemQuantities[added[0].id]).toBe(shape === "item" ? 1 : 2);
+    const sourceAfter = await page.evaluate(id => __adminUiTest.snapshot(id), before.sourceId);
+    expect(sourceAfter.metadata).toEqual(before.source.metadata);
+    expect(stripAdminTemplateEditorMetadata(sourceAfter.payload)).toEqual(stripAdminTemplateEditorMetadata(before.source.payload));
+    expect(server.errors).toEqual([]);
+  });
 }
 
 const crossTreeCases = [];
