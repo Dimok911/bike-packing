@@ -5405,6 +5405,14 @@ function createGroupFromItems(itemId, targetItemId) {
   if (!state.layouts?.[layoutId] || !state.items[itemId] || !state.items[targetItemId]) return;
   if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    return prepareCausalAdminPlacementCopy({ type: "placement-group", sourceId: itemId, targetItemId,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId }).then(async commit => {
+      const created = commit && await commit();
+      if (!created) return false;
+      runtime.editingContainerId = created; render(); return true;
+    });
+  }
   const changedAt = nowIso();
   const groupId = createEntityId("container");
   const prepared = preparePersonalPlacementAction({ layoutId, action: "group-items", ids: [itemId, targetItemId], groupId });

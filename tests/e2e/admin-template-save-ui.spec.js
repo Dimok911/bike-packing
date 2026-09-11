@@ -93,6 +93,13 @@ async function fixture(page, context, { published = false, shared = false, hydra
     layout.rootContainerIds.push("secondBag"); arrangement.rootContainerIds.push("secondBag");
     arrangement.containers.secondBag = { parentId: "", childIds: [], itemIds: ["second"], order: [{ type: "item", id: "second" }] };
     arrangement.items.second = "secondBag"; arrangement.itemQuantities.second = 3;
+    if (placementMove === "group-same") {
+      state.payload.items.pump.containerId = "secondBag"; arrangement.items.pump = "secondBag";
+      for (const row of [state.payload.containers.pocket, arrangement.containers.pocket]) Object.assign(row, { itemIds: [], order: [] });
+      for (const row of [state.payload.containers.secondBag, arrangement.containers.secondBag]) Object.assign(row, {
+        itemIds: ["pump", "second"], order: [{ type: "item", id: "pump" }, { type: "item", id: "second" }]
+      });
+    }
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
@@ -982,6 +989,101 @@ for (const shared of [false, true]) for (const kind of ["root", "lift"])
     expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(original.items).sort());
     expect(arrangement.itemQuantities).toEqual(prior.itemQuantities);
     await editItem(page, "Правка после перемещения", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement);
+    expect(server.errors).toEqual([]);
+  });
+}
+
+async function beginAdminItemGroup(page, sourceId, targetId) {
+  const selector = `#packingView [data-item-drag="${sourceId}"]`, handle = page.locator(selector); await handle.scrollIntoViewIfNeeded();
+  const box = await handle.boundingBox(), start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const mobile = test.info().project.name === "mobile-webkit";
+  const touch = async (type, point) => page.evaluate(({ type, point, selector }) => {
+    const element = document.querySelector(selector), target = type === "touchstart" ? element : document;
+    const contact = { identifier: 1, target: element, clientX: point.x, clientY: point.y };
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, { touches: { value: type === "touchend" ? [] : [contact] }, targetTouches: { value: type === "touchend" ? [] : [contact] }, changedTouches: { value: [contact] } });
+    target.dispatchEvent(event);
+  }, { type, point, selector });
+  if (mobile) await touch("touchstart", start);
+  else { await page.mouse.move(start.x, start.y); await page.mouse.down(); await page.mouse.move(start.x + 20, start.y + 20, { steps: 5 }); }
+  await expect(page.locator("body")).toHaveClass(/dragging-ui/);
+  const target = page.locator(`#packingView [data-item-id="${targetId}"]`); await target.scrollIntoViewIfNeeded(); let point;
+  await expect.poll(async () => {
+    const current = await target.boundingBox(); point = { x: current.x + current.width / 2, y: current.y + current.height / 2 };
+    if (mobile) await touch("touchmove", point); else await page.mouse.move(point.x, point.y);
+    return (await target.getAttribute("class")).includes("group-target");
+  }).toBe(true);
+  return async () => { if (mobile) await touch("touchend", point); else await page.mouse.up(); };
+}
+
+for (const shared of [false, true]) for (const sameParent of [false, true])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"]) {
+  test(`admin placement group ${shared ? "shared" : "demo"} ${sameParent ? "same" : "different"} (${mode})`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true, placementMove: sameParent ? "group-same" : true });
+    const before = await page.evaluate(() => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const source = Object.values(current.items).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Насос шаблона");
+      const target = Object.values(current.items).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Вторая вещь шаблона");
+      return { layoutId: layout.id, sourceId: source.id, targetId: target.id, snapshot: __adminUiTest.snapshot(layout.id),
+        ids: [Object.keys(current.containers), Object.keys(current.items)] };
+    });
+    await page.locator('[data-view="packing"]').click();
+    const finish = await beginAdminItemGroup(page, before.sourceId, before.targetId);
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Existing bag quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    server.lose = mode === "lost";
+    await finish();
+    if (mode === "mirror-quota") {
+      await expect(page.locator("body")).toContainText("Existing bag quota");
+      expect(server.posts).toEqual([]);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers).sort(), Object.keys(__adminUiTest.state().items).sort()])).toEqual(before.ids.map(ids => [...ids].sort()));
+      expect(server.errors).toEqual([]); return;
+    }
+    if (["plan-quota", "pointer-quota"].includes(mode)) await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+    else { await expect.poll(() => server.posts.length).toBe(1); if (mode === "lost") await expect.poll(() => server.hidden).toBe(true); }
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    const createdIds = await page.evaluate(before => Object.keys(__adminUiTest.state().containers).filter(id => !before.includes(id)), before.ids[0]);
+    expect(createdIds).toHaveLength(1);
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().items).sort())).toEqual([...before.ids[1]].sort());
+    server.lose = false; server.hidden = false;
+    const priorAction = server.posts[0] && structuredClone(server.posts[0]);
+    const planId = priorAction?.operationId || await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1);
+    if (priorAction) expect(server.posts[0]).toEqual(priorAction);
+    expect(server.posts[0].operationId).toBe(planId); expect(server.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    const original = before.snapshot.payload, arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    const prior = Object.values(original.layouts)[0].arrangement, expected = structuredClone(prior);
+    const source = Object.values(server.payload.items).find(row => row.name === "Насос шаблона"), target = Object.values(server.payload.items).find(row => row.name === "Вторая вещь шаблона");
+    const groupId = `container-template-group-${planId}`, parentId = prior.items[target.id], oldParentId = prior.items[source.id];
+    expect(createdIds).toEqual([groupId]);
+    for (const id of new Set([parentId, oldParentId])) {
+      expected.containers[id].itemIds = expected.containers[id].itemIds.filter(id => ![source.id, target.id].includes(id));
+      expected.containers[id].order = expected.containers[id].order.filter(row => row.type !== "item" || ![source.id, target.id].includes(row.id));
+    }
+    expected.containers[groupId] = { parentId, childIds: [], itemIds: [target.id, source.id], order: [{ type: "item", id: target.id }, { type: "item", id: source.id }] };
+    expected.containers[parentId].childIds.push(groupId); expected.containers[parentId].order.push({ type: "container", id: groupId });
+    expected.items[source.id] = groupId; expected.items[target.id] = groupId;
+    delete expected.packedItems[source.id]; delete expected.packedItems[target.id];
+    expect(arrangement).toEqual(expected);
+    expect(Object.keys(server.payload.containers).sort()).toEqual([...Object.keys(original.containers), groupId].sort());
+    expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(original.items).sort());
+    expect(arrangement.itemQuantities).toEqual(prior.itemQuantities);
+    await editItem(page, "Правка после группировки", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
     expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
     expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement);
     expect(server.errors).toEqual([]);
