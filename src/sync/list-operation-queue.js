@@ -15,6 +15,7 @@ import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, PERSONAL_PENDING_FORM_UPDATE_CAPA
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY, assertPersonalGuestImportHashes, validatePersonalGuestImportResult } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY, assertPersonalPublicImportHashes, validatePersonalPublicImportResult } from "./personal-public-import-protocol.js";
+import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY } from "./personal-admin-template-source.js";
 import { PERSONAL_SERVER_IMPORT_ENABLED, PERSONAL_SERVER_IMPORT_CAPABILITY } from "./personal-server-import-source.js";
 import { assertPersonalServerImportHashes, validatePersonalServerImportResult } from "./personal-server-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY, personalArchivePhotoBodyResultReference } from "./personal-pending-archive-update.js";
@@ -193,6 +194,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  adminTemplateImportEnabled = PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED,
   serverImportEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
@@ -317,7 +319,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
           await assertPersonalServerImportHashes(body); assertCurrent();
         }
         if (Object.hasOwn(body, "publicImport")) {
-          if (route.kind !== "list.import" || !publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== operationId) {
+          if (route.kind !== "list.import" || !publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== operationId
+            || body.publicImport?.source?.kind === "admin-template" && !adminTemplateImportEnabled) {
             throw paused(operationId, "Отмена копирования шаблона ещё не включена.");
           }
           await assertPersonalPublicImportHashes(body); assertCurrent();
@@ -341,6 +344,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
         if (Object.hasOwn(body, "publicImport") && (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(operationId,
           "Сервер ещё не поддерживает отмену копирования шаблона.");
+        if (body.publicImport?.source?.kind === "admin-template" && !capabilities.capabilities?.includes(PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY)) throw paused(operationId,
+          "Сервер ещё не поддерживает копирование административного шаблона в личный список.");
         if (Object.hasOwn(body, "serverImport") && !capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает отмену серверной копии.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
           "Отмена копии дерева с фото ещё не включена. Исходная копия сохранена.");
@@ -643,6 +648,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           await assertPersonalServerImportHashes(body);
         } else if (Object.hasOwn(body, "publicImport")) {
           if (!publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== requestedId
+            || body.publicImport?.source?.kind === "admin-template" && !adminTemplateImportEnabled
             || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) {
             throw paused(requestedId, "Копирование шаблона ещё не включено или не совпало с сохранённым действием.");
           }
@@ -792,6 +798,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "list.import" && Object.hasOwn(body, "serverImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает копирование списка по ссылке через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
+            if (body.publicImport?.source?.kind === "admin-template" && !capabilities.capabilities?.includes(PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY)) throw paused(requestedId,
+              "Сервер ещё не поддерживает копирование административного шаблона в личный список.");
             if ((!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(requestedId, "Сервер ещё не поддерживает копирование шаблона через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает гостевой перенос через очередь.");

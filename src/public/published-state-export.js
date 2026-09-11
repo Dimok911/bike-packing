@@ -9,7 +9,8 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   locations = [],
   categories = [],
   normalizePublishedStatePayload,
-  stripPublishedPublicOriginMarkers
+  stripPublishedPublicOriginMarkers,
+  onMappedEntity = () => {}
 } = {}) {
   const layout = targetState.layouts?.[layoutId];
   if (!layout) throw new Error("Укладка не найдена.");
@@ -22,6 +23,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     const container = targetState.containers?.[containerId];
     const nextId = uniquePublishedRecordId(containers, cleanPublishedEntityId("container", container, containerId, { cssSafeId }));
     containerIdMap.set(containerId, nextId);
+    onMappedEntity({ type: "containers", sourceId: containerId, targetId: nextId });
     return nextId;
   };
   const mapItemId = (itemId) => {
@@ -29,6 +31,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     const item = targetState.items?.[itemId];
     const nextId = uniquePublishedRecordId(items, cleanPublishedEntityId("item", item, itemId, { cssSafeId }));
     itemIdMap.set(itemId, nextId);
+    onMappedEntity({ type: "items", sourceId: itemId, targetId: nextId });
     return nextId;
   };
   const copyItemRecord = (itemId, containerId = "") => {

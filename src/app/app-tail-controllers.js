@@ -143,6 +143,7 @@ export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     prepareCausalAdminCatalogCopy,
     prepareCausalAdminPlacementCopy,
+    prepareCausalAdminToPersonalCopy,
     openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
     newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate } = ctx;
   const runtime = ctx.runtime;
@@ -2400,8 +2401,9 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (!source || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  if (adminTemplateUiEnabled() && targetIsPublic) {
-    const commit = targetLayoutId === getPublishedEditLayoutId()
+  if (adminTemplateUiEnabled() && (targetIsPublic || isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId))) {
+    const commit = !targetIsPublic ? await prepareCausalAdminToPersonalCopy({ type: "item", sourceId: itemId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
+      targetLayoutId, targetParentId: targetContainerId }) : targetLayoutId === getPublishedEditLayoutId()
       ? prepareCausalAdminCatalogCopy("item", [itemId], { addToLayoutId: targetLayoutId, targetContainerId })
       : await prepareCausalAdminPlacementCopy({ type: "item", sourceId: itemId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
         targetLayoutId, targetParentId: targetContainerId });
@@ -2409,7 +2411,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
     if (!await askConfirmDialog({ title: localText("Copy item?", "Скопировать вещь?"),
       text: localText(`Create a separate copy of “${source.name}” in “${state.containers[targetContainerId]?.name}”?`,
         `Создать отдельную копию «${source.name}» в «${state.containers[targetContainerId]?.name}»?`),
-      okText: localText("Copy", "Копировать"), tone: "safe" })) return;
+      okText: localText("Copy", "Копировать"), tone: "safe" })) { commit.cancel?.(); return; }
     const copyId = await commit(); if (!copyId) return;
     markRecentlyAddedItem(copyId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
     const focused = closeDialogsThenFocus({ closeDialog: closeDialogWithoutRestoringFocus,
@@ -2620,8 +2622,8 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (warnLockedLayoutMutation(targetLayoutId)) return;
   if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  if (adminTemplateUiEnabled() && targetIsPublic) {
-    const commit = await prepareCausalAdminPlacementCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
+  if (adminTemplateUiEnabled() && (targetIsPublic || isAdminEditablePublishedLayout(sourceLayoutId))) {
+    const commit = await (targetIsPublic ? prepareCausalAdminPlacementCopy : prepareCausalAdminToPersonalCopy)({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
     if (!commit) return;
     let mode = "";
     if (commit.canLink && commit.canMissing) {
@@ -2629,7 +2631,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
         text: localText(`Add ${commit.missingItemCount} missing items to the matching bags, or add the whole bag?`,
           `Добавить ${commit.missingItemCount} недостающих вещей в найденные сумки или добавить сумку целиком?`),
         okText: localText("Missing only", "Только недостающие"), alternateText: localText("Whole bag", "Вся сумка"), tone: "safe" });
-      if (!missing) return;
+      if (!missing) { commit.cancel?.(); return; }
       if (missing === true) mode = "missing";
     }
     if (!mode) {
@@ -2640,7 +2642,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
         alternateText: commit.canLink ? localText("Add existing", "Добавить существующую") : commit.canMissing ? localText("Missing only", "Только недостающие") : "",
         highlightText: commit.canMissing ? localText(`${commit.missingItemCount} missing items can be added to matching bags without changing existing contents.`,
           `${commit.missingItemCount} недостающих вещей можно добавить в найденные сумки, сохранив имеющееся содержимое.`) : "", tone: "safe" });
-      if (!choice) return;
+      if (!choice) { commit.cancel?.(); return; }
       mode = choice === "alternate" ? commit.canLink ? "link" : "missing" : "copy";
     }
     const rootId = await commit(mode); if (!rootId) return;

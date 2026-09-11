@@ -1,4 +1,5 @@
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
+import { personalAdminTemplateImportSource } from "./personal-admin-template-source.js";
 import { personalPublicEntityPlan } from "./personal-public-entity-plan.js";
 import { personalGuestImportPlan } from "./personal-guest-import-plan.js";
 import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
@@ -17,6 +18,7 @@ const fail = () => { throw Object.assign(Error("Выбранный шаблон 
 // grants source access: the API must verify publication, the canonical key and
 // the complete snapshot under the same transaction as the private destination.
 export function personalPublicImportSource(value) {
+  if (value?.kind === "admin-template") return personalAdminTemplateImportSource(value);
   assertListOperationJsonValue(value);
   if (!exact(value, ["kind", "listId", "itemKey", "stateRevision", "language"]) || value.kind !== "public-template"
     || typeof value.listId !== "string" || value.listId.length > 64 || !/^public-(?:demo-state(?:-[a-z0-9-]+)?|shared-layout-[a-z0-9-]+)$/.test(value.listId)
@@ -28,6 +30,7 @@ export function personalPublicImportSource(value) {
 export function personalPublicImportManifest(value) {
   assertListOperationJsonValue(value);
   if (!value || !Object.hasOwn(value, "source")) fail();
+  if (value.source?.kind === "admin-template" && (value.files?.length !== 0 || value.photoTargets?.length !== 0)) fail();
   if (value.version === 2) {
     if (!exact(value, ["version", "operationId", "sourcePayload", "sourceHash", "copy", "ownerTargets", "photoTargets", "editMeta", "targetStateRevision", "payloadHash", "files", "source"])
       || typeof value.operationId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.operationId)
@@ -64,6 +67,7 @@ export async function assertPersonalPublicImportHashes(body) {
   body = clone(body);
   const manifest = personalPublicImportManifest(body?.publicImport);
   if (await personalArchiveHash(manifest.sourcePayload) !== manifest.sourceHash || await personalArchiveHash(body.payload) !== manifest.payloadHash) fail();
+  if (manifest.source.kind === "admin-template" && manifest.source.payloadDigest !== manifest.sourceHash) fail();
 }
 
 export function personalPublicImportReceipt(value) {
@@ -84,5 +88,6 @@ export function validatePersonalPublicImportResult(result, expected) {
 }
 
 export function personalPublicImportPlan(input, files) {
+  if (input.source?.kind === "admin-template" && (files?.length !== 0 || input.photoTargets?.length !== 0)) fail();
   return input.version === 2 ? personalPublicEntityPlan(input, files) : personalGuestImportPlan(input, files);
 }

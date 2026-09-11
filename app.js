@@ -793,6 +793,7 @@ import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelect
 import { createPersonalPublicImportSelectionStore, PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
+import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, personalAdminTemplateImportSource } from "./src/sync/personal-admin-template-source.js";
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { resolvePersonalServerPreparation, personalServerRecoverablePreparations } from "./src/sync/personal-server-preparation-resolution.js";
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
@@ -1796,6 +1797,7 @@ const appTailControllerDeps = {
   runCausalAdminTemplateCommand,
   prepareCausalAdminCatalogCopy,
   prepareCausalAdminPlacementCopy,
+  prepareCausalAdminToPersonalCopy,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
   newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
@@ -5162,11 +5164,11 @@ async function withLayoutArrangementAppliedAsync(layoutId, callback) {
   }
 }
 
-function persistActiveLayoutSelection({ sync = false } = {}) {
+function persistActiveLayoutSelection({ sync = false, recordAction = true } = {}) {
   if (!state.layouts?.[state.activeLayoutId]) return;
   if (isReadOnlyStateScope() || isAdminEditablePublishedLayout(state.activeLayoutId)) return;
   if (!canUseLocalEditableState(state.activeLayoutId)) return;
-  saveState({ sync: false });
+  saveState({ sync: false, recordAction });
   if (sync && syncMeta.dirty) updateSyncUi();
 }
 
@@ -5184,7 +5186,7 @@ function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = s
   }
 }
 
-function switchActiveLayout(layoutId, { remember = true } = {}) {
+function switchActiveLayout(layoutId, { remember = true, recordAction = remember } = {}) {
   if (!canUsePrivateState() && !isGuestDemoCopyLayout(layoutId)) {
     enterSignedOutPublicMode(currentPublicTemplateStatusMessage()).catch(() => {
       setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
@@ -5198,7 +5200,7 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
     else setActiveLocalEditableScope(layoutId);
     if (layoutId && state.layouts?.[layoutId]) {
       if (remember) rememberActiveLayoutChoice(layoutId);
-      persistActiveLayoutSelection({ sync: remember });
+      persistActiveLayoutSelection({ sync: remember, recordAction });
     }
     render();
     return;
@@ -5210,7 +5212,7 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
   applyLayoutArrangement(layoutId);
   explicitLayoutChoice = { id: layoutId, at: Date.now() };
   if (remember) rememberActiveLayoutChoice(layoutId);
-  persistActiveLayoutSelection({ sync: remember });
+  persistActiveLayoutSelection({ sync: remember, recordAction });
   if (!(state.layouts[layoutId]?.rootContainerIds || []).length) {
     rootContainerUsageFilter = "all";
   }
@@ -8706,7 +8708,7 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
       normalizeRecords: normalizeAdminTemplateHistoryRecords,
       readTemplate: binding => adminTemplateClient(binding, "", true).prepare(),
       materialize: (record, prepared) => materializeCausalAdminTemplate(targetForRecord(record), prepared),
-      acceptRecords: records => { adminTemplateHistoryRecords = records; }, persist: () => persistStateSnapshot(state),
+      acceptRecords: records => { adminTemplateHistoryRecords = records; }, persist: () => persistStateSnapshot(state, { recordAction: false }),
     });
     if (renderAfter && result.restored) render();
     return result.restored;
@@ -10468,7 +10470,7 @@ function repairActiveEmptyAdminDemoDraft() {
   return true;
 }
 
-function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true, preserveCatalog = false } = {}) {
+function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true, preserveCatalog = false, recordAction = true } = {}) {
   return importDemoStateAsEditableLayoutValue(state, demoState, {
     activate,
     applyLayoutArrangement,
@@ -10491,7 +10493,7 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, lis
     render,
     renderAfter,
     preserveCatalog,
-    saveState,
+    saveState: options => saveState({ ...options, recordAction }),
     setActivePrivateScope,
     switchView
   });
@@ -10658,6 +10660,105 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   };
 }
+async function prepareCausalAdminToPersonalCopy(request) {
+  request = clone(request);
+  let sourceLayout, original, sourceSnapshot, privateInitial, privateSnapshot, outbox, selection, missingSelection, sourcePrepared, sourceId;
+  const fail = (reason = "selection") => { throw Object.assign(Error("Шаблон или личный список изменился. Повторите выбор копии."), { adminCopyGuard: reason }); };
+  const privateState = () => ({ ...serializeState({ forSync: true }), activeLayoutId: request.targetLayoutId });
+  const coordinator = adminTemplateSaveCoordinator();
+  const restoreSourceView = () => {
+    if (!personalSaveRecovery.message() && original?.binding.actorId === String(currentUser?.id || "") && canOpenAdminPublishedEdit()
+      && state.layouts[sourceLayout?.id] === sourceLayout && state.activeLayoutId === request.targetLayoutId) {
+      activateAdminPublishedLayout(sourceLayout.id, { remember: false });
+    }
+  };
+  const guard = (capturedId = "") => {
+    const pending = outbox?.recover();
+    const checks = { authority: !canOpenAdminPublishedEdit(), sourceObject: state.layouts[sourceLayout.id] !== sourceLayout,
+      sourcePending: coordinator.hasPendingCapture(sourceLayout.id) || sourceLayout.templateDraftSyncPending || sourceLayout.adminCausalCopyPlan,
+      sourceIdentity: canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(original),
+      sourceSnapshot: canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot,
+      privatePending: capturedId ? pending?.action.operationId !== capturedId : hasPendingPersonalSave(),
+      privateDirty: syncMeta.dirty, actor: original.binding.actorId !== String(currentUser?.id || ""),
+      privateContext: privateInitial && canonicalTemplateJson(personalSaveContext()) !== privateInitial,
+      privateSnapshot: privateInitial && canonicalTemplateJson(privateState()) !== privateSnapshot };
+    const invalid = Object.keys(checks).filter(key => checks[key]); if (invalid.length) fail(invalid.join(","));
+  };
+  try {
+    if (!PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED || !personalSavePilotEnabled() || !PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) {
+      throw Error("Копирование административного шаблона в личный список через очередь ещё не включено.");
+    }
+    sourceLayout = state.layouts[request.sourceLayoutId]; original = clone(sourceLayout?.adminCausalSource || null);
+    if (!original?.exists || original.planId || !original.base?.stateRevision || getPublishedEditLayoutId() !== sourceLayout.id
+      || !state.layouts[request.targetLayoutId] || isAdminEditablePublishedLayout(request.targetLayoutId)) fail();
+    const ids = { items: {}, containers: {} }, observed = adminTemplateEditorSnapshot(sourceLayout.id, {
+      onMappedEntity: ({ type, sourceId, targetId }) => { ids[type][sourceId] = targetId; }
+    });
+    sourceSnapshot = canonicalTemplateJson(observed); guard();
+    sourcePrepared = await adminTemplateClient(original.binding, sourceLayout.id, true).prepare(); guard();
+    const verified = adminTemplateEditorSource(original.binding, sourcePrepared);
+    if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(original.base)
+      || canonicalTemplateJson(personalBusinessPayload(stripAdminTemplateEditorMetadata(observed.payload))) !== canonicalTemplateJson(personalBusinessPayload(sourcePrepared.payload))) {
+      throw Error("Шаблон отличается от подтверждённой серверной версии. Сначала сверьте его изменения.");
+    }
+    sourceId = ids[request.type === "item" ? "items" : "containers"][request.sourceId || request.rootId];
+    if (!sourceId) fail();
+    const source = personalAdminTemplateImportSource({ kind: "admin-template", listId: original.binding.listId, itemKey: original.binding.itemKey,
+      stateRevision: sourcePrepared.stateRevision, language: sourcePrepared.metadata.language, payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) });
+    guard(); switchActiveLayout(request.targetLayoutId, { remember: false, recordAction: false });
+    if (!personalPhotoFormUiEnabled()) fail();
+    personalSaveRecovery.assertRunning(); outbox = personalSaveOutboxForScope();
+    if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) fail();
+    privateInitial = canonicalTemplateJson(personalSaveContext()); privateSnapshot = canonicalTemplateJson(privateState()); guard();
+    const basePayload = personalBusinessPayload(privateState());
+    if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, basePayload)) throw Error("Сначала подтвердите текущую личную укладку.");
+    const input = { binding: outbox.binding, basePayload, baseStateRevision: Number(syncMeta.stateRevision), source, sourcePayload: sourcePrepared.payload, editMeta: currentCreateMeta() };
+    const sourceLayoutId = Object.keys(sourcePrepared.payload.layouts)[0];
+    selection = preparePersonalPublicEntitySelection({ ...input, copy: { version: 1, mode: "independent", sourceLayoutId,
+      entries: [{ entityType: request.type === "item" ? "item" : "container", sourceId, includeContents: request.includeContents === true }],
+      destination: { layoutId: request.targetLayoutId, containerId: request.targetParentId || "", index: request.targetIndex ?? null } } });
+    if (request.includeContents) {
+      const preview = personalPublicMissingPreview({ currentPayload: basePayload, sourcePayload: sourcePrepared.payload, sourceLayoutId, sourceId, targetLayoutId: request.targetLayoutId });
+      if (preview.canCopyMissingItems) missingSelection = preparePersonalPublicEntitySelection({ ...input, copy: preview.copy });
+    }
+    if ([selection, missingSelection].some(value => value?.photoTargets.length)) throw Error("Для этой копии требуется отдельный перенос фотографий. Исходный шаблон сохранён.");
+    guard();
+  } catch (error) { restoreSourceView(); reportAdminTemplateSaveError(error); return false; }
+  let used = false;
+  return Object.assign(async (mode = "copy") => {
+    let source, commit;
+    try {
+      if (used) return false; guard();
+      const chosen = mode === "copy" ? selection : mode === "missing" ? missingSelection : null;
+      if (!chosen) return false;
+      for (const [type, entityType] of [["items", "item"], ["containers", "container"]]) {
+        const count = chosen.ownerTargets.filter(row => row.entityType === entityType).length;
+        if (count && !requireUsageCapacity(type, count)) return false;
+      }
+      used = true; source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext: personalSaveContext }), inventory: null };
+      personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
+      commit = await preparePersonalPublicImport({ selection: chosen, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
+        getContext: personalSaveContext, getState: privateState, getRevision: () => Number(syncMeta.stateRevision),
+        makeSnapshot: (payload, previous, activeLayoutId) => personalPublicCopySnapshot(payload, previous, activeLayoutId),
+        loadFile: () => { throw Error("Для файлов нужен отдельный план."); },
+        onCaptured(saved) {
+          guard(chosen.operationId); personalSaveRecovery.assertRunning(); replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+          personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source;
+          rememberActiveLayoutChoice(request.targetLayoutId); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+          updateSyncUi("Личная копия шаблона сохранена и ждёт подтверждения сервера.");
+        }
+      });
+      await commit(); scheduleRemoteSave();
+      return chosen.ownerTargets.find(row => row.sourceId === sourceId)?.targetId || request.targetParentId || state.layouts[request.targetLayoutId].rootContainerIds[0];
+    } catch (error) {
+      if (source) await retainPersonalPublicPreparationForRecovery(source);
+      else restoreSourceView();
+      reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); return false;
+    } finally { if (source) personalPhotoFormPreparing--; }
+  }, { cancel() { if (!used) { used = true; restoreSourceView(); } },
+    canLink: false, canMissing: Boolean(missingSelection), missingItemCount: missingSelection?.ownerTargets.length || 0 });
+}
+
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
@@ -10908,11 +11009,11 @@ async function finishCausalAdminTemplateOrder(work) {
     await work.batch.acknowledge(work.pending.id);
   }
 }
-function adminTemplateEditorSnapshot(layoutId) {
+function adminTemplateEditorSnapshot(layoutId, options = {}) {
   return withLayoutArrangementApplied(layoutId, () => {
     const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
     const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
-    let payload = exportLayoutAsDemoState(layoutId);
+    let payload = exportLayoutAsDemoState(layoutId, options);
     if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
     return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
       description: String(layout.note || "").trim(), language } };
@@ -11023,7 +11124,7 @@ function materializeCausalAdminTemplate(target, prepared) {
     return projection.layout;
   }
   const before = { items: new Set(Object.keys(state.items || {})), containers: new Set(Object.keys(state.containers || {})) };
-  const layout = importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true });
+  const layout = importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true, recordAction: false });
   if (layout) for (const kind of ["items", "containers"]) for (const [id, record] of Object.entries(state[kind] || {})) {
     if (!before[kind].has(id)) record.publicCatalogLayoutId = layout.id;
   }
@@ -11117,7 +11218,7 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
     layout.adminCausalSource = editorSource; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
-    persistStateSnapshot(state); activateAdminPublishedLayout(layout.id, { remember });
+    persistStateSnapshot(state, { recordAction: false }); activateAdminPublishedLayout(layout.id, { remember });
     return layout;
   } catch (error) { reportAdminTemplateSaveError(error); showToast(error.message, "error"); return null; }
 }
@@ -11195,9 +11296,10 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, option
   });
 }
 
-function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
+function exportLayoutAsDemoState(layoutId = state.activeLayoutId, { onMappedEntity } = {}) {
   captureActiveLayoutArrangement();
   return exportLayoutAsPublishedState(state, layoutId, {
+    onMappedEntity,
     categories,
     clone,
     createLayoutArrangementFromCurrentState,
