@@ -10719,7 +10719,7 @@ async function prepareCausalAdminToPersonalCopy(request) {
     const sourceLayoutId = Object.keys(sourcePrepared.payload.layouts)[0];
     selection = request.type === "layout" ? preparePersonalPublicImportSelection({ ...input,
       layoutIds: [sourceLayoutId], layoutNames: [uniqueLayoutName(request.requestedName)] })
-      : preparePersonalPublicEntitySelection({ ...input, copy: { version: 1, mode: "independent", sourceLayoutId,
+      : preparePersonalPublicEntitySelection({ ...input, copy: { version: request.catalog ? 3 : 1, mode: request.catalog ? "catalog" : "independent", sourceLayoutId,
       entries: [{ entityType: request.type === "item" ? "item" : "container", sourceId, includeContents: request.includeContents === true }],
       destination: { layoutId: request.targetLayoutId, containerId: request.targetParentId || "", index: request.targetIndex ?? null } } });
     if (request.includeContents) {

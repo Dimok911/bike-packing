@@ -40,7 +40,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false, emptySource = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false, personalSource = false, reverseImport = false, emptySource = false, emptyPersonal = false } = {}) {
   const fixtureBundle = reverseImport ? path.resolve("test-results/admin-personal-import-ui-build") : bundleRoot;
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   state.privatePosts = []; state.privateReceipts = new Map();
@@ -158,6 +158,11 @@ async function fixture(page, context, { published = false, shared = false, hydra
     state.payload.containers = {}; state.payload.items.pump.containerId = "";
     state.payload.layouts["layout-a"].rootContainerIds = [];
     state.payload.layouts["layout-a"].arrangement = { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 };
+  }
+  if (emptyPersonal) {
+    state.privatePayload.containers = {}; state.privatePayload.items = {};
+    state.privatePayload.layouts["layout-a"].rootContainerIds = [];
+    state.privatePayload.layouts["layout-a"].arrangement = { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 };
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
@@ -300,27 +305,37 @@ test.describe("admin reverse personal import", () => {
       { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
     expect(result.status, result.stderr).toBe(0);
   });
-  for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing"]) for (const mode of ["confirmed", "lost", "cancel",
+  for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing", "catalog-placed", "catalog-detached", ...(!shared ? ["catalog-empty"] : [])]) for (const mode of ["confirmed", "lost", "cancel",
+    ...(shape.startsWith("catalog") ? ["queue-quota"] : []),
     ...(shape === "item" ? ["edit"] : []), ...(shape === "tree" ? ["changed-source", "changed-target", "changed-account", "pending-source", "selection-quota", "action-quota", "queue-quota"] : [])]) {
     test(`${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
-      const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true, missingItems: shape === "missing" });
+      const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, personalSource: true, reverseImport: true,
+        missingItems: shape === "missing", catalogPair: shape === "catalog-detached", emptyPersonal: shape === "catalog-empty" });
       await editItem(page, "Подтверждённая вещь", "Насос шаблона"); await confirmedRevision(page, 8);
-      const before = await page.evaluate(() => {
+      const before = await page.evaluate(shape => {
         const s = __adminUiTest.state(), layout = Object.values(s.layouts).find(row => row.adminCausalSource);
         return { sourceLayout: layout.id, source: __adminUiTest.snapshot(layout.id), private: __adminUiTest.privatePayload(),
-          item: Object.values(s.items).find(row => row.publicCatalogLayoutId === layout.id).id,
+          item: Object.values(s.items).find(row => row.publicCatalogLayoutId === layout.id
+            && row.name === (shape === "catalog-detached" ? "Вторая вещь шаблона" : "Подтверждённая вещь")).id,
           bag: Object.values(s.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Сумка шаблона").id,
           pocket: Object.values(s.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Карман шаблона").id };
-      });
-      const source = structuredClone(server.payload), originalPrivate = personalBusinessPayload(server.privatePayload), item = shape === "item";
+      }, shape);
+      const catalog = shape.startsWith("catalog"), source = structuredClone(server.payload), originalPrivate = personalBusinessPayload(server.privatePayload), item = shape === "item" || catalog;
       if (shape === "shell") { await page.locator('[data-view="bags"]').click(); await page.locator(`#bagsView [data-root-card="${before.bag}"] [data-root-title]`).click(); }
-      else await page.evaluate(({ before, shape }) => shape === "item" ? __adminUiTest.openItem(before.item) : __adminUiTest.openContainer(shape === "nested" ? before.pocket : before.bag), { before, shape });
+      else await page.evaluate(({ before, shape, item }) => item ? __adminUiTest.openItem(before.item) : __adminUiTest.openContainer(shape === "nested" ? before.pocket : before.bag), { before, shape, item });
       await page.locator(item ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
-      await expect(page.locator("#containerPickerDialog")).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
-      if (item) await page.locator('#containerPickerBoard [data-pick-container="bag"]').click();
+      await expect(page.locator("#containerPickerDialog")).toBeVisible();
+      if (catalog) {
+        await page.locator("#containerPickerLayoutSelect").selectOption(before.sourceLayout);
+        await expect(page.locator("[data-pick-personal-catalog]")).toHaveCount(0);
+      }
+      await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+      if (catalog) await page.locator("[data-pick-personal-catalog]").click();
+      else if (item) await page.locator('#containerPickerBoard [data-pick-container="bag"]').click();
       else if (shape === "nested") await page.locator('#containerPickerBoard [data-pick-container-parent="bag"][data-pick-container-index="0"]').click();
       else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
       await expect.poll(() => page.evaluate(() => globalThis.__adminUiLastError || document.querySelector("#confirmDialog").open)).toBe(true); server.privateLose = mode === "lost";
+      if (catalog) await expect(page.locator("#confirmDialog")).toContainText("в личном каталоге вещей без размещения");
       if (mode.startsWith("changed-") || mode === "pending-source") await page.evaluate(({ mode, before }) => {
         if (mode === "changed-source") __adminUiTest.state().items[before.item].name = "Later source change";
         if (mode === "changed-target") __adminUiTest.state().containers.bag.name = "Later private change";
@@ -401,9 +416,14 @@ test.describe("admin reverse personal import", () => {
       expect(Object.keys(copied.containers).length).toBe(Object.keys(originalPrivate.containers).length + (item || shape === "missing" ? 0 : shape === "tree" ? 2 : 1));
       for (const [id, row] of Object.entries(originalPrivate.items)) expect(copied.items[id]).toEqual(row);
       for (const entry of action.body.publicImport.ownerTargets.filter(row => row.entityType === "item")) {
-        expect(copied.items[entry.targetId].quantity).toBe(1);
-        expect(copied.layouts["layout-a"].arrangement.itemQuantities[entry.targetId]).toBe(shape === "missing" ? copied.items[entry.targetId].name === "Недостающее в сумке" ? 3 : 4 : 2);
+        expect(copied.items[entry.targetId].quantity).toBe(shape === "catalog-detached" ? 3 : 1);
+        if (catalog) {
+          expect(action.body.publicImport.copy.mode).toBe("catalog");
+          expect(copied.layouts).toEqual(originalPrivate.layouts); expect(copied.containers).toEqual(originalPrivate.containers);
+          expect(copied.layouts["layout-a"].arrangement.items[entry.targetId]).toBeUndefined();
+        } else expect(copied.layouts["layout-a"].arrangement.itemQuantities[entry.targetId]).toBe(shape === "missing" ? copied.items[entry.targetId].name === "Недостающее в сумке" ? 3 : 4 : 2);
       }
+      if (catalog && !mode.endsWith("quota")) await expect(page.locator("#itemsView")).toBeVisible();
       if (["confirmed", "edit"].includes(mode)) await page.waitForFunction(() => __adminUiTest.privateMeta().stateRevision === 4 && !__adminUiTest.privateMeta().dirty);
       server.privateLose = false; server.privateHidden = false;
       await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
@@ -522,6 +542,16 @@ test.describe("admin reverse personal import", () => {
       expect(await page.evaluate(() => __adminUiTest.state().activeLayoutId)).toBe(mode === "queue-quota" ? "layout-a" : target.targetId);
       expect(server.privatePosts).toHaveLength(1); expect(server.payload).toEqual(source); expect(server.posts).toHaveLength(1); expect(server.errors).toEqual([]);
     });
+});
+test("admin personal catalog disabled gate hides the catalog destination", async ({ page, context }) => {
+  const server = await fixture(page, context, { hydrate: true, withContainers: true, personalSource: true });
+  await editItem(page, "Подтверждённая вещь", "Насос шаблона"); await confirmedRevision(page, 8);
+  const id = await page.evaluate(() => Object.values(__adminUiTest.state().items).find(row => row.publicCatalogLayoutId && row.name === "Подтверждённая вещь").id);
+  await page.evaluate(id => __adminUiTest.openItem(id), id); await page.locator("#itemCopyToContainerBtn").click();
+  await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+  await expect(page.locator('#containerPickerBoard [data-pick-container="bag"]')).toBeVisible();
+  await expect(page.locator("[data-pick-personal-catalog]")).toHaveCount(0);
+  expect(server.posts).toHaveLength(1); expect(server.privatePosts).toEqual([]); expect(server.errors).toEqual([]);
 });
 for (const shared of [false, true]) for (const shape of ["item", "tree", "shell", "nested", "missing"]) for (const mode of ["confirmed", "lost", "mirror-quota", "plan-quota", "pointer-quota"]) personalAdminCases.push({ shared, shape, mode });
 for (const shared of [false, true]) for (const shape of ["item-detached", "item-detached-parent"]) for (const mode of ["confirmed", "lost"]) personalAdminCases.push({ shared, shape, mode });

@@ -41,6 +41,7 @@ import {
 } from "../state/layout-replace.js";
 import { orderedLayouts } from "../state/layout-order.js";
 import { itemRecordIsPublicNamespaceSource } from "../state/layout-copy-policy.js";
+import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED } from "../sync/personal-admin-template-source.js";
 import {
   persistPublicTemplateOrderUpdates,
   publicTemplateOrderUpdates
@@ -1984,6 +1985,17 @@ function renderContainerPicker() {
   });
   refs.containerPickerBoard.querySelector("[data-add-packing-root]")
     ?.addEventListener("click", openCopyTargetContainerSetup);
+  if (PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED && adminTemplateUiEnabled() && runtime.containerPickerMode === "item-copy"
+    && isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId)
+    && isPrivateUserLayoutId(runtime.containerPickerLayoutId) && !isLayoutLocked(state.layouts[runtime.containerPickerLayoutId])) {
+    refs.containerPickerBoard.insertAdjacentHTML("beforeend", `<article class="container-picker-column">
+      <button class="container-picker-root" type="button" data-pick-personal-catalog>
+        <strong>${escapeHtml(localText("To personal item catalog", "В личный каталог вещей"))}</strong>
+        <span>${escapeHtml(localText("Without placement in a layout", "Без размещения в укладке"))}</span>
+      </button></article>`);
+    refs.containerPickerBoard.querySelector("[data-pick-personal-catalog]").addEventListener("click", () =>
+      copyItemToContainerInLayout(runtime.editingItemId, "", runtime.containerPickerLayoutId, { catalog: true }));
+  }
   bindHorizontalTouchScroll(refs.containerPickerBoard);
   resetHorizontalTouchScroll(refs.containerPickerBoard);
 }
@@ -2395,24 +2407,33 @@ async function hydrateAuthForSharedLink() {
   }
 }
 
-async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId, { catalog = false } = {}) {
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (catalog && (!PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED || !adminTemplateUiEnabled() || targetIsPublic
+    || !isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId))) return;
   if (adminTemplateUiEnabled() && (targetIsPublic || isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId))) {
     const commit = !targetIsPublic ? await prepareCausalAdminToPersonalCopy({ type: "item", sourceId: itemId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
-      targetLayoutId, targetParentId: targetContainerId }) : targetLayoutId === getPublishedEditLayoutId()
+      targetLayoutId, targetParentId: targetContainerId, catalog }) : targetLayoutId === getPublishedEditLayoutId()
       ? prepareCausalAdminCatalogCopy("item", [itemId], { addToLayoutId: targetLayoutId, targetContainerId })
       : await prepareCausalAdminPlacementCopy({ type: "item", sourceId: itemId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
         targetLayoutId, targetParentId: targetContainerId });
     if (!commit) return;
     if (!await askConfirmDialog({ title: localText("Copy item?", "Скопировать вещь?"),
-      text: localText(`Create a separate copy of “${source.name}” in “${state.containers[targetContainerId]?.name}”?`,
+      text: catalog ? localText(`Create a separate copy of “${source.name}” in your personal item catalog without placing it in a layout?`,
+        `Создать отдельную копию «${source.name}» в личном каталоге вещей без размещения в укладке?`)
+        : localText(`Create a separate copy of “${source.name}” in “${state.containers[targetContainerId]?.name}”?`,
         `Создать отдельную копию «${source.name}» в «${state.containers[targetContainerId]?.name}»?`),
       okText: localText("Copy", "Копировать"), tone: "safe" })) { commit.cancel?.(); return; }
     const copyId = await commit(); if (!copyId) return;
+    if (catalog) {
+      closeDialogWithoutRestoringFocus(refs.containerPickerDialog);
+      if (runtime.editingItemId === itemId && refs.dialog?.open) closeDialogWithoutRestoringFocus(refs.dialog);
+      switchView("items"); render(); showToast(t("items.copyOutside"), "success"); return;
+    }
     markRecentlyAddedItem(copyId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
     const focused = closeDialogsThenFocus({ closeDialog: closeDialogWithoutRestoringFocus,
       dialogs: [refs.containerPickerDialog, runtime.editingItemId === itemId ? refs.dialog : null],
