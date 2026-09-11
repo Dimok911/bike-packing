@@ -10701,6 +10701,7 @@ async function prepareCausalAdminPlacementCopy(request) {
   let used = false;
   return Object.assign(async (mode = "copy") => {
     const priorLayout = { ...layout }, parentId = request.targetParentId || "", priorParent = state.containers[parentId];
+    const priorUpdates = [];
     try {
       if (used) return false; guard();
       prepared = mode === "copy" ? copyPrepared : mode === "link" ? linked : null;
@@ -10709,6 +10710,11 @@ async function prepareCausalAdminPlacementCopy(request) {
       used = true;
       for (const { type, targetId } of prepared.entries) state[type][targetId] = clone(prepared.snapshot[type][targetId]);
       try {
+        for (const { type, id } of prepared.updates || []) {
+          if (!["items", "containers"].includes(type) || !state[type][id] || state[type][id].publicCatalogLayoutId !== layout.id) throw Error("Исходная запись размещения изменилась.");
+          priorUpdates.push({ type, id, value: state[type][id] });
+          state[type][id] = clone(prepared.snapshot[type][id]);
+        }
         layout.arrangement = clone(prepared.snapshot.layouts[layout.id].arrangement);
         layout.rootContainerIds = [...prepared.snapshot.layouts[layout.id].rootContainerIds]; markEdited(layout, changedAt);
         if (parentId) state.containers[parentId] = clone(prepared.snapshot.containers[parentId]);
@@ -10720,6 +10726,7 @@ async function prepareCausalAdminPlacementCopy(request) {
         layout.templateDraftSyncPending = true; persistNewCausalAdminTemplateDraft(layout);
       } catch (error) {
         for (const { type, targetId } of prepared.entries) delete state[type][targetId];
+        for (const { type, id, value } of priorUpdates) state[type][id] = value;
         for (const key of Object.keys(layout)) if (!Object.hasOwn(priorLayout, key)) delete layout[key];
         Object.assign(layout, priorLayout); if (parentId) state.containers[parentId] = priorParent;
         throw error;

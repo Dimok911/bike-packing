@@ -62,3 +62,30 @@ test("existing standalone catalog item keeps its ID, quantity and durable placem
   f.state.items.source.containerId = "detached-catalog-bag";
   assert.throws(() => prepareAdminTemplateItemCopy(f.state, request, options));
 });
+
+test("existing item leaves only its detached catalog parent and preserves sibling records", () => {
+  const f = fixture(true), request = { ...f.request, mode: "link", targetLayoutId: "from", targetParentId: "from-bag" };
+  f.state.items.source.containerId = "detached";
+  f.state.items.stays = { id: "stays", name: "Stays", publicCatalogLayoutId: "from", containerId: "detached", quantity: 5 };
+  f.state.containers.detached = { id: "detached", publicCatalogLayoutId: "from", parentId: "", childIds: [],
+    itemIds: ["source", "stays"], order: [{ type: "item", id: "source" }, { type: "item", id: "stays" }] };
+  const before = structuredClone(f.state), result = prepareAdminTemplateItemCopy(f.state, request, options);
+  assert.deepEqual(f.state, before); assert.deepEqual(result.entries, []);
+  assert.deepEqual(result.updates, [{ type: "items", id: "source" }, { type: "containers", id: "detached" }]);
+  assert.deepEqual(result.snapshot.items.stays, before.items.stays);
+  assert.deepEqual(result.snapshot.containers.detached, { ...before.containers.detached,
+    itemIds: ["stays"], order: [{ type: "item", id: "stays" }] });
+  assert.equal(result.snapshot.items.source.id, "source"); assert.equal(result.snapshot.items.source.containerId, "from-bag");
+  assert.equal(result.snapshot.items.source.quantity, 1); assert.equal(result.snapshot.layouts.from.arrangement.itemQuantities.source, 3);
+  assert.deepEqual(Object.keys(result.snapshot.items), Object.keys(before.items));
+  for (const mutate of [
+    state => { state.containers.detached.publicCatalogLayoutId = "other"; },
+    state => { state.containers.detached.itemIds.push("source"); },
+    state => { state.containers.detached.order = []; },
+    state => { state.containers["from-bag"].itemIds.push("source"); },
+    state => { state.layouts.from.arrangement.containers.detached = {}; }
+  ]) {
+    const state = structuredClone(before); mutate(state); const unchanged = structuredClone(state);
+    assert.throws(() => prepareAdminTemplateItemCopy(state, request, options)); assert.deepEqual(state, unchanged);
+  }
+});

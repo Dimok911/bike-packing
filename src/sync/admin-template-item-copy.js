@@ -22,7 +22,15 @@ export function prepareAdminTemplateItemCopy(state, request, { operationId, chan
     || hasPhotos(source) || isItemUnavailableForPacking(source)
     || frozen.containers?.[targetParentId]?.publicCatalogLayoutId !== targetLayoutId
     || !to.arrangement.containers?.[targetParentId]) fail();
-  if (mode === "link" && (Object.hasOwn(from.arrangement.items || {}, sourceId) || source.containerId)) fail();
+  if (mode === "link" && Object.hasOwn(from.arrangement.items || {}, sourceId)) fail();
+  const oldParentId = mode === "link" ? source.containerId || "" : "", oldParent = frozen.containers?.[oldParentId];
+  if (oldParentId) {
+    if (!oldParent || oldParent.publicCatalogLayoutId !== sourceLayoutId || from.arrangement.containers?.[oldParentId]
+      || !Array.isArray(oldParent.itemIds) || oldParent.itemIds.filter(id => id === sourceId).length !== 1
+      || !Array.isArray(oldParent.order) || oldParent.order.filter(row => row.type === "item" && row.id === sourceId).length !== 1
+      || Object.entries(frozen.containers).some(([id, row]) => id !== oldParentId && row.publicCatalogLayoutId === sourceLayoutId
+        && (row.itemIds?.includes(sourceId) || row.order?.some(entry => entry.type === "item" && entry.id === sourceId)))) fail();
+  }
   const itemId = mode === "link" ? sourceId : `item-template-copy-${operationId}`;
   // Match the existing item-copy UI: placed catalog records copy one unit;
   // detached records retain their catalog quantity, independent of packing.
@@ -31,6 +39,10 @@ export function prepareAdminTemplateItemCopy(state, request, { operationId, chan
   const { snapshot } = mode === "link" ? { snapshot: clone(frozen) } : preparePersonalCopyBatch(copySource, { type: "copy", version: 1, keepPlacement: false, layoutId: "",
     entries: [{ type: "item", sourceId, targetId: itemId }] }, { changedAt, currentEditMeta, hasPhotos });
   snapshot.items[sourceId] = clone(source);
+  if (oldParentId) {
+    snapshot.containers[oldParentId].itemIds = oldParent.itemIds.filter(id => id !== sourceId);
+    snapshot.containers[oldParentId].order = oldParent.order.filter(row => row.type !== "item" || row.id !== sourceId);
+  }
   if (mode === "copy") snapshot.items[itemId] = { ...cloneIsolatedPublicEntity(snapshot.items[itemId]),
     publicCatalogLayoutId: targetLayoutId, adminDemo: Boolean(to.adminDemo) };
   snapshot.items[itemId].containerId = targetParentId;
@@ -46,5 +58,6 @@ export function prepareAdminTemplateItemCopy(state, request, { operationId, chan
   Object.assign(snapshot.containers[targetParentId], { itemIds: [...arrangement.containers[targetParentId].itemIds],
     order: clone(arrangement.containers[targetParentId].order) });
   snapshot.items[itemId].quantity = 1;
-  return { snapshot, entries: mode === "link" ? [] : [{ type: "items", sourceId, targetId: itemId }], itemId };
+  return { snapshot, entries: mode === "link" ? [] : [{ type: "items", sourceId, targetId: itemId }], itemId,
+    ...(mode === "link" ? { updates: [{ type: "items", id: sourceId }, ...(oldParentId ? [{ type: "containers", id: oldParentId }] : [])] } : {}) };
 }
