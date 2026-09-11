@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1606" />
+    <link rel="stylesheet" href="./styles.css?v=1608" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -834,6 +834,10 @@
           <h2>Вход по ссылке</h2>
           <button type="button" class="icon-button" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
         </header>
+        <section id="authMigrateExperiment" hidden>
+          <p class="dialog-note"></p>
+          <button id="authMigrateExperimentBtn" type="button" class="ghost">Перенести прежний вход Experiment</button>
+        </section>
         <p id="authRequestNote" class="dialog-note">Enter your email. We will send a magic link, no password needed.</p>
         <label>
           <span id="authEmailLabel">Email</span>
@@ -995,6 +999,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1606" type="module"></script>
+    <script src="./app.js?v=1608" type="module"></script>
   </body>
 </html>

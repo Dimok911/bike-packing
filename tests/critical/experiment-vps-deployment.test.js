@@ -35,7 +35,7 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   assert.match(remoteScript, /abort\)[\s\S]*rm -rf -- "\$stage" "\$assets_stage"/);
   assert.match(script, /Experiment deployment failed; the previous release was restored/);
   assert.match(script, /\$sharedPrefix\*/);
-  assert.match(script, /\$ApiCapabilitiesUrl\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/capabilities"/);
+  assert.match(script, /\$ApiCapabilitiesUrl\s*=\s*"https:\/\/api\.vniipo-help\.ru\/experiment\/letters-vniipo\/api\/bike-packing\/capabilities"/);
   assert.match(script, /function Assert-ExperimentApiContract/);
   assert.match(script, /requiredApiCompatibilityVersion/);
   assert.match(script, /requiredApiCapabilities/);

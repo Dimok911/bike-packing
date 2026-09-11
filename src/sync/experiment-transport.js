@@ -401,10 +401,16 @@ export function createExperimentTransport({
     if (!experiment || typeof source !== "string") return null;
     try {
       const url = new URL(source, `${EXPERIMENT_API_BASE}/`);
-      const allowed = [new URL(EXPERIMENT_API_BASE).origin, "https://api.vniipo-help.ru", new URL(EU_EXPERIMENT_API_BASE).origin];
-      if (!allowed.includes(url.origin) || url.username || url.password) return null;
-      const prefix = url.origin === new URL(EU_EXPERIMENT_API_BASE).origin ? "/experiment/letters-vniipo/api" : "/letters-vniipo/api";
-      if (!url.pathname.startsWith(`${prefix}/bike-packing/`)) return null;
+      // Saved photo references predate the canonical API host. Preserve those
+      // identities while routing both old and current references through the
+      // selected Experiment transport; no other host/path becomes a proxy.
+      const prefixes = url.origin === "https://api.vniipo-help.ru"
+        ? ["/experiment/letters-vniipo/api", "/letters-vniipo/api"]
+        : url.origin === EXPERIMENT_FRONTEND_ORIGIN ? ["/letters-vniipo/api"]
+        : url.origin === new URL(EU_EXPERIMENT_API_BASE).origin ? ["/experiment/letters-vniipo/api"] : [];
+      if (url.username || url.password) return null;
+      const prefix = prefixes.find(value => url.pathname.startsWith(`${value}/bike-packing/`));
+      if (!prefix) return null;
       const suffix = `${url.pathname.slice(prefix.length)}${url.search}`;
       // Only binary photo routes; external/catalog URLs and auth never enter here.
       if (!/\/photos\/[^/]+\/(file|thumb)$/.test(url.pathname)) return null;

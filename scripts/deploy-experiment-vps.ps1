@@ -8,7 +8,7 @@ param(
   [string]$IdentityFile = "",
   [switch]$ApplicationOnly,
   [string]$PublicUrl = "https://experiment.vniipo-help.ru/",
-  [string]$ApiCapabilitiesUrl = "https://experiment.vniipo-help.ru/letters-vniipo/api/bike-packing/capabilities"
+  [string]$ApiCapabilitiesUrl = "https://api.vniipo-help.ru/experiment/letters-vniipo/api/bike-packing/capabilities"
 )
 
 Set-StrictMode -Version Latest
@@ -78,6 +78,12 @@ function Assert-ExperimentApiContract([string]$ContractPath, [string]$TemporaryD
   $contract = Get-Content -LiteralPath $ContractPath -Raw | ConvertFrom-Json
   $requiredVersion = [string]$contract.requiredApiCompatibilityVersion
   $requiredCapabilities = @($contract.requiredApiCapabilities | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  if ($contract.PSObject.Properties.Name -contains "experimentRelease") {
+    if ($contract.experimentRelease.origin -ne $PublicUrl.TrimEnd("/")) {
+      throw "The enabled Experiment release cannot be published to another origin."
+    }
+    $requiredCapabilities += @($contract.experimentRelease.requiredCapabilities)
+  }
   if ([int]$contract.schemaVersion -ne 1 -or [string]::IsNullOrWhiteSpace($requiredVersion)) {
     throw "Release API contract is missing or invalid."
   }

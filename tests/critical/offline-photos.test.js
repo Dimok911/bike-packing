@@ -1589,7 +1589,7 @@ test("CRITICAL offline-photos: dialog photo uploads render a queued batch before
   assert.match(controllers, /setItemDialogPhotoStatus\(openedFormPhotoStatus\(list\)\)/);
   assert.match(controllers, /setRootContainerDialogPhotoStatus\(openedFormPhotoStatus\(list\)\)/);
   const statusBlock = controllers.slice(controllers.indexOf("function openedFormPhotoStatus"), controllers.indexOf("const personalPhotoForms"));
-  assert.match(statusBlock, /personalPhotoFormUiEnabled\(\) && prepared\.length/);
+  assert.match(statusBlock, /\(adminTemplatePhotoFormEnabled\(\) \|\| personalPhotoFormUiEnabled\(\)\) && prepared\.length/);
   assert.match(statusBlock, /Отправятся после сохранения карточки/);
   assert.match(statusBlock, /return photoDialogStatusText\(list\)/); // Legacy uploads retain their progress label.
   assert.doesNotMatch(app, /async function getPhotoUploadSource|async function copyRemotePhotoToList|async function fetchRemotePhotoBlobForUpload/);

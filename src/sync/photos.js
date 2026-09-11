@@ -112,12 +112,12 @@ export function photoRemoteSrc(photo) {
   return versionedPhotoUrl(normalizeRemotePhotoUrl(src), photo?.updatedAt || photo?.id || "");
 }
 
-export function normalizeRemotePhotoUrl(src) {
+export function normalizeRemotePhotoUrl(src, apiBase = API_BASE) {
   const value = syncSafePhotoUrl(src);
   if (!value) return "";
   try {
-    const apiUrl = new URL(API_BASE);
-    const url = new URL(value, API_BASE);
+    const apiUrl = new URL(apiBase);
+    const url = new URL(value, apiBase);
     const apiMarker = "/letters-vniipo/api/";
     const apiIndex = url.pathname.indexOf(apiMarker);
     if (apiIndex >= 0) {

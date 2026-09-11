@@ -1,55 +1,78 @@
-import { EXPERIMENT_SHARED_AUTH_URL } from "../config/constants.js";
+import { EXPERIMENT_SESSION_MIGRATION_URL } from "../config/constants.js";
 import { experimentTransport } from "./experiment-transport.js";
 
-let shareAttempt = null;
+export function isExperimentHost(locationLike = globalThis.location) {
+  return String(locationLike?.hostname || "").toLowerCase() === "experiment.vniipo-help.ru";
+}
 
-export async function ensureExperimentSharedAuthSession({
-  fetchImpl = typeof fetch === "function" ? fetch : null,
-  locationLike = typeof window !== "undefined" ? window.location : null,
-  shareUrl = EXPERIMENT_SHARED_AUTH_URL,
-  timeoutMs = 7000,
-  transport = experimentTransport,
-} = {}) {
-  if (String(locationLike?.hostname || "").toLowerCase() !== "experiment.vniipo-help.ru") {
-    return { handled: false, reason: "not-experiment" };
+async function mutateSession(url, path, { fetchImpl, timeoutMs, transport, body, migration = false }) {
+  // These session endpoints have fixed destinations. They still participate in
+  // the cross-tab mutation barrier, including an unknown result after timeout.
+  const writeId = await transport.beginWrite(path, "POST", body);
+  try {
+    transport.assertWritable(path, "POST");
+  } catch (error) {
+    transport.confirmWrite(writeId, { committed: false });
+    throw error;
   }
-  if (typeof fetchImpl !== "function") return { handled: false, reason: "fetch-unavailable" };
-  if (shareAttempt) return shareAttempt;
-
-  shareAttempt = (async () => {
-    // This host-only-cookie bridge has one fixed RU destination, not a fallback.
-    // Still participate in the same cross-tab mutation barrier before dispatch.
-    const path = "/auth/experiment-share-session";
-    const writeId = await transport.beginWrite(path, "POST");
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetchImpl(shareUrl, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
+  const controller = new AbortController();
+  let timeoutId;
+  try {
+    const { response, data } = await Promise.race([
+      fetchImpl(url, {
+        method: "POST", credentials: "include", cache: "no-store", redirect: "error",
         signal: controller.signal,
-        redirect: "error",
-      });
-      const data = await response.json().catch(() => null);
-      if (response.status >= 500 || response.status === 408 || (response.ok && !data)) {
-        const error = new Error("Shared session result is unconfirmed");
-        error.status = response.ok ? 0 : response.status;
-        throw error;
-      }
-      transport.confirmWrite(writeId, { committed: response.ok });
-      return {
-        handled: Boolean(response.ok && data?.user?.id),
-        reason: response.ok ? "session-shared" : response.status === 401 ? "signed-out" : "unavailable",
-      };
-    } catch (error) {
-      throw transport.noteFailure(error, path, "POST", writeId);
-    } finally {
-      clearTimeout(timeoutId);
+        ...(body ? { headers: { "Content-Type": "application/json" }, body } : {}),
+      }).then(async response => ({ response, data: migration ? await response.json().catch(() => null) : null })),
+      new Promise((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          const error = new Error("Session request timed out; result is unconfirmed");
+          error.name = "AbortError";
+          reject(error);
+        }, timeoutMs);
+      }),
+    ]);
+    if (response.status >= 500 || response.status === 408
+      || (migration && response.ok && (data?.ok === false || !data?.user?.id))) {
+      const error = new Error("Session result is unconfirmed");
+      error.status = response.ok ? 0 : response.status;
+      throw error;
     }
-  })().catch(() => ({ handled: false, reason: "network-error" }));
+    if (transport.confirmWrite(writeId, { committed: response.ok }) === false) {
+      throw new Error("Session acknowledgement could not be saved");
+    }
+    return { response, data };
+  } catch (error) {
+    throw transport.noteFailure(error, path, "POST", writeId);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
-  return shareAttempt;
+export async function migrateExperimentSession({
+  explicitIntent = false, fetchImpl = globalThis.fetch, locationLike = globalThis.location,
+  timeoutMs = 7000, transport = experimentTransport,
+} = {}) {
+  if (!isExperimentHost(locationLike)) return { handled: false, reason: "not-experiment" };
+  if (!explicitIntent) return { handled: false, reason: "explicit-intent-required" };
+  if (typeof fetchImpl !== "function") return { handled: false, reason: "fetch-unavailable" };
+  const { response } = await mutateSession(EXPERIMENT_SESSION_MIGRATION_URL, "/auth/migrate-session", {
+    fetchImpl, timeoutMs, transport, body: JSON.stringify({ useExperimentSession: true }), migration: true,
+  });
+  if (!response.ok) return { handled: false, reason: response.status === 401 ? "sign-in-required" : "unavailable" };
+  await clearLegacyExperimentCookie({ fetchImpl, locationLike, timeoutMs, transport }).catch(() => null);
+  return { handled: true, reason: "session-migrated" };
+}
+
+export async function clearLegacyExperimentCookie({
+  fetchImpl = globalThis.fetch, locationLike = globalThis.location,
+  timeoutMs = 7000, transport = experimentTransport,
+} = {}) {
+  if (!isExperimentHost(locationLike)) return;
+  if (typeof fetchImpl !== "function") throw new Error("Session cleanup is unavailable");
+  const { response } = await mutateSession("https://experiment.vniipo-help.ru/session/clear-legacy", "/session/clear-legacy", {
+    fetchImpl, timeoutMs, transport,
+  });
+  if (!response.ok) throw new Error("Legacy session cleanup failed");
 }

@@ -22,8 +22,9 @@ const personal = () => ({ locations: ["Велосипед"], categories: ["Ре�
     arrangement: { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {} } } },
   activeLayoutId: "personal", packedItems: {} });
 
-export async function adminPhotoBrowserFixture(page, context, { shared = false, oldPhotos = true, exactSourceArrangement = false, photoEdit = false } = {}) {
-  const bundle = photoEdit ? path.resolve("test-results/admin-template-photo-edit-ui-build") : adminPhotoBundle;
+export async function adminPhotoBrowserFixture(page, context, { shared = false, oldPhotos = true, exactSourceArrangement = false, photoEdit = false, release = false } = {}) {
+  const bundle = release ? path.resolve("www/vniipo-help.ru/bike-packing")
+    : photoEdit ? path.resolve("test-results/admin-template-photo-edit-ui-build") : adminPhotoBundle;
   const webkit = context.browser()?.browserType().name() === "webkit";
   const binding = { actorId: "admin-a", environment: "bike-packing-experiment",
     listId: shared ? "public-shared-layout-photo-ui" : "public-demo-state-photo-ui",
@@ -51,11 +52,25 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
   if (photoEdit) for (const [type, id] of [["items", "pump"], ["containers", "bag"]]) {
     payload[type][id].photos = [photo(`old-${id}`), photo(`второе-${id}`), photo(`third-${id}`)];
   }
+  if (release) for (const type of ["items", "containers"]) for (const owner of Object.values(payload[type])) {
+    for (const photo of owner.photos || []) photo.thumbUrl = photo.thumbUrl.replace(api, "https://api.vniipo-help.ru/experiment/letters-vniipo/api");
+  }
+  if (release) {
+    // The real selector recognizes a private demo copy by its server-assigned
+    // causal layout ID. The legacy fixture's arbitrary "original" ID only
+    // worked because its test hook opened the editor without the selector.
+    const id = "layout-7734f0ea-03d8-4e6b-a8e1-41f45dbf9e55";
+    payload.layouts = { [id]: { ...payload.layouts.original, id } }; payload.activeLayoutId = id;
+  }
   const server = { binding, payload, initialPayload: clone(payload), metadata: { title: "Фото шаблона", description: "", language: "ru" },
     revision: 7, visibility: "private", ownerId: "different-database-owner", privatePayload: personal(),
     posts: [], stagePosts: [], preparePosts: [], operationGets: [], stageGets: [], receipts: new Map(), stages: new Map(), errors: [],
     lostStageAck: false, lostSaveAck: false, stageHidden: false, saveHidden: false, hideSaveAfterCommit: false, stageHold: null,
     capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1", "adminTemplatePhotoEditV1"] };
+  server.release = release; server.photoReads = [];
+  if (release) server.capabilities.push("personalListCausalOperationsV1", "personalListOperationCancellationV1", "personalListInitialMigrationV1",
+    "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalCausalPhotoPublicationV1", "personalCausalPhotoOwnerStateV1",
+    "personalCausalPhotoFormV1", "personalCausalPhotoItemFormContextV1", "personalCausalPhotoContainerFormContextV1");
   page.on("pageerror", error => server.errors.push(error.message));
   await context.addInitScript(() => localStorage.setItem("bike-packing-language-v1", "ru"));
   if (webkit) await context.addInitScript(() => {
@@ -78,17 +93,23 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
   });
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url());
-    const headers = { "Access-Control-Allow-Origin": adminPhotoOrigin, "Access-Control-Allow-Credentials": "true" };
+    const headers = { "Access-Control-Allow-Origin": adminPhotoOrigin, "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
     try {
       if (url.pathname.includes("/letters-vniipo/api/")) {
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
         const suffix = url.pathname.split("/letters-vniipo/api")[1]; let data;
-        if (/\/photos\/[^/]+\/(file|thumb)$/.test(suffix)) return route.fulfill({ headers, contentType: "image/gif", body: selectedGif });
+        if (/\/photos\/[^/]+\/(file|thumb)$/.test(suffix)) {
+          server.photoReads.push(url.href); return route.fulfill({ headers, contentType: "image/gif", body: selectedGif });
+        }
         if (["/auth/me", "/auth/experiment-share-session"].includes(suffix)) data = { ok: true, user: { id: binding.actorId, email: "admin@example.test" } };
         else if (suffix === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "admin",
           capabilities: ["templates:write", "templates:history:read", "reports:read", "catalog:review"] } };
-        else if (suffix === "/bike-packing/capabilities") data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-          capabilities: server.capabilities };
+        else if (suffix === "/bike-packing/capabilities") {
+          if (release) Object.assign(headers, { "X-Vniipo-Proxy-Target": "bike-packing-experiment", "X-Vniipo-Proxy-Write-Gate": "enabled",
+            "Access-Control-Expose-Headers": "X-Vniipo-Proxy-Target, X-Vniipo-Proxy-Write-Gate" });
+          data = { ok: true, service: "bikepacking-api", apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION, capabilities: server.capabilities };
+        }
         else if (suffix === "/bike-packing/lists") data = { ok: true, lists: [{ id: "personal-list", title: "Личный список", ownerId: binding.actorId,
           role: "owner", canEdit: true, stateRevision: 1, payload: server.privatePayload }] };
         else if (suffix.startsWith("/bike-packing/lists/personal-list") && request.method() === "GET") data = { ok: true,
@@ -217,12 +238,30 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
     } catch (error) { server.errors.push(`${request.method()} ${url.pathname}: ${error.stack || error}`); await route.abort("failed").catch(() => {}); }
   });
   page.adminPhotoServer = server;
+  if (release && process.env.BIKE_RELEASE_DIAGNOSTIC === "1" && context.browser()?.browserType().name() === "chromium") {
+    const debuggerSession = await context.newCDPSession(page); server.exceptions = [];
+    await debuggerSession.send("Debugger.enable");
+    debuggerSession.on("Debugger.paused", event => {
+      if (event.reason === "exception") server.exceptions.push({ error: event.data?.description,
+        stack: event.callFrames.slice(0, 8).map(frame => ({ name: frame.functionName, location: frame.location })) });
+      debuggerSession.send("Debugger.resume").catch(() => {});
+    });
+    await debuggerSession.send("Debugger.setPauseOnExceptions", { state: "all" });
+  }
   await page.goto(adminPhotoOrigin); await openAdminPhotoEditor(page, server);
   return server;
 }
 
 export async function openAdminPhotoEditor(page, server) {
   await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  if (server.release) {
+    await expect(page.locator("#layoutSelect option").filter({ hasText: "Фото шаблона" })).toHaveCount(1);
+    const value = await page.locator("#layoutSelect option").filter({ hasText: "Фото шаблона" }).getAttribute("value");
+    await page.locator("#layoutSelect").selectOption(value);
+    await expect.poll(() => server.preparePosts.length).toBeGreaterThan(0);
+    await expect(page.locator("body")).toContainText("Насос шаблона");
+    return;
+  }
   await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");
   await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("shared-layout:")
     ? { type: "shared", sharedId: "photo-ui" } : { type: "demo", demoListId: binding.listId, language: "ru" }), server.binding);

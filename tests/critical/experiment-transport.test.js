@@ -150,6 +150,81 @@ test("transport: photo fetch rewrites only trusted private photo routes; cache s
   }
 });
 
+test("transport: canonical, legacy and EU photo identities follow the chosen route without widening the URL allowlist", async () => {
+  const suffix = "/bike-packing/lists/list-%D1%82/photos/photo-1/thumb?v=2&quality=full";
+  const bases = [
+    "https://api.vniipo-help.ru/experiment/letters-vniipo/api",
+    "https://api.vniipo-help.ru/letters-vniipo/api",
+    "https://experiment.vniipo-help.ru/letters-vniipo/api",
+    EU_EXPERIMENT_API_BASE,
+  ];
+  for (const selection of ["direct", "eu"]) {
+    const requests = [];
+    const transport = createExperimentTransport({ locationLike, selection, euEnabled: true, locks, storage: storageMock(),
+      fetchImpl: async (url, options) => { requests.push({ url, options }); return url.endsWith("capabilities") ? descriptor() : new Response("photo"); } });
+    for (const base of bases) {
+      await transport.fetchPhoto(base + suffix, { credentials: "include" });
+      const actual = requests.at(-1);
+      assert.equal(actual.url, (selection === "eu" ? EU_EXPERIMENT_API_BASE : EXPERIMENT_API_BASE) + suffix);
+      assert.equal(actual.options.credentials, "include");
+      assert.equal(actual.options.redirect, selection === "eu" ? "error" : undefined);
+    }
+    for (const source of [
+      "https://api-eu.vniipo-help.ru/letters-vniipo/api" + suffix,
+      "https://experiment.vniipo-help.ru/experiment/letters-vniipo/api" + suffix,
+      "http://api.vniipo-help.ru/experiment/letters-vniipo/api" + suffix,
+      "https://api.vniipo-help.ru.evil.test/experiment/letters-vniipo/api" + suffix,
+      "https://user@api.vniipo-help.ru/experiment/letters-vniipo/api" + suffix,
+      "https://api.vniipo-help.ru/experiment/letters-vniipo/api-other" + suffix,
+      "https://api.vniipo-help.ru/experiment/letters-vniipo/api/auth/me",
+      "https://api.vniipo-help.ru/experiment/letters-vniipo/api/bike-packing/lists/list/photos/photo-1",
+    ]) assert.equal(await transport.photoUrl(source), source);
+  }
+  const production = createExperimentTransport({ locationLike: { origin: "https://vniipo-help.ru", hostname: "vniipo-help.ru" }, selection: "eu", euEnabled: true });
+  for (const base of bases) assert.equal(await production.photoUrl(base + suffix), base + suffix);
+});
+
+test("transport: RU pending write survives an unauthenticated EU choice; return to RU permits only receipt read", async () => {
+  const storage = storageMock(), selectionStore = storageMock(), requests = [];
+  const operationId = crypto.randomUUID();
+  const recovery = { type: "list", protocol: "causal-v1", operationId, actorId: "actor", listId: "list-1",
+    kind: "list.update", body: { version: 1, payload: { name: "retained draft" } } };
+  const make = selection => createExperimentTransport({ locationLike, selection, euEnabled: true, locks, storage,
+    fetchImpl: async () => descriptor() });
+  const original = make("direct");
+  const id = await original.beginWrite("/bike-packing/list-operations", "POST", JSON.stringify(recovery.body), recovery);
+  original.noteFailure(new TypeError("RU response lost after dispatch"), "/bike-packing/list-operations", "POST", id);
+  const saved = storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
+  const priorFetch = globalThis.fetch, priorWindow = globalThis.window;
+  const receipt = { ok: true, operationId, status: "committed" };
+  globalThis.window = { setTimeout, clearTimeout };
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, method: options.method || "GET" });
+    if (url === `${EU_EXPERIMENT_API_BASE}/auth/me`) return Response.json({ ok: true, user: null });
+    assert.equal(url, `${EXPERIMENT_API_BASE}/bike-packing/list-operations/${operationId}`);
+    return Response.json(receipt);
+  };
+  try {
+    saveTransportSelection("eu", { locationLike, storage: selectionStore });
+    const european = make(selectionStore.getItem(EXPERIMENT_TRANSPORT_KEY));
+    assert.equal((await apiFetchRequest("/auth/me", {}, { transport: european })).user, null);
+    for (const path of ["/auth/request-magic-link", "/auth/verify-magic-link", "/bike-packing/list-operations"]) {
+      await assert.rejects(apiFetchRequest(path, { method: "POST", body: "{}", silentErrors: true }, { transport: european }), /unknown outcome/);
+    }
+    assert.equal(storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${id}`), saved);
+    saveTransportSelection("direct", { locationLike, storage: selectionStore });
+    const returned = make(selectionStore.getItem(EXPERIMENT_TRANSPORT_KEY));
+    assert.deepEqual(await apiFetchRequest(`/bike-packing/list-operations/${operationId}`, {}, { transport: returned }), receipt);
+    assert.deepEqual(requests, [
+      { url: `${EU_EXPERIMENT_API_BASE}/auth/me`, method: "GET" },
+      { url: `${EXPERIMENT_API_BASE}/bike-packing/list-operations/${operationId}`, method: "GET" },
+    ]);
+    // Reading a response is not the queue's validation/acknowledgement step.
+    assert.equal(storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${id}`), saved);
+    assert.equal(returned.uncertainWrite.id, operationId);
+  } finally { globalThis.fetch = priorFetch; globalThis.window = priorWindow; }
+});
+
 test("transport: 401/403 and network errors never silently fail over or re-send a fetch mutation", async () => {
   const priorFetch = globalThis.fetch, priorWindow = globalThis.window;
   globalThis.window = { setTimeout, clearTimeout };
@@ -217,12 +292,12 @@ test("transport: XHR upload uses the same isolated origin exactly once and timeo
   } finally { globalThis.XMLHttpRequest = previous; }
 });
 
-test("transport: auth bridge and cookie bootstrap remain distinct; token-consuming GET is unsafe", () => {
+test("transport: canonical session migration stays on its fixed host; token-consuming GET is unsafe", () => {
   assert.equal(isReadOnlyRequest("/auth/verify-magic-link?token=x"), false);
   assert.equal(isReadOnlyRequest("/auth/me"), true);
   assert.equal(isReadOnlyRequest("/auth/me", "PATCH"), false);
   const source = readFileSync(new URL("../../src/sync/experiment-shared-auth.js", import.meta.url), "utf8");
-  assert.match(source, /EXPERIMENT_SHARED_AUTH_URL/);
+  assert.match(source, /EXPERIMENT_SESSION_MIGRATION_URL/);
   assert.match(source, /credentials: "include"/);
   assert.doesNotMatch(source, /201\.51\.16\.219|api-eu/);
   assert.equal(API_BASE.includes("api-eu"), false);

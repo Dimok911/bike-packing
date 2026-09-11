@@ -82,9 +82,9 @@ test("production shell has no experimental banner and only the experiment host s
   assert.doesNotMatch(indexSource, /id="experimentBanner"/);
   assert.equal(resolveApiBase({ hostname: "vniipo-help.ru" }), "https://api.vniipo-help.ru/letters-vniipo/api");
   assert.equal(resolveApiBase({ hostname: "dimok911.github.io" }), "https://api.vniipo-help.ru/letters-vniipo/api");
-  assert.equal(resolveApiBase({ hostname: "experiment.vniipo-help.ru" }), "https://experiment.vniipo-help.ru/letters-vniipo/api");
+  assert.equal(resolveApiBase({ hostname: "experiment.vniipo-help.ru" }), "https://api.vniipo-help.ru/experiment/letters-vniipo/api");
   assert.match(constantsSource, /PRODUCTION_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api"/);
-  assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api"/);
+  assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/experiment\/letters-vniipo\/api"/);
 });
 
 test("prominent banner is mounted once on the exact Experiment frontend and never on production or API hosts", async () => {

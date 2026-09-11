@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { EXPERIMENT_RELEASE_ORIGIN, EXPERIMENT_RELEASE_PROFILE, EXPERIMENT_RELEASE_GATES,
+  EXPERIMENT_RELEASE_CAPABILITIES } from "./experiment-release-profile.mjs";
 import {
   REQUIRED_ADMIN_API_CAPABILITIES,
   REQUIRED_ADMIN_API_VERSION
@@ -43,7 +45,15 @@ async function writeReleaseContract(appVersion) {
     schemaVersion: 1,
     appVersion,
     requiredApiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-    requiredApiCapabilities: REQUIRED_ADMIN_API_CAPABILITIES
+    requiredApiCapabilities: REQUIRED_ADMIN_API_CAPABILITIES,
+    experimentRelease: {
+      profile: EXPERIMENT_RELEASE_PROFILE,
+      origin: EXPERIMENT_RELEASE_ORIGIN,
+      enabledGates: Object.values(EXPERIMENT_RELEASE_GATES).flat(),
+      requiredCapabilities: EXPERIMENT_RELEASE_CAPABILITIES,
+      manualEuropeanRoute: true,
+      automaticRouteSelection: false
+    }
   };
   await fs.writeFile(
     path.join(distDir, "release-contract.json"),

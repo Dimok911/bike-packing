@@ -37,6 +37,7 @@ const origin = "https://experiment.vniipo-help.ru";
 const bundleRoot = path.resolve("test-results/personal-ui-build");
 const photoRecoveryBundleRoot = path.resolve("test-results/personal-photo-cancel-ui-build");
 test.beforeAll(async () => {
+  if (process.env.BIKE_RELEASE_BROWSER === "1") return; // Exact normal release build, no test-only gate transforms.
   for (const mode of process.env.BIKE_PERSONAL_UI_MODES?.split(",") || ["production", "photo-recovery", "photo-form", "photo-edit"]) {
   expect(["production", "photo-recovery", "photo-form", "photo-edit"]).toContain(mode);
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)),
@@ -581,7 +582,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   }
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
-  const activeBundleRoot = photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  const activeBundleRoot = process.env.BIKE_RELEASE_BROWSER === "1" ? path.resolve("www/vniipo-help.ru/bike-packing")
+    : photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
   state.publicSource = publicSource;
   state.publicReads = [];
   state.publicRecords = publicSource ? [...(publicSourceConfig?.others || []), {

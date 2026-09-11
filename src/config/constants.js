@@ -1,5 +1,5 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v1606";
+export const APP_VERSION = "v1608";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -19,9 +19,8 @@ export const ACTIVE_LAYOUT_CHOICE_KEY = "bike-packing-active-layout-choice-v1";
 export const ACTIVE_LAYOUT_CHOICE_SOURCE_KEY = "bike-packing-active-layout-choice-source-v1";
 export const ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY = "bike-packing-active-private-layout-choice-v1";
 export const PRODUCTION_API_BASE = "https://api.vniipo-help.ru/letters-vniipo/api";
-export const EXPERIMENT_API_BASE = "https://experiment.vniipo-help.ru/letters-vniipo/api";
-export const EXPERIMENT_SHARED_AUTH_URL =
-  "https://api.vniipo-help.ru/letters-vniipo/api/auth/experiment-share-session";
+export const EXPERIMENT_API_BASE = "https://api.vniipo-help.ru/experiment/letters-vniipo/api";
+export const EXPERIMENT_SESSION_MIGRATION_URL = "https://api.vniipo-help.ru/auth/migrate-session";
 export function resolveApiBase(locationLike = globalThis.location) {
   const host = String(locationLike?.hostname || "").toLowerCase();
   if (["201.51.16.219", "api-eu.vniipo-help.ru"].includes(host)) {
