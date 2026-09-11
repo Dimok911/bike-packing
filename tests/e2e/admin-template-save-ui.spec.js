@@ -2254,6 +2254,100 @@ for (const shared of [false, true]) for (const type of ["item", "container"])
   });
 }
 
+const pendingCatalogCases = [];
+for (const shared of [false, true]) {
+  for (const shape of ["item", "bag", "bulk-item", "bulk-bag", "root", "nested"]) pendingCatalogCases.push({ shared, shape, mode: "confirmed" });
+  for (const shape of ["bulk-item", "bulk-bag"]) for (const mode of ["lost", "plan-quota", "pointer-quota", "mirror-quota"]) pendingCatalogCases.push({ shared, shape, mode });
+  for (const mode of ["changed-source", "cancel", "corrupt-parent"]) pendingCatalogCases.push({ shared, shape: "item", mode });
+  for (const shape of ["item", "bulk-bag"]) pendingCatalogCases.push({ shared, shape, mode: "metadata" });
+}
+for (const { shared, shape, mode } of pendingCatalogCases) {
+  test(`pending admin catalog ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true, catalogPair: true }); state.blockBusiness = true;
+    if (mode === "metadata") await capturePendingSourceLabel(page, "Ожидающее название каталога");
+    else await editItem(page, "Ожидающая правка каталога", "Насос шаблона");
+    await expect.poll(() => page.evaluate(() => __adminUiTest.state().layouts[__adminUiTest.state().activeLayoutId].adminCausalSource.planId)).toBeTruthy();
+    // This case checks the copy's quota message. Finish the parent's failed
+    // send first so its independent notification cannot replace that message.
+    if (mode === "mirror-quota") await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено:");
+    const item = !shape.includes("bag"), collection = item ? "items" : "containers", bulk = shape.startsWith("bulk"), placed = ["root", "nested"].includes(shape);
+    const before = await page.evaluate(({ collection, bulk, shape }) => {
+      const current = __adminUiTest.state(), layout = current.layouts[current.activeLayoutId];
+      const rows = Object.values(current[collection]).filter(row => row.publicCatalogLayoutId === layout.id && (collection === "items" || !row.parentId));
+      return { layoutId: layout.id, binding: layout.adminCausalSource.binding, parentId: layout.adminCausalSource.base.operationId, parentPlanId: layout.adminCausalSource.planId,
+        ids: (bulk ? rows : rows.slice(0, 1)).map(row => row.id), snapshot: __adminUiTest.snapshot(layout.id),
+        targetId: Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && Boolean(row.parentId) === (shape === "nested")).id };
+    }, { collection, bulk, shape });
+    if (placed) {
+      await page.evaluate(id => __adminUiTest.openItem(id), before.ids[0]); await page.locator("#itemCopyToContainerBtn").click();
+      await expect(page.locator("#containerPickerLayoutSelect")).toHaveValue(before.layoutId);
+      await page.locator(`#containerPickerBoard [data-pick-container="${before.targetId}"]`).click();
+    } else {
+      await page.locator(`[data-view="${item ? "items" : "bags"}"]`).click();
+      const card = id => page.locator(item ? `#itemsView [data-list-item-id="${id}"]` : `#bagsView [data-root-card="${id}"]`);
+      if (bulk) for (const id of before.ids) await card(id).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
+      await card(before.ids[0]).locator(`[data-copy-${item ? "item" : "root"}]`).filter({ visible: true }).first().click();
+    }
+    await expect(page.locator("#confirmDialog")).toBeVisible();
+    if (mode === "changed-source") await page.evaluate(id => { __adminUiTest.state().items[id].name = "Несохранённая поздняя правка"; }, before.ids[0]);
+    if (mode === "corrupt-parent") await page.evaluate(id => {
+      const [key, value] = Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan.id === id);
+      const row = JSON.parse(value); row.digest = "0".repeat(64); localStorage.setItem(key, JSON.stringify(row));
+    }, before.parentPlanId);
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Pending catalog quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    const snapshot = () => page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    if (["cancel", "changed-source", "corrupt-parent", "mirror-quota"].includes(mode)) {
+      if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Pending catalog quota"
+        : mode === "changed-source" ? "Шаблон изменился" : "Сохранение шаблона ожидает продолжения");
+      expect(Object.keys((await snapshot()).payload[collection]).sort()).toEqual(Object.keys(before.snapshot.payload[collection]).sort());
+      expect(await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).toBe(before.parentPlanId);
+      expect(state.posts.every(post => post.operationId === before.parentId)).toBe(true); expect(state.errors).toEqual([]); return;
+    }
+    await expect.poll(async () => Object.keys((await snapshot()).payload[collection]).length).toBe(Object.keys(before.snapshot.payload[collection]).length + before.ids.length);
+    const chosen = await snapshot();
+    let plan;
+    if (["plan-quota", "pointer-quota"].includes(mode)) {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), before.layoutId)).toBe(true);
+      plan = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan, before.layoutId);
+    } else {
+      await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.layoutId)).not.toBe(before.parentPlanId);
+      plan = await page.evaluate(id => {
+        const currentId = __adminUiTest.state().layouts[id].adminCausalSource.planId;
+        return JSON.parse(Object.entries(localStorage).find(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan.id === currentId)[1]).plan;
+      }, before.layoutId);
+    }
+    expect(plan.operations[0].body.base).toEqual({ operationId: before.parentId });
+    expect(state.posts.every(post => post.operationId === before.parentId)).toBe(true);
+    state.blockBusiness = false; state.lose = mode === "lost";
+    await page.reload(); await openEditorForTarget(page, shared);
+    if (mode === "lost") {
+      await expect.poll(() => state.hidden).toBe(true); state.lose = false; state.hidden = false;
+      await page.reload(); await openEditorForTarget(page, shared);
+    }
+    await confirmedRevision(page, 9);
+    const childPosts = state.posts.filter(post => post.operationId === plan.id);
+    expect(childPosts).toHaveLength(1); expect(childPosts[0].body).toEqual(plan.operations[0].body);
+    expect(state.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
+    for (const [id, row] of Object.entries(before.snapshot.payload[collection])) expect(state.payload[collection][id]).toEqual(row);
+    const added = Object.values(state.payload[collection]).filter(row => !before.snapshot.payload[collection][row.id]);
+    expect(added).toHaveLength(before.ids.length);
+    if (placed) for (const row of added) {
+      expect(Object.values(state.payload.layouts)[0].arrangement.items[row.id]).toBe(row.containerId);
+      expect(row.containerId).toBeTruthy();
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
+
 for (const shared of [false, true]) for (const type of ["item", "container"]) for (const mode of ["confirmed", "lost", "plan-quota"]) {
   test(`admin catalog bulk copy ${shared ? "shared" : "demo"} ${type} remains atomic (${mode})`, async ({ page, context }) => {
     const state = await fixture(page, context, { shared, withContainers: true, catalogPair: true, published: mode === "confirmed" });

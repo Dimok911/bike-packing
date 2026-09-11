@@ -6,6 +6,76 @@ import { ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "../../src/sync/admin-template
 
 import { adminClientFixture as fixture } from "../fixtures/admin-template-client-fixture.js";
 
+test("a fetch failure preserves its original error and retained operation for recovery", async () => {
+  const f = fixture(), action = f.action(), failure = new TypeError("Interrupted request");
+  const client = f.make({ fetchImpl: () => Promise.reject(failure) }).client;
+  const saved = await client.capture(action);
+  await assert.rejects(client.run(action.operationId), error => error === failure);
+  const retained = await client.read(action.operationId);
+  assert.deepEqual(retained.intent, saved.intent); assert.equal(retained.receipt, null); assert.equal(retained.dispatched, false);
+  assert.equal(f.posts().length, 0);
+  assert.equal((await f.make().client.run(action.operationId)).operation.state, "committed");
+  assert.equal(f.posts().length, 1);
+});
+
+for (const event of ["beforeunload", "pagehide"]) test(`${event} aborts the active attempt and retains the original operation`, async () => {
+  const f = fixture(), lifecycleTarget = new EventTarget(), action = f.action(); let listening = 0;
+  const add = lifecycleTarget.addEventListener.bind(lifecycleTarget), remove = lifecycleTarget.removeEventListener.bind(lifecycleTarget);
+  lifecycleTarget.addEventListener = (...args) => { listening++; return add(...args); };
+  lifecycleTarget.removeEventListener = (...args) => { listening--; return remove(...args); };
+  const client = f.make({ lifecycleTarget, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    queueMicrotask(() => lifecycleTarget.dispatchEvent(new Event(event)));
+  }) }).client;
+  await client.capture(action);
+  await assert.rejects(client.run(action.operationId), error => error.name === "AbortError");
+  assert.equal(listening, 0); assert.equal((await client.read(action.operationId)).receipt, null); assert.equal(f.posts().length, 0);
+  assert.equal((await f.make().client.run(action.operationId)).operation.state, "committed");
+  assert.equal(f.posts().length, 1);
+});
+
+for (const event of ["beforeunload", "pagehide"]) {
+  test(`${event} between requests stops the next fetch, including after a lock wait`, async () => {
+    for (const phase of ["lock", "body"]) {
+      const f = fixture(), lifecycleTarget = new EventTarget(), action = f.action();
+      await f.make().client.capture(action);
+      let fetches = 0;
+      const client = f.make({ lifecycleTarget,
+        ...(phase === "lock" ? { locks: { request: async (_key, task) => {
+          lifecycleTarget.dispatchEvent(new Event(event)); return task();
+        } } } : {}),
+        fetchImpl: async () => {
+          fetches++;
+          return { status: 200, json: async () => {
+            lifecycleTarget.dispatchEvent(new Event(event));
+            return { ok: true, user: { id: f.binding.actorId } };
+          } };
+        },
+      }).client;
+      await assert.rejects(client.run(action.operationId), error => error.name === "AbortError");
+      assert.equal(fetches, phase === "lock" ? 0 : 1);
+      assert.equal((await client.read(action.operationId)).receipt, null);
+      assert.equal(f.posts().length, 0);
+    }
+  });
+
+  test(`${event} after POST retains uncertainty and a later attempt checks the same receipt`, async () => {
+    const f = fixture(), lifecycleTarget = new EventTarget(), action = f.action();
+    const client = f.make({ lifecycleTarget }).client;
+    await client.capture(action);
+    f.state.afterPost = () => lifecycleTarget.dispatchEvent(new Event(event));
+    await assert.rejects(client.run(action.operationId), error => error.name === "AbortError");
+    assert.equal(f.posts().length, 1);
+    const retained = await client.read(action.operationId);
+    assert.equal(retained.receipt, null); assert.equal(retained.dispatched, true);
+    assert.equal(f.calls.at(-1).options.method, "POST");
+    f.state.afterPost = null;
+    // Covers a cancelled navigation or a restored document using the same client.
+    assert.equal((await client.run(action.operationId)).operation.state, "committed");
+    assert.equal(f.posts().length, 1);
+  });
+}
+
 test("admin capture is independently OFF and cannot use a personal-owner context", async () => {
   assert.equal(ADMIN_TEMPLATE_OPERATIONS_ENABLED, false);
   const f = fixture(); await assert.rejects(f.make({ enabled: false }).client.capture(f.action()));

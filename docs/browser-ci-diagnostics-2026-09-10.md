@@ -1,5 +1,27 @@
 # Мобильные прерывания Linux CI: подтверждённые факты
 
+## CI 20e8e92: фото-превью и два подтверждённых падения, 11.09.2026
+
+[Run 34585849626](https://github.com/Dimok911/bike-packing/actions/runs/34585849626)
+завершился ошибкой mobile WebKit: 1486 passed, 292 skipped, 6 flaky, 1 failed;
+Chromium successful. Единственный окончательный отказ —
+`composed item photo form preserves placement and availability (create)`:
+ожидалось 2 изображения превью, получено 0 в обеих попытках.
+
+Архив `10262160718` сохранён как `ci-20e8e92-mobile.zip`.
+В обеих трассах `browser-lifecycle` есть `page-crash`: 11:02:45.118 и
+11:03:31.601 UTC. Kernel зафиксировал соответствующие segfault compositor
+в 11:02:17 и 11:03:00; уведомление автоматизации пришло позже самого отказа.
+Всего в этом запуске 9 segfault в той же `libWPEWebKit-2.0.so.1.10.2`,
+смещение `5fd556a`. OOM/oom_kill в доступных cgroup равны нулю.
+Это подтверждённые нативные отказы, а не установленная регрессия фотоформы.
+Ожидания количества фото, тайм-ауты и число повторов не изменены.
+
+Данные: `resume-ci-20e8e92-mobile.txt`,
+`resume-ci-20e8e92-linux-browser.txt`, `ci-20e8e92-photo-lifecycle.json`
+в локальном каталоге доказательств. Причина внутри библиотеки и исправление
+ещё не установлены; успешные повторные запуски не закрывают этот вопрос.
+
 `7d634e9`, [34550648965](https://github.com/Dimok911/bike-packing/actions/runs/34550648965):
 Chromium **847 passed / 260 skipped** (45,9 минуты), mobile **807 passed /
 268 skipped / 6 flaky** (1,3 часа), OFF по 4/4. Артефакт 10182509328 сохранён

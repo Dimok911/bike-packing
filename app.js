@@ -10561,8 +10561,9 @@ async function resumeCausalAdminTemplateCopy(layout) {
   if (!pending) return;
   const original = layout.adminCausalSource, binding = original?.binding, wasPending = layout.templateDraftSyncPending;
   const catalog = [1, 4].includes(pending.version), sourceChecked = pending.version === 4, operation = pending.operations?.[0];
-  if (!binding || original.planId || canonicalTemplateJson(binding) !== canonicalTemplateJson(pending.binding)
-    || (catalog ? !original.exists || !original.base?.stateRevision || operation?.kind !== "template.save"
+  const pendingCatalog = catalog && !sourceChecked && Boolean(original?.planId && original.base?.operationId);
+  if (!binding || original.planId && !pendingCatalog || canonicalTemplateJson(binding) !== canonicalTemplateJson(pending.binding)
+    || (catalog ? !original.exists || original.deleted || !original.base?.stateRevision && !pendingCatalog || operation?.kind !== "template.save"
       || canonicalTemplateJson(original.base) !== canonicalTemplateJson(operation.body.base)
       : layout.id !== "layout-" + pending.id || original.exists || original.base !== null)) throw Error("Подготовленная копия требует сверки.");
   const input = sourceChecked ? { binding, operationId: pending.id, body: operation.body, sourceSnapshot: pending.sourceSnapshot }
@@ -10573,6 +10574,13 @@ async function resumeCausalAdminTemplateCopy(layout) {
   if (canonicalTemplateJson(expected) !== canonicalTemplateJson(pending)) throw Error("Сохранённая подготовка копии повреждена.");
   const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id));
   const plans = adminTemplatePlansFor(binding, layout.id);
+  if (pendingCatalog) {
+    const parent = await plans.read(original.planId);
+    if (parent?.cancelRequested !== false || parent.plan.operations.at(-1).id !== original.base.operationId) throw Error("Исходное действие копии требует сверки.");
+    await adminTemplateRecoveryFor(binding, layout.id).assertCanAppend(original.planId);
+    if (state.layouts[layout.id] !== layout || layout.adminCausalSource !== original || layout.adminCausalCopyPlan !== pending
+      || canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id)) !== initial) throw Error("Контекст копирования изменился.");
+  }
   if (sourceChecked) await plans.captureSourceSave(input); else if (catalog) await plans.capture(input); else await plans.captureCopy(input);
   if (state.layouts[layout.id] !== layout || layout.adminCausalSource !== original || layout.adminCausalCopyPlan !== pending
     || canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id)) !== initial) throw Error("Контекст копирования изменился.");
@@ -10585,20 +10593,23 @@ async function resumeCausalAdminTemplateCopy(layout) {
   }
 }
 function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false, addToLayoutId = "", targetContainerId = "" } = {}) {
-  let layout, original, snapshot, initial, prepared, operationId, changedAt;
+  let layout, original, snapshot, initial, prepared, operationId, changedAt, pendingSource = false;
+  sourceIds = [...sourceIds];
   const collection = type === "item" ? "items" : "containers", coordinator = adminTemplateSaveCoordinator();
   const fail = message => { throw Error(message); };
   const guard = () => {
-    if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
-      || layout.adminCausalCopyPlan || layout.templateDraftSyncPending
+    if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout
+      || !pendingSource && (coordinator.hasPendingCapture(layout.id) || layout.templateDraftSyncPending)
+      || layout.adminCausalCopyPlan
       || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial
       || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) fail("Шаблон изменился. Выберите записи для копирования заново.");
   };
   try {
     layout = state.layouts[getPublishedEditLayoutId()]; original = clone(layout?.adminCausalSource || null);
-    if (!layout || !original?.exists || original.planId || !original.base?.stateRevision || layout.adminCausalCopyPlan
-      || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) fail("Сначала дождитесь подтверждения исходного шаблона.");
+    pendingSource = Boolean(original?.planId && original.base?.operationId);
+    if (!layout || !original?.exists || original.deleted || !pendingSource && (original.planId || !original.base?.stateRevision
+      || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) || layout.adminCausalCopyPlan) fail("Сначала дождитесь подтверждения исходного шаблона.");
     if (keepPlacement || addToLayoutId && !targetContainerId) fail("Этот способ размещения копии ещё требует отдельной подготовки. Исходные записи сохранены.");
     if (targetContainerId && (type !== "item" || addToLayoutId !== layout.id || layout.locked
       || state.containers[targetContainerId]?.publicCatalogLayoutId !== layout.id
@@ -10632,6 +10643,16 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
     try {
       if (used) return false; guard();
       if (!requireUsageCapacity(collection, sourceIds.length)) return false;
+      if (pendingSource) {
+        const plans = adminTemplatePlansFor(original.binding, layout.id);
+        await adminTemplateRecoveryFor(original.binding, layout.id).assertCanAppend(original.planId); guard();
+        const saved = await plans.read(original.planId); guard();
+        const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
+        const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(original.binding, layout.id).read() : null; guard();
+        const receipts = saved?.plan.version === 2 ? await adminTemplateClient(original.binding, layout.id, true).list() : []; guard();
+        const observed = JSON.parse(snapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
+        await pendingAdminTemplateCopySource(original, saved, observed, records, { baseline, receipts }); guard();
+      }
       if (added.some(id => state.items[id] || state.containers[id] || state.layouts[id])) fail("Идентификатор копии уже занят.");
       used = true;
       for (const id of added) state[collection][id] = { ...cloneIsolatedPublicEntity(prepared.snapshot[collection][id]),

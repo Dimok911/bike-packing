@@ -58,7 +58,8 @@ export function validateAdminTemplateReceipt(receipt, expected) {
 // Independent administrative storage, actor checks and rights. Private owner
 // journals cannot confer administrator authority or absorb these confirmations.
 export function createAdminTemplateClient({ binding, getContext, transport, storage = globalThis.localStorage,
-  locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED } = {}) {
+  locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window,
+  enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED } = {}) {
   if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== environment) throw blocked();
   binding = clone(binding);
   const prefix = "bike-packing-admin-template-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -69,7 +70,24 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       || value.scope !== "admin-template" || value.admin !== true || value.listId !== binding.listId || value.itemKey !== binding.itemKey || !value.generation) throw blocked();
     return clone(value);
   };
-  const guard = initial => { if (!same(context(), initial)) throw blocked(); };
+  const liveExecutions = new WeakMap();
+  const guard = initial => {
+    liveExecutions.get(initial)?.throwIfAborted();
+    if (!same(context(), initial)) throw blocked();
+  };
+  const withLiveDocument = async (initial, task) => {
+    // Cancel the whole attempt, including gaps between requests. The journal
+    // survives; a later attempt reconciles the original operation ID.
+    const controller = new AbortController(), abort = () => controller.abort();
+    const events = ["beforeunload", "pagehide"];
+    liveExecutions.set(initial, controller.signal);
+    for (const event of events) lifecycleTarget?.addEventListener(event, abort, { once: true });
+    try { return await task(); }
+    finally {
+      for (const event of events) lifecycleTarget?.removeEventListener(event, abort);
+      liveExecutions.delete(initial);
+    }
+  };
   const read = async id => {
     const raw = storage?.getItem(key(id));
     if (raw == null) return null;
@@ -97,7 +115,8 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
   const writable = () => { if (enabled !== true || !transport?.experiment) throw blocked(); };
   const request = async (path, initial, options = {}) => {
     guard(initial);
-    const response = await fetchImpl(transport.apiUrl(path), { credentials: "include", cache: "no-store", redirect: "error", ...options });
+    const response = await fetchImpl(transport.apiUrl(path), { credentials: "include", cache: "no-store", redirect: "error", ...options,
+      signal: liveExecutions.get(initial) });
     guard(initial);
     const data = await response.json(); guard(initial);
     if (response.status !== 200 || data?.ok !== true) throw Object.assign(blocked(), { status: response.status });
@@ -136,7 +155,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
   };
   const execute = async (id, cancel) => {
     writable(); const initial = context();
-    return withLock(id, async () => {
+    return withLiveDocument(initial, () => withLock(id, async () => {
       guard(initial); let saved = await read(id); guard(initial);
       if (!saved) throw blocked();
       if (cancel && !saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, initial);
@@ -172,15 +191,18 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         if (recovered) return recovered;
         throw error;
       }
-    });
+    }));
   };
   return Object.freeze({
     async prepare() {
-      const initial = context(); await identity(initial);
-      const result = await request("/bike-packing/admin/template-operations/prepare", initial, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemKey: binding.itemKey }) });
-      if (result.actorId !== binding.actorId || result.environment !== environment || result.listId !== binding.listId || result.itemKey !== binding.itemKey) throw blocked();
-      return clone(result);
+      const initial = context();
+      return withLiveDocument(initial, async () => {
+        await identity(initial);
+        const result = await request("/bike-packing/admin/template-operations/prepare", initial, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemKey: binding.itemKey }) });
+        if (result.actorId !== binding.actorId || result.environment !== environment || result.listId !== binding.listId || result.itemKey !== binding.itemKey) throw blocked();
+        return clone(result);
+      });
     },
     async list() {
       const initial = context(), ids = [];
@@ -204,12 +226,12 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     async read(operationId) { const initial = context(), saved = await read(operationId); guard(initial); return clone(saved); },
     async inspect(operationId) {
       const initial = context();
-      return withLock(operationId, async () => {
+      return withLiveDocument(initial, () => withLock(operationId, async () => {
         guard(initial); const saved = await read(operationId); guard(initial);
         if (!saved) throw blocked();
         await identity(initial);
         return inspect(saved, initial);
-      });
+      }));
     },
     run: operationId => execute(operationId, false),
     cancel: operationId => execute(operationId, true),
