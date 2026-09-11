@@ -688,6 +688,113 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell"]) for (
   });
 }
 
+async function beginAdminCatalogDrag(page, sourceId, targetId = "", editorTarget = false) {
+  await page.locator('[data-view="bags"]').click();
+  const selector = `#bagsView [data-root-drag="${sourceId}"]`;
+  await page.locator(selector).scrollIntoViewIfNeeded();
+  const start = await page.locator(selector).evaluate(handle => {
+    const box = handle.getBoundingClientRect();
+    for (let y = Math.max(0, box.top + 8); y < Math.min(innerHeight, box.bottom - 5); y += 12)
+      for (let x = Math.max(0, box.left + 8); x < Math.min(innerWidth, box.right - 5); x += 12) {
+        const element = document.elementFromPoint(x, y);
+        if (handle.contains(element) && !element.closest("button,input,select,textarea,label")) return { x, y };
+      }
+    throw Error("No visible catalog drag surface");
+  });
+  const mobile = test.info().project.name === "mobile-webkit";
+  const touch = async (type, point) => page.evaluate(({ type, point, selector }) => {
+    const target = type === "touchstart" ? document.querySelector(selector) : document;
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    const contact = { identifier: 1, target, clientX: point.x, clientY: point.y, pageX: point.x + scrollX, pageY: point.y + scrollY };
+    Object.defineProperties(event, { touches: { value: type === "touchend" ? [] : [contact] }, changedTouches: { value: [contact] } });
+    target.dispatchEvent(event);
+  }, { type, point, selector });
+  if (mobile) await touch("touchstart", start);
+  else { await page.mouse.move(start.x, start.y); await page.mouse.down(); await page.mouse.move(start.x + 16, start.y + 16); }
+  await expect(page.locator(".settings-drag-ghost")).toBeVisible();
+  if (editorTarget) {
+    const list = page.locator("#layoutDropList"); await list.scrollIntoViewIfNeeded();
+    const box = await list.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + 3);
+    await expect(list.locator(":scope > .drop-placeholder")).toBeVisible();
+    return () => page.mouse.up();
+  }
+  const tab = await page.locator('[data-view="packing"]').boundingBox();
+  const portal = { x: tab.x + tab.width / 2, y: tab.y + tab.height / 2 };
+  if (mobile) await touch("touchmove", portal); else await page.mouse.move(portal.x, portal.y);
+  await expect(page.locator("#packingView")).toBeVisible();
+  const targetSelector = targetId ? `#packingView [data-subcontainer-id="${targetId}"], #packingView [data-root-container-id="${targetId}"]`
+    : "#packingView [data-root-container-id]";
+  const destination = page.locator(targetSelector).first(); await destination.scrollIntoViewIfNeeded();
+  const point = await destination.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    for (let y = Math.max(0, box.top + 3); y < Math.min(innerHeight, box.bottom); y += 8)
+      for (let x = Math.max(0, box.left + 3); x < Math.min(innerWidth, box.right); x += 8)
+        if (document.elementFromPoint(x, y)?.closest("[data-root-container-id],[data-subcontainer-id]") === element) return { x, y };
+    throw Error("No visible placement target");
+  });
+  if (mobile) await touch("touchmove", point); else await page.mouse.move(point.x, point.y);
+  await expect(page.locator(targetId ? `.dropzone[data-container-id="${targetId}"] > .drop-placeholder` : "#packingView .board > .column-placeholder")).toBeVisible();
+  return async () => { if (mobile) await touch("touchend", point); else await page.mouse.up(); };
+}
+
+for (const shared of [false, true]) for (const target of ["root", "bag", "pocket", "editor"])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"]) {
+  test(`admin catalog drag ${shared ? "shared" : "demo"} into ${target} (${mode})`, async ({ page, context }) => {
+    test.skip(target === "editor" && test.info().project.name === "mobile-webkit", "Adjacent catalog/list drag is desktop; mobile uses the tested packing-tab portal.");
+    const server = await fixture(page, context, { shared, withContainers: true, detachedTree: "tree", nestableTree: target !== "root", hydrate: true });
+    const before = await page.evaluate(target => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const owned = Object.values(current.containers).filter(row => row.publicCatalogLayoutId === layout.id);
+      return { layoutId: layout.id, sourceId: owned.find(row => row.name === "Запасная сумка").id,
+        targetId: ["root", "editor"].includes(target) ? "" : owned.find(row => row.name === (target === "bag" ? "Сумка шаблона" : "Карман шаблона")).id,
+        snapshot: __adminUiTest.snapshot(layout.id) };
+    }, target);
+    const finish = await beginAdminCatalogDrag(page, before.sourceId, before.targetId, target === "editor");
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Catalog drag quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    server.lose = mode === "lost"; await finish(); await expect(page.locator(".settings-drag-ghost")).toHaveCount(0);
+    if (mode === "mirror-quota") {
+      await expect(page.locator("body")).toContainText("Catalog drag quota"); expect(server.posts).toEqual([]);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(server.errors).toEqual([]); return;
+    }
+    if (["plan-quota", "pointer-quota"].includes(mode)) await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+    else { await expect.poll(() => server.posts.length).toBe(1); if (mode === "lost") await expect.poll(() => server.hidden).toBe(true); }
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId), first = server.posts[0] && structuredClone(server.posts[0]);
+    const operationId = first?.operationId || await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+    server.lose = false; server.hidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1); expect(server.posts[0].operationId).toBe(operationId);
+    if (first) expect(server.posts[0]).toEqual(first);
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    expect(Object.keys(server.payload.containers).sort()).toEqual(Object.keys(before.snapshot.payload.containers).sort());
+    expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(before.snapshot.payload.items).sort());
+    const source = Object.values(server.payload.containers).find(row => row.name === "Запасная сумка");
+    const arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    if (["root", "editor"].includes(target)) expect(arrangement.rootContainerIds[0]).toBe(source.id);
+    else {
+      const parent = Object.values(server.payload.containers).find(row => row.name === (target === "bag" ? "Сумка шаблона" : "Карман шаблона"));
+      expect(arrangement.containers[parent.id].order[0]).toEqual({ type: "container", id: source.id });
+      expect(arrangement.containers[source.id].parentId).toBe(parent.id);
+    }
+    const item = Object.values(server.payload.items).find(row => row.name === "Запасная вещь");
+    expect(arrangement.itemQuantities[item.id]).toBe(3); expect(arrangement.packedItems[item.id]).toBeUndefined();
+    await editItem(page, "Правка после перетаскивания", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement); expect(server.errors).toEqual([]);
+  });
+}
+
 async function submitAdminTemplateCopy(page, name) {
   const sourceId = await page.evaluate(() => {
     const layout = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);

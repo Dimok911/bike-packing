@@ -1359,6 +1359,15 @@ function applyRootContainerDialogPlacement() {
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
   const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !pendingCopyTargetContainerSetup
+    && !state.layouts[layoutId]?.arrangement?.containers?.[containerId]) {
+    return prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: "", targetIndex }).then(async commit => {
+      if (!commit || !await commit()) return false;
+      if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
+      if (renderAfter) render(); return true;
+    });
+  }
   const action = state.layouts?.[layoutId]?.arrangement?.containers?.[containerId] ? "lift-container" : "link-root";
   const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, includeContents: !pendingCopyTargetContainerSetup });
   if (commit === false) return;
@@ -5453,6 +5462,13 @@ function placeExistingContainerInLayout(containerId, parentId, layoutId = state.
   if (parentId && container.nestable !== true) return false;
   if (!parentId && !currentParentId) return false;
   if (warnLockedLayoutMutation(layoutId)) return false;
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !layout.arrangement?.containers?.[containerId]) {
+    return prepareCausalAdminPlacementCopy({ mode: "link", rootId: containerId, includeContents: true,
+      sourceLayoutId: layoutId, targetLayoutId: layoutId, targetParentId: parentId, targetIndex }).then(async commit => {
+      if (!commit || !await commit()) return false;
+      if (renderAfter) render(); return true;
+    });
+  }
   const action = !parentId ? "lift-container" : layout.arrangement?.containers?.[containerId] ? "move-container" : "link-container";
   const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, targetContainerId: parentId });
   if (commit === false) return false;

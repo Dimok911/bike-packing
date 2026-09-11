@@ -431,24 +431,30 @@ export function bindSettingsPointerDrag({
     const onEnd = (endEvent) => {
       if (finished) return;
       finished = true;
+      let completion;
       if (holdTimer) window.clearTimeout(holdTimer);
       if (!canceled && started && placeholder.parentElement === dropList) {
         endEvent.preventDefault();
         dropped = true;
         const targetIndex = getLayoutPlaceholderIndex(dropList, placeholder);
-        addRootContainerToActiveLayout(containerId, targetIndex, { closeDialog: false, renderAfter: false });
+        completion = addRootContainerToActiveLayout(containerId, targetIndex, { closeDialog: false, renderAfter: false });
       } else if (!canceled && started && sourceIsRootCatalog && packingDrop) {
         endEvent.preventDefault();
         dropped = true;
         if (packingDrop.type === "root") {
-          addRootContainerToActiveLayout(containerId, packingDrop.index, { closeDialog: false, renderAfter: false });
+          completion = addRootContainerToActiveLayout(containerId, packingDrop.index, { closeDialog: false, renderAfter: false });
         } else if (packingDrop.type === "container") {
-          placeContainerInActiveLayout(containerId, packingDrop.parentId, packingDrop.index, { renderAfter: false });
+          completion = placeContainerInActiveLayout(containerId, packingDrop.parentId, packingDrop.index, { renderAfter: false });
         }
       }
       if (started) suppressNextClickAfterDrag(sourceRow, { clientX: latestX, clientY: latestY });
       cleanup();
-      if (dropped) render();
+      if (dropped) {
+        // A causal administrative placement persists asynchronously. Remove
+        // the drag UI immediately, then display its saved result.
+        if (completion && typeof completion.then === "function") completion.then(() => render());
+        else render();
+      }
     };
 
     const onKeyDown = (keyEvent) => {
