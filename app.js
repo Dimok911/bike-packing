@@ -67,6 +67,7 @@ import { prepareAdminTemplateItemReplacement } from "./src/sync/admin-template-i
 import { prepareAdminTemplateContainerReplacement } from "./src/sync/admin-template-container-replace.js";
 import { prepareAdminTemplatePlacementMove } from "./src/sync/admin-template-placement-move.js";
 import { prepareAdminTemplatePlacementGroup } from "./src/sync/admin-template-placement-group.js";
+import { prepareAdminTemplatePlacementRemoval } from "./src/sync/admin-template-placement-remove.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10697,12 +10698,13 @@ async function prepareCausalAdminPlacementCopy(request) {
       : request.type === "item-replace" ? prepareAdminTemplateItemReplacement
       : request.type === "container-replace" ? prepareAdminTemplateContainerReplacement
       : request.type === "placement-move" ? prepareAdminTemplatePlacementMove
-      : request.type === "placement-group" ? prepareAdminTemplatePlacementGroup : prepareAdminTemplateTreeCopy;
+      : request.type === "placement-group" ? prepareAdminTemplatePlacementGroup
+      : request.type === "placement-remove" ? prepareAdminTemplatePlacementRemoval : prepareAdminTemplateTreeCopy;
     prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }

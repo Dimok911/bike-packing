@@ -892,6 +892,117 @@ for (const shared of [false, true]) for (const kind of ["item", "container"])
   });
 }
 
+for (const shared of [false, true]) for (const kind of ["item-form", "item-row", "root-form", "reusable", "temporary", "settings"])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"]) {
+  test(`admin placement remove ${shared ? "shared" : "demo"} ${kind} (${mode})`, async ({ page, context }) => {
+    test.skip(kind === "settings" && test.info().project.name === "mobile-webkit", "Adjacent layout editor is desktop; mobile removal uses the tested bag form.");
+    const itemOnly = kind.startsWith("item"), form = kind === "item-form" ? "#itemDialog" : ["root-form", "reusable", "temporary"].includes(kind) ? "#rootContainerDialog" : "";
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true, bagReplacement: kind === "reusable" ? "reusable" : "" });
+    const before = await page.evaluate(kind => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const source = Object.values(kind.startsWith("item") ? current.items : current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === (kind.startsWith("item") ? "Насос шаблона" : ["root-form", "settings"].includes(kind) ? "Сумка шаблона" : "Карман шаблона"));
+      return { layoutId: layout.id, sourceId: source.id, temporaryId: Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Карман шаблона" && row.nestable !== true)?.id, snapshot: __adminUiTest.snapshot(layout.id),
+        ids: [Object.keys(current.containers), Object.keys(current.items)] };
+    }, kind);
+    await page.locator(`[data-view="${kind === "settings" ? "bags" : "packing"}"]`).click();
+    if (kind === "item-form") { await page.evaluate(id => __adminUiTest.openItem(id), before.sourceId); await page.locator("#itemRemoveFromLayoutBtn").click(); }
+    else if (kind === "item-row") await page.locator(`[data-remove-from-layout="${before.sourceId}"]`).click();
+    else if (kind === "settings") await page.locator(`[data-remove-layout-root="${before.sourceId}"]`).click();
+    else { await page.evaluate(id => __adminUiTest.openContainer(id), before.sourceId); await page.locator("#rootContainerRemoveFromLayoutBtn").click(); }
+    await expect(page.locator("#confirmOkBtn")).toBeVisible();
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Placement removal quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    server.lose = mode === "lost";
+    await page.locator("#confirmOkBtn").click();
+    if (mode === "mirror-quota") {
+      await expect(page.locator("body")).toContainText("Placement removal quota");
+      expect(server.posts).toEqual([]); if (form) await expect(page.locator(form)).toBeVisible();
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers).sort(), Object.keys(__adminUiTest.state().items).sort()])).toEqual(before.ids.map(ids => [...ids].sort()));
+      expect(server.errors).toEqual([]); return;
+    }
+    if (["plan-quota", "pointer-quota"].includes(mode)) await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+    else { await expect.poll(() => server.posts.length).toBe(1); if (mode === "lost") await expect.poll(() => server.hidden).toBe(true); }
+    if (form) await expect(page.locator(form)).not.toBeVisible();
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().items).sort())).toEqual([...before.ids[1]].sort());
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers).sort())).toEqual(before.ids[0].filter(id => itemOnly || id !== before.temporaryId).sort());
+    server.lose = false; server.hidden = false;
+    const priorAction = server.posts[0] && structuredClone(server.posts[0]);
+    const planId = priorAction?.operationId || await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1);
+    if (priorAction) expect(server.posts[0]).toEqual(priorAction);
+    expect(server.posts[0].operationId).toBe(planId); expect(server.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    const original = before.snapshot.payload, arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    const prior = Object.values(original.layouts)[0].arrangement, expected = structuredClone(prior);
+    const source = Object.values(itemOnly ? original.items : original.containers).find(row => row.name === (itemOnly ? "Насос шаблона" : ["root-form", "settings"].includes(kind) ? "Сумка шаблона" : "Карман шаблона"));
+    const containers = new Set(), items = new Set();
+    const walk = id => { containers.add(id); for (const item of prior.containers[id].itemIds) items.add(item); for (const child of prior.containers[id].childIds) walk(child); };
+    if (itemOnly) items.add(source.id); else walk(source.id);
+    for (const id of items) for (const field of ["items", "itemQuantities", "packedItems"]) delete expected[field][id];
+    for (const id of containers) delete expected.containers[id];
+    expected.rootContainerIds = expected.rootContainerIds.filter(id => !containers.has(id));
+    for (const row of Object.values(expected.containers)) {
+      row.itemIds = row.itemIds.filter(id => !items.has(id)); row.childIds = row.childIds.filter(id => !containers.has(id));
+      row.order = row.order.filter(row => row.type === "item" ? !items.has(row.id) : !containers.has(row.id));
+    }
+    expect(arrangement).toEqual(expected); expect(Object.keys(server.payload.items).sort()).toEqual(Object.keys(original.items).sort());
+    const deleted = [...containers].filter(id => !prior.rootContainerIds.includes(id) && original.containers[id].nestable !== true);
+    expect(Object.keys(server.payload.containers).sort()).toEqual(Object.keys(original.containers).filter(id => !deleted.includes(id)).sort());
+    for (const id of items) expect(server.payload.items[id]).toEqual({ ...original.items[id], containerId: "" });
+    for (const id of containers) if (!deleted.includes(id)) expect(server.payload.containers[id]).toEqual({ ...original.containers[id], parentId: null, childIds: [], itemIds: [], order: [] });
+    await editItem(page, "Правка после удаления из укладки", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(arrangement);
+    expect(server.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const kind of ["item-form", "root-form", "settings"])
+  for (const mode of ["cancel", "changed-target"]) {
+  test(`admin placement remove guard ${shared ? "shared" : "demo"} ${kind} (${mode})`, async ({ page, context }) => {
+    test.skip(kind === "settings" && test.info().project.name === "mobile-webkit", "Adjacent layout editor is desktop; mobile removal uses the tested bag form.");
+    const itemOnly = kind.startsWith("item"), form = kind === "item-form" ? "#itemDialog" : ["root-form", "reusable", "temporary"].includes(kind) ? "#rootContainerDialog" : "";
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true, bagReplacement: kind === "reusable" ? "reusable" : "" });
+    const before = await page.evaluate(kind => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const source = Object.values(kind.startsWith("item") ? current.items : current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === (kind.startsWith("item") ? "Насос шаблона" : ["root-form", "settings"].includes(kind) ? "Сумка шаблона" : "Карман шаблона"));
+      return { layoutId: layout.id, sourceId: source.id, temporaryId: Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Карман шаблона" && row.nestable !== true)?.id, snapshot: __adminUiTest.snapshot(layout.id),
+        ids: [Object.keys(current.containers), Object.keys(current.items)] };
+    }, kind);
+    await page.locator(`[data-view="${kind === "settings" ? "bags" : "packing"}"]`).click();
+    if (kind === "item-form") { await page.evaluate(id => __adminUiTest.openItem(id), before.sourceId); await page.locator("#itemRemoveFromLayoutBtn").click(); }
+    else if (kind === "item-row") await page.locator(`[data-remove-from-layout="${before.sourceId}"]`).click();
+    else if (kind === "settings") await page.locator(`[data-remove-layout-root="${before.sourceId}"]`).click();
+    else { await page.evaluate(id => __adminUiTest.openContainer(id), before.sourceId); await page.locator("#rootContainerRemoveFromLayoutBtn").click(); }
+    await expect(page.locator("#confirmOkBtn")).toBeVisible();
+    if (mode === "changed-target") await page.evaluate(id => {
+      const layout = __adminUiTest.state().layouts[id]; layout.arrangement.itemQuantities[Object.keys(layout.arrangement.items)[0]] = 5;
+    }, before.layoutId);
+    const atConfirm = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    if (mode !== "cancel") await expect(page.locator("body")).toContainText("Шаблон изменился");
+    else await expect(page.locator("#confirmDialog")).not.toBeVisible();
+    if (form) await expect(page.locator(form)).toBeVisible();
+    expect(server.posts).toEqual([]);
+    expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(atConfirm);
+    expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers), Object.keys(__adminUiTest.state().items)])).toEqual(before.ids);
+    expect(server.errors).toEqual([]);
+  });
+}
+
 async function beginAdminColumnMove(page, sourceId, targetId, kind) {
   const selector = kind === "root" ? `#packingView [data-root-container-id="${sourceId}"] > .container-header`
     : `#packingView [data-subcontainer-id="${sourceId}"] .subcontainer-title`;

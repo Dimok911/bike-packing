@@ -20,6 +20,7 @@ export function bindLayoutEditorControls({
   openConfirmDialog,
   openLayoutRootDialog,
   removeRootContainerFromActiveLayout,
+  prepareRemoveContainerFromLayout = () => null,
   state
 } = {}) {
   const layoutPlaceholder = document.createElement("div");
@@ -28,10 +29,12 @@ export function bindLayoutEditorControls({
   document.querySelector("#addLayoutRootBtn")?.addEventListener("click", openLayoutRootDialog);
 
   document.querySelectorAll("[data-remove-layout-root]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const containerId = button.dataset.removeLayoutRoot;
       const container = state.containers[containerId];
       const itemCount = getContainerItemIdsDeep(containerId).length;
+      const prepared = await prepareRemoveContainerFromLayout(containerId);
+      if (prepared === false) return;
       openConfirmDialog({
         title: localText("Remove from layout?", "Убрать из укладки?"),
         text: localText(
@@ -49,7 +52,7 @@ export function bindLayoutEditorControls({
           ),
         tone: itemCount ? "danger" : "safe",
         okText: localText("Remove", "Убрать"),
-        onConfirm: () => removeRootContainerFromActiveLayout(containerId)
+        onConfirm: () => removeRootContainerFromActiveLayout(containerId, prepared)
       });
     });
   });

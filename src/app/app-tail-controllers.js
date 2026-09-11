@@ -1109,6 +1109,13 @@ function canRemoveContainerFromActiveLayout(containerId) {
   );
 }
 
+function prepareLayoutRemovalAction(layoutId, action, sourceId) {
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    return prepareCausalAdminPlacementCopy({ type: "placement-remove", action, sourceId, sourceLayoutId: layoutId, targetLayoutId: layoutId });
+  }
+  return preparePersonalPlacementAction({ layoutId, action, ids: [sourceId] });
+}
+
 async function confirmRemoveEditingContainerFromActiveLayout(event) {
   event?.preventDefault();
   const containerId = runtime.editingRootContainerId;
@@ -1125,7 +1132,7 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
     `Current layout: ${confirmLayoutNameHtml(layoutName)}`,
     `Текущая укладка: ${confirmLayoutNameHtml(layoutName)}`
   );
-  const prepared = preparePersonalPlacementAction({ layoutId: layout.id, action: "remove-container", ids: [containerId] });
+  const prepared = await prepareLayoutRemovalAction(layout.id, "remove-container", containerId);
   if (prepared === false) return;
   const nestedSubject = localText(
     `This nested pouch will be deleted forever from the current layout ${layoutName}.`,
@@ -1177,9 +1184,13 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
 
 function removeContainerFromLayoutWithAnimation(containerId, prepared = preparePersonalPlacementAction({ layoutId: getPublishedEditLayoutId(), action: "remove-container", ids: [containerId] })) {
   if (prepared === false) return;
+  if (!prepared && adminTemplateUiEnabled() && isAdminEditablePublishedLayout(getPublishedEditLayoutId())) {
+    return prepareLayoutRemovalAction(getPublishedEditLayoutId(), "remove-container", containerId)
+      .then(commit => commit ? removeContainerFromLayoutWithAnimation(containerId, commit) : false);
+  }
   if (prepared) {
-    if (!prepared()) return false;
-    refs.rootContainerDialog?.close("cancel"); render(); return true;
+    const finish = applied => { if (!applied) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; };
+    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
   }
   const element = findContainerElementInPacking(containerId);
   refs.rootContainerDialog?.close("cancel");
@@ -5101,6 +5112,7 @@ function bindLayoutEditor() {
     openConfirmDialog,
     openLayoutRootDialog,
     removeRootContainerFromActiveLayout,
+    prepareRemoveContainerFromLayout: id => prepareLayoutRemovalAction(getPublishedEditLayoutId(), "remove-container", id),
     state
   });
 }
@@ -5435,7 +5447,13 @@ function createGroupFromItems(itemId, targetItemId) {
 
 function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId, prepared = preparePersonalPlacementAction({ layoutId, action: "remove-item", ids: [itemId] })) {
   if (prepared === false) return false;
-  if (prepared) { capturePackingScroll(); if (!prepared()) return false; render(); return true; }
+  if (!prepared && adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    return prepareLayoutRemovalAction(layoutId, "remove-item", itemId).then(commit => commit ? removeItemFromActiveLayout(itemId, layoutId, commit) : false);
+  }
+  if (prepared) {
+    capturePackingScroll(); const finish = applied => { if (!applied) return false; render(); return true; };
+    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
+  }
   if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
@@ -5526,12 +5544,12 @@ function moveContainerInLayoutArrangement(layout, containerId, targetParentId, t
   return moveContainerInLayoutArrangementForState(state, layout, containerId, targetParentId, targetIndex);
 }
 
-function confirmRemoveItemFromActiveLayout(itemId) {
+async function confirmRemoveItemFromActiveLayout(itemId) {
   const item = state.items[itemId];
   const layout = state.layouts?.[state.activeLayoutId];
   if (!item || !getItemContainerIdInLayout(layout, itemId)) return;
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
-  const prepared = preparePersonalPlacementAction({ layoutId: layout.id, action: "remove-item", ids: [itemId] });
+  const prepared = await prepareLayoutRemovalAction(layout.id, "remove-item", itemId);
   if (prepared === false) return;
   openConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
@@ -5552,7 +5570,7 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   const layout = state.layouts?.[layoutId];
   if (!item || !layout || !getItemContainerIdInLayout(layout, itemId)) return;
   if (warnLockedLayoutMutation(layoutId)) return;
-  const prepared = preparePersonalPlacementAction({ layoutId, action: "remove-item", ids: [itemId] });
+  const prepared = await prepareLayoutRemovalAction(layoutId, "remove-item", itemId);
   if (prepared === false) return;
   const confirmed = await askConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
@@ -5564,7 +5582,7 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   });
   if (!confirmed) return;
   if (prepared) {
-    if (removeItemFromActiveLayout(itemId, layoutId, prepared)) refs.dialog?.close("remove-from-layout");
+    if (await removeItemFromActiveLayout(itemId, layoutId, prepared)) refs.dialog?.close("remove-from-layout");
     return;
   }
   refs.dialog?.close("remove-from-layout");
@@ -5886,7 +5904,13 @@ function deleteRootContainer(containerId, personalDelete = preparePersonalCatalo
 
 function removeRootContainerFromActiveLayout(containerId, prepared = preparePersonalPlacementAction({ layoutId: getPublishedEditLayoutId(), action: "remove-container", ids: [containerId] })) {
   if (prepared === false) return;
-  if (prepared) { if (!prepared()) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; }
+  if (!prepared && adminTemplateUiEnabled() && isAdminEditablePublishedLayout(getPublishedEditLayoutId())) {
+    return prepareLayoutRemovalAction(getPublishedEditLayoutId(), "remove-container", containerId).then(commit => commit ? removeRootContainerFromActiveLayout(containerId, commit) : false);
+  }
+  if (prepared) {
+    const finish = applied => { if (!applied) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; };
+    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
+  }
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   const container = state.containers[containerId];
