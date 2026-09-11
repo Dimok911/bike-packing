@@ -39,10 +39,11 @@ function editSelection(entry, draft, fields) {
 // One entry belongs to an opened initial-snapshot object, never just a reusable
 // dialog or owner ID. This controller owns selection; the supplied submitter
 // owns durable capture, staging, reconciliation and their immutable identifiers.
-export function createAdminTemplatePhotoFormController({ isEnabled, isEditEnabled = () => false, getContext, getView, readForm, submit, submitEdit,
+export function createAdminTemplatePhotoFormController({ isEnabled, isEditEnabled = () => false, isReplaceEnabled = () => false, getContext, getView, readForm, submit, submitEdit,
   createPhoto, cachePhoto, onDurable, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
-  const enabled = mode => mode === "append" ? isEnabled() : mode === "edit" ? isEditEnabled() : isEnabled() || isEditEnabled();
+  const enabled = mode => mode === "append" ? isEnabled() : mode === "replace" ? isEnabled() && isReplaceEnabled()
+    : mode === "edit" ? isEditEnabled() : isEnabled() || isEditEnabled();
   const entryAt = type => { const token = getView(type)?.token; return token && typeof token === "object" ? entries.get(token) : null; };
   const context = (type, entityId) => {
     const value = getContext(type, entityId);
@@ -197,7 +198,9 @@ export function createAdminTemplatePhotoFormController({ isEnabled, isEditEnable
         }
         if (!Array.isArray(selected)) fail("Не удалось прочитать фотографии открытой формы.");
         const baseIds = new Set(entry.basePhotos.map(photo => photo?.id));
-        const mode = selected.every(photo => baseIds.has(photo?.id)) ? "edit" : "append";
+        const unchangedPrefix = !view.draft.deletedPhotos?.length && same(selected.slice(0, entry.basePhotos.length), entry.basePhotos);
+        const mode = selected.every(photo => baseIds.has(photo?.id)) ? "edit" : unchangedPrefix ? "append" : "replace";
+        if (mode === "replace" && !enabled(mode)) fail("Замена фотографий ещё не включена. Выбранные изменения остались в форме.");
         current(entry, mode);
         let input;
         if (mode === "edit") {
@@ -206,12 +209,14 @@ export function createAdminTemplatePhotoFormController({ isEnabled, isEditEnable
           input = Object.freeze({ entityType: type, entityId: entry.entityId, fields: freeze(clone(form.fields)),
             photos: freeze(clone(selected)), deletedPhotos: freeze(clone(view.draft.deletedPhotos)) });
         } else {
-          if (!Array.isArray(view.draft?.photos) || !Array.isArray(view.draft.deletedPhotos) || view.draft.deletedPhotos.length
-            || selected.length <= entry.basePhotos.length || !same(selected.slice(0, entry.basePhotos.length), entry.basePhotos)) {
+          if (mode === "replace") {
+            editSelection(entry, { photos: selected.filter(photo => baseIds.has(photo?.id)), deletedPhotos: view.draft.deletedPhotos }, form.fields);
+          } else if (!Array.isArray(view.draft?.photos) || !Array.isArray(view.draft.deletedPhotos) || view.draft.deletedPhotos.length
+            || selected.length <= entry.basePhotos.length || !unchangedPrefix) {
             fail("Добавление новых файлов пока требует сохранить старые фотографии и их порядок.");
           }
           const seen = new Set(entry.basePhotos.map(photo => photo.id)), parts = []; let bytes = 0;
-          for (const photo of selected.slice(entry.basePhotos.length)) {
+          for (const photo of selected.filter(photo => !baseIds.has(photo?.id))) {
             const prepared = entry.files.get(photo?.id);
             if (!prepared || seen.has(photo.id) || photo.localId !== photo.id || photo.status !== "pending" || photo.url !== "" || photo.thumbUrl !== ""
               || Object.hasOwn(photo, "assetId") || photo.fileName !== prepared.fileName || photo.type !== prepared.type || photo.size !== prepared.size
@@ -222,7 +227,8 @@ export function createAdminTemplatePhotoFormController({ isEnabled, isEditEnable
           }
           if (parts.length > 50 || bytes > 50 * 1024 * 1024) fail("Выбрано слишком много фотографий для одного сохранения.");
           input = Object.freeze({ entityType: type, entityId: entry.entityId, fields: freeze(clone(form.fields)),
-            photos: freeze(clone(selected)), files: Object.freeze([...parts]) });
+            photos: freeze(clone(selected)), files: Object.freeze([...parts]),
+            ...(mode === "replace" ? { replace: true, deletedPhotos: freeze(clone(view.draft.deletedPhotos)) } : {}) });
         }
         const signature = current(entry, mode).signature;
         if (typeof signature !== "string") fail("Не удалось зафиксировать состояние открытой формы.");

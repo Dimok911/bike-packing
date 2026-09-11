@@ -1,5 +1,5 @@
 import { canonicalTemplateJson, validTemplateOperationId } from "./admin-template-protocol.js";
-import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED } from "./admin-template-photo-append-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED } from "./admin-template-photo-append-protocol.js";
 import { adminTemplatePhotoActionBinding, encodeAdminTemplatePhotoRecord, decodeAdminTemplatePhotoRecord } from "./admin-template-photo-record.js";
 
 const databaseName = "bike-packing-admin-template-photo-actions-v1";
@@ -20,7 +20,7 @@ const sameRecord = (left, right) => sameKeys(left, right) && left.version === ri
 // owns the full immutable intent and all bytes. No dispatch, expiry, overwrite
 // or deletion authority is exposed, including after a partial caller failure.
 export function createAdminTemplatePhotoActionStore({ binding, getContext, indexedDB = globalThis.indexedDB,
-  enabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED } = {}) {
+  enabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, replaceEnabled = ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, getExcludedOperations = null } = {}) {
   binding = Object.freeze(adminTemplatePhotoActionBinding(binding));
   const bindingKey = JSON.stringify(binding), key = operationId => JSON.stringify([bindingKey, operationId]);
   const current = () => {
@@ -80,12 +80,22 @@ export function createAdminTemplatePhotoActionStore({ binding, getContext, index
   return Object.freeze({
     binding,
     async capture({ action, snapshot, files }) {
-      if (!enabled) throw blocked("disabled");
+      if (enabled !== true || action?.body?.photoAppend?.version === 2 && replaceEnabled !== true) throw blocked("disabled");
       const initial = current();
       const frozen = { binding, action: clone(action), snapshot: clone(snapshot), files: files?.map(part => ({
         stage: clone(part.stage), file: part.file, thumb: part.thumb ?? null })) };
       try {
         const record = await encodeAdminTemplatePhotoRecord(frozen); guard(initial);
+        const excluded = clone(getExcludedOperations ? await getExcludedOperations() : []); guard(initial);
+        if (!Array.isArray(excluded) || excluded.some(id => !validTemplateOperationId(id)) || new Set(excluded).size !== excluded.length) throw blocked("excluded-operations");
+        const excludedRecords = new Map();
+        // Verified stop choices grant no permission to ignore corrupt bytes.
+        // Hash outside IDB's active write transaction, then compare the exact
+        // committed record again inside it before skipping a base conflict.
+        for (const id of excluded) {
+          const previous = await readRecord(id, initial); guard(initial);
+          if (previous) { await decode(previous, id, initial); guard(initial); excludedRecords.set(id, previous); }
+        }
         await transaction("readwrite", initial, (store, finish, abort) => {
           const candidates = store.index("binding").getAllKeys(bindingKey);
           candidates.onsuccess = () => {
@@ -106,9 +116,12 @@ export function createAdminTemplatePhotoActionStore({ binding, getContext, index
                       exists = true;
                     } else {
                       const intent = JSON.parse(previous.intentJson);
-                      if (previous.bindingKey !== bindingKey || canonicalTemplateJson(intent.binding) !== canonicalTemplateJson(binding)
+                      if (previous.key !== previousKey || previous.bindingKey !== bindingKey || canonicalTemplateJson(intent.binding) !== canonicalTemplateJson(binding)
+                        || !validTemplateOperationId(intent.action?.operationId) || previousKey !== key(intent.action.operationId)
                         || !Number.isSafeInteger(intent.action?.body?.base?.stateRevision)) throw blocked("record-key");
-                      if (intent.action.body.base.stateRevision === frozen.action.body.base.stateRevision) throw blocked("base-already-captured");
+                      if (excluded.includes(intent.action.operationId)) {
+                        if (!sameRecord(previous, excludedRecords.get(intent.action.operationId))) throw blocked("excluded-record-changed");
+                      } else if (intent.action.body.base.stateRevision === frozen.action.body.base.stateRevision) throw blocked("base-already-captured");
                     }
                     if (--remaining === 0) commit();
                   } catch (error) { abort(error); }
@@ -162,6 +175,7 @@ export function createAdminTemplatePhotoActionStore({ binding, getContext, index
       if (!enabled) throw blocked("disabled");
       operation(operationId); operation(stageId); const initial = current();
       const raw = await readRecord(operationId, initial), record = await decode(raw, operationId, initial); guard(initial);
+      if (record?.action.body.photoAppend.version === 2 && replaceEnabled !== true) throw blocked("disabled");
       const part = record?.files.find(file => file.stage.operationId === stageId);
       const asset = record?.action.body.photoAppend.assets.find(value => value.assetId === stageId);
       if (!part || !asset) throw blocked("stage-missing");

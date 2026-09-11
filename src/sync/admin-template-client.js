@@ -1,6 +1,6 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, validTemplatePersonalSourceId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY, TEMPLATE_SOURCE_SAVE_CAPABILITY, TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY, TEMPLATE_PENDING_SOURCE_CAPABILITY, TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY } from "./admin-template-protocol.js";
-import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, validateAdminTemplatePhotoAppendResultStructure,
+import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, TEMPLATE_PHOTO_REPLACE_CAPABILITY, validateAdminTemplatePhotoAppendResultStructure,
   validateAdminTemplatePhotoAppendResult, validateAdminTemplatePhotoStages } from "./admin-template-photo-append-protocol.js";
 import { ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, TEMPLATE_PHOTO_EDIT_CAPABILITY, validateAdminTemplatePhotoEditResultStructure,
   validateAdminTemplatePhotoEditResult } from "./admin-template-photo-edit-protocol.js";
@@ -68,7 +68,7 @@ export function validateAdminTemplateReceipt(receipt, expected) {
 export function createAdminTemplateClient({ binding, getContext, transport, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window,
   enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED, photoAppendEnabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED,
-  photoEditEnabled = ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, photoStore = null, photoStaging = null } = {}) {
+  photoEditEnabled = ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, photoReplaceEnabled = ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, photoStore = null, photoStaging = null } = {}) {
   if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== environment) throw blocked();
   binding = clone(binding);
   const prefix = "bike-packing-admin-template-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -198,7 +198,10 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       if (saved.intent.body.photoEdit && !saved.cancelRequested
         && (photoEditEnabled !== true || !capabilities.capabilities.includes(TEMPLATE_PHOTO_EDIT_CAPABILITY))) throw blocked();
       if (saved.intent.body.photoAppend && !saved.cancelRequested) {
-        if (photoAppendEnabled !== true || !photoStaging || !capabilities.capabilities.includes(TEMPLATE_PHOTO_APPEND_CAPABILITY)) throw blocked();
+        const replacement = saved.intent.body.photoAppend.version === 2;
+        if (photoAppendEnabled !== true || replacement && photoReplaceEnabled !== true || !photoStaging
+          || !capabilities.capabilities.includes(TEMPLATE_PHOTO_APPEND_CAPABILITY)
+          || replacement && !capabilities.capabilities.includes(TEMPLATE_PHOTO_REPLACE_CAPABILITY)) throw blocked();
         const stages = [];
         for (const asset of saved.intent.body.photoAppend.assets) {
           const receipt = await photoStaging.stage(id, asset.assetId); guard(initial);
@@ -266,7 +269,8 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       writable(); const initial = context();
       // Freeze before the first asynchronous operation or cross-tab lock.
       const intent = adminTemplateIntent({ ...binding, operationId, kind, body });
-      if (intent.body.photoAppend) {
+      const replacement = intent.body.photoAppend?.version === 2;
+      if (intent.body.photoAppend && (!replacement || photoReplaceEnabled === true && photoAppendEnabled === true)) {
         if (photoAppendEnabled !== true || !photoStore || !same(photoStore.binding, binding)) throw blocked();
         const record = await photoStore.read(operationId); guard(initial);
         if (!record || !same(record.binding, binding) || record.action?.operationId !== operationId || record.action.kind !== kind
@@ -281,6 +285,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         // OFF may reattach an identical retained action for inspection or
         // cancellation, but cannot create a new business intent or storage row.
         if (intent.body.photoEdit && photoEditEnabled !== true) throw blocked();
+        if (replacement && (photoReplaceEnabled !== true || photoAppendEnabled !== true)) throw blocked();
         return clone(persist(saved, initial));
       });
     },

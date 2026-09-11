@@ -70,6 +70,7 @@ export async function prepareAdminTemplatePhotoRecord(input) {
     blob: file.blob, thumbBlob: file.thumbBlob ?? null }));
   if (!Array.isArray(selected) || !selected.length || selected.length > 50) fail();
   const { binding, operationId, snapshot, payload, entityType, entityId } = frozen;
+  if (Object.hasOwn(frozen, "replace") && typeof frozen.replace !== "boolean") fail();
   const type = entityType === "item" ? "items" : entityType === "container" ? "containers" : null;
   const mapped = snapshot.ownerMap?.owners.find(row => row.type === type && row.localId === entityId);
   if (!mapped || !snapshot.state[type]?.[entityId] || !payload[type]?.[mapped.serverId]) fail();
@@ -88,7 +89,8 @@ export async function prepareAdminTemplatePhotoRecord(input) {
   }
   const action = { operationId, kind: "template.save", listId: binding.listId, itemKey: binding.itemKey,
     body: { version: 1, base: { stateRevision: snapshot.state.layouts[snapshot.layoutId].adminCausalSource.base.stateRevision },
-      payload, metadata: snapshot.metadata, photoAppend: { version: 1, assets } } };
+      payload, metadata: snapshot.metadata, photoAppend: frozen.replace === true
+        ? { version: 2, assets, photoIds: snapshot.state[type][entityId].photos.map(photo => photo.id) } : { version: 1, assets } } };
   adminTemplateIntent({ ...binding, ...action });
   const encoded = await encodeAdminTemplatePhotoRecord({ binding, action, snapshot, files: parts });
   return decodeAdminTemplatePhotoRecord(encoded, binding, operationId);

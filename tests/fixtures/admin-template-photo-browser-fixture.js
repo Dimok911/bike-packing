@@ -22,8 +22,10 @@ const personal = () => ({ locations: ["Велосипед"], categories: ["Ре�
     arrangement: { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {} } } },
   activeLayoutId: "personal", packedItems: {} });
 
-export async function adminPhotoBrowserFixture(page, context, { shared = false, oldPhotos = true, exactSourceArrangement = false, photoEdit = false, release = false } = {}) {
+export async function adminPhotoBrowserFixture(page, context, { shared = false, oldPhotos = true, exactSourceArrangement = false,
+  photoEdit = false, photoReplace = false, replaceOff = false, release = false } = {}) {
   const bundle = release ? path.resolve("www/vniipo-help.ru/bike-packing")
+    : photoReplace ? path.resolve(`test-results/admin-template-photo-replace${replaceOff ? "-off" : ""}-ui-build`)
     : photoEdit ? path.resolve("test-results/admin-template-photo-edit-ui-build") : adminPhotoBundle;
   const webkit = context.browser()?.browserType().name() === "webkit";
   const binding = { actorId: "admin-a", environment: "bike-packing-experiment",
@@ -49,7 +51,7 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
     payload.layouts.original.arrangement.photoRecoveryMarker = { label: "Original administrative arrangement", order: [3, 1, 2] };
     payload.packedItems = { pump: true };
   }
-  if (photoEdit) for (const [type, id] of [["items", "pump"], ["containers", "bag"]]) {
+  if (photoEdit || photoReplace) for (const [type, id] of [["items", "pump"], ["containers", "bag"]]) {
     payload[type][id].photos = [photo(`old-${id}`), photo(`второе-${id}`), photo(`third-${id}`)];
   }
   if (release) for (const type of ["items", "containers"]) for (const owner of Object.values(payload[type])) {
@@ -68,6 +70,7 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
     lostStageAck: false, lostSaveAck: false, stageHidden: false, saveHidden: false, hideSaveAfterCommit: false, stageHold: null,
     capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1", "adminTemplatePhotoEditV1"] };
   server.release = release; server.photoReads = [];
+  if (photoReplace) server.capabilities.push("adminTemplatePhotoReplaceV1");
   if (release) server.capabilities.push("personalListCausalOperationsV1", "personalListOperationCancellationV1", "personalListInitialMigrationV1",
     "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalCausalPhotoPublicationV1", "personalCausalPhotoOwnerStateV1",
     "personalCausalPhotoFormV1", "personalCausalPhotoItemFormContextV1", "personalCausalPhotoContainerFormContextV1");
@@ -197,7 +200,20 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
               owner.photos = [...(owner.photos || []), photo];
               return { assetId: asset.assetId, assetDigest: asset.assetDigest, entityType: asset.entityType, entityId: asset.entityId, photo };
             });
-            const photoAppend = assets.length ? { version: 1, ownerId: server.ownerId, added, confirmedPayload, confirmedPayloadDigest: digest(confirmedPayload) } : null;
+            let replacement;
+            if (input.body.photoAppend?.version === 2) {
+              expect(photoReplace).toBe(true);
+              const first = assets[0], type = first.entityType === "item" ? "items" : "containers";
+              expect(assets.every(asset => asset.entityType === first.entityType && asset.entityId === first.entityId)).toBe(true);
+              const original = input.body.payload[type][first.entityId].photos, owner = confirmedPayload[type][first.entityId];
+              const finalIds = input.body.photoAppend.photoIds, byId = new Map(owner.photos.map(photo => [photo.id ?? photo.photoId, photo]));
+              expect(new Set(finalIds).size).toBe(finalIds.length); expect(finalIds.every(id => byId.has(id))).toBe(true);
+              expect(assets.every(asset => finalIds.includes(asset.photoId))).toBe(true);
+              owner.photos = finalIds.map(id => clone(byId.get(id)));
+              replacement = { photoIds: clone(finalIds), removedPhotoIds: original.map(photo => photo.id ?? photo.photoId).filter(id => !finalIds.includes(id)) };
+            }
+            const photoAppend = assets.length ? { version: replacement ? 2 : 1, ownerId: server.ownerId, added,
+              ...(replacement || {}), confirmedPayload, confirmedPayloadDigest: digest(confirmedPayload) } : null;
             if (photoAppend) expect(await validateAdminTemplatePhotoAppendResult(photoAppend, { intent, stageReceipts: stages })).toBe(true);
             let editedPhotos;
             if (input.body.photoEdit) {

@@ -836,7 +836,7 @@ import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-
 import { recoverPersonalAdminDrafts, personalPayloadWithoutAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
 import { pendingPersonalTemplateSource } from "./src/sync/admin-template-pending-personal-source.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView, restoreAdminTemplatePhotoReferences } from "./src/sync/admin-template-photo-view.js";
-import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED } from "./src/sync/admin-template-photo-append-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED } from "./src/sync/admin-template-photo-append-protocol.js";
 import { ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED } from "./src/sync/admin-template-photo-edit-protocol.js";
 import { adminTemplatePhotoEditSavePlan } from "./src/sync/admin-template-photo-edit-save-plan.js";
 import { captureAdminTemplatePhotoOwnerMap, adminTemplatePhotoPreservedEntityIds } from "./src/sync/admin-template-photo-owner-map.js";
@@ -1807,7 +1807,7 @@ const appTailRuntime = {
 const appTailControllerDeps = {
   runtime: appTailRuntime,
   adminTemplateUiEnabled,
-  adminTemplatePhotoFormEnabled, adminTemplatePhotoEditFormEnabled, adminTemplatePhotoFormContext,
+  adminTemplatePhotoFormEnabled, adminTemplatePhotoEditFormEnabled, adminTemplatePhotoReplaceFormEnabled, adminTemplatePhotoFormContext,
   submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
   runCausalAdminTemplateCommand,
   prepareCausalAdminCatalogCopy,
@@ -10638,9 +10638,10 @@ function adminTemplateClient(binding, layoutId = "", preparing = false) {
   const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
   const photoStore = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED ? adminTemplatePhotoStore(binding, layoutId, preparing) : null;
   return createAdminTemplateClient({ binding, transport: experimentTransport, enabled: adminTemplateUiEnabled(),
-    getContext, photoAppendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, photoEditEnabled: ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, photoStore,
+    getContext, photoAppendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, photoEditEnabled: ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED,
+    photoReplaceEnabled: ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, photoStore,
     photoStaging: photoStore ? createAdminTemplatePhotoStaging({ store: photoStore, getContext, transport: experimentTransport,
-      enabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED }) : null });
+      enabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, replaceEnabled: ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED }) : null });
 }
 const administrativePhotoForms = new Map();
 const administrativePhotoAttempts = new WeakMap();
@@ -10708,6 +10709,9 @@ function adminTemplatePhotoFormEnabled() {
 function adminTemplatePhotoEditFormEnabled() {
   return ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED && adminTemplateUiEnabled() && canOpenAdminPublishedEdit() && isAdminPublicEditScope(modeState);
 }
+function adminTemplatePhotoReplaceFormEnabled() {
+  return ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED && adminTemplatePhotoFormEnabled();
+}
 function adminTemplatePhotoFormContext(type, entityId) {
   const owner = state[type === "item" ? "items" : "containers"]?.[entityId];
   const layoutId = owner?.publicCatalogLayoutId, source = state.layouts[layoutId]?.adminCausalSource, binding = source?.binding;
@@ -10716,6 +10720,8 @@ function adminTemplatePhotoFormContext(type, entityId) {
 }
 function adminTemplatePhotoStore(binding, layoutId, preparing = false) {
   return createAdminTemplatePhotoActionStore({ binding, enabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED,
+    replaceEnabled: ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED,
+    getExcludedOperations: () => adminTemplatePhotoExcludedPlans(binding, layoutId),
     getContext: () => adminTemplateOperationContext(binding, layoutId, preparing) });
 }
 async function adminTemplatePhotoSourcePayload(layout) {
@@ -10902,6 +10908,7 @@ async function captureAdminTemplatePhotoAppendForm(input, { isCurrent, onDurable
   const type = input.entityType === "item" ? "items" : input.entityType === "container" ? "containers" : null;
   const owner = state[type]?.[input.entityId], layoutId = owner?.publicCatalogLayoutId, layout = state.layouts[layoutId];
   if (!layout || !adminTemplatePhotoFormEnabled() || administrativePhotoForms.has(layoutId)) throw Error("Дождитесь сохранения текущего шаблона.");
+  if (input.replace && !adminTemplatePhotoReplaceFormEnabled()) throw Error("Замена фото ещё не включена. Выбранные изменения остались в форме.");
   const source = layout.adminCausalSource, binding = clone(source.binding), initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
   if (!source.exists || source.deleted || source.visibility !== "private" || source.planId || source.photoAppendPending || source.photoEditPending
     || !source.base?.stateRevision || layout.adminCausalCopyPlan || layout.templateDraftSyncPending || adminTemplateSaveCoordinator().hasPendingCapture(layoutId)) {
@@ -10938,7 +10945,7 @@ async function captureAdminTemplatePhotoAppendForm(input, { isCurrent, onDurable
     const store = adminTemplatePhotoStore(binding, layoutId);
     for (const id of await store.ids()) {
       guard(); const previous = await store.read(id); guard();
-      if (id !== operationId && previous?.snapshot.layoutId === layoutId && previous.action.body.base.stateRevision === source.base.stateRevision) {
+      if (id !== operationId && !excluded.includes(id) && previous?.snapshot.layoutId === layoutId && previous.action.body.base.stateRevision === source.base.stateRevision) {
         throw Error("На устройстве уже есть фотопакет этой версии. Откройте сохранённые изменения шаблона для продолжения.");
       }
     }
@@ -10954,7 +10961,7 @@ async function captureAdminTemplatePhotoAppendForm(input, { isCurrent, onDurable
     guard();
     const candidate = clone(beforeState); applyFields(candidate[type][input.entityId]); candidate[type][input.entityId].photos = photos;
     const record = attempt.record || await prepareAdminTemplatePhotoRecord({ binding, operationId, entityType: input.entityType, entityId: input.entityId,
-      payload, files,
+      payload, files, replace: input.replace === true,
       snapshot: { version: 1, layoutId, ownerMap, sourcePayload, beforeState, state: candidate, metadata: editor.metadata } });
     attempt.record = record;
     guard(); await store.capture(record); guard();

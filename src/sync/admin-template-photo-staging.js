@@ -1,5 +1,5 @@
 import { canonicalTemplateJson, TEMPLATE_OPERATION_CAPABILITY } from "./admin-template-protocol.js";
-import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, adminTemplatePhotoStageManifest,
+import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, TEMPLATE_PHOTO_REPLACE_CAPABILITY, adminTemplatePhotoStageManifest,
   adminTemplatePhotoStageDigest, validateAdminTemplatePhotoStageReceipt } from "./admin-template-photo-append-protocol.js";
 
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -14,7 +14,7 @@ const path = "/bike-packing/admin/template-photo-assets";
 // record. It never attaches a photo or advances a template revision.
 export function createAdminTemplatePhotoStaging({ store, getContext, transport, locks = globalThis.navigator?.locks,
   fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window, timeoutMs = 10000,
-  enabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED } = {}) {
+  enabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, replaceEnabled = ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED } = {}) {
   const binding = clone(store?.binding);
   if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== "bike-packing-experiment") throw paused();
   const context = () => {
@@ -51,6 +51,8 @@ export function createAdminTemplatePhotoStaging({ store, getContext, transport, 
         guard();
         const record = await store.readStage(actionId, stageId); guard();
         if (!record || !same(record.binding, binding) || record.action?.operationId !== actionId) throw paused();
+        const replacement = record.action.body?.photoAppend?.version === 2;
+        if (!inspectOnly && replacement && replaceEnabled !== true) throw paused("admin-template-photo-stage-disabled");
         const manifest = adminTemplatePhotoStageManifest(record.stage), assetDigest = await adminTemplatePhotoStageDigest(manifest); guard();
         if (manifest.operationId !== stageId || manifest.templateOperationId !== actionId
           || Object.keys(binding).some(key => manifest[key] !== binding[key])
@@ -85,7 +87,8 @@ export function createAdminTemplatePhotoStaging({ store, getContext, transport, 
           || known.operation.actorId !== binding.actorId || known.operation.state !== "unknown" || entry()?.confirmed) throw paused();
         if (inspectOnly) return clone(known);
         const capabilities = await request("/bike-packing/capabilities");
-        if (capabilities.service !== "bikepacking-api" || ![TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_PHOTO_APPEND_CAPABILITY]
+        if (capabilities.service !== "bikepacking-api" || ![TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_PHOTO_APPEND_CAPABILITY,
+          ...(replacement ? [TEMPLATE_PHOTO_REPLACE_CAPABILITY] : [])]
           .every(value => capabilities.capabilities?.includes(value))) throw paused("admin-template-photo-stage-capability");
         if (entry()) throw paused();
         transport.assertWritable(path, "POST", metadata);

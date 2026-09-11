@@ -5,12 +5,13 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/").split("?")[0];
-    if (mode === "admin-photo-edit" && source.endsWith("/src/sync/admin-template-photo-edit-protocol.js")) {
+    if (["admin-photo-edit", "admin-photo-replace", "admin-photo-replace-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-edit-protocol.js")) {
       return code.replace("ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = true");
     }
-    if ((mode === "admin-photo-append" || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
+    if ((["admin-photo-append", "admin-photo-replace", "admin-photo-replace-off"].includes(mode) || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
       && source.endsWith("/src/sync/admin-template-photo-append-protocol.js")) {
-      return code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
+      code = code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
+      return mode === "admin-photo-replace" ? code.replace("ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = true") : code;
     }
     if (["admin-photo-append", "admin-photo-edit"].includes(mode) && source.endsWith("/app.js")) {
       const anchor = "  const before = snapshot.beforeState && adminTemplatePhotoEditorSnapshot(snapshot.beforeState, layoutId, snapshot.metadata);";
@@ -45,6 +46,8 @@ export default defineConfig(({ mode }) => ({
     return code;
   } }],
   build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build"
+    : mode === "admin-photo-replace" ? "test-results/admin-template-photo-replace-ui-build"
+    : mode === "admin-photo-replace-off" ? "test-results/admin-template-photo-replace-off-ui-build"
     : mode === "admin-photo-edit" ? "test-results/admin-template-photo-edit-ui-build"
     : mode === "admin-photo-append" ? "test-results/admin-template-photo-append-ui-build" : "test-results/admin-template-ui-build", emptyOutDir: true },
 }));

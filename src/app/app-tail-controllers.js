@@ -143,7 +143,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
-    adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false,
+    adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false, adminTemplatePhotoReplaceFormEnabled = () => false,
     adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
     prepareCausalAdminCatalogCopy,
     prepareCausalAdminPlacementCopy,
@@ -8507,6 +8507,7 @@ function openedFormPhotoStatus(photos) {
 const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
   isEnabled: adminTemplatePhotoFormEnabled,
   isEditEnabled: adminTemplatePhotoEditFormEnabled,
+  isReplaceEnabled: adminTemplatePhotoReplaceFormEnabled,
   getContext: adminTemplatePhotoFormContext,
   getView(type) {
     const item = type === "item", entityId = item ? runtime.editingItemId : runtime.editingRootContainerId;

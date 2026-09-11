@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createAdminTemplatePhotoActionStore } from "../../src/sync/admin-template-photo-action-store.js";
 import { adminPhotoRecordFixture, adminPhotoIndexedDBFixture } from "../fixtures/admin-template-photo-record-fixture.js";
 import { adminTemplatePhotoStageDigest } from "../../src/sync/admin-template-photo-append-protocol.js";
+import { adminPhotoReplacementRecordFixture } from "../fixtures/admin-template-photo-replacement-record-fixture.js";
 
 const storageError = code => ({ code: `admin-template-photo-storage-${code}`, isAdminTemplateBlocked: true });
 async function fixture(options) {
@@ -64,6 +65,54 @@ test("two independent tabs can durably capture only one action for the same temp
   assert.equal(f.idb.rows().size, 1);
   const input = saved.action.operationId === f.input.action.operationId ? f.input : other;
   assert.deepEqual((await f.create().capture(input)).action, saved.action);
+});
+
+test("replacement storage and claims require both flags while cold OFF inventory preserves its complete action", async () => {
+  const f = await fixture(), input = await adminPhotoReplacementRecordFixture();
+  await assert.rejects(f.store.capture(input), storageError("disabled"));
+  await assert.rejects(f.create({ enabled: false, replaceEnabled: true }).capture(input), storageError("disabled"));
+  const store = f.create({ replaceEnabled: true }); await store.capture(input);
+  const cold = f.create({ enabled: false, replaceEnabled: false });
+  assert.deepEqual((await cold.read(input.action.operationId)).action, input.action);
+  await assert.rejects(f.store.claimStage(input.action.operationId, input.files[0].stage.operationId), storageError("disabled"));
+  assert.equal((await store.claimStage(input.action.operationId, input.files[0].stage.operationId)).fresh, true);
+  assert.equal(f.idb.rows().size, 1);
+});
+
+test("verified stop exclusion permits one new same-base capture while retaining the original full record", async () => {
+  const f = await fixture(), next = await adminPhotoReplacementRecordFixture(); await f.store.capture(f.input);
+  const original = structuredClone([...f.idb.rows()][0]);
+  await assert.rejects(f.create({ replaceEnabled: true }).capture(next), storageError("base-already-captured"));
+  const store = f.create({ replaceEnabled: true, getExcludedOperations: async () => [f.input.action.operationId] });
+  await store.capture(next);
+  assert.deepEqual(f.idb.rows().get(original[0]), original[1]); assert.equal(f.idb.rows().size, 2);
+  assert.deepEqual((await store.read(next.action.operationId)).action, next.action);
+  await assert.rejects(store.capture(await adminPhotoReplacementRecordFixture()), storageError("base-already-captured"));
+  assert.equal(f.idb.rows().size, 2);
+});
+
+test("excluded records still require valid bytes and an unchanged transactional record before their base can be skipped", async () => {
+  for (const when of ["before-verification", "after-verification"]) {
+    const f = await fixture(); await f.store.capture(f.input); const next = await adminPhotoReplacementRecordFixture();
+    const damage = () => { new Uint8Array([...f.idb.rows().values()][0].files[0].file)[0] ^= 1; };
+    if (when === "before-verification") damage();
+    else { let changed = false; f.idb.controls.onCommit = ({ mode }) => { if (mode === "readonly" && !changed) { changed = true; damage(); } }; }
+    const store = f.create({ replaceEnabled: true, getExcludedOperations: async () => [f.input.action.operationId] });
+    await assert.rejects(store.capture(next), { code: when === "before-verification" ? "admin-template-photo-record" : "admin-template-photo-storage-excluded-record-changed" });
+    assert.equal(f.idb.rows().size, 1);
+  }
+});
+
+test("malformed stop exclusions and context changes during proof discovery never create another IDB action", async () => {
+  for (const mode of ["malformed", "duplicate", "context"]) {
+    const f = await fixture(); await f.store.capture(f.input);
+    const store = f.create({ getExcludedOperations: async () => {
+      if (mode === "context") f.context.generation = "other-view";
+      return mode === "malformed" ? ["not-an-operation"] : mode === "duplicate" ? [f.input.action.operationId, f.input.action.operationId] : [f.input.action.operationId];
+    } });
+    await assert.rejects(store.capture(await adminPhotoRecordFixture()), error => error.isAdminTemplateBlocked === true);
+    assert.equal(f.idb.rows().size, 1);
+  }
 });
 
 test("quota or aborted multi-file transactions preserve earlier actions without a partial new package", async () => {

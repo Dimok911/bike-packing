@@ -63,3 +63,16 @@ test("context changes during stored-file read or after POST never acknowledge in
     assert.equal(transport.writes.some(row => row.confirmed), false);
   }
 });
+
+test("replacement capability and both feature gates precede the first stage claim and multipart POST", async () => {
+  for (const mode of ["append-off", "replace-off", "append-capability", "replace-capability"]) {
+    const f = await fixture({ replace: true }), options = mode === "append-off" ? { enabled: false } : mode === "replace-off" ? { replaceEnabled: false } : {};
+    if (mode.endsWith("capability")) f.controls.capabilities = f.controls.capabilities.filter(value => value !== (mode === "append-capability" ? "adminTemplatePhotoAppendV1" : "adminTemplatePhotoReplaceV1"));
+    await assert.rejects(f.make(options).client.stage(f.stage.templateOperationId, f.stage.operationId));
+    assert.equal(f.claims.size, 0); assert.equal(f.posts().length, 0);
+  }
+  const f = await fixture({ replace: true }); f.controls.lost = true;
+  assert.deepEqual(await f.make().client.stage(f.stage.templateOperationId, f.stage.operationId), f.data);
+  assert.deepEqual(await f.make({ enabled: false, replaceEnabled: false }).client.inspect(f.stage.templateOperationId, f.stage.operationId), f.data);
+  assert.equal(f.posts().length, 1); assert.equal(f.claims.size, 1);
+});

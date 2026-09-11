@@ -1,7 +1,8 @@
 import { adminTemplateIntent, canonicalTemplateJson } from "./admin-template-protocol.js";
 
 // The save body contains old raw refs; the separate editor snapshot contains
-// selected pending photos. Neither is rebuilt from stage responses on reload.
+// selected pending photos, including V2's final mixed selection. Neither is
+// rebuilt from stage responses on reload; both retain the existing V5 journal.
 export function adminTemplatePhotoSavePlan({ binding, operationId, body, editorSnapshot }) {
   const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
     && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
