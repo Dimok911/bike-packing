@@ -1,5 +1,6 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admin-template-copy-projection.js";
+import { adminTemplatePhotoSavePlan } from "./admin-template-photo-save-plan.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -62,6 +63,12 @@ export function adminTemplateSourceSavePlan({ binding, operationId, body, source
 }
 
 function validatePlan(plan) {
+  if (plan?.version === 5) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoSavePlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0].body, editorSnapshot: plan.editorSnapshot }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 4) {
     if (!exact(plan, ["version", "id", "binding", "operations", "sourceSnapshot"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1 || !same(plan, adminTemplateSourceSavePlan({ binding: plan.binding, operationId: plan.id,
@@ -217,6 +224,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     captureCommand: input => capturePlan(input, adminTemplateCommandPlan),
     captureCopy: input => capturePlan(input, adminTemplateCopyPlan),
     captureSourceSave: input => capturePlan(input, adminTemplateSourceSavePlan),
+    capturePhoto: input => capturePlan(input, adminTemplatePhotoSavePlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];

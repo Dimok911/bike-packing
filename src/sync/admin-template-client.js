@@ -1,5 +1,7 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, validTemplatePersonalSourceId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY, TEMPLATE_SOURCE_SAVE_CAPABILITY, TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY, TEMPLATE_PENDING_SOURCE_CAPABILITY, TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY } from "./admin-template-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, validateAdminTemplatePhotoAppendResultStructure,
+  validateAdminTemplatePhotoAppendResult, validateAdminTemplatePhotoStages } from "./admin-template-photo-append-protocol.js";
 const environment = "bike-packing-experiment";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -36,12 +38,14 @@ export function validateAdminTemplateReceipt(receipt, expected) {
         version: 1, operationId: intent.id, noBusinessEffects: true, operationCannotApply: true });
     }
     const deleted = intent.kind === "template.delete";
-    if (operation.state !== "committed" || result.status !== 200 || !exact(payload, ["ok", "listId", "itemKey", "stateRevision", deleted ? "deleted" : "visibility", "indexes"])
+    const photoAppend = Boolean(intent.body.photoAppend);
+    if (operation.state !== "committed" || result.status !== 200 || !exact(payload, ["ok", "listId", "itemKey", "stateRevision", deleted ? "deleted" : "visibility", "indexes", ...(photoAppend ? ["photoAppend"] : [])])
       || payload.ok !== true || payload.listId !== intent.listId || payload.itemKey !== intent.itemKey
       || !Number.isSafeInteger(payload.stateRevision) || payload.stateRevision < 1
       || ["template.create", "template.copy"].includes(intent.kind) && payload.stateRevision !== 1
       || intent.body.base?.stateRevision && payload.stateRevision !== intent.body.base.stateRevision + 1
       || (deleted ? payload.deleted !== true : !["private", "public"].includes(payload.visibility))) return false;
+    if (photoAppend && (payload.visibility !== "private" || !validateAdminTemplatePhotoAppendResultStructure(payload.photoAppend, intent))) return false;
     if (!deleted && (["template.create", "template.copy", "template.archive"].includes(intent.kind) && payload.visibility !== "private"
       || intent.kind === "template.publication" && payload.visibility !== (intent.body.published ? "public" : "private"))) return false;
     const indexes = intent.body.indexes || [];
@@ -59,7 +63,7 @@ export function validateAdminTemplateReceipt(receipt, expected) {
 // journals cannot confer administrator authority or absorb these confirmations.
 export function createAdminTemplateClient({ binding, getContext, transport, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window,
-  enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED } = {}) {
+  enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED, photoAppendEnabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, photoStore = null, photoStaging = null } = {}) {
   if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== environment) throw blocked();
   binding = clone(binding);
   const prefix = "bike-packing-admin-template-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -92,11 +96,15 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     const raw = storage?.getItem(key(id));
     if (raw == null) return null;
     const saved = JSON.parse(raw);
-    if (!exact(saved, ["version", "intent", "payloadDigest", "dispatched", "cancelRequested", "receipt"])
+    const photoAppend = Boolean(saved.intent?.body?.photoAppend);
+    if (!exact(saved, ["version", "intent", "payloadDigest", "dispatched", "cancelRequested", "receipt", ...(photoAppend ? ["photoStages"] : [])])
       || saved.version !== 1 || typeof saved.dispatched !== "boolean" || typeof saved.cancelRequested !== "boolean"
       || !same(saved.intent, adminTemplateIntent({ ...binding, operationId: id, kind: saved.intent?.kind, body: saved.intent?.body }))
       || saved.payloadDigest !== await digest(saved.intent)
       || saved.receipt !== null && !validateAdminTemplateReceipt(saved.receipt, saved)) throw blocked();
+    if (photoAppend && (saved.photoStages !== null && !await validateAdminTemplatePhotoStages(saved.intent, saved.photoStages)
+      || saved.receipt?.operation?.state === "committed" && !await validateAdminTemplatePhotoAppendResult(saved.receipt.result.payload.photoAppend,
+        { intent: saved.intent, stageReceipts: saved.photoStages }))) throw blocked();
     return saved;
   };
   const persist = (saved, initial) => {
@@ -136,9 +144,12 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     if (entry && (!same(entry.recovery, metadata(saved)) || entry.mode !== transport.mode)) throw blocked();
     return entry;
   };
-  const settle = (saved, data, initial) => {
+  const settle = async (saved, data, initial) => {
     const { ok, ...receipt } = data;
     if (ok !== true || !validateAdminTemplateReceipt(receipt, saved)) throw blocked();
+    if (saved.intent.body.photoAppend && receipt.operation.state === "committed"
+      && !await validateAdminTemplatePhotoAppendResult(receipt.result.payload.photoAppend, { intent: saved.intent, stageReceipts: saved.photoStages })) throw blocked();
+    guard(initial);
     if (saved.receipt && saved.receipt.operation.state !== "waiting" && !same(saved.receipt, receipt)) throw blocked();
     persist({ ...saved, receipt }, initial);
     const entry = checkTransport(saved);
@@ -175,16 +186,32 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         && !capabilities.capabilities.includes(TEMPLATE_PENDING_SOURCE_CAPABILITY)) throw blocked();
       if (saved.intent.body.source?.kind === "personal-list" && saved.intent.body.source.base.operationId
         && !capabilities.capabilities.includes(TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY)) throw blocked();
+      if (saved.intent.body.photoAppend && !saved.cancelRequested) {
+        if (photoAppendEnabled !== true || !photoStaging || !capabilities.capabilities.includes(TEMPLATE_PHOTO_APPEND_CAPABILITY)) throw blocked();
+        const stages = [];
+        for (const asset of saved.intent.body.photoAppend.assets) {
+          const receipt = await photoStaging.stage(id, asset.assetId); guard(initial);
+          if (receipt?.assetState !== "ready") throw blocked(); stages.push(receipt);
+        }
+        if (!await validateAdminTemplatePhotoStages(saved.intent, stages)) throw blocked(); guard(initial);
+        if (saved.photoStages && !same(saved.photoStages.map(value => value.receipt), stages.map(value => value.receipt))) throw blocked();
+        saved = persist({ ...saved, photoStages: stages }, initial);
+      }
       const recovery = metadata(saved), gateway = "/bike-packing/admin/template-operations";
       const path = saved.cancelRequested ? gateway + "/" + id + "/cancel" : gateway;
       const envelope = { expectedActorId: binding.actorId, environment, operationId: id, listId: binding.listId, itemKey: binding.itemKey,
         kind: saved.intent.kind, body: saved.intent.body };
-      transport.assertWritable(path, "POST", recovery);
+      // Only the cancellation endpoint may pass this action's unknown stages.
+      // Keep this permission outside durable recovery identity: an earlier save
+      // registration must still match, and no stage is acknowledged by cancel.
+      const cancellation = saved.cancelRequested && saved.intent.body.photoAppend ? { operationId: id, payloadDigest: saved.payloadDigest,
+        assets: saved.intent.body.photoAppend.assets.map(({ assetId, assetDigest }) => ({ assetId, assetDigest })) } : null;
+      transport.assertWritable(path, "POST", recovery, cancellation);
       saved = persist({ ...saved, dispatched: true }, initial);
-      if (!checkTransport(saved)) await transport.beginWrite(gateway, "POST", null, recovery);
+      if (!checkTransport(saved)) await transport.beginWrite(path, "POST", null, recovery, cancellation);
       guard(initial);
       try {
-        return settle(saved, await request(path, initial, { method: "POST", headers: { "content-type": "application/json" },
+        return await settle(saved, await request(path, initial, { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify(envelope) }), initial);
       } catch (error) {
         transport.noteFailure(error, path, "POST", id);
@@ -228,7 +255,14 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       writable(); const initial = context();
       // Freeze before the first asynchronous operation or cross-tab lock.
       const intent = adminTemplateIntent({ ...binding, operationId, kind, body });
-      const saved = { version: 1, intent, payloadDigest: await digest(intent), dispatched: false, cancelRequested: false, receipt: null };
+      if (intent.body.photoAppend) {
+        if (photoAppendEnabled !== true || !photoStore || !same(photoStore.binding, binding)) throw blocked();
+        const record = await photoStore.read(operationId); guard(initial);
+        if (!record || !same(record.binding, binding) || record.action?.operationId !== operationId || record.action.kind !== kind
+          || !same(record.action.body, intent.body)) throw blocked();
+      }
+      const saved = { version: 1, intent, payloadDigest: await digest(intent), dispatched: false, cancelRequested: false, receipt: null,
+        ...(intent.body.photoAppend ? { photoStages: null } : {}) };
       guard(initial);
       return withLock(operationId, async () => {
         guard(initial); const existing = await read(operationId); guard(initial);

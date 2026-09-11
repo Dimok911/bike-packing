@@ -1,7 +1,8 @@
-import { validTemplateOperationId } from "../sync/admin-template-protocol.js";
+import { validTemplateOperationId, canonicalTemplateJson } from "../sync/admin-template-protocol.js";
 import { createLayoutArrangementFromCurrentState } from "../state/layout-arrangement.js";
 import { normalizeItemPhotos } from "../state/item-photos.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView } from "../sync/admin-template-photo-view.js";
+import { captureAdminTemplatePhotoOwnerMap, assertAdminTemplatePhotoOwnerMap } from "../sync/admin-template-photo-owner-map.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const paused = () => Error("Серверный вариант требует отдельной сверки связей. Местный черновик сохранён.");
@@ -20,10 +21,11 @@ const order = (values, containers, items) => (values || []).map(row => {
 
 // Prepare a detached editor patch. The decision stores its IDs before applying
 // it, so a reload never creates a second set of server-derived local entities.
-export function projectAdminTemplateServerVariant(layout, server, decisionId, { photoBinding = null } = {}) {
+export function projectAdminTemplateServerVariant(layout, server, decisionId, { photoBinding = null, photoOwnerMapEnabled = false } = {}) {
   if (!layout?.id || !validTemplateOperationId(decisionId) || !server?.exists || server.deleted
     || Object.keys(server.payload?.layouts || {}).length !== 1) throw paused();
   const payload = server.payload, sourceLayout = Object.values(payload.layouts)[0], items = {}, containers = {};
+  if (photoOwnerMapEnabled && (!photoBinding || server.exists !== true || server.visibility !== "private")) throw paused();
   const copiedLayoutId = adminTemplateCopiedLayoutId(payload);
   const containerMap = new Map(Object.keys(payload.containers || {}).sort().map((id, i) => [id, `admin-server-container-${decisionId}-${i}`]));
   const itemMap = new Map(Object.keys(payload.items || {}).sort().map((id, i) => [id, `admin-server-item-${decisionId}-${i}`]));
@@ -65,12 +67,56 @@ export function projectAdminTemplateServerVariant(layout, server, decisionId, { 
     // Kept inside the saved projection until the confirmed source is installed.
     next.adminCausalSource = { photoView };
   }
+  if (photoOwnerMapEnabled) {
+    const photoOwnerMap = captureAdminTemplatePhotoOwnerMap({ binding: photoBinding, layoutId: layout.id,
+      stateRevision: server.stateRevision, sourcePayload: payload, state: { layouts: { [layout.id]: next }, items, containers }, mappings: {
+        items: Object.fromEntries([...itemMap].map(([sourceId, localId]) => [localId, sourceId])),
+        containers: Object.fromEntries([...containerMap].map(([sourceId, localId]) => [localId, sourceId])) } });
+    next.adminCausalSource = { ...next.adminCausalSource, photoOwnerMap };
+  }
   return { layoutId: layout.id, layout: next, items, containers };
 }
 
-export function applyAdminTemplateServerVariant(state, layoutId, projection, source, { persist, applyArrangement = () => {} }) {
+function assertProjectedPhotoOwnerMap(state, layoutId, projection, source, sourcePayload) {
+  const map = projection.layout.adminCausalSource?.photoOwnerMap;
+  if (map === undefined) return;
+  const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
+    && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+  const identity = value => typeof value === "string" && value.length > 0 && value.length <= 191
+    && /^[\p{L}\p{N}][\p{L}\p{N}._:-]*$/u.test(value) && !["__proto__", "prototype", "constructor"].includes(value);
+  if (source?.exists !== true || source.visibility !== "private" || !Number.isSafeInteger(source.base?.stateRevision)
+    || source.base.stateRevision < 1 || !exact(map, ["version", "binding", "layoutId", "stateRevision", "owners"])
+    || map.version !== 1 || map.layoutId !== layoutId || map.stateRevision !== source.base.stateRevision
+    || canonicalTemplateJson(map.binding) !== canonicalTemplateJson(source.binding) || !Array.isArray(map.owners)) throw paused();
+  const candidate = { ...state, layouts: { ...state.layouts, [layoutId]: projection.layout },
+    ...Object.fromEntries(["items", "containers"].map(type => [type, {
+      ...Object.fromEntries(Object.entries(state[type] || {}).filter(([, row]) => row.publicCatalogLayoutId !== layoutId)),
+      ...projection[type] }])) };
+  if (sourcePayload) {
+    assertAdminTemplatePhotoOwnerMap({ binding: source.binding, layoutId, stateRevision: source.base.stateRevision,
+      map, state: candidate, sourcePayload });
+    return;
+  }
+  // A saved stop-choice contains the already captured mapping and its digest,
+  // but not the raw source in this API. Validate its identity and complete local
+  // inventory here; only callers supplying sourcePayload can recheck raw IDs.
+  const seenLocal = new Set(), seenServer = new Set();
+  for (const owner of map.owners) {
+    if (!exact(owner, ["type", "localId", "serverId"]) || !["items", "containers"].includes(owner.type)
+      || !identity(owner.localId) || !identity(owner.serverId) || seenLocal.has(owner.localId) || seenServer.has(owner.serverId)
+      || projection[owner.type]?.[owner.localId]?.id !== owner.localId
+      || projection[owner.type][owner.localId].publicCatalogLayoutId !== layoutId
+      || Object.hasOwn(candidate.layouts, owner.localId)
+      || Object.hasOwn(candidate[owner.type === "items" ? "containers" : "items"], owner.localId)) throw paused();
+    seenLocal.add(owner.localId); seenServer.add(owner.serverId);
+  }
+  if ([...Object.keys(projection.items || {}), ...Object.keys(projection.containers || {})].some(id => !seenLocal.has(id))) throw paused();
+}
+
+export function applyAdminTemplateServerVariant(state, layoutId, projection, source, { persist, applyArrangement = () => {}, sourcePayload = null }) {
   const layout = state.layouts?.[layoutId];
   if (!layout || projection?.layoutId !== layoutId || projection.layout?.id !== layoutId) throw paused();
+  assertProjectedPhotoOwnerMap(state, layoutId, projection, source, sourcePayload);
   if (projection.layout.adminCausalSource?.photoView || [...Object.values(projection.items || {}), ...Object.values(projection.containers || {})].some(row => row.photos?.length)) {
     assertAdminTemplatePhotoView({ binding: source.binding, layoutId, baseline: projection.layout.adminCausalSource?.photoView,
       state: { layouts: { [layoutId]: projection.layout }, items: projection.items, containers: projection.containers } });
@@ -110,8 +156,8 @@ export function applyAdminTemplateServerVariant(state, layoutId, projection, sou
   try {
     oldItems.forEach(id => delete state.items[id]); oldContainers.forEach(id => delete state.containers[id]);
     Object.assign(state.items, clone(projection.items)); Object.assign(state.containers, clone(projection.containers));
-    const photoView = projection.layout.adminCausalSource?.photoView;
-    replace(layout, { ...projection.layout, adminCausalSource: { ...source, ...(photoView ? { photoView } : {}) },
+    const photoView = projection.layout.adminCausalSource?.photoView, photoOwnerMap = projection.layout.adminCausalSource?.photoOwnerMap;
+    replace(layout, { ...projection.layout, adminCausalSource: { ...source, ...(photoView ? { photoView } : {}), ...(photoOwnerMap ? { photoOwnerMap } : {}) },
       templatePublished: source.visibility === "public", templateDraftServerHydrated: true });
     // Applying an arrangement normally switches the entire working catalog.
     // A server decision only replaces this editor, so normalize its records

@@ -5,6 +5,30 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/").split("?")[0];
+    if ((mode === "admin-photo-append" || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
+      && source.endsWith("/src/sync/admin-template-photo-append-protocol.js")) {
+      return code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
+    }
+    if (mode === "admin-photo-append" && source.endsWith("/app.js")) {
+      const anchor = "  const before = snapshot.beforeState && adminTemplatePhotoEditorSnapshot(snapshot.beforeState, layoutId, snapshot.metadata);";
+      if (!code.includes(anchor)) throw Error("Admin photo candidate diagnostic anchor changed");
+      code = code.replace(anchor, anchor + `
+  try {
+    const mirrorText = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
+    let mirror;
+    try { mirror = mirrorText && adminTemplatePhotoEditorSnapshot(JSON.parse(mirrorText), layoutId, snapshot.metadata); }
+    catch (error) { mirror = { diagnosticError: String(error.message) }; }
+    (globalThis.__adminPhotoCandidateChecks ||= []).push({
+      operationId: action.operationId, layoutId, current: JSON.parse(current), before, candidate, mirror,
+      observed: clone(observed), expectedSource: clone(snapshot.state.layouts[layoutId].adminCausalSource),
+      sourceMatches: canonicalTemplateJson(observed) === canonicalTemplateJson(snapshot.state.layouts[layoutId].adminCausalSource),
+      bindingMatches: canonicalTemplateJson(observed?.binding) === canonicalTemplateJson(record.binding),
+      currentMatchesBefore: Boolean(before && current === canonicalTemplateJson(before)),
+      currentMatchesCandidate: current === canonicalTemplateJson(candidate), stack: new Error().stack
+    });
+  } catch (error) { globalThis.__adminPhotoCandidateDiagnosticError = String(error.message); }
+`);
+    }
     if (mode === "personal-import" && source.endsWith("/app.js")) {
       code = code.replace('return outbox.capture({ snapshot, body, operationId });', 'globalThis.__adminUiCaptureCalls ||= []; globalThis.__adminUiCaptureCalls.push({ stack: new Error().stack, scope: currentViewScope(), activeLayoutId: state.activeLayoutId }); return outbox.capture({ snapshot, body, operationId });');
       code = code.replace('function reportAdminTemplateSaveError(error) {', 'function reportAdminTemplateSaveError(error) { globalThis.__adminUiLastError = String(error.adminCopyGuard || "") + String(error.message) + String(error.stack || error);')
@@ -17,5 +41,6 @@ export default defineConfig(({ mode }) => ({
     if (source.endsWith("/app.js")) return code + "\nwindow.__adminUiTest={setOrderCatalog:({demo,shared})=>{serverConfirmedDemoTemplates=demo;serverConfirmedSharedLayouts=shared;renderFilters();},openDemo:openAdminDemoLayout,openShared:openSharedLayoutForAdmin,snapshot:adminTemplateEditorSnapshot,openPrepared:openCausalAdminTemplate,refreshDrafts:refreshAdminTemplateDrafts,openItem:openItemDialog,openContainer:openRootContainerDialog,save:savePublishedLayoutRecord,privatePayload:()=>serializeState({forSync:true}),privateMeta:()=>syncMeta,openPrivate:id=>switchActiveLayout(id,{remember:false}),state:()=>state,user:()=>currentUser,scope:()=>currentViewScope()};\n";
     return code;
   } }],
-  build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build" : "test-results/admin-template-ui-build", emptyOutDir: true },
+  build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build"
+    : mode === "admin-photo-append" ? "test-results/admin-template-photo-append-ui-build" : "test-results/admin-template-ui-build", emptyOutDir: true },
 }));

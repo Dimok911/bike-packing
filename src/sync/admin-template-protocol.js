@@ -1,4 +1,5 @@
 import { canonicalAccessJson as canonicalOperationJson, validAccessOperationId as validListOperationId } from "./personal-access-protocol.js";
+import { adminTemplatePhotoAppend } from "./admin-template-photo-append-protocol.js";
 export const ADMIN_TEMPLATE_OPERATIONS_ENABLED = false;
 export const TEMPLATE_OPERATION_CAPABILITY = "adminTemplateCausalOperationsV1";
 export const TEMPLATE_COPY_CAPABILITY = "adminTemplateCopyV1";
@@ -33,7 +34,9 @@ export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listI
     : kind === "template.copy" ? ["source", "metadata"]
     : kind === "template.metadata" ? ["metadata"] : kind === "template.publication" ? ["published", "indexes"] : ["indexes"];
   if (kind === "template.save" && Object.hasOwn(body, "source")) extra.push("source");
+  if (kind === "template.save" && Object.hasOwn(body, "photoAppend")) extra.push("photoAppend");
   if (!exact(body, ["version", "base", ...extra])) fail();
+  if (extra.includes("photoAppend")) { try { adminTemplatePhotoAppend(body, operationId); } catch { fail(); } }
   if (["template.create", "template.copy"].includes(kind)) {
     if (body.base !== null) fail();
   } else if (!validBase(body.base, operationId)) fail();

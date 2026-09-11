@@ -641,6 +641,9 @@ test("actual app persistence writes the intent before its mirror and cannot fall
   let fail = false;
   const persist = appFunction("persistStateSnapshot", {
     personalSaveRecovery: createPersonalSaveRecovery(),
+    hasOwnedAdminTemplatePhotoEditor: appFunction("hasOwnedAdminTemplatePhotoEditor", {
+      ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: true, localStorageScopeKey: "id:actor-a"
+    }),
     personalSavePilotEnabled: () => true, hasPendingPersonalSave: () => false, applyingRemoteState: false, STORAGE_KEY: "mirror",
     capturePersonalSaveIntent: snapshot => {
       calls.push("intent"); if (fail) throw Error("quota"); return f.outbox.capture({ ...f.input(1), snapshot });

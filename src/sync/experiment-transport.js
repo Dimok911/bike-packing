@@ -238,7 +238,7 @@ export function createExperimentTransport({
     if (!ready) throw transportError("API transport is not verified");
     return `${mode === "eu" ? EU_EXPERIMENT_API_BASE : canonical}${path}`;
   };
-  const assertWritable = (path, method, recovery = null) => {
+  const assertWritable = (path, method, recovery = null, cancellation = null) => {
     validateApiPath(path);
     refreshJournal();
     const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
@@ -296,24 +296,48 @@ export function createExperimentTransport({
         && file.entityType === entry.recovery.entityType && file.entityId === entry.recovery.entityId
         && /^[a-f0-9]{64}$/.test(file.file?.hash) && file.file.hash === entry.recovery.fileHash
         && (file.thumb?.hash || file.file.hash) === entry.recovery.thumbHash));
+    // This in-memory permission is derived from the frozen admin save. It can
+    // only fence that save on its cancellation URL, never upload/attach a file
+    // or acknowledge the separate stage journal's still-unknown outcome.
+    const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
+      && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+    const uuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+    const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+    const adminPhotoCancellation = admin && recovery.kind === "template.save"
+      && path === `/bike-packing/admin/template-operations/${recovery.operationId}/cancel`
+      && exact(cancellation, ["operationId", "payloadDigest", "assets"])
+      && cancellation.operationId === recovery.operationId && cancellation.payloadDigest === recovery.payloadDigest
+      && Array.isArray(cancellation.assets) && cancellation.assets.length > 0 && cancellation.assets.length <= 50
+      && Object.keys(cancellation.assets).length === cancellation.assets.length
+      && cancellation.assets.every(asset => exact(asset, ["assetId", "assetDigest"]) && uuid(asset.assetId)
+        && asset.assetId !== recovery.operationId && hash(asset.assetDigest))
+      && new Set(cancellation.assets.map(asset => asset.assetId)).size === cancellation.assets.length;
+    const ownCancelledAdminStage = entry => adminPhotoCancellation && entry.mode === mode && entry.method === "POST"
+      && entry.path === "/bike-packing/admin/template-photo-assets"
+      && exact(entry.recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "actionOperationId", "assetDigest", "intentHash"])
+      && entry.recovery.type === "admin-template-photo-stage" && entry.recovery.protocol === "admin-template-photo-stage-v1"
+      && ["environment", "actorId", "listId", "itemKey"].every(key => entry.recovery[key] === recovery[key])
+      && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id && hash(entry.recovery.intentHash)
+      && cancellation.assets.some(asset => asset.assetId === entry.id && asset.assetDigest === entry.recovery.assetDigest);
     if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
       && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)
-      && !ownCancelledStage(entry) && !ownAccess(entry) && !accessPeer(entry) && !ownAdmin(entry) && !adminPeer(entry)) && !isReadOnlyRequest(path, method)) {
+      && !ownCancelledStage(entry) && !ownCancelledAdminStage(entry)
+      && !ownAccess(entry) && !accessPeer(entry) && !ownAdmin(entry) && !adminPeer(entry)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;
     }
   };
-  const beginWrite = async (path, method = "GET", body = null, recovery = null) => {
+  const beginWrite = async (path, method = "GET", body = null, recovery = null, cancellation = null) => {
     if (automatic && !ready) throw transportError("API transport is not verified; write was not sent");
-    assertWritable(path, method, recovery);
+    assertWritable(path, method, recovery, cancellation);
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
     const identity = await photoWriteIdentity(path, method, body);
     return locks.request(EXPERIMENT_WRITE_LOCK, () => {
       // Atomic across tabs, including direct and EU. No network/await in this
       // critical section; independent photos in this page can upload concurrently.
-      assertWritable(path, method, recovery);
+      assertWritable(path, method, recovery, cancellation);
       if (identity && journal.some((entry) => entry.identity === identity)) {
         const error = transportError("Photo operation was already sent; reconcile before replay");
         error.isAmbiguousMutation = true;
@@ -342,7 +366,7 @@ export function createExperimentTransport({
     try {
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
-      if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template"].includes(entry?.recovery?.type))) {
+      if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template", "admin-template-photo-stage"].includes(entry?.recovery?.type))) {
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
