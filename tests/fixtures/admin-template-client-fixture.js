@@ -22,6 +22,7 @@ export function adminClientFixture() {
     else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1", ...(state.copyCapability ? ["adminTemplateCopyV1"] : []),
       ...(state.sourceSaveCapability ? ["adminTemplateSourceSaveV1"] : []),
       ...(state.pendingSourceCapability ? ["adminTemplatePendingSourceV1"] : []),
+      ...(state.pendingPersonalSourceCapability ? ["adminTemplatePendingPersonalSourceV1"] : []),
       ...(state.personalSourceCapability ? ["adminTemplatePersonalSourceSaveV1"] : [])] : [] };
     else if (options.method === "POST") {
       const input = JSON.parse(options.body), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input });

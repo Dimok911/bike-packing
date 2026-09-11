@@ -1,5 +1,5 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
-  TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY, TEMPLATE_SOURCE_SAVE_CAPABILITY, TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY, TEMPLATE_PENDING_SOURCE_CAPABILITY } from "./admin-template-protocol.js";
+  TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY, TEMPLATE_SOURCE_SAVE_CAPABILITY, TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY, TEMPLATE_PENDING_SOURCE_CAPABILITY, TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY } from "./admin-template-protocol.js";
 const environment = "bike-packing-experiment";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -173,6 +173,8 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         && !capabilities.capabilities.includes(TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY)) throw blocked();
       if (saved.intent.body.source?.base?.operationId
         && !capabilities.capabilities.includes(TEMPLATE_PENDING_SOURCE_CAPABILITY)) throw blocked();
+      if (saved.intent.body.source?.kind === "personal-list" && saved.intent.body.source.base.operationId
+        && !capabilities.capabilities.includes(TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY)) throw blocked();
       const recovery = metadata(saved), gateway = "/bike-packing/admin/template-operations";
       const path = saved.cancelRequested ? gateway + "/" + id + "/cancel" : gateway;
       const envelope = { expectedActorId: binding.actorId, environment, operationId: id, listId: binding.listId, itemKey: binding.itemKey,

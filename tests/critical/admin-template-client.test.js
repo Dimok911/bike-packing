@@ -217,3 +217,31 @@ test("pending source cancellation freezes rejection without waiting for the sour
   assert.deepEqual(await f.make().client.run(action.operationId), receipt);
   assert.equal(f.posts().length, 2);
 });
+
+test("pending personal source needs its own capability and retains the exact private dependency through recovery", async () => {
+  const f = fixture(), action = f.action(), parentId = randomUUID();
+  action.body.source = { kind: "personal-list", listId: "personal-pending", base: { operationId: parentId }, payloadDigest: "e".repeat(64) };
+  f.state.sourceSaveCapability = true; f.state.personalSourceCapability = true; f.state.pendingSourceCapability = true;
+  const client = f.make().client; await client.capture(action);
+  await assert.rejects(client.run(action.operationId)); assert.equal(f.posts().length, 0);
+  f.state.pendingPersonalSourceCapability = true; f.state.pendingSource = true;
+  const waiting = await client.run(action.operationId); assert.equal(waiting.operation.state, "waiting");
+  assert.deepEqual(waiting.waiting.operationIds, [parentId]);
+  assert.deepEqual(await f.make().client.run(action.operationId), waiting);
+  f.state.pendingSource = false; f.state.lose = true;
+  const receipt = await f.make().client.run(action.operationId); assert.equal(receipt.operation.state, "committed");
+  f.state.pendingPersonalSourceCapability = false;
+  assert.deepEqual(await f.make().client.run(action.operationId), receipt);
+  assert.equal(f.posts().length, 3);
+  for (const post of f.posts()) assert.deepEqual(JSON.parse(post.options.body).body.source, action.body.source);
+});
+
+test("pending personal source cancellation remains final after its predecessor becomes available", async () => {
+  const f = fixture(), action = f.action();
+  action.body.source = { kind: "personal-list", listId: "personal-pending", base: { operationId: randomUUID() }, payloadDigest: "f".repeat(64) };
+  Object.assign(f.state, { sourceSaveCapability: true, personalSourceCapability: true, pendingSourceCapability: true, pendingPersonalSourceCapability: true, pendingSource: true });
+  const client = f.make().client; await client.capture(action); assert.equal((await client.run(action.operationId)).operation.state, "waiting");
+  const receipt = await f.make().client.cancel(action.operationId); assert.equal(receipt.result.payload.code, "operation_cancelled");
+  f.state.pendingSource = false; assert.deepEqual(await f.make().client.run(action.operationId), receipt);
+  assert.equal(f.posts().length, 2);
+});

@@ -5,6 +5,7 @@ export const TEMPLATE_COPY_CAPABILITY = "adminTemplateCopyV1";
 export const TEMPLATE_SOURCE_SAVE_CAPABILITY = "adminTemplateSourceSaveV1";
 export const TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY = "adminTemplatePersonalSourceSaveV1";
 export const TEMPLATE_PENDING_SOURCE_CAPABILITY = "adminTemplatePendingSourceV1";
+export const TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY = "adminTemplatePendingPersonalSourceV1";
 export const TEMPLATE_OPERATION_KINDS = Object.freeze(["template.create", "template.copy", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"]);
 export { canonicalOperationJson as canonicalTemplateJson, validListOperationId as validTemplateOperationId };
 
@@ -45,7 +46,6 @@ export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listI
         || !text(source.itemKey, 191) || !/^(demo-state(?:[:-].+)?|shared-layout:.+)$/.test(source.itemKey)
         || !text(source.listId, 64) || !/^(public-demo-state(?:-.+)?|public-shared-layout-.+)$/.test(source.listId)) fail();
     if (source.listId === listId || !validBase(source.base, operationId)
-      || personal && !exact(source.base, ["stateRevision"])
       || typeof source.payloadDigest !== "string" || !/^[a-f0-9]{64}$/.test(source.payloadDigest)) fail();
   }
   if (extra.includes("indexes")) {
