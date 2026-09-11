@@ -216,3 +216,15 @@ smoke. Чтение журнала ограничено 15 секундами. �
 фотоформа сумки/lost-file и mixed фото вещи/queue-quota
 (`resume-browser-diagnostics-ui-1.txt`, 2,2 минуты). Полный административный UI 250/250
 относится к неизменённому коду приложения `d653d83`; публикаций нет.
+
+## New completed baseline d8b1c6f, 2026-09-11
+
+Run `34554510823` completed successfully. Chromium job `103124180914`:
+967 passed / 260 skipped in 1.0 h; disabled-owner checks 4/4.
+Mobile job `103124180891`: 917 passed / 278 skipped / 6 flaky in 1.4 h;
+disabled-owner checks 4/4. Logs retained as `resume-ci-d8b1c6f-{chromium,mobile}.txt`.
+The six mobile first failures include closed/crashed pages and assertion failures;
+their current artifact/lifecycle has not yet been correlated, so this does not
+close the native WebKit issue or establish the cause of every assertion failure.
+Newer checkpoints 5692f0d/6f965f4/a79a50a/b0890ed were still running at this check.
+No publication, flags OFF.

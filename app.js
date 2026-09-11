@@ -68,6 +68,7 @@ import { prepareAdminTemplateContainerReplacement } from "./src/sync/admin-templ
 import { prepareAdminTemplatePlacementMove } from "./src/sync/admin-template-placement-move.js";
 import { prepareAdminTemplatePlacementGroup } from "./src/sync/admin-template-placement-group.js";
 import { prepareAdminTemplatePlacementRemoval } from "./src/sync/admin-template-placement-remove.js";
+import { prepareAdminTemplateCatalogDeletion } from "./src/sync/admin-template-catalog-delete.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10699,12 +10700,13 @@ async function prepareCausalAdminPlacementCopy(request) {
       : request.type === "container-replace" ? prepareAdminTemplateContainerReplacement
       : request.type === "placement-move" ? prepareAdminTemplatePlacementMove
       : request.type === "placement-group" ? prepareAdminTemplatePlacementGroup
-      : request.type === "placement-remove" ? prepareAdminTemplatePlacementRemoval : prepareAdminTemplateTreeCopy;
+      : request.type === "placement-remove" ? prepareAdminTemplatePlacementRemoval
+      : request.type === "catalog-delete" ? prepareAdminTemplateCatalogDeletion : prepareAdminTemplateTreeCopy;
     prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove", "catalog-delete"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
@@ -10726,7 +10728,7 @@ async function prepareCausalAdminPlacementCopy(request) {
           state[type][id] = clone(prepared.snapshot[type][id]);
         }
         for (const { type, id } of prepared.removals || []) {
-          if (type !== "containers" || !state[type][id] || state[type][id].publicCatalogLayoutId !== layout.id
+          if (!["items", "containers"].includes(type) || !state[type][id] || state[type][id].publicCatalogLayoutId !== layout.id
             || Object.hasOwn(prepared.snapshot[type], id)) throw Error("Исходная запись удаления изменилась.");
           priorUpdates.push({ type, id, value: state[type][id] }); delete state[type][id];
         }

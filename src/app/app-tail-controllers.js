@@ -4876,6 +4876,15 @@ async function copyCatalogItems(itemIds) {
   renderItems();
 }
 
+function prepareCatalogDeletionAction(type, ids) {
+  const layoutId = getPublishedEditLayoutId();
+  if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId)) {
+    return prepareCausalAdminPlacementCopy({ type: "catalog-delete", action: type === "item" ? "delete-item" : "delete-container",
+      ...(Array.isArray(ids) ? { sourceIds: ids } : { sourceId: ids }), sourceLayoutId: layoutId, targetLayoutId: layoutId });
+  }
+  return preparePersonalCatalogDeletion(Array.isArray(ids) ? { type: "batch", operations: ids.map(id => ({ type, id })) } : { type, id: ids });
+}
+
 async function confirmDeleteCatalogItems(itemIds) {
   const ids = [...new Set(itemIds)].filter((id) => state.items?.[id]);
   if (ids.length <= 1) {
@@ -4883,7 +4892,8 @@ async function confirmDeleteCatalogItems(itemIds) {
     return;
   }
   if (ids.some(id => warnLockedItemDelete(id))) return;
-  const personalDelete = preparePersonalCatalogDeletion({ type: "batch", operations: ids.map(id => ({ type: "item", id })) });
+  const personalDelete = await prepareCatalogDeletionAction("item", ids);
+  if (personalDelete === false) return;
   const confirmed = await askConfirmDialog({
     title: localText("Delete selected items forever?", "Удалить выбранные вещи навсегда?"),
     text: localText(`${ids.length} items will be removed from the item list and every layout. Bags and places will remain. This cannot be undone.`, `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`),
@@ -4895,7 +4905,7 @@ async function confirmDeleteCatalogItems(itemIds) {
   if (!confirmed) return;
   if (ids.some(id => warnLockedItemDelete(id))) return;
   if (personalDelete) {
-    if (!personalDelete()) return;
+    if (!await personalDelete()) return;
     runtime.selectedCatalogItemIds = new Set();
     runtime.selectedCatalogItemAnchorId = "";
     render();
@@ -4945,7 +4955,8 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
     return;
   }
   if (ids.some(id => warnLockedContainerDelete(id))) return;
-  const personalDelete = preparePersonalCatalogDeletion({ type: "batch", operations: ids.map(id => ({ type: "container", id })) });
+  const personalDelete = await prepareCatalogDeletionAction("container", ids);
+  if (personalDelete === false) return;
   const confirmed = await askConfirmDialog({
     title: localText("Delete selected bags and places?", "Удалить выбранные сумки и места?"),
     text: localText(`${ids.length} bags/places will be removed from the bag list and every layout.`, `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`),
@@ -4957,7 +4968,7 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
   if (!confirmed) return;
   if (ids.some(id => warnLockedContainerDelete(id))) return;
   if (personalDelete) {
-    if (!personalDelete()) return;
+    if (!await personalDelete()) return;
     runtime.selectedCatalogRootIds = new Set();
     runtime.selectedCatalogRootAnchorId = "";
     render();
@@ -5598,11 +5609,12 @@ function confirmDeleteEditingItemForever(event) {
   });
 }
 
-function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
+async function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   const item = state.items[itemId];
   if (!item) return;
   if (warnLockedItemDelete(itemId)) return;
-  const personalDelete = preparePersonalCatalogDeletion({ type: "item", id: itemId });
+  const personalDelete = await prepareCatalogDeletionAction("item", itemId);
+  if (personalDelete === false) return;
   const placements = describeVisibleItemLayoutPlacementRows(item);
   const placementText = placements.length
     ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement.label}`).join("\n")}`
@@ -5620,8 +5632,8 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
     tone: placements.length ? "danger" : "safe",
     ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length), t }),
     highlightHtml: placementHtml,
-    onConfirm: () => {
-      if (deleteItemForever(itemId, { personalDelete })) afterConfirm?.();
+    onConfirm: async () => {
+      if (await deleteItemForever(itemId, { personalDelete })) afterConfirm?.();
     }
   });
 }
@@ -5659,10 +5671,13 @@ function deleteItemPhotos(item, itemId) {
 function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = true,
   personalDelete = preparePersonalCatalogDeletion({ type: "item", id: itemId }) } = {}) {
   if (warnLockedItemDelete(itemId)) return;
+  if (personalDelete === false) return false;
+  if (!personalDelete && adminTemplateUiEnabled() && isAdminEditablePublishedLayout(getPublishedEditLayoutId())) {
+    return prepareCatalogDeletionAction("item", itemId).then(commit => commit ? deleteItemForever(itemId, { cleanupContainers, renderAfter, personalDelete: commit }) : false);
+  }
   if (personalDelete) {
-    if (!personalDelete()) return false;
-    if (renderAfter) render();
-    return true;
+    const finish = applied => { if (!applied) return false; if (renderAfter) render(); return true; };
+    const result = personalDelete(); return result?.then ? result.then(finish) : finish(result);
   }
   const changedAt = nowIso();
   const deleted = deleteItemFromState(state, itemId, {
@@ -5834,11 +5849,12 @@ function confirmDeleteEditingRootContainerForever(event) {
   });
 }
 
-function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
+async function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
   if (!container || (container.parentId && container.nestable !== true)) return;
   if (warnLockedContainerDelete(containerId)) return;
-  const personalDelete = preparePersonalCatalogDeletion({ type: "container", id: containerId });
+  const personalDelete = await prepareCatalogDeletionAction("container", containerId);
+  if (personalDelete === false) return;
   const itemCount = getContainerItemIdsDeep(containerId).length;
   const layoutRows = Object.values(state.layouts)
     .filter((layout) => getLayoutContainerIdSet(layout).has(containerId))
@@ -5875,18 +5891,21 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
       risky: Boolean(layoutRows.length || itemCount),
       t
     }),
-    onConfirm: () => {
-      if (deleteRootContainer(containerId, personalDelete)) afterConfirm?.();
+    onConfirm: async () => {
+      if (await deleteRootContainer(containerId, personalDelete)) afterConfirm?.();
     }
   });
 }
 
 function deleteRootContainer(containerId, personalDelete = preparePersonalCatalogDeletion({ type: "container", id: containerId })) {
   if (warnLockedContainerDelete(containerId)) return;
+  if (personalDelete === false) return false;
+  if (!personalDelete && adminTemplateUiEnabled() && isAdminEditablePublishedLayout(getPublishedEditLayoutId())) {
+    return prepareCatalogDeletionAction("container", containerId).then(commit => commit ? deleteRootContainer(containerId, commit) : false);
+  }
   if (personalDelete) {
-    if (!personalDelete()) return false;
-    render();
-    return true;
+    const finish = applied => { if (!applied) return false; if (runtime.editingRootContainerId === containerId) runtime.editingRootContainerId = null; render(); return true; };
+    const result = personalDelete(); return result?.then ? result.then(finish) : finish(result);
   }
   const changedAt = nowIso();
   const deleted = deleteRootContainerFromState(state, containerId, {

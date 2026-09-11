@@ -892,6 +892,105 @@ for (const shared of [false, true]) for (const kind of ["item", "container"])
   });
 }
 
+for (const shared of [false, true]) for (const kind of ["placed-item", "standalone-item", "detached-item", "root", "nested", "detached-tree", "batch-items", "batch-bags"])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", ...(["placed-item", "root", "batch-bags"].includes(kind) ? ["cancel", "changed-target"] : [])]) {
+  test(`admin catalog delete ${shared ? "shared" : "demo"} ${kind} (${mode})`, async ({ page, context }) => {
+    const itemOnly = kind.includes("item"), batch = kind.startsWith("batch"), form = batch ? "" : itemOnly ? "#itemDialog" : "#rootContainerDialog";
+    const names = { "placed-item": ["Насос шаблона"], "standalone-item": ["Вторая вещь шаблона"], "detached-item": ["Запасная вещь"],
+      root: ["Сумка шаблона"], nested: ["Карман шаблона"], "detached-tree": ["Запасная сумка"],
+      "batch-items": ["Насос шаблона", "Вторая вещь шаблона"], "batch-bags": ["Сумка шаблона", "Запасная сумка"] }[kind];
+    const server = await fixture(page, context, { shared, withContainers: true, catalogPair: true, hydrate: true, detachedTree: "tree", detachedItemLink: true, bagReplacement: kind === "nested" ? "reusable" : "" });
+    const before = await page.evaluate(({ names, itemOnly }) => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const sourceIds = names.map(name => Object.values(itemOnly ? current.items : current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === name).id);
+      const tree = new Set(), walk = id => { tree.add(id); current.containers[id].childIds.forEach(walk); };
+      if (!itemOnly) sourceIds.forEach(walk);
+      return { layoutId: layout.id, sourceIds, sourceId: sourceIds[0], snapshot: __adminUiTest.snapshot(layout.id), ids: [Object.keys(current.containers), Object.keys(current.items)],
+        deletedContainers: [...tree].filter(id => sourceIds.includes(id) || current.containers[id].nestable !== true) };
+    }, { names, itemOnly });
+    await page.locator(`[data-view="${itemOnly ? "items" : "bags"}"]`).click();
+    if (batch) {
+      const card = id => page.locator(itemOnly ? `#itemsView [data-list-item-id="${id}"]` : `#bagsView [data-root-card="${id}"]`);
+      for (const id of before.sourceIds) await card(id).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
+      for (const id of before.sourceIds) await expect(card(id)).toHaveAttribute("aria-selected", "true");
+      await card(before.sourceIds[0]).locator(itemOnly ? "[data-delete-item]" : "[data-delete-root]").click();
+    } else if (itemOnly) { await page.evaluate(id => __adminUiTest.openItem(id), before.sourceId); await page.locator("#itemDeleteForeverBtn").click(); }
+    else { await page.evaluate(id => __adminUiTest.openContainer(id), before.sourceId); await page.locator("#rootContainerDeleteForeverBtn").click(); }
+    await expect(page.locator("#confirmOkBtn")).toBeVisible();
+    if (["cancel", "changed-target"].includes(mode)) {
+      if (mode === "changed-target") await page.evaluate(id => { const layout = __adminUiTest.state().layouts[id]; layout.arrangement.itemQuantities[Object.keys(layout.arrangement.items)[0]] = 5; }, before.layoutId);
+      const atConfirm = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+      await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+      if (mode === "cancel") await expect(page.locator("#confirmDialog")).not.toBeVisible();
+      else await expect(page.locator("body")).toContainText("Шаблон изменился");
+      expect(server.posts).toEqual([]); if (form) await expect(page.locator(form)).toBeVisible();
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(atConfirm);
+      expect(server.errors).toEqual([]); return;
+    }
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Catalog deletion quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    server.lose = mode === "lost";
+    await page.locator("#confirmOkBtn").click();
+    if (mode === "mirror-quota") {
+      await expect(page.locator("body")).toContainText("Catalog deletion quota");
+      expect(server.posts).toEqual([]); if (form) await expect(page.locator(form)).toBeVisible();
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(await page.evaluate(() => [Object.keys(__adminUiTest.state().containers).sort(), Object.keys(__adminUiTest.state().items).sort()])).toEqual(before.ids.map(ids => [...ids].sort()));
+      expect(server.errors).toEqual([]); return;
+    }
+    if (["plan-quota", "pointer-quota"].includes(mode)) await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+    else { await expect.poll(() => server.posts.length).toBe(1); if (mode === "lost") await expect.poll(() => server.hidden).toBe(true); }
+    if (form) await expect(page.locator(form)).not.toBeVisible();
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().items).sort())).toEqual(before.ids[1].filter(id => !itemOnly || !before.sourceIds.includes(id)).sort());
+    expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers).sort())).toEqual(before.ids[0].filter(id => !before.deletedContainers.includes(id)).sort());
+    server.lose = false; server.hidden = false;
+    const priorAction = server.posts[0] && structuredClone(server.posts[0]);
+    const planId = priorAction?.operationId || await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1);
+    if (priorAction) expect(server.posts[0]).toEqual(priorAction);
+    expect(server.posts[0].operationId).toBe(planId); expect(server.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    const original = before.snapshot.payload, expectedItems = structuredClone(original.items), expectedContainers = structuredClone(original.containers);
+    const prior = Object.values(original.layouts)[0].arrangement, expectedArrangement = structuredClone(prior);
+    const selected = names.map(name => Object.values(itemOnly ? original.items : original.containers).find(row => row.name === name).id);
+    const containers = new Set(), items = new Set();
+    const walk = id => { containers.add(id); original.containers[id].itemIds.forEach(id => items.add(id)); original.containers[id].childIds.forEach(walk); };
+    if (itemOnly) selected.forEach(id => items.add(id)); else selected.forEach(walk);
+    for (const id of items) {
+      for (const key of ["items", "itemQuantities", "packedItems"]) delete expectedArrangement[key][id];
+      if (itemOnly) delete expectedItems[id]; else expectedItems[id].containerId = "";
+    }
+    expectedArrangement.rootContainerIds = expectedArrangement.rootContainerIds.filter(id => !containers.has(id));
+    for (const id of containers) {
+      delete expectedArrangement.containers[id];
+      if (selected.includes(id) || original.containers[id].nestable !== true) delete expectedContainers[id];
+      else Object.assign(expectedContainers[id], { parentId: null, childIds: [], itemIds: [], order: [] });
+    }
+    for (const row of [...Object.values(expectedContainers), ...Object.values(expectedArrangement.containers)]) {
+      row.itemIds = row.itemIds.filter(id => !items.has(id)); row.childIds = row.childIds.filter(id => !containers.has(id));
+      row.order = row.order.filter(row => row.type === "item" ? !items.has(row.id) : !containers.has(row.id));
+    }
+    expect(server.payload.items).toEqual(expectedItems); expect(server.payload.containers).toEqual(expectedContainers);
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(expectedArrangement);
+    await editItem(page, "Правка после удаления из каталога", "Остающаяся вещь", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(Object.values(server.payload.layouts)[0].arrangement).toEqual(expectedArrangement);
+    expect(server.errors).toEqual([]);
+  });
+}
+
 for (const shared of [false, true]) for (const kind of ["item-form", "item-row", "root-form", "reusable", "temporary", "settings"])
   for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"]) {
   test(`admin placement remove ${shared ? "shared" : "demo"} ${kind} (${mode})`, async ({ page, context }) => {
