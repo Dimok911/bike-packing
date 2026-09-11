@@ -5,11 +5,14 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/").split("?")[0];
+    if (mode === "admin-photo-edit" && source.endsWith("/src/sync/admin-template-photo-edit-protocol.js")) {
+      return code.replace("ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = true");
+    }
     if ((mode === "admin-photo-append" || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
       && source.endsWith("/src/sync/admin-template-photo-append-protocol.js")) {
       return code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
     }
-    if (mode === "admin-photo-append" && source.endsWith("/app.js")) {
+    if (["admin-photo-append", "admin-photo-edit"].includes(mode) && source.endsWith("/app.js")) {
       const anchor = "  const before = snapshot.beforeState && adminTemplatePhotoEditorSnapshot(snapshot.beforeState, layoutId, snapshot.metadata);";
       if (!code.includes(anchor)) throw Error("Admin photo candidate diagnostic anchor changed");
       code = code.replace(anchor, anchor + `
@@ -42,5 +45,6 @@ export default defineConfig(({ mode }) => ({
     return code;
   } }],
   build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build"
+    : mode === "admin-photo-edit" ? "test-results/admin-template-photo-edit-ui-build"
     : mode === "admin-photo-append" ? "test-results/admin-template-photo-append-ui-build" : "test-results/admin-template-ui-build", emptyOutDir: true },
 }));

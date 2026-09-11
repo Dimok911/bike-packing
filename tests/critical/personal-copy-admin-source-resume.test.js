@@ -90,7 +90,7 @@ async function harness() {
     createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true,
     adminTemplateRecoveryFor: () => ({ resumeStop: async () => null }),
     adminTemplateStopChoiceFor: () => ({ resume: async () => null }), administrativeSaveCoordinator: null };
-  const helpers = ["restoreAdminPublishedLayoutContext", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
+  const helpers = ["restoreAdminPublishedLayoutContext", "applyAdminTemplateConfirmedPhotoResult", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
     .map(name => app.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0]).join("\n");
   const actual = new Function(...Object.keys(deps), `${helpers}\nreturn { run: resumePersonalCopyAdminSource, coordinator: adminTemplateSaveCoordinator };`)(...Object.values(deps));
   return { run: () => actual.run(source), coordinator: actual.coordinator, source, state, currentUser, view, controls, calls, f, plan,

@@ -13,6 +13,7 @@ import { repairContainerMembershipFromItemLinks } from "../../src/state/repair.j
 import { exportLayoutAsPublishedState } from "../../src/public/published-state-export.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView } from "../../src/sync/admin-template-photo-view.js";
 import { normalizeItemPhotos } from "../../src/state/item-photos.js";
+import { adminPhotoEditFixture, photoEditStorage, copy as copyPhotoEdit } from "../fixtures/admin-template-photo-edit-fixture.js";
 
 async function fixture({ stop = true } = {}) {
   const f = adminClientFixture(), body = f.action().body;
@@ -50,6 +51,41 @@ async function fixture({ stop = true } = {}) {
   f.savedChoice = () => JSON.parse([...f.values].find(([key]) => key.startsWith("bike-packing-admin-stop-choice-v1:"))[1]).choice;
   return f;
 }
+
+test("a stopped v6 cannot durably choose unsupported local replay and can still adopt the server afterwards", async () => {
+  const f = adminPhotoEditFixture(), persistence = photoEditStorage(), savedActions = new Map(), posts = [];
+  const context = { ...f.binding, scope: "admin-template", admin: true, generation: "photo-edit" };
+  const state = copyPhotoEdit(f.input.photoSnapshot.state), layout = state.layouts[f.layoutId];
+  layout.adminCausalSource = { ...layout.adminCausalSource, planId: f.action.operationId,
+    base: { operationId: f.action.operationId }, photoEditPending: f.action.operationId };
+  const server = { ok: true, ...f.binding, exists: true, deleted: false, stateRevision: 7, visibility: "private", indexes: [],
+    payload: copyPhotoEdit(f.sourcePayload), metadata: copyPhotoEdit(f.metadata) };
+  const client = { async capture() { if (!savedActions.has(f.action.operationId)) savedActions.set(f.action.operationId, { intent: copyPhotoEdit(f.intent), receipt: null }); },
+    async cancel(id) {
+      posts.push(id);
+      const receipt = { operation: { ...copyPhotoEdit(f.receipt.operation), state: "rejected" }, result: { status: 409, payload: {
+        ok: false, code: "operation_cancelled", cancellation: { version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } } };
+      savedActions.get(id).receipt = receipt; return copyPhotoEdit(receipt);
+    }, async read(id) { return copyPhotoEdit(savedActions.get(id) || null); }, async prepare() { return copyPhotoEdit(server); } };
+  let recovery;
+  const plans = createAdminTemplateSavePlans({ binding: f.binding, client, getContext: () => context, ...persistence, enabled: true,
+    shouldCancel: id => recovery.requiresCancellation(id) });
+  recovery = createAdminTemplateRecovery({ binding: f.binding, client, plans, getContext: () => context, ...persistence, enabled: true });
+  await plans.capturePhotoEdit(f.input); await recovery.captureStop(f.action.operationId, f.input.editorSnapshot); await recovery.resumeStop(f.action.operationId);
+  const make = () => createAdminTemplateStopChoice({ binding: f.binding, layoutId: f.layoutId, priorPlanId: f.action.operationId,
+    getContext: () => context, getSource: () => layout.adminCausalSource, snapshot: () => f.input.editorSnapshot,
+    client, plans, recovery, ...persistence, enabled: true,
+    projectServer: (value, id) => projectAdminTemplateServerVariant(layout, value, id, { photoBinding: f.binding, photoOwnerMapEnabled: true }) });
+  const opened = await make().open(); assert.match(opened.localUnavailableReason, /серверный вариант/);
+  const before = [...persistence.values];
+  await assert.rejects(make().choose(opened, { variant: "local" }), { code: "admin-template-photo-edit-local-choice-unsupported" });
+  assert.deepEqual([...persistence.values], before); assert.equal((await plans.list()).length, 1);
+  const cold = make(), reopened = await cold.open(); assert.equal(reopened.saved, null);
+  const choice = await cold.choose(reopened, { variant: "server" }); assert.equal(choice.version, 2);
+  const resumed = await make().resume(); assert.equal(resumed.serverAdoption.source.adoptedStop.priorPlanId, f.action.operationId);
+  assert.deepEqual(await make().excludedPlans(resumed.serverAdoption.source.adoptedStop), [f.action.operationId]);
+  assert.equal((await plans.list()).length, 1); assert.deepEqual(posts, [f.action.operationId]);
+});
 
 test("post-stop comparison is read-only until chosen and retains both versions for an independent save", async () => {
   const f = await fixture(), choice = f.choice(), opened = await choice.open();

@@ -45,6 +45,16 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
     const info = await recovery.inspect(priorPlanId); unchanged(session);
     if (!info.stopped || !info.stopCoversHead || info.id !== priorPlanId) throw paused();
   };
+  const localUnavailableReason = async opened => {
+    const saved = await plans.read(priorPlanId); unchanged(opened);
+    return saved?.plan.version === 6
+      ? "После остановки удаления или перестановки фото местный вариант остаётся сохранённым для сверки. Сейчас можно открыть серверный вариант и повторно выбрать изменения в его форме."
+      : null;
+  };
+  const assertLocalSupported = async opened => {
+    const reason = await localUnavailableReason(opened);
+    if (reason) throw Object.assign(paused(), { message: reason, code: "admin-template-photo-edit-local-choice-unsupported" });
+  };
   const source = server => {
     const value = adminTemplateEditorSource(binding, server);
     if (!value.exists || !server.payload || Object.keys(server.payload.layouts || {}).length !== 1) throw paused();
@@ -114,13 +124,16 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
     },
     async open() {
       const opened = session(), saved = await read(); unchanged(opened); await stopped(opened);
-      if (saved) { if (!matches(saved, opened)) throw paused(); return { ...opened, saved }; }
+      const reason = await localUnavailableReason(opened);
+      const availability = reason ? { localUnavailableReason: reason } : {};
+      if (saved) { if (!matches(saved, opened)) throw paused(); return { ...opened, ...availability, saved }; }
       const server = clone(await client.prepare()); unchanged(opened); source(server); await stopped(opened);
-      return { ...opened, server, saved: null };
+      return { ...opened, ...availability, server, saved: null };
     },
     async choose(opened, { variant = "local" } = {}) {
       opened = clone(opened); unchanged(opened); if (opened.saved) throw paused();
       if (!["local", "server"].includes(variant) || variant === "server" && !projectServer) throw paused();
+      if (variant === "local") await assertLocalSupported(opened);
       const knownPlans = variant === "server" ? (await plans.list()).map(row => ({ id: row.plan.id, digest: row.digest })) : null;
       unchanged(opened);
       const id = uuid(), choice = validate({ version: variant === "server" ? 2 : 1, id, binding, layoutId, priorPlanId,
@@ -148,6 +161,7 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
           return { serverAdoption: { projection: clone(choice.projection),
             source: { ...source(choice.server), adoptedStop: { choiceId: choice.id, priorPlanId } } } };
         }
+        await assertLocalSupported(opened);
         await plans.capture(input(choice)); unchanged(opened);
         // Point directly at the approved plan: cancelled plans may share its
         // server base, so generic orphan discovery must not pick a successor.

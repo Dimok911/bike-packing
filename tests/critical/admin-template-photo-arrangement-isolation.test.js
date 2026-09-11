@@ -8,14 +8,14 @@ import {
 import { snapshotContainerTreeFromLiveState } from "../../src/state/container-tree-snapshot.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
-const names = ["hasOwnedAdminTemplatePhotoEditor", "solidifyTemplateDraftLayout", "solidifyManagedTemplateDrafts"];
+const names = ["adminTemplatePhotoMechanismEnabled", "hasOwnedAdminTemplatePhotoEditor", "solidifyTemplateDraftLayout", "solidifyManagedTemplateDrafts"];
 const source = names.map(name => {
   const match = app.match(new RegExp("function " + name + "\\([^]*?\\n\\}"));
   assert.ok(match, "Actual application function " + name + " is available");
   return match[0];
 }).join("\n");
 
-function fixture({ enabled = true, actor = "admin-a", pending = false } = {}) {
+function fixture({ enabled = true, editEnabled = false, actor = "admin-a", pending = false } = {}) {
   const arrangement = prefix => ({
     rootContainerIds: [prefix + "-bag"],
     containers: { [prefix + "-bag"]: {
@@ -37,7 +37,7 @@ function fixture({ enabled = true, actor = "admin-a", pending = false } = {}) {
         adminCausalSource: { version: 1,
           binding: { environment: "bike-packing-experiment", actorId: actor, listId: "public-demo-state-ui", itemKey: "demo-state:ui" },
           base: pending ? { operationId } : { stateRevision: 7 }, planId: pending ? operationId : null,
-          ...(pending ? { photoAppendPending: operationId } : {}) } },
+          ...(pending ? { [pending === "edit" ? "photoEditPending" : "photoAppendPending"]: operationId } : {}) } },
       legacy: { id: "legacy", adminDemo: true, rootContainerIds: ["legacy-bag"], arrangement: arrangement("legacy") }
     },
     items: { private: { id: "private", name: "Unchanged private item", categories: ["Private category"] } },
@@ -53,7 +53,7 @@ function fixture({ enabled = true, actor = "admin-a", pending = false } = {}) {
     itemIds: ["detachedItem"], childIds: [], order: [{ type: "item", id: "detachedItem" }], unknown: { untouched: true } };
   state.items.detachedItem = { id: "detachedItem", containerId: "detachedBag", publicCatalogLayoutId: "causal",
     name: "Detached administrative item", quantity: 4, photos: [{ id: "legacy-photo", metadata: { exact: [2, 1, 3] } }] };
-  const deps = { state, ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: enabled, localStorageScopeKey: "id:admin-a",
+  const deps = { state, ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: enabled, ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED: editEnabled, localStorageScopeKey: "id:admin-a",
     solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayoutForState, snapshotContainerTreeFromLiveState };
   const actual = new Function(...Object.keys(deps), source + "\nreturn { " + names.join(", ") + " };")(...Object.values(deps));
   return { state, actual };
@@ -99,5 +99,42 @@ test("the actual wrappers keep their existing behavior when disabled or outside 
       assert.notEqual(causalNamespace(state), before);
       assert.deepEqual(state.layouts.causal.arrangement.packedItems, {});
     }
+  }
+});
+
+test("edit-only individual and bulk solidification preserve confirmed and pending namespaces including detached photo owners", () => {
+  for (const pending of [false, "edit"]) for (const method of ["solidifyManagedTemplateDrafts", "solidifyTemplateDraftLayout"]) {
+    const { state, actual } = fixture({ enabled: false, editEnabled: true, pending });
+    const before = causalNamespace(state), privateItem = structuredClone(state.items.private), privateLayout = structuredClone(state.layouts.personal);
+    assert.equal(actual.adminTemplatePhotoMechanismEnabled(), true);
+    assert.equal(actual[method]("causal"), method === "solidifyManagedTemplateDrafts");
+    assert.equal(causalNamespace(state), before); assert.deepEqual(state.items.private, privateItem);
+    assert.deepEqual(state.layouts.personal, privateLayout); assert.deepEqual(state.packedItems, {});
+    if (method === "solidifyManagedTemplateDrafts") assert.deepEqual(state.layouts.legacy.arrangement.packedItems, {});
+  }
+});
+
+test("cold append/edit plans keep their exact inactive arrangement when both feature gates are OFF", () => {
+  for (const pending of ["append", "edit"]) for (const method of ["solidifyManagedTemplateDrafts", "solidifyTemplateDraftLayout"]) {
+    const { state, actual } = fixture({ enabled: false, editEnabled: false, pending });
+    Object.assign(state, JSON.parse(JSON.stringify(state)));
+    const before = causalNamespace(state), privateItem = structuredClone(state.items.private);
+    assert.equal(actual.adminTemplatePhotoMechanismEnabled(), false);
+    assert.equal(actual[method]("causal"), method === "solidifyManagedTemplateDrafts", `${pending}/${method}`);
+    assert.equal(causalNamespace(state), before, `${pending}/${method}: pending candidate cannot be normalized while paused`);
+    assert.deepEqual(state.items.private, privateItem); assert.deepEqual(state.packedItems, {});
+    assert.deepEqual(state.layouts.causal.arrangement.packedItems, { "causal-item": true });
+  }
+});
+
+test("a confirmed photo mapping preserves arrangement and detached owners after both gates are disabled", () => {
+  for (const method of ["solidifyManagedTemplateDrafts", "solidifyTemplateDraftLayout"]) {
+    const { state, actual } = fixture({ enabled: false });
+    state.layouts.causal.adminCausalSource.photoOwnerMap = { version: 1, layoutId: "causal", stateRevision: 7,
+      owners: [{ type: "items", localId: "detachedItem", serverId: "server-detached-item" }] };
+    Object.assign(state, JSON.parse(JSON.stringify(state)));
+    const before = causalNamespace(state);
+    assert.equal(actual[method]("causal"), method === "solidifyManagedTemplateDrafts");
+    assert.equal(causalNamespace(state), before); assert.deepEqual(state.packedItems, {});
   }
 });

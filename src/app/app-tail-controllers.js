@@ -143,7 +143,8 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
-    adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm,
+    adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false,
+    adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
     prepareCausalAdminCatalogCopy,
     prepareCausalAdminPlacementCopy,
     prepareCausalAdminToPersonalCopy,
@@ -8505,6 +8506,7 @@ function openedFormPhotoStatus(photos) {
 
 const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
   isEnabled: adminTemplatePhotoFormEnabled,
+  isEditEnabled: adminTemplatePhotoEditFormEnabled,
   getContext: adminTemplatePhotoFormContext,
   getView(type) {
     const item = type === "item", entityId = item ? runtime.editingItemId : runtime.editingRootContainerId;
@@ -8532,6 +8534,7 @@ const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
       catalogSource: item ? Boolean(runtime.sharedDialogCopyItemId) : Boolean(rootContainerCatalogSelection || rootContainerManufacturerPhotoSource) };
   },
   submit: submitAdminTemplatePhotoForm,
+  submitEdit: submitAdminTemplatePhotoEditForm,
   createPhoto: createItemPhotoFromFile,
   cachePhoto: (record, scopeKey) => putCachedPhoto(record, scopeKey, { binary: true }),
   onDurable(record, { type, view }) {
@@ -8557,6 +8560,9 @@ const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
 async function prepareOpenedFormPhotos(type, files) {
   const administrative = await adminTemplatePhotoForms.preparePhotos(type, files);
   return administrative === null ? personalPhotoForms.preparePhotos(type, files) : administrative;
+}
+function adminTemplateAnyPhotoFormEnabled() {
+  return adminTemplatePhotoFormEnabled() || adminTemplatePhotoEditFormEnabled();
 }
 
 function openedPhotoFormInputGuard(type) {
@@ -8711,14 +8717,15 @@ async function removeItemDialogPhoto() {
   const source = runtime.editingItemId ? state.items[runtime.editingItemId] : { photos: [] };
   const draft = runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
   if (!draft.photos.length) return;
+  const isCurrent = adminTemplatePhotoForms.mutationGuard("item"), selectedIndex = runtime.itemDialogPhotoActiveIndex;
   const confirmed = await confirmDialogPhotoDelete("item");
-  if (!confirmed) return;
-  const result = removePhotoFromDraft(draft, runtime.itemDialogPhotoActiveIndex, source);
+  if (!confirmed || isCurrent && (!isCurrent() || runtime.itemDialogPhotoActiveIndex !== selectedIndex)) return;
+  const result = removePhotoFromDraft(draft, selectedIndex, source);
   runtime.itemDialogPhotoDraft = result.draft;
   runtime.itemDialogPhotoActiveIndex = result.nextIndex;
   if (result.discardedPhoto) {
     deleteCachedDraftPhotos(result.discardedPhoto);
-    if (!adminTemplatePhotoFormEnabled() && !adminTemplatePhotoForms.owns("item") && (result.discardedPhoto.url || result.discardedPhoto.thumbUrl)) {
+    if (!adminTemplateAnyPhotoFormEnabled() && !adminTemplatePhotoForms.owns("item") && (result.discardedPhoto.url || result.discardedPhoto.thumbUrl)) {
       deleteRemotePhotoIfPossible(
         runtime.editingItemId || photoDraftEntityId(runtime.itemDialogPhotoDraft),
         result.discardedPhoto
@@ -8899,7 +8906,8 @@ function openPhotoOrderDialog(kind = "item") {
     const src = image.currentSrc || image.src || "";
     if (id && src) previewSources.set(id, src);
   });
-  photoOrderContext = { kind, photos: [...draft.photos], activeId: photoOrderIdentity(draft.photos[activeIndex]), previewSources };
+  photoOrderContext = { kind, photos: [...draft.photos], activeId: photoOrderIdentity(draft.photos[activeIndex]), previewSources,
+    isCurrent: adminTemplatePhotoForms.mutationGuard(kind) };
   photoOrderInitialSignature = photoOrderSignature(photoOrderContext.photos);
   refs.photoOrderTitle.textContent = isEnglishUi() ? "Photo order" : "Порядок фото";
   refs.photoOrderHint.textContent = isEnglishUi()
@@ -8944,11 +8952,13 @@ function handlePhotoOrderFormSubmit(event) {
 }
 
 async function requestClosePhotoOrderDialog() {
+  const requestedContext = photoOrderContext;
   if (!hasSavablePhotoOrderChanges()) {
     refs.photoOrderDialog.close("cancel");
     return;
   }
   const action = await askUnsavedChangesDialog();
+  if (photoOrderContext !== requestedContext || requestedContext?.isCurrent && !requestedContext.isCurrent()) return;
   if (action === "save") {
     applyPhotoOrderDialog();
     return;
@@ -8992,6 +9002,10 @@ function handlePhotoOrderListClick(event) {
 function applyPhotoOrderDialog(event) {
   event?.preventDefault();
   if (!photoOrderContext) return;
+  if (photoOrderContext.isCurrent && !photoOrderContext.isCurrent()) {
+    refs.photoOrderDialog.close("cancel");
+    return;
+  }
   const itemMode = photoOrderContext.kind === "item";
   const source = itemMode
     ? (runtime.editingItemId ? state.items?.[runtime.editingItemId] : { photos: [] })
@@ -9034,7 +9048,7 @@ function cleanupUnsavedItemDialogPhotoDraft() {
   const source = runtime.editingItemId ? state.items?.[runtime.editingItemId] || { photos: [] } : { photos: [] };
   const entityId = runtime.editingItemId || photoDraftEntityId(runtime.itemDialogPhotoDraft);
   draftPhotosToCleanup(runtime.itemDialogPhotoDraft, source).forEach((photo) => {
-    if (!adminTemplatePhotoFormEnabled() && !adminTemplatePhotoForms.owns("item") && (photo?.url || photo?.thumbUrl)) deleteRemotePhotoIfPossible(entityId, photo);
+    if (!adminTemplateAnyPhotoFormEnabled() && !adminTemplatePhotoForms.owns("item") && (photo?.url || photo?.thumbUrl)) deleteRemotePhotoIfPossible(entityId, photo);
     deleteCachedDraftPhotos(photo);
   });
 }
@@ -9147,14 +9161,15 @@ async function removeRootContainerDialogPhoto() {
   const source = runtime.editingRootContainerId ? state.containers[runtime.editingRootContainerId] : { photos: [] };
   const draft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
   if (!draft.photos.length) return;
+  const isCurrent = adminTemplatePhotoForms.mutationGuard("container"), selectedIndex = runtime.rootContainerDialogPhotoActiveIndex;
   const confirmed = await confirmDialogPhotoDelete("container");
-  if (!confirmed) return;
-  const result = removePhotoFromDraft(draft, runtime.rootContainerDialogPhotoActiveIndex, source);
+  if (!confirmed || isCurrent && (!isCurrent() || runtime.rootContainerDialogPhotoActiveIndex !== selectedIndex)) return;
+  const result = removePhotoFromDraft(draft, selectedIndex, source);
   runtime.rootContainerDialogPhotoDraft = result.draft;
   runtime.rootContainerDialogPhotoActiveIndex = result.nextIndex;
   if (result.discardedPhoto) {
     deleteCachedDraftPhotos(result.discardedPhoto);
-    if (!adminTemplatePhotoFormEnabled() && !adminTemplatePhotoForms.owns("container") && (result.discardedPhoto.url || result.discardedPhoto.thumbUrl)) {
+    if (!adminTemplateAnyPhotoFormEnabled() && !adminTemplatePhotoForms.owns("container") && (result.discardedPhoto.url || result.discardedPhoto.thumbUrl)) {
       deleteRemotePhotoIfPossible(
         runtime.editingRootContainerId || photoDraftEntityId(runtime.rootContainerDialogPhotoDraft),
         result.discardedPhoto,
@@ -9182,7 +9197,7 @@ function confirmDialogPhotoDelete(kind = "item") {
 }
 
 async function uploadItemDialogDraftPhotos(photos = []) {
-  if (adminTemplatePhotoFormEnabled() || adminTemplatePhotoForms.owns("item")) return false;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item")) return false;
   const draft = runtime.itemDialogPhotoDraft;
   const existingItem = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
   const item = existingItem || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
@@ -9214,7 +9229,7 @@ async function uploadItemDialogDraftPhotos(photos = []) {
 }
 
 async function uploadRootContainerDialogDraftPhotos(photos = []) {
-  if (adminTemplatePhotoFormEnabled() || adminTemplatePhotoForms.owns("container")) return false;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container")) return false;
   const draft = runtime.rootContainerDialogPhotoDraft;
   const existingContainer = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
   const container = existingContainer || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
@@ -9415,7 +9430,7 @@ function cleanupUnsavedRootContainerDialogPhotoDraft() {
   const source = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] || { photos: [] } : { photos: [] };
   const entityId = runtime.editingRootContainerId || photoDraftEntityId(runtime.rootContainerDialogPhotoDraft);
   draftPhotosToCleanup(runtime.rootContainerDialogPhotoDraft, source).forEach((photo) => {
-    if (!adminTemplatePhotoFormEnabled() && !adminTemplatePhotoForms.owns("container") && (photo?.url || photo?.thumbUrl)) deleteRemotePhotoIfPossible(entityId, photo, "container");
+    if (!adminTemplateAnyPhotoFormEnabled() && !adminTemplatePhotoForms.owns("container") && (photo?.url || photo?.thumbUrl)) deleteRemotePhotoIfPossible(entityId, photo, "container");
     deleteCachedDraftPhotos(photo);
   });
 }
@@ -9883,6 +9898,7 @@ function saveDialogItem(event) {
 
 function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {
   if (!runtime.itemDialogPhotoDraft || !photoDraftChanged(runtime.itemDialogPhotoDraft, item)) return;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item")) throw Error("Сохраните фотографии через исходную административную форму.");
   item.photos = [...runtime.itemDialogPhotoDraft.photos];
   runtime.itemDialogPhotoDraft.deletedPhotos.forEach((photo) => {
     if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
@@ -9893,6 +9909,7 @@ function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {
 
 function applyRootContainerDialogPhotoDraft(container, changedAt = nowIso()) {
   if (!runtime.rootContainerDialogPhotoDraft || !photoDraftChanged(runtime.rootContainerDialogPhotoDraft, container)) return;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container")) throw Error("Сохраните фотографии через исходную административную форму.");
   container.photos = [...runtime.rootContainerDialogPhotoDraft.photos];
   runtime.rootContainerDialogPhotoDraft.deletedPhotos.forEach((photo) => {
     if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);

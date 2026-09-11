@@ -34,6 +34,24 @@ async function prepareSelected(f, controller, type = "item", count = 1) {
   f.view.draft.photos.push(...photos); f.view.signature = "form-with-prepared-photos";
   return photos;
 }
+function editFixture(type = "item") {
+  const f = fixture();
+  f.controls.enabled = false; f.controls.editEnabled = true;
+  f.source.photos.push({ id: "old-c", status: "synced", fileName: "Third.png", metadata: { credit: "Third" } });
+  for (const photo of f.source.photos) Object.assign(photo, { photoId: photo.id, listId: f.context.listId,
+    url: `https://example.test/lists/${f.context.listId}/photos/${photo.id}/file`, assetId: `preserved-${photo.id}` });
+  f.view.draft.photos = structuredClone(f.source.photos);
+  if (type === "container") { delete f.form.fields.quantity; Object.assign(f.form.fields, { volume: 25, nestable: true }); }
+  f.options.isEditEnabled = () => f.controls.editEnabled;
+  f.options.submitEdit = f.options.submit;
+  f.options.submit = () => assert.fail("existing-photo edits must not enter file submission");
+  f.options.createPhoto = () => assert.fail("fileless edits must not prepare images");
+  f.options.cachePhoto = () => assert.fail("fileless edits must not cache images");
+  return f;
+}
+function deleteFirst(f) {
+  f.view.draft.deletedPhotos.push(f.view.draft.photos.shift()); f.view.signature = "existing-photo-deleted";
+}
 
 test("real item/container image preparation retains cache callback bytes and Save owns one immutable submit before closing", async () => {
   for (const type of ["item", "container"]) {
@@ -243,6 +261,221 @@ test("disabled or unchanged photo forms preserve the existing path, while retain
   await assert.rejects(controller.preparePhotos("item", [selectedFile()]), { code: "admin-template-photo-form" });
 });
 
+test("fileless item/container saves delete, reorder, combine them or remove all old photos without prior preparation", async () => {
+  for (const type of ["item", "container"]) for (const change of ["order", "delete", "both", "all"]) {
+    const f = editFixture(type), controller = createAdminTemplatePhotoFormController(f.options), original = structuredClone(f.source);
+    assert.equal(controller.owns(type), false);
+    if (change === "delete" || change === "both") deleteFirst(f);
+    if (change === "order" || change === "both") f.view.draft.photos.reverse();
+    if (change === "all") { f.view.draft.deletedPhotos = f.view.draft.photos.splice(0); }
+    f.view.signature = `fileless-${change}`;
+    assert.equal(controller.save(type), true); assert.equal(controller.save(type), true);
+    assert.equal(f.captured.length, 1); assert.equal(controller.owns(type), true); assert.equal(controller.busy(type), true);
+    assert.equal(f.view.dialog.open, true); assert.deepEqual(f.source, original); assert.equal(f.cache.length, 0);
+    const { input, callbacks } = f.captured[0];
+    assert.deepEqual(Object.keys(input).sort(), ["deletedPhotos", "entityId", "entityType", "fields", "photos"]);
+    assert.equal(input.entityType, type); assert.equal(input.entityId, f.source.id);
+    assert.deepEqual(input.fields, f.form.fields); assert.deepEqual(input.photos, f.view.draft.photos);
+    assert.deepEqual(input.deletedPhotos, f.view.draft.deletedPhotos);
+    assert.equal(callbacks.isCurrent(), true);
+    f.pending.resolve(); await tick();
+    assert.equal(f.view.dialog.open, false); assert.equal(f.events.filter(event => event === "durable").length, 1);
+    assert.deepEqual(f.source, original, "controller leaves the live owner for the durable submitter to apply");
+  }
+});
+
+test("fileless fields, kept references and deleted references are detached and frozen before submitEdit can await", async () => {
+  const f = editFixture(); deleteFirst(f); f.form.fields.dimensions = { width: 4, height: 5, depth: 6 };
+  let checkedBeforeAwait = false;
+  const submit = f.options.submitEdit;
+  f.options.submitEdit = (input, callbacks) => {
+    for (const value of [input, input.fields, input.fields.dimensions, input.photos, input.photos[0], input.photos[0].metadata,
+      input.deletedPhotos, input.deletedPhotos[0], input.deletedPhotos[0].metadata]) assert.equal(Object.isFrozen(value), true);
+    checkedBeforeAwait = true; return submit(input, callbacks);
+  };
+  const controller = createAdminTemplatePhotoFormController(f.options); controller.save("item");
+  assert.equal(checkedBeforeAwait, true); const { input, callbacks } = f.captured[0];
+  f.form.fields.dimensions.width = 500; f.view.draft.photos[0].metadata.credit = "Later kept photo";
+  f.view.draft.deletedPhotos[0].metadata.credit = "Later removed photo"; f.view.signature = "later-fields";
+  assert.equal(input.fields.dimensions.width, 4); assert.equal(input.photos[0].metadata.credit, "Other");
+  assert.equal(input.deletedPhotos[0].metadata.credit, "Original"); assert.equal(callbacks.isCurrent(), false);
+  f.pending.resolve(); await tick();
+  assert.equal(f.view.dialog.open, true); assert.equal(f.events.includes("durable"), false);
+  assert.equal(controller.recoveryCopy("item"), input); assert.equal(controller.save("item"), true);
+  assert.equal(f.captured.length, 1);
+});
+
+test("fileless retries after synchronous or asynchronous capture failure reuse one input and options object", async () => {
+  for (const mode of ["sync", "async"]) {
+    const f = editFixture(), failed = deferred(); deleteFirst(f); let reads = 0;
+    f.options.readForm = () => { reads++; return f.form; };
+    f.options.submitEdit = (input, callbacks) => {
+      f.captured.push({ input, callbacks });
+      if (f.captured.length === 1) { if (mode === "sync") throw Error("Capture interrupted"); return failed.promise; }
+      callbacks.onDurable({ operationId: "same-edit-action" }); return Promise.resolve();
+    };
+    const controller = createAdminTemplatePhotoFormController(f.options); assert.equal(controller.save("item"), true);
+    const original = f.captured[0];
+    if (mode === "async") { controller.save("item"); assert.equal(f.captured.length, 1); failed.reject(Error("Capture interrupted")); }
+    await tick();
+    assert.equal(f.view.dialog.open, true); assert.equal(controller.busy("item"), false);
+    assert.equal(controller.recoveryCopy("item"), original.input); assert.equal(controller.save("item"), true); await tick();
+    assert.equal(reads, 1); assert.equal(f.captured.length, 2);
+    assert.equal(f.captured[1].input, original.input); assert.equal(f.captured[1].callbacks, original.callbacks);
+    assert.equal(f.view.dialog.open, false); assert.equal(f.events.filter(event => event === "durable").length, 1);
+  }
+});
+
+test("fileless delayed durability cannot close a changed dialog, entity, source, account, namespace or editor generation", async () => {
+  for (const change of [f => { f.view.token = {}; }, f => { f.view.dialog = { open: true }; },
+    f => { f.view.entityId = "another-owner"; }, f => { f.view.source = structuredClone(f.source); },
+    f => { f.source.name = "Concurrent source change"; }, f => { f.context.actorId = "other-admin"; },
+    f => { f.context.listId = "public-shared-layout-other"; f.context.itemKey = "shared-layout:other"; },
+    f => { f.context.generation = "next-editor-generation"; }]) {
+    const f = editFixture(), controller = createAdminTemplatePhotoFormController(f.options); deleteFirst(f); controller.save("item");
+    const { callbacks } = f.captured[0]; change(f);
+    assert.equal(callbacks.isCurrent(), false); f.pending.resolve(); await tick();
+    assert.equal(f.view.dialog.open, true); assert.equal(f.events.includes("durable"), false); assert.equal(f.captured.length, 1);
+  }
+});
+
+test("fileless raw references must exactly partition the original owner without duplicates, silent loss or metadata changes", () => {
+  for (const change of [f => { f.view.draft.photos.push(structuredClone(f.view.draft.photos[0])); },
+    f => { f.view.draft.deletedPhotos.push(structuredClone(f.view.draft.deletedPhotos[0])); },
+    f => { f.view.draft.photos.push(structuredClone(f.view.draft.deletedPhotos[0])); },
+    f => { f.view.draft.photos.pop(); }, f => { f.view.draft.photos[0].metadata.credit = "Changed"; },
+    f => { f.view.draft.deletedPhotos[0].url = "https://example.test/foreign/file"; },
+    f => { f.view.draft.photos[0].id = "foreign-owner-photo"; },
+    f => { f.view.draft.deletedPhotos[0].id = "foreign-owner-photo"; }]) {
+    const f = editFixture(), controller = createAdminTemplatePhotoFormController(f.options); deleteFirst(f); change(f);
+    assert.equal(controller.save("item"), true); assert.equal(f.captured.length, 0);
+    assert.equal(f.view.dialog.open, true); assert.equal(controller.busy("item"), false);
+    assert.equal(f.events.some(event => event?.isAdminTemplateBlocked === true), true);
+  }
+});
+
+test("fileless edits reject malformed, unsynced or differently bound base references even when the draft matches them", () => {
+  for (const change of [photo => { photo.listId = "public-shared-layout-other"; }, photo => { photo.status = "pending"; },
+    photo => { photo.photoId = "another-photo"; }, photo => { photo.id = "constructor"; photo.photoId = "constructor"; }]) {
+    const f = editFixture(); change(f.source.photos[0]); f.view.draft.photos = structuredClone(f.source.photos); deleteFirst(f);
+    const controller = createAdminTemplatePhotoFormController(f.options); assert.equal(controller.save("item"), true);
+    assert.equal(f.captured.length, 0); assert.equal(f.view.dialog.open, true);
+  }
+});
+
+test("fileless saves refuse placement, availability, catalog, new owners and fields outside the existing item/container form", () => {
+  for (const type of ["item", "container"]) for (const change of [f => { f.form.placementChanged = true; },
+    f => { f.form.availabilityChanged = true; }, f => { f.form.catalogSource = true; }, f => { f.form.created = true; },
+    f => { f.view.entityId = ""; f.view.source = null; }, f => { f.form.fields.layoutId = "other-layout"; },
+    f => { f.form.fields[type === "item" ? "volume" : "quantity"] = 10; }]) {
+    const f = editFixture(type), controller = createAdminTemplatePhotoFormController(f.options); deleteFirst(f); change(f);
+    assert.equal(controller.save(type), true); assert.equal(f.captured.length, 0); assert.equal(f.view.dialog.open, true);
+  }
+});
+
+test("enabling fileless editing keeps mixed retained new files and old-photo removal or reorder blocked", async () => {
+  for (const change of ["delete", "reorder"]) {
+    const f = fixture(); f.options.isEditEnabled = () => true;
+    f.options.submitEdit = () => assert.fail("mixed edits cannot enter fileless submission");
+    const controller = createAdminTemplatePhotoFormController(f.options); await prepareSelected(f, controller);
+    if (change === "delete") deleteFirst(f);
+    else [f.view.draft.photos[0], f.view.draft.photos[1]] = [f.view.draft.photos[1], f.view.draft.photos[0]];
+    assert.equal(controller.save("item"), true); assert.equal(f.captured.length, 0); assert.equal(f.view.dialog.open, true);
+  }
+});
+
+test("edit-only input guards retain the admin path and reject new files before image preparation or cache writes", async () => {
+  for (const guarded of [false, true]) {
+    const f = editFixture(), controller = createAdminTemplatePhotoFormController(f.options);
+    if (guarded) { const guard = controller.inputGuard("item"); assert.equal(typeof guard, "function"); assert.equal(guard(), true); }
+    await assert.rejects(controller.preparePhotos("item", [selectedFile()]), error => error.isAdminTemplateBlocked === true
+      && /Добавление новых файлов/.test(error.message));
+    assert.equal(controller.owns("item"), true); assert.equal(f.cache.length, 0); assert.equal(f.captured.length, 0);
+    deleteFirst(f); assert.equal(controller.save("item"), true); assert.equal(f.captured.length, 1);
+  }
+});
+
+test("edit gate defaults off and unchanged forms fall through, but owned edits remain blocked when the gate changes", () => {
+  const unchanged = editFixture(), ordinary = createAdminTemplatePhotoFormController(unchanged.options);
+  assert.equal(ordinary.save("item"), false); assert.equal(ordinary.owns("item"), false);
+  const off = fixture(); off.options.submitEdit = () => assert.fail("edit gate defaults off"); deleteFirst(off);
+  const disabled = createAdminTemplatePhotoFormController(off.options);
+  assert.equal(disabled.save("item"), true); assert.equal(off.captured.length, 0); assert.equal(off.view.dialog.open, true);
+  const f = editFixture(), controller = createAdminTemplatePhotoFormController(f.options), guard = controller.mutationGuard("item");
+  assert.equal(guard(), true); deleteFirst(f); f.controls.editEnabled = false;
+  assert.equal(guard(), false); assert.equal(controller.save("item"), true); assert.equal(f.captured.length, 0);
+  assert.equal(typeof controller.inputGuard("item"), "function"); assert.equal(controller.inputGuard("item")(), false);
+  assert.equal(controller.owns("item"), true);
+});
+
+test("photo mutation guards permit one current local deletion/order and reject a later confirmation after the draft changes", () => {
+  for (const type of ["item", "container"]) {
+    const f = editFixture(type), controller = createAdminTemplatePhotoFormController(f.options), original = structuredClone(f.source);
+    const remove = controller.mutationGuard(type); assert.equal(remove(), true);
+    deleteFirst(f); assert.equal(remove(), false);
+    const order = controller.mutationGuard(type); assert.equal(order(), true);
+    f.view.draft.photos.reverse(); assert.equal(order(), false);
+    assert.deepEqual(f.source, original); assert.equal(f.captured.length, 0);
+    assert.equal(controller.save(type), true); assert.equal(f.captured.length, 1);
+    assert.equal(controller.mutationGuard(type)(), false, "a fixed save cannot be altered by a delayed confirmation");
+  }
+});
+
+test("the first delete/order works with a lazily created draft while the original source remains protected", () => {
+  for (const type of ["item", "container"]) for (const change of ["delete", "order"]) {
+    const f = editFixture(type), original = structuredClone(f.source); f.view.draft = null;
+    const controller = createAdminTemplatePhotoFormController(f.options), guard = controller.mutationGuard(type);
+    assert.equal(guard(), true, `${type}/${change}: unopened photo draft still represents the original photos`);
+    const draft = { photos: structuredClone(f.source.photos), deletedPhotos: [] };
+    if (change === "delete") draft.deletedPhotos.push(draft.photos.shift()); else draft.photos.reverse();
+    assert.equal(guard(), true, "preparing the detached local draft does not modify the opened form");
+    f.view.draft = draft; f.view.signature = `first-${change}`;
+    assert.equal(guard(), false); assert.equal(controller.save(type), true); assert.equal(f.captured.length, 1);
+    assert.deepEqual(f.captured[0].input.photos, draft.photos); assert.deepEqual(f.captured[0].input.deletedPhotos, draft.deletedPhotos);
+    assert.deepEqual(f.source, original); assert.equal(f.view.dialog.open, true);
+  }
+});
+
+test("a delayed first-photo confirmation rejects a newly changed draft or source, but accepts an unchanged initialized draft", () => {
+  for (const change of ["same-draft", "changed-draft", "changed-source"]) {
+    const f = editFixture(); f.view.draft = null;
+    const controller = createAdminTemplatePhotoFormController(f.options), guard = controller.mutationGuard("item");
+    assert.equal(guard(), true);
+    if (change === "changed-source") f.source.photos[0].metadata.credit = "Concurrent source change";
+    else {
+      f.view.draft = { photos: structuredClone(f.source.photos), deletedPhotos: [] };
+      if (change === "changed-draft") f.view.draft.photos.reverse();
+    }
+    assert.equal(guard(), change === "same-draft"); assert.equal(f.captured.length, 0);
+  }
+});
+
+test("photo mutation guards bind dialog/source identity, scope, fields and both photo arrays before confirmation awaits", () => {
+  for (const change of [f => { f.view.token = {}; }, f => { f.view.dialog = { open: true }; }, f => { f.view.dialog.open = false; },
+    f => { f.view.entityId = "another-owner"; }, f => { f.view.source = structuredClone(f.source); },
+    f => { f.context.scope = "personal"; }, f => { f.context.actorId = "other-admin"; },
+    f => { f.context.generation = "next-editor-generation"; }, f => { f.source.name = "Changed source"; },
+    f => { f.view.signature = "changed ordinary fields"; }, f => { f.view.draft.photos[0].metadata.credit = "Changed"; },
+    f => { f.view.draft.deletedPhotos.push(structuredClone(f.view.draft.photos[0])); }]) {
+    const f = editFixture(), controller = createAdminTemplatePhotoFormController(f.options), guard = controller.mutationGuard("item");
+    assert.equal(guard(), true); change(f); assert.equal(guard(), false); assert.equal(f.captured.length, 0);
+  }
+  const f = editFixture(); f.controls.editEnabled = false;
+  const controller = createAdminTemplatePhotoFormController(f.options);
+  assert.equal(controller.mutationGuard("item"), null); assert.equal(controller.owns("item"), false);
+});
+
+test("a pending image preparation blocks confirmed local mutations until its draft has been incorporated", async () => {
+  const f = fixture(), pending = deferred(); f.options.isEditEnabled = () => true;
+  f.options.cachePhoto = async () => pending.promise;
+  const controller = createAdminTemplatePhotoFormController(f.options), guard = controller.mutationGuard("item");
+  assert.equal(guard(), true);
+  const preparing = prepareSelected(f, controller); assert.equal(controller.busy("item"), true); assert.equal(guard(), false);
+  pending.resolve(); await preparing;
+  assert.equal(controller.busy("item"), false); assert.equal(guard(), false, "the selected photos changed while confirmation was open");
+  assert.equal(controller.mutationGuard("item")(), true); assert.equal(f.captured.length, 0);
+});
+
 test("real form wiring intercepts both save and photo inputs before personal/legacy paths and guards camera/clipboard cleanup", () => {
   const tail = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
   for (const [name, type] of [["saveDialogItem", "item"], ["saveRootContainerDialog", "container"]]) {
@@ -256,8 +489,9 @@ test("real form wiring intercepts both save and photo inputs before personal/leg
   }
   assert.match(tail, /const administrative = await adminTemplatePhotoForms\.preparePhotos\(type, files\)/);
   assert.match(tail, /adminTemplatePhotoForms\.inputGuard\(type\) \|\| personalPhotoForms\.inputGuard\(type\)/);
+  assert.match(tail, /function adminTemplateAnyPhotoFormEnabled\(\)\s*\{\s*return adminTemplatePhotoFormEnabled\(\) \|\| adminTemplatePhotoEditFormEnabled\(\)/);
   for (const name of ["uploadItemDialogDraftPhotos", "uploadRootContainerDialogDraftPhotos", "cleanupUnsavedItemDialogPhotoDraft", "cleanupUnsavedRootContainerDialogPhotoDraft"]) {
     const code = tail.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
-    assert.match(code, /adminTemplatePhotoFormEnabled\(\)/); assert.match(code, /adminTemplatePhotoForms\.owns/);
+    assert.match(code, /adminTemplateAnyPhotoFormEnabled\(\)/); assert.match(code, /adminTemplatePhotoForms\.owns/);
   }
 });

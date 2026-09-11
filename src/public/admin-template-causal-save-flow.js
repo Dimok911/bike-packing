@@ -8,7 +8,7 @@ const blocked = () => Object.assign(Error("Сохранение шаблона �
 const recoveryRequired = () => Object.assign(blocked(), { code: "admin-template-editor-recovery-required" });
 const finalOperationId = plan => plan.operations.at(-1).id;
 const writeOperation = plan => plan.operations.find(operation => ["template.save", "template.create"].includes(operation.kind));
-const planSnapshot = plan => [2, 3, 5].includes(plan.version) ? plan.editorSnapshot
+const planSnapshot = plan => [2, 3, 5, 6].includes(plan.version) ? plan.editorSnapshot
   : { payload: writeOperation(plan).body.payload, metadata: writeOperation(plan).body.metadata };
 const plannedVisibility = (plan, fallback) => {
   const publication = plan.operations.find(operation => operation.kind === "template.publication");
@@ -27,6 +27,7 @@ function savedSuccessor(observed, saved) {
   for (;;) {
     const children = saved.filter(({ plan }) => equal(plan.operations[0].body.base, base));
     if (!children.length) return latest ? { ...latest, chain } : null;
+    if (latest?.plan.version === 6) throw recoveryRequired();
     if (children.length !== 1 || visited.has(children[0].plan.id)) throw recoveryRequired();
     latest = children[0]; visited.add(latest.plan.id); chain.push(latest.plan);
     base = { operationId: finalOperationId(latest.plan) };
@@ -55,7 +56,7 @@ export function adminTemplateEditorSource(binding, prepared) {
 }
 
 export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, resolutionFor = null,
-  applyServerVariant = null, applyPhotoResult = null, persist, notify = () => {},
+  applyServerVariant = null, applyPhotoResult = null, applyPhotoEditResult = null, persist, notify = () => {},
   uuid = () => crypto.randomUUID(), enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   const captures = new Map();
   const source = layout => {
@@ -75,7 +76,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
   const capture = async (layoutId, { published = null } = {}) => {
     if (enabled !== true) throw blocked();
     const layout = getLayout(layoutId), observed = source(layout), initial = clone(getContext(observed.binding));
-    if (observed.photoAppendPending) throw blocked();
+    if (observed.photoAppendPending || observed.photoEditPending) throw blocked();
     const candidate = clone(snapshot(layoutId)); candidate.payload = stripAdminTemplateEditorMetadata(candidate.payload);
     const previous = captures.get(layoutId), sameEditor = previous?.layout === layout && equal(previous.binding, observed.binding);
     if (sameEditor && previous.mode === "save" && previous.published === published && equal(previous.candidate, candidate)) return previous.promise;
@@ -97,7 +98,13 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       const plans = plansFor(base.binding, layoutId);
       await recoveryFor?.(base.binding, layoutId).assertCanAppend(base.planId);
       guard(layoutId, layout, initial, base.binding);
-      if (savedSuccessor(base, await eligiblePlans(base, layoutId))) throw recoveryRequired();
+      const retained = await eligiblePlans(base, layoutId);
+      // A legacy form has already applied its ordinary fields before capture.
+      // Preserve that distinct intent when another tab retained a v6 at the
+      // same confirmed base. This does not authorize a UUID child of that v6
+      // or let recovery replace either editor with the competing snapshot.
+      const predecessors = base.base?.stateRevision ? retained.filter(row => row.plan.version !== 6) : retained;
+      if (savedSuccessor(base, predecessors)) throw recoveryRequired();
       guard(layoutId, layout, initial, base.binding);
       await plans.capture(input);
       guard(layoutId, layout, initial, base.binding);
@@ -113,7 +120,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
   const captureCommand = async (layoutId, { kind, metadata, published } = {}) => {
     if (enabled !== true) throw blocked();
     const layout = getLayout(layoutId), observed = source(layout), initial = clone(getContext(observed.binding));
-    if (observed.photoAppendPending) throw blocked();
+    if (observed.photoAppendPending || observed.photoEditPending) throw blocked();
     const candidate = clone(snapshot(layoutId)); candidate.payload = stripAdminTemplateEditorMetadata(candidate.payload);
     const previous = captures.get(layoutId), sameEditor = previous?.layout === layout && equal(previous.binding, observed.binding);
     const base = sameEditor ? previous.nextSource : observed;
@@ -194,6 +201,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     layout.adminCausalSource = { ...observed, exists: true, planId: successor.plan.id,
       base: { operationId: finalOperationId(successor.plan) },
       ...(successor.plan.version === 5 ? { photoAppendPending: successor.plan.id } : {}),
+      ...(successor.plan.version === 6 ? { photoEditPending: successor.plan.id } : {}),
       visibility, deleted: successor.plan.operations.at(-1).kind === "template.delete",
       indexes: removedReferences ? [] : observed.indexes };
     layout.templateDraftSyncPending = true; captures.delete(layoutId); persist(); notify("pending", layoutId);
@@ -213,6 +221,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     if (captureError) throw captureError;
     const plans = plansFor(observed.binding, layoutId), saved = await plans.list(); guard(layoutId, layout, initial, observed.binding);
     const ordered = adminTemplatePlanChain(observed.planId, saved);
+    if (ordered.slice(0, -1).some(row => row.plan.version === 6)) throw recoveryRequired();
     let result;
     for (const { plan } of ordered) {
       const stopping = await recoveryFor?.(observed.binding, layoutId).resumeStop(observed.planId);
@@ -232,11 +241,12 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     const nextSource = { ...observed, base: { stateRevision: receipt.result.payload.stateRevision },
       visibility: receipt.result.payload.visibility || null, deleted: receipt.result.payload.deleted === true, planId: null,
       lastConfirmedOperation: { id: receipt.operation.id, kind: receipt.operation.kind } };
-    if (plan.version === 5) {
-      delete nextSource.photoAppendPending;
+    if ([5, 6].includes(plan.version)) {
+      const apply = plan.version === 6 ? applyPhotoEditResult : applyPhotoResult;
+      delete nextSource[plan.version === 6 ? "photoEditPending" : "photoAppendPending"];
       // The photo projection replaces local owner IDs and persists the whole
       // selected namespace atomically, rolling it back if storage fails.
-      if (!applyPhotoResult || applyPhotoResult(layoutId, { plan, receipt, source: nextSource }) !== true) throw blocked();
+      if (!apply || apply(layoutId, { plan, receipt, source: nextSource }) !== true) throw blocked();
       captures.delete(layoutId); notify("committed", layoutId);
       return { ...result, applied: true };
     }

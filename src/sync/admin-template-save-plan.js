@@ -1,6 +1,8 @@
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admin-template-copy-projection.js";
 import { adminTemplatePhotoSavePlan } from "./admin-template-photo-save-plan.js";
+import { adminTemplatePhotoEditSavePlan } from "./admin-template-photo-edit-save-plan.js";
+export { adminTemplatePhotoEditSavePlan } from "./admin-template-photo-edit-save-plan.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -63,6 +65,12 @@ export function adminTemplateSourceSavePlan({ binding, operationId, body, source
 }
 
 function validatePlan(plan) {
+  if (plan?.version === 6) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot", "photoSnapshot"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoEditSavePlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0].body, editorSnapshot: plan.editorSnapshot, photoSnapshot: plan.photoSnapshot }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 5) {
     if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoSavePlan({ binding: plan.binding, operationId: plan.id,
@@ -158,7 +166,7 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
   return { operationId: plan.operations.at(-1).id, payload: clone(write.body.payload), metadata: clone(write.body.metadata) };
 }
 
-export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, storage = globalThis.localStorage,
+export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, getExcludedPlans = null, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -213,11 +221,38 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
       if ([3, 4].includes(plan.version) && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
-      return lock(plan.id, async () => {
+      const capture = () => lock(plan.id, async () => {
         const existing = await read(plan.id); guard(initial);
         if (existing) { if (!same(existing.plan, plan)) throw paused(); return clone(existing); }
+        // Only the caller's validated adopted-stop resolution may exclude a
+        // retained action. A cancellation marker alone proves no adoption.
+        const excluded = getExcludedPlans ? await getExcludedPlans() : []; guard(initial);
+        if (!Array.isArray(excluded) || excluded.some(id => !validTemplateOperationId(id)) || new Set(excluded).size !== excluded.length) throw paused();
+        // A new photo selection cannot overtake an already retained action.
+        // Legacy forms mutate/persist before capture: keep their later intent
+        // durable even when a photo plan has won this base. SQL will reject a
+        // stale writer; the application preserves each editor for recovery.
+        const base = plan.operations[0].body.base;
+        const ids = [];
+        for (let i = 0; i < storage.length; i++) {
+          const name = storage.key(i); if (name?.startsWith(prefix)) ids.push(name.slice(prefix.length));
+        }
+        for (const id of ids) {
+          const other = await read(id); guard(initial);
+          if (!other) continue;
+          if (!excluded.includes(id) && plan.version === 6 && same(other.plan.operations[0].body.base, base)) throw paused();
+          // A generic successor cannot bypass an unsettled photo selection by
+          // pointing at its UUID. A reconciled editor uses its numeric receipt.
+          if (other.plan.version === 6 && base?.operationId === other.plan.operations.at(-1).id) throw paused();
+        }
         return clone(persist(saved, initial));
       });
+      const base = plan.operations[0].body.base;
+      if (base?.stateRevision) {
+        if (!locks?.request) throw paused();
+        return locks.request(prefix + "confirmed-base:" + base.stateRevision, capture);
+      }
+      return capture();
   };
   return Object.freeze({
     capture: input => capturePlan(input, adminTemplateSavePlan),
@@ -225,6 +260,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     captureCopy: input => capturePlan(input, adminTemplateCopyPlan),
     captureSourceSave: input => capturePlan(input, adminTemplateSourceSavePlan),
     capturePhoto: input => capturePlan(input, adminTemplatePhotoSavePlan),
+    capturePhotoEdit: input => capturePlan(input, adminTemplatePhotoEditSavePlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];
