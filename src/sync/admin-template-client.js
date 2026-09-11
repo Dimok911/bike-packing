@@ -1,4 +1,4 @@
-import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
+import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, validTemplatePersonalSourceId, ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY, TEMPLATE_SOURCE_SAVE_CAPABILITY, TEMPLATE_PERSONAL_SOURCE_SAVE_CAPABILITY, TEMPLATE_PENDING_SOURCE_CAPABILITY, TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY } from "./admin-template-protocol.js";
 const environment = "bike-packing-experiment";
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -196,6 +196,17 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     }));
   };
   return Object.freeze({
+    async preparePersonalSource(personalListId) {
+      if (!validTemplatePersonalSourceId(personalListId)) throw blocked();
+      const initial = context();
+      return withLiveDocument(initial, async () => {
+        await identity(initial);
+        const result = await request("/bike-packing/admin/template-operations/prepare", initial, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ personalListId }) });
+        if (result.actorId !== binding.actorId || result.environment !== environment || result.listId !== personalListId) throw blocked();
+        return clone(result);
+      });
+    },
     async prepare() {
       const initial = context();
       return withLiveDocument(initial, async () => {

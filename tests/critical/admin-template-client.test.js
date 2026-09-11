@@ -181,6 +181,24 @@ test("personal source needs explicit server capability; terminal replay works af
   assert.equal(f.posts().length, 1); assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.source, action.body.source);
 });
 
+test("private source preparation uses the guarded read client without a write journal", async () => {
+  const f = fixture();
+  f.state.personalPrepared = { ok: true, actorId: f.binding.actorId, environment: f.binding.environment,
+    listId: "personal-source", stateRevision: 3, payload: { items: {} }, payloadDigest: "a".repeat(64) };
+  const client = f.make({ enabled: false }).client;
+  assert.deepEqual(await client.preparePersonalSource("personal-source"), f.state.personalPrepared);
+  assert.equal(f.values.size, 0); assert.equal(f.receipts.size, 0);
+  assert.deepEqual(JSON.parse(f.posts()[0].options.body), { personalListId: "personal-source" });
+  for (const change of [{ actorId: "other" }, { environment: "production" }, { listId: "other" }]) {
+    const original = f.state.personalPrepared; f.state.personalPrepared = { ...original, ...change };
+    await assert.rejects(client.preparePersonalSource("personal-source")); f.state.personalPrepared = original;
+  }
+  await assert.rejects(client.preparePersonalSource("public-demo-state"));
+  f.state.afterPersonalPrepare = () => { f.context.generation = "changed"; };
+  await assert.rejects(client.preparePersonalSource("personal-source"));
+  assert.equal(f.values.size, 0); assert.equal(f.receipts.size, 0);
+});
+
 test("pending template source waits for its captured predecessor across reload and cannot accept unrelated waiting receipts", async () => {
   const f = fixture(), action = f.action(), parentId = randomUUID();
   action.body.source = { itemKey: "shared-layout:source", listId: "public-shared-layout-source",

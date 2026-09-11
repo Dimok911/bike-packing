@@ -832,6 +832,7 @@ import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
+import { recoverPersonalAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
@@ -4486,7 +4487,8 @@ function loadState({ createFallbackLayout = true } = {}) {
   // must not silently turn into an empty editable list.
   const recovered = outbox?.recoverSnapshot();
   const mirror = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
-  const saved = recovered ? JSON.stringify(personalSnapshotWithUiPreferences(recovered, mirror)) : mirror;
+  const adminRecovery = { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() };
+  const saved = recovered ? JSON.stringify(recoverPersonalAdminDrafts(personalSnapshotWithUiPreferences(recovered, mirror), mirror, adminRecovery)) : mirror;
   if (!saved) {
     const initial = createEmptyUserState();
     ensureItemDisplayModeState(initial);
@@ -4538,7 +4540,9 @@ function loadState({ createFallbackLayout = true } = {}) {
       installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
       return fallback;
     }
-    if (recovered && outbox.list().some(record => record.action.body.publicImport || record.action.body.serverImport)) parsed = personalPublicImportSnapshot(recovered, parsed);
+    if (recovered && outbox.list().some(record => record.action.body.publicImport || record.action.body.serverImport)) {
+      parsed = recoverPersonalAdminDrafts(personalPublicImportSnapshot(recovered, parsed), mirror, adminRecovery);
+    }
     installRuntimeActiveLayoutId(parsed, parsed.activeLayoutId);
     persistStateSnapshot(parsed, { recordAction: false });
     return parsed;
@@ -10861,8 +10865,7 @@ async function prepareCausalAdminPlacementCopy(request) {
     await verifyPendingTarget();
     planningState = state;
     if (personalSource) {
-      sourcePrepared = await apiFetch("/bike-packing/admin/template-operations/prepare", { method: "POST",
-        headers: { "content-type": "application/json" }, body: JSON.stringify({ personalListId: currentPackingListId }), timeoutMs: LIST_API_TIMEOUT_MS }); guard();
+      sourcePrepared = await adminTemplateClient(original.binding, layout.id, true).preparePersonalSource(currentPackingListId); guard();
       const digest = await adminTemplateCopyPayloadDigest(sourcePrepared.payload); guard();
       if (sourcePrepared.ok !== true || sourcePrepared.actorId !== String(currentUser.id) || sourcePrepared.environment !== "bike-packing-experiment"
         || sourcePrepared.listId !== currentPackingListId || sourcePrepared.stateRevision !== Number(syncMeta.stateRevision)

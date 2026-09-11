@@ -24,7 +24,9 @@ export function adminClientFixture() {
       ...(state.pendingSourceCapability ? ["adminTemplatePendingSourceV1"] : []),
       ...(state.pendingPersonalSourceCapability ? ["adminTemplatePendingPersonalSourceV1"] : []),
       ...(state.personalSourceCapability ? ["adminTemplatePersonalSourceSaveV1"] : [])] : [] };
-    else if (options.method === "POST") {
+    else if (url.endsWith("/template-operations/prepare") && JSON.parse(options.body).personalListId) {
+      data = structuredClone(state.personalPrepared); state.afterPersonalPrepare?.();
+    } else if (options.method === "POST") {
       const input = JSON.parse(options.body), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input });
       const { id, ...bound } = intent, { body, ...identity } = bound;
       if (!receipts.has(id) || receipts.get(id).operation.state === "waiting") {
