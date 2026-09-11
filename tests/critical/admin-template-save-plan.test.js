@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { adminTemplateSavePlan, createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
+import { adminTemplateSavePlan, adminTemplateSourceSavePlan, createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
+import { adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 
 const binding = { actorId: "admin-a", environment: "bike-packing-experiment", listId: "public-demo-state-a", itemKey: "demo-state:a" };
 const action = () => ({ operationId: randomUUID(), publicationId: randomUUID(), exists: true, visibility: "private", base: { stateRevision: 7 },
@@ -83,4 +84,44 @@ test("quota, corrupted storage, route changes and OFF keep the saved plan from b
   const key = [...f.values.keys()][0], saved = JSON.parse(f.values.get(key)); saved.plan.operations[0].body.metadata.title = "Corrupted";
   f.values.set(key, JSON.stringify(saved)); await assert.rejects(f.make().run(input.operationId)); assert.equal(f.calls.length, 0);
   f.context.admin = false; await assert.rejects(f.make().read(input.operationId));
+});
+
+async function sourceSave() {
+  const sourceSnapshot = { items: { source: { id: "source", name: "Original" } } }, input = action();
+  return { operationId: input.operationId, sourceSnapshot, body: { version: 1, base: input.base, payload: input.payload, metadata: input.metadata,
+    source: { itemKey: "shared-layout:source", listId: "public-shared-layout-source", base: { stateRevision: 3 },
+      payloadDigest: await adminTemplateCopyPayloadDigest(sourceSnapshot) } } };
+}
+
+test("source save retains independent source and target revisions across a lost ACK and reload", async () => {
+  const f = fixture(), input = await sourceSave(), expected = structuredClone(input), pending = f.make().captureSourceSave(input);
+  input.sourceSnapshot.items.source.name = "Changed source"; input.body.base.stateRevision = 99; input.body.payload.items.a.name = "Changed target";
+  const saved = await pending;
+  assert.deepEqual(saved.plan, adminTemplateSourceSavePlan({ binding, ...expected }));
+  assert.equal(saved.plan.operations[0].body.base.stateRevision, 7); assert.equal(saved.plan.operations[0].body.source.base.stateRevision, 3);
+  f.state.failId = input.operationId; f.state.failAfter = true; await assert.rejects(f.make().run(input.operationId));
+  f.state.failId = null; assert.equal((await f.make().run(input.operationId)).state, "committed"); assert.equal(f.calls.length, 1);
+  assert.deepEqual((await f.make().read(input.operationId)).plan.sourceSnapshot, expected.sourceSnapshot);
+});
+
+test("source save rejects mismatched snapshots and cannot become a different source under the same UUID", async () => {
+  const f = fixture(), input = await sourceSave(), invalid = structuredClone(input);
+  invalid.sourceSnapshot.items.source.name = "Not the hashed snapshot";
+  await assert.rejects(f.make().captureSourceSave(invalid)); assert.equal(f.values.size, 0);
+  await f.make().captureSourceSave(input);
+  const changed = structuredClone(input); changed.body.source.base.stateRevision++;
+  await assert.rejects(f.make().captureSourceSave(changed)); assert.equal(f.calls.length, 0);
+  changed.body.source.listId = binding.listId; changed.body.source.itemKey = binding.itemKey;
+  assert.throws(() => adminTemplateSourceSavePlan({ binding, ...changed }));
+  changed.body.source = null; assert.throws(() => adminTemplateSourceSavePlan({ binding, ...changed }));
+});
+
+test("source save quota and durable cancellation preserve both snapshots without a write", async () => {
+  const f = fixture(), input = await sourceSave(); f.state.quota = true;
+  await assert.rejects(f.make().captureSourceSave(input)); assert.equal(f.calls.length, 0); f.state.quota = false;
+  await f.make().captureSourceSave(input); f.state.failId = input.operationId;
+  await assert.rejects(f.make().cancel(input.operationId));
+  assert.equal((await f.make().read(input.operationId)).cancelRequested, true);
+  f.state.failId = null; assert.equal((await f.make().run(input.operationId)).state, "cancelled");
+  assert.deepEqual(f.calls, [{ id: input.operationId, cancel: true }]);
 });

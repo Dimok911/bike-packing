@@ -9,22 +9,24 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const fail = () => { throw Error("Не подтверждены состав сумки и место копии. Исходные данные сохранены."); };
 const ids = value => Array.isArray(value) && value.every(id => typeof id === "string" && id && !["__proto__", "constructor", "prototype"].includes(id)) && new Set(value).size === value.length;
 
-// This planner reads only one prepared catalog. Its caller persists the result
-// under that catalog's original revision; no other template is a source here.
+// The caller persists the result under the target's original revision. A
+// different source additionally requires the source-checked save protocol.
 export async function prepareAdminTemplateTreeCopy(state, request, { operationId, changedAt = "", currentEditMeta = () => ({}),
   markEdited = () => {}, copyContainerName = name => `${name} копия`, normalizeContainerColor = value => value,
   hasPhotos = row => Boolean(row.photos?.length) } = {}) {
   const frozen = clone(state), { rootId, sourceLayoutId, targetLayoutId, includeContents, targetParentId = "", targetIndex = null, mode = "copy" } = clone(request);
   const layout = frozen.layouts?.[targetLayoutId], arrangement = layout?.arrangement;
-  if (!validTemplateOperationId(operationId) || !["copy", "link"].includes(mode) || typeof includeContents !== "boolean" || sourceLayoutId !== targetLayoutId
+  const sourceLayout = frozen.layouts?.[sourceLayoutId], sourceArrangement = sourceLayout?.arrangement;
+  if (!validTemplateOperationId(operationId) || !["copy", "link"].includes(mode) || typeof includeContents !== "boolean"
+    || sourceLayoutId !== targetLayoutId && mode !== "copy" || !sourceLayout?.adminCausalSource?.exists || !sourceArrangement
     || !layout?.adminCausalSource?.exists || layout.locked || !arrangement?.containers || !arrangement.items
     || targetIndex !== null && (!Number.isSafeInteger(targetIndex) || targetIndex < 0)) fail();
-  const owner = row => row?.publicCatalogLayoutId === targetLayoutId;
-  if (targetParentId && (!owner(frozen.containers?.[targetParentId]) || !arrangement.containers[targetParentId])) fail();
-  const placedSource = Object.hasOwn(arrangement.containers, rootId), source = { rootId, containers: {}, items: {} };
+  const owner = row => row?.publicCatalogLayoutId === sourceLayoutId;
+  if (targetParentId && (frozen.containers?.[targetParentId]?.publicCatalogLayoutId !== targetLayoutId || !arrangement.containers[targetParentId])) fail();
+  const placedSource = Object.hasOwn(sourceArrangement.containers, rootId), source = { rootId, containers: {}, items: {} };
   const visited = new Set(), seenItems = new Set();
   const walk = (id, parentId = null) => {
-    const row = frozen.containers?.[id], placement = placedSource ? arrangement.containers[id] : row;
+    const row = frozen.containers?.[id], placement = placedSource ? sourceArrangement.containers[id] : row;
     if (visited.has(id) || !owner(row) || row.id !== id || hasPhotos(row) || !placement) fail();
     visited.add(id);
     const shell = !includeContents && id === rootId;
@@ -35,11 +37,11 @@ export async function prepareAdminTemplateTreeCopy(state, request, { operationId
       || parentId && placement.parentId !== parentId) fail();
     source.containers[id] = { ...clone(row), parentId, childIds: [...childIds], itemIds: [...itemIds], order: clone(order) };
     for (const itemId of itemIds) {
-      const item = frozen.items?.[itemId], containerId = placedSource ? arrangement.items[itemId] : item?.containerId;
+      const item = frozen.items?.[itemId], containerId = placedSource ? sourceArrangement.items[itemId] : item?.containerId;
       if (seenItems.has(itemId) || !owner(item) || item.id !== itemId || containerId !== id || hasPhotos(item) || isItemUnavailableForPacking(item)) fail();
       seenItems.add(itemId);
       source.items[itemId] = { ...clone(item), containerId: id,
-        quantity: normalizeItemQuantity(placedSource ? arrangement.itemQuantities?.[itemId] : item.quantity) };
+        quantity: normalizeItemQuantity(placedSource ? sourceArrangement.itemQuantities?.[itemId] : item.quantity) };
     }
     for (const childId of childIds) walk(childId, id);
   };

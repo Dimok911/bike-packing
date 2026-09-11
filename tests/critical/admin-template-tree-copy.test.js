@@ -35,6 +35,29 @@ for (const includeContents of [true, false]) for (const nested of [true, false])
   const again = await prepareAdminTemplateTreeCopy(original, { ...f.request, includeContents, targetParentId: nested ? "root" : "" }, options);
   assert.deepEqual(prepared, again);
 });
+
+for (const includeContents of [true, false]) test(`cross-template ${includeContents ? "tree" : "shell"} changes only the target catalog and placement`, async () => {
+  const f = fixture();
+  f.state.containers.target = { id: "target", name: "Target", publicCatalogLayoutId: "destination", childIds: [], itemIds: [], order: [] };
+  f.state.layouts.destination = { id: "destination", adminDemo: true, adminCausalSource: { exists: true }, rootContainerIds: ["target"],
+    arrangement: createLayoutArrangementFromCurrentState(f.state, ["target"]) };
+  const request = { ...f.request, targetLayoutId: "destination", targetParentId: "target", includeContents }, before = structuredClone(f.state);
+  const result = await prepareAdminTemplateTreeCopy(f.state, request, options);
+  assert.deepEqual(f.state, before); assert.deepEqual(result.snapshot.layouts.layout, before.layouts.layout);
+  for (const id of ["root", "child"]) assert.deepEqual(result.snapshot.containers[id], before.containers[id]);
+  assert.deepEqual(result.snapshot.items.item, before.items.item);
+  assert.equal(result.snapshot.containers[result.rootId].publicCatalogLayoutId, "destination");
+  assert.deepEqual(result.snapshot.layouts.destination.arrangement.containers.target.order[0], { type: "container", id: result.rootId });
+  const copiedItem = result.entries.find(row => row.type === "items")?.targetId;
+  assert.equal(Boolean(copiedItem), includeContents);
+  if (copiedItem) {
+    assert.equal(result.snapshot.items[copiedItem].publicCatalogLayoutId, "destination");
+    assert.equal(result.snapshot.layouts.destination.arrangement.itemQuantities[copiedItem], 3);
+    assert.equal(result.snapshot.layouts.destination.arrangement.packedItems[copiedItem], undefined);
+  }
+  await assert.rejects(prepareAdminTemplateTreeCopy(f.state, { ...request, mode: "link" }, options));
+  await assert.rejects(prepareAdminTemplateTreeCopy(f.state, { ...request, targetParentId: "root" }, options));
+});
 test("admin tree rejects foreign owners, photos, dangling and duplicate links, target corruption and occupied IDs without changing state", async () => {
   const mutations = [
     f => { f.state.items.item.publicCatalogLayoutId = "foreign"; },

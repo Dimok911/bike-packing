@@ -19,7 +19,8 @@ export function adminClientFixture() {
     assert.equal(options.redirect, "error"); assert.equal(options.credentials, "include");
     if (url.endsWith("/auth/me")) data = { ok: true, user: { id: state.actor } };
     else if (url.endsWith("/authorization")) data = { ok: true, authorization: { version: 1, role: state.admin ? "admin" : "user", capabilities: state.admin ? ["templates:write"] : [] } };
-    else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1", ...(state.copyCapability ? ["adminTemplateCopyV1"] : [])] : [] };
+    else if (url.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: state.capability ? ["adminTemplateCausalOperationsV1", ...(state.copyCapability ? ["adminTemplateCopyV1"] : []),
+      ...(state.sourceSaveCapability ? ["adminTemplateSourceSaveV1"] : [])] : [] };
     else if (options.method === "POST") {
       const input = JSON.parse(options.body), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input });
       const { id, ...bound } = intent, { body, ...identity } = bound;

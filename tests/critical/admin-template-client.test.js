@@ -88,3 +88,14 @@ test("independent admin targets continue during known admin uncertainty; legacy 
   f.state.actor = "admin-b"; const other = f.action(); await foreign.capture(other); await assert.rejects(foreign.run(other.operationId));
   assert.equal(f.posts().length, 2);
 });
+
+test("source-checked save requires its own capability and retains the exact source after lost ACK", async () => {
+  const f = fixture(), client = f.make().client, action = f.action();
+  action.body.source = { itemKey: "shared-layout:source", listId: "public-shared-layout-source", base: { stateRevision: 3 }, payloadDigest: "a".repeat(64) };
+  await client.capture(action); f.state.copyCapability = true;
+  await assert.rejects(client.run(action.operationId)); assert.equal(f.posts().length, 0);
+  f.state.sourceSaveCapability = true; f.state.lose = true;
+  const receipt = await client.run(action.operationId); f.state.sourceSaveCapability = false;
+  assert.deepEqual(await f.make().client.run(action.operationId), receipt); assert.equal(f.posts().length, 1);
+  assert.deepEqual(JSON.parse(f.posts()[0].options.body).body.source, action.body.source);
+});

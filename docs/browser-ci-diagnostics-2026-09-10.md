@@ -1,5 +1,24 @@
 # Мобильные прерывания Linux CI: подтверждённые факты
 
+Отдельное локальное наблюдение: `Cache API operation failed: Context is stopped`
+при reload, без page-crash. В `resume-admin-cross-tree-ui-1.txt` это один отказ
+проверки pageerror (19/20); последующие неизменённые UI 10/10 и расширенные
+84/84 прошли. Минимальный `scripts/diagnose-webkit-cache-reload.mjs` запускает
+свежий WebKit iPhone-контекст с перехваченным локальным HTML, без приложения,
+пользовательских данных или service worker. Все Cache promises обработаны.
+Прогон `cache-reload-probe-1.txt`: 25 контрольных reload без ошибок; 25 reload
+с Cache API — одна такая же ошибка на первом повторе, пустой стек, без crash.
+Это воспроизводит ошибку независимо от приложения, но не доказывает причину
+Linux segfault и не является исправлением. Ошибки в UI-тестах не фильтруются.
+
+Последующий [CI 34540700823](https://github.com/Dimok911/bike-packing/actions/runs/34540700823),
+FE `76b51d6`, завершён успешно с первой попытки в обоих браузерах: Chromium
+737 passed / 260 skipped, mobile 705 passed / 268 skipped, OFF по 4/4.
+В полных журналах этого запуска нет flaky summary, `Target crashed` или
+`segfault at`. Это подтверждает успешный прогон этой контрольной точки,
+но не устанавливает причину и не закрывает прежние непостоянные падения.
+Журналы `resume-ci-76b51d6-chromium.txt` и `resume-ci-76b51d6-mobile.txt` сохранены.
+
 Run `34531714499`, FE `130485c`, завершён успешно: Chromium 625 passed /
 260 skipped, mobile 593 passed / 268 skipped / 2 flaky; OFF 4/4 на каждом.
 Оба первых mobile-отказа (pending photo copy / container deletion / both и

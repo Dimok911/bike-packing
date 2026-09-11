@@ -51,7 +51,23 @@ export function adminTemplateCopyPlan({ binding, operationId, body, sourceSnapsh
     editorSnapshot: editorSnapshot ? clone(editorSnapshot) : { payload: projectAdminTemplateCopy(sourceSnapshot, operationId, intent.body.metadata), metadata: clone(intent.body.metadata) } };
 }
 
+// An existing target keeps its own revision while a different confirmed
+// template supplies the source. Both snapshots survive reload unchanged.
+export function adminTemplateSourceSavePlan({ binding, operationId, body, sourceSnapshot }) {
+  if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== "bike-packing-experiment"
+    || !body?.source) throw paused();
+  const intent = adminTemplateIntent({ ...binding, operationId, kind: "template.save", body });
+  canonicalTemplateJson(sourceSnapshot);
+  return { version: 4, id: operationId, binding: clone(binding), operations: [intent], sourceSnapshot: clone(sourceSnapshot) };
+}
+
 function validatePlan(plan) {
+  if (plan?.version === 4) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "sourceSnapshot"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplateSourceSavePlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0].body, sourceSnapshot: plan.sourceSnapshot }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 3) {
     if (!exact(plan, ["version", "id", "binding", "operations", "sourceSnapshot", "editorSnapshot"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1 || !same(plan, adminTemplateCopyPlan({ binding: plan.binding, operationId: plan.id,
@@ -103,7 +119,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     const saved = JSON.parse(raw);
     if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || typeof saved.cancelRequested !== "boolean"
       || saved.plan.id !== id || !same(saved.plan.binding, binding) || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
-    if (saved.plan.version === 3 && await adminTemplateCopyPayloadDigest(saved.plan.sourceSnapshot) !== saved.plan.operations[0].body.source.payloadDigest) throw paused();
+    if ([3, 4].includes(saved.plan.version) && await adminTemplateCopyPayloadDigest(saved.plan.sourceSnapshot) !== saved.plan.operations[0].body.source.payloadDigest) throw paused();
     return saved;
   };
   const execute = async (id, cancel) => {
@@ -134,7 +150,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   const capturePlan = async (input, makePlan) => {
       if (enabled !== true) throw paused(); const initial = context();
       const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
-      if (plan.version === 3 && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
+      if ([3, 4].includes(plan.version) && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
       return lock(plan.id, async () => {
         const existing = await read(plan.id); guard(initial);
@@ -146,6 +162,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     capture: input => capturePlan(input, adminTemplateSavePlan),
     captureCommand: input => capturePlan(input, adminTemplateCommandPlan),
     captureCopy: input => capturePlan(input, adminTemplateCopyPlan),
+    captureSourceSave: input => capturePlan(input, adminTemplateSourceSavePlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];

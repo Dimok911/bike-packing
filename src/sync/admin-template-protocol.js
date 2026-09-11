@@ -2,6 +2,7 @@ import { canonicalAccessJson as canonicalOperationJson, validAccessOperationId a
 export const ADMIN_TEMPLATE_OPERATIONS_ENABLED = false;
 export const TEMPLATE_OPERATION_CAPABILITY = "adminTemplateCausalOperationsV1";
 export const TEMPLATE_COPY_CAPABILITY = "adminTemplateCopyV1";
+export const TEMPLATE_SOURCE_SAVE_CAPABILITY = "adminTemplateSourceSaveV1";
 export const TEMPLATE_OPERATION_KINDS = Object.freeze(["template.create", "template.copy", "template.save", "template.metadata", "template.publication", "template.archive", "template.delete"]);
 export { canonicalOperationJson as canonicalTemplateJson, validListOperationId as validTemplateOperationId };
 
@@ -24,11 +25,12 @@ export function adminTemplateIntent({ actorId, operationId, kind, itemKey, listI
   const extra = ["template.create", "template.save"].includes(kind) ? ["payload", "metadata"]
     : kind === "template.copy" ? ["source", "metadata"]
     : kind === "template.metadata" ? ["metadata"] : kind === "template.publication" ? ["published", "indexes"] : ["indexes"];
+  if (kind === "template.save" && Object.hasOwn(body, "source")) extra.push("source");
   if (!exact(body, ["version", "base", ...extra])) fail();
   if (["template.create", "template.copy"].includes(kind)) {
     if (body.base !== null) fail();
   } else if (!validBase(body.base, operationId)) fail();
-  if (kind === "template.copy") {
+  if (kind === "template.copy" || extra.includes("source")) {
     const source = body.source;
     if (!exact(source, ["itemKey", "listId", "base", "payloadDigest"])
       || !text(source.itemKey, 191) || !/^(demo-state(?:[:-].+)?|shared-layout:.+)$/.test(source.itemKey)

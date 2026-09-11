@@ -1977,10 +1977,13 @@ function getContainerPickerLayoutOptions() {
     choiceForLayout: publicLayoutChoiceForLayout,
     visibleChoices: adminPublicLayoutOptions().map(([value]) => value)
   }).filter((layout) => isPublishedLayoutEditable(layout) && !excludedLayoutIds.has(layout.id)));
-  // The open prepared editor remains selectable even while the independent
-  // catalog index has not loaded it. The copy adapter validates its revision.
-  if (adminTemplateUiEnabled() && ["item-copy", "container-copy"].includes(runtime.containerPickerMode) && currentLayout?.adminCausalSource
-    && currentLayout.id === runtime.containerPickerSourceLayoutId && !publicDrafts.some(row => row.id === currentLayout.id)) publicDrafts.unshift(currentLayout);
+  // Prepared editors remain selectable before the independent catalog index
+  // loads. Their copy adapters validate the captured revisions and ownership.
+  if (adminTemplateUiEnabled() && ["item-copy", "container-copy"].includes(runtime.containerPickerMode)) {
+    const prepared = runtime.containerPickerMode === "container-copy" ? allLayouts : [currentLayout];
+    for (const layout of prepared) if (layout?.adminCausalSource && isPublishedLayoutEditable(layout)
+      && !excludedLayoutIds.has(layout.id) && !publicDrafts.some(row => row.id === layout.id)) publicDrafts.unshift(layout);
+  }
   return [...publicDrafts, ...personalLayouts];
 }
 
