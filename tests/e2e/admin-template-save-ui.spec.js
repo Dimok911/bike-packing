@@ -157,8 +157,8 @@ async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
 
-async function crossTemplateFixture(page, context, sourceShared, targetShared) {
-  const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true });
+async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false) {
+  const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true, catalogPair: detachedItem });
   const target = { payload: structuredClone(server.payload), revision: 19, visibility: "private",
     listId: targetShared ? "public-shared-layout-cross" : "public-demo-state-cross",
     itemKey: targetShared ? "shared-layout:cross" : "demo-state:cross",
@@ -209,34 +209,45 @@ for (const sourceShared of [false, true]) crossTreeCases.push({ sourceShared, ta
 for (const mode of ["lost", "plan-quota", "pointer-quota", "mirror-quota", "source-conflict", "target-conflict", "changed-source", "changed-target", "changed-account", "pending-source", "pending-target", "cancel"]) {
   crossTreeCases.push({ sourceShared: false, targetShared: true, shape: "tree", mode });
 }
+for (const sourceShared of [false, true]) for (const targetShared of [false, true]) for (const shape of ["item-root", "item-nested"]) crossTreeCases.push({ sourceShared, targetShared, shape, mode: "confirmed" });
+for (const sourceShared of [false, true]) crossTreeCases.push({ sourceShared, targetShared: !sourceShared, shape: "item-detached", mode: "confirmed" });
+for (const mode of ["lost", "plan-quota", "pointer-quota", "mirror-quota", "source-conflict", "target-conflict", "changed-source", "changed-target", "changed-account", "pending-source", "pending-target", "cancel"]) {
+  crossTreeCases.push({ sourceShared: false, targetShared: true, shape: "item-root", mode });
+}
 for (const { sourceShared, targetShared, shape, mode } of crossTreeCases) {
-  test(`admin cross tree ${sourceShared ? "shared" : "demo"} to ${targetShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
-    const server = await crossTemplateFixture(page, context, sourceShared, targetShared), target = server.target;
-    const before = await page.evaluate(targetListId => {
+  test(`admin cross ${shape.startsWith("item-") ? "item" : "tree"} ${sourceShared ? "shared" : "demo"} to ${targetShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const itemCopy = shape.startsWith("item-"), detached = shape === "item-detached";
+    const server = await crossTemplateFixture(page, context, sourceShared, targetShared, detached), target = server.target;
+    const before = await page.evaluate(({ targetListId, detached, itemCopy }) => {
       const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetListId);
       const source = Object.values(current.layouts).find(row => row.adminCausalSource && row !== target);
       const find = (layout, name) => Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === name).id;
       return { sourceId: source.id, targetId: target.id, sourceBag: find(source, "Сумка шаблона"), sourceChild: find(source, "Карман шаблона"),
-        targetBag: find(target, "Целевая сумка"), source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id), ids: Object.keys(current.containers) };
-    }, target.listId);
+        targetBag: find(target, "Целевая сумка"), targetChild: find(target, "Целевой карман"),
+        sourceItem: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === (detached ? "Вторая вещь шаблона" : "Насос шаблона")).id,
+        source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id), ids: Object.keys(itemCopy ? current.items : current.containers) };
+    }, { targetListId: target.listId, detached, itemCopy });
     const sourceRoot = shape === "nested" ? before.sourceChild : before.sourceBag;
-    if (shape === "shell") {
+    if (itemCopy) await page.evaluate(id => __adminUiTest.openItem(id), before.sourceItem);
+    else if (shape === "shell") {
       await page.locator('[data-view="bags"]').click(); await page.locator(`#bagsView [data-root-card="${sourceRoot}"] [data-root-title]`).click();
     } else await page.evaluate(id => __adminUiTest.openContainer(id), sourceRoot);
-    await expect(page.locator("#rootContainerDialog")).toBeVisible(); await page.locator("#rootContainerCopyToContainerBtn").click();
+    await expect(page.locator(itemCopy ? "#itemDialog" : "#rootContainerDialog")).toBeVisible();
+    await page.locator(itemCopy ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
     await expect(page.locator("#containerPickerDialog")).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption(before.targetId);
-    if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.targetBag}"][data-pick-container-index="0"]`).click();
+    if (itemCopy) await page.locator(`#containerPickerBoard [data-pick-container="${shape === "item-nested" ? before.targetChild : before.targetBag}"]`).click();
+    else if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.targetBag}"][data-pick-container-index="0"]`).click();
     else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
-    await expect(page.locator("#confirmDialog")).toContainText(shape === "shell" ? "пустую копию" : "со всем содержимым");
+    await expect(page.locator("#confirmDialog")).toContainText(itemCopy ? "Скопировать вещь" : shape === "shell" ? "пустую копию" : "со всем содержимым");
     await expect(page.locator("#confirmAlternateBtn")).toBeHidden();
-    if (mode.startsWith("changed-") || mode.startsWith("pending-")) await page.evaluate(({ mode, before }) => {
+    if (mode.startsWith("changed-") || mode.startsWith("pending-")) await page.evaluate(({ mode, before, itemCopy }) => {
       const current = __adminUiTest.state();
-      if (mode === "changed-source") current.containers[before.sourceBag].name = "Позднее изменение";
+      if (mode === "changed-source") (itemCopy ? current.items[before.sourceItem] : current.containers[before.sourceBag]).name = "Позднее изменение";
       if (mode === "changed-target") current.containers[before.targetBag].name = "Поздняя цель";
       if (mode === "changed-account") __adminUiTest.user().id = "admin-b";
       if (mode === "pending-source") current.layouts[before.sourceId].templateDraftSyncPending = true;
       if (mode === "pending-target") current.layouts[before.targetId].templateDraftSyncPending = true;
-    }, { mode, before });
+    }, { mode, before, itemCopy });
     if (mode.endsWith("quota")) await page.evaluate(mode => {
       const set = Storage.prototype.setItem; let mirrored = false;
       Storage.prototype.setItem = function(key, value) {
@@ -253,14 +264,15 @@ for (const { sourceShared, targetShared, shape, mode } of crossTreeCases) {
     await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
     if (mode === "cancel" || mode === "mirror-quota" || mode.startsWith("changed-") || mode.startsWith("pending-")) {
       if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Cross copy quota" : "Шаблон изменился");
-      expect(server.posts).toEqual([]); expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers))).toEqual(before.ids);
+      expect(server.posts).toEqual([]); expect(await page.evaluate(itemCopy => Object.keys(__adminUiTest.state()[itemCopy ? "items" : "containers"]), itemCopy)).toEqual(before.ids);
       if (mode === "cancel" || mode === "mirror-quota") expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId)).toEqual(before.target);
       expect(server.errors).toEqual([]); return;
     }
     const snapshot = async () => {
       const value = await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId); value.payload = stripAdminTemplateEditorMetadata(value.payload); return value;
     };
-    await expect.poll(async () => Object.keys((await snapshot()).payload.containers).length).toBe(Object.keys(before.target.payload.containers).length + (shape === "tree" ? 2 : 1));
+    const collection = itemCopy ? "items" : "containers";
+    await expect.poll(async () => Object.keys((await snapshot()).payload[collection]).length).toBe(Object.keys(before.target.payload[collection]).length + (shape === "tree" ? 2 : 1));
     const chosen = await snapshot(); let planId;
     if (["plan-quota", "pointer-quota"].includes(mode)) {
       planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.targetId); expect(server.posts).toEqual([]);
@@ -279,7 +291,19 @@ for (const { sourceShared, targetShared, shape, mode } of crossTreeCases) {
     const added = Object.values(target.payload.items).filter(row => !before.target.payload.items[row.id]);
     expect(added).toHaveLength(shape === "shell" ? 0 : 1);
     const arrangement = Object.values(target.payload.layouts)[0].arrangement;
-    for (const row of added) { expect(arrangement.itemQuantities[row.id]).toBe(2); expect(arrangement.packedItems[row.id]).toBeUndefined(); }
+    for (const row of added) { expect(arrangement.itemQuantities[row.id]).toBe(itemCopy ? detached ? 3 : 1 : 2); expect(arrangement.packedItems[row.id]).toBeUndefined();
+      if (itemCopy) {
+        const destination = Object.values(before.target.payload.containers).find(row => row.name === (shape === "item-nested" ? "Целевой карман" : "Целевая сумка")).id;
+        expect(arrangement.items[row.id]).toBe(destination);
+        expect(arrangement.containers[destination].order.at(-1)).toEqual({ type: "item", id: row.id });
+        const previous = structuredClone(arrangement);
+        delete previous.items[row.id]; delete previous.itemQuantities[row.id];
+        previous.containers[destination].itemIds = previous.containers[destination].itemIds.filter(id => id !== row.id);
+        previous.containers[destination].order = previous.containers[destination].order.filter(entry => entry.id !== row.id);
+        expect(previous).toEqual(Object.values(before.target.payload.layouts)[0].arrangement);
+        expect(target.payload.containers).toHaveProperty(destination);
+        expect(row.quantity).toBe(1);
+      } }
     await editItem(page, "Правка после межшаблонной копии", "Вещь цели", before.targetId); await confirmedRevision(page, 21);
     expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 20 }); expect(server.posts[1].body.source).toBeUndefined();
     expect(server.errors).toEqual([]);

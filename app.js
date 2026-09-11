@@ -62,6 +62,7 @@ import { I18N } from "./src/data/i18n.js";
 import { demoSharedLayout } from "./src/data/demo-data.js";
 import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
 import { prepareAdminTemplateTreeCopy } from "./src/sync/admin-template-tree-copy.js";
+import { prepareAdminTemplateItemCopy } from "./src/sync/admin-template-item-copy.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -1787,7 +1788,7 @@ const appTailControllerDeps = {
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
   prepareCausalAdminCatalogCopy,
-  prepareCausalAdminTreeCopy,
+  prepareCausalAdminPlacementCopy,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
   newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
@@ -10650,7 +10651,7 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   };
 }
-async function prepareCausalAdminTreeCopy(request) {
+async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
   let layout, original, snapshot, initial, prepared, copyPrepared, linked, operationId, changedAt;
   let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof;
@@ -10688,11 +10689,12 @@ async function prepareCausalAdminTreeCopy(request) {
         payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) }; guard();
     }
     operationId = crypto.randomUUID(); changedAt = nowIso();
-    prepared = await prepareAdminTemplateTreeCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
+    const prepareCopy = request.type === "item" ? prepareAdminTemplateItemCopy : prepareAdminTemplateTreeCopy;
+    prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = request.type === "item" ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
@@ -10725,7 +10727,7 @@ async function prepareCausalAdminTreeCopy(request) {
       if (sourceLayout !== layout && !activateAdminPublishedLayout(layout.id)) throw Error("Копия сохранена. Откройте целевой шаблон для продолжения.");
       try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(layout.id); }
       catch (error) { reportAdminTemplateSaveError(error); }
-      return prepared.rootId;
+      return prepared.itemId || prepared.rootId;
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   }, { canLink: Boolean(linked) });
 }

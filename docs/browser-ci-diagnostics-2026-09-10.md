@@ -11,6 +11,12 @@
 Это воспроизводит ошибку независимо от приложения, но не доказывает причину
 Linux segfault и не является исправлением. Ошибки в UI-тестах не фильтруются.
 
+Контрольная точка `eb7f9b2`, [CI 34544253383](https://github.com/Dimok911/bike-packing/actions/runs/34544253383):
+Chromium завершён успешно — 783 passed / 260 skipped, 39,8 минуты; OFF 4/4.
+В полном журнале `resume-ci-eb7f9b2-chromium.txt` нет flaky summary или
+признаков crash. Mobile на момент этой записи ещё выполняется; весь запуск
+пока не принят. Новый CI `34547328037` проверяет следующий `5f35b3a`.
+
 Последующий [CI 34540700823](https://github.com/Dimok911/bike-packing/actions/runs/34540700823),
 FE `76b51d6`, завершён успешно с первой попытки в обоих браузерах: Chromium
 737 passed / 260 skipped, mobile 705 passed / 268 skipped, OFF по 4/4.

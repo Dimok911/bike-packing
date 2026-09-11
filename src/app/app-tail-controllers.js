@@ -142,7 +142,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     prepareCausalAdminCatalogCopy,
-    prepareCausalAdminTreeCopy,
+    prepareCausalAdminPlacementCopy,
     openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
     newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate } = ctx;
   const runtime = ctx.runtime;
@@ -1980,7 +1980,7 @@ function getContainerPickerLayoutOptions() {
   // Prepared editors remain selectable before the independent catalog index
   // loads. Their copy adapters validate the captured revisions and ownership.
   if (adminTemplateUiEnabled() && ["item-copy", "container-copy"].includes(runtime.containerPickerMode)) {
-    const prepared = runtime.containerPickerMode === "container-copy" ? allLayouts : [currentLayout];
+    const prepared = allLayouts;
     for (const layout of prepared) if (layout?.adminCausalSource && isPublishedLayoutEditable(layout)
       && !excludedLayoutIds.has(layout.id) && !publicDrafts.some(row => row.id === layout.id)) publicDrafts.unshift(layout);
   }
@@ -2347,7 +2347,10 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (adminTemplateUiEnabled() && targetIsPublic) {
-    const commit = prepareCausalAdminCatalogCopy("item", [itemId], { addToLayoutId: targetLayoutId, targetContainerId });
+    const commit = targetLayoutId === getPublishedEditLayoutId()
+      ? prepareCausalAdminCatalogCopy("item", [itemId], { addToLayoutId: targetLayoutId, targetContainerId })
+      : await prepareCausalAdminPlacementCopy({ type: "item", sourceId: itemId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
+        targetLayoutId, targetParentId: targetContainerId });
     if (!commit) return;
     if (!await askConfirmDialog({ title: localText("Copy item?", "Скопировать вещь?"),
       text: localText(`Create a separate copy of “${source.name}” in “${state.containers[targetContainerId]?.name}”?`,
@@ -2564,7 +2567,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (adminTemplateUiEnabled() && targetIsPublic) {
-    const commit = await prepareCausalAdminTreeCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
+    const commit = await prepareCausalAdminPlacementCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
     if (!commit) return;
     const choice = await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
       text: includeContents ? localText("Create an independent copy with all contents at the selected position?", "Создать отдельную копию со всем содержимым в выбранном месте?")
