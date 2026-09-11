@@ -63,6 +63,7 @@ import { demoSharedLayout } from "./src/data/demo-data.js";
 import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
 import { prepareAdminTemplateTreeCopy } from "./src/sync/admin-template-tree-copy.js";
 import { prepareAdminTemplateItemCopy } from "./src/sync/admin-template-item-copy.js";
+import { prepareAdminTemplateItemReplacement } from "./src/sync/admin-template-item-replace.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10689,12 +10690,13 @@ async function prepareCausalAdminPlacementCopy(request) {
         payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) }; guard();
     }
     operationId = crypto.randomUUID(); changedAt = nowIso();
-    const prepareCopy = request.type === "item" ? prepareAdminTemplateItemCopy : prepareAdminTemplateTreeCopy;
+    const prepareCopy = request.type === "item" ? prepareAdminTemplateItemCopy
+      : request.type === "item-replace" ? prepareAdminTemplateItemReplacement : prepareAdminTemplateTreeCopy;
     prepared = await prepareCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
     copyPrepared = prepared;
-    try { linked = request.type === "item" ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+    try { linked = ["item", "item-replace"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
     guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }

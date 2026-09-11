@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareAdminTemplateItemCopy } from "../../src/sync/admin-template-item-copy.js";
+import { prepareAdminTemplateItemReplacement } from "../../src/sync/admin-template-item-replace.js";
 import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 
 const options = { operationId: "8ad83878-2144-455e-b0ce-8b8cce033fdc", changedAt: "2026-09-11T02:00:00Z" };
@@ -87,5 +88,45 @@ test("existing item leaves only its detached catalog parent and preserves siblin
   ]) {
     const state = structuredClone(before); mutate(state); const unchanged = structuredClone(state);
     assert.throws(() => prepareAdminTemplateItemCopy(state, request, options)); assert.deepEqual(state, unchanged);
+  }
+});
+
+for (const detachedParent of [false, true]) test(`admin replacement keeps the old position and quantity (${detachedParent ? "catalog tree" : "standalone"})`, () => {
+  const f = fixture(), own = row => ({ ...row, publicCatalogLayoutId: "from" });
+  f.state.items.before = own({ id: "before", name: "Before", containerId: "from-bag", quantity: 4 });
+  f.state.items.after = own({ id: "after", name: "After", containerId: "from-bag", quantity: 5 });
+  const parent = f.state.containers["from-bag"];
+  parent.itemIds = ["before", "source", "after"]; parent.order = parent.itemIds.map(id => ({ type: "item", id }));
+  f.state.layouts.from.arrangement = createLayoutArrangementFromCurrentState(f.state, ["from-bag"]);
+  f.state.layouts.from.arrangement.itemQuantities.source = 2; f.state.items.source.quantity = 1;
+  f.state.items.replacement = own({ id: "replacement", name: "Replacement", quantity: 7, containerId: detachedParent ? "detached" : "" });
+  if (detachedParent) {
+    f.state.items.stays = own({ id: "stays", name: "Stays", quantity: 4, containerId: "detached" });
+    f.state.containers.detached = own({ id: "detached", parentId: "", childIds: [], itemIds: ["replacement", "stays"],
+      order: [{ type: "item", id: "replacement" }, { type: "item", id: "stays" }] });
+  }
+  const original = structuredClone(f.state), request = { sourceId: "replacement", replacedId: "source",
+    sourceLayoutId: "from", targetLayoutId: "from", targetParentId: "from-bag" };
+  const result = prepareAdminTemplateItemReplacement(f.state, request, options), arrangement = result.snapshot.layouts.from.arrangement;
+  assert.deepEqual(f.state, original); assert.deepEqual(result.entries, []);
+  assert.deepEqual(Object.keys(result.snapshot.items), Object.keys(original.items));
+  assert.deepEqual(arrangement.containers["from-bag"].order, ["before", "replacement", "after"].map(id => ({ type: "item", id })));
+  assert.equal(arrangement.itemQuantities.replacement, 2); assert.equal(arrangement.items.source, undefined);
+  assert.equal(arrangement.packedItems.source, undefined); assert.equal(arrangement.packedItems.replacement, undefined);
+  assert.deepEqual(result.snapshot.items.source, { ...original.items.source, containerId: "" });
+  assert.equal(result.snapshot.items.replacement.quantity, 1); assert.equal(result.snapshot.items.replacement.containerId, "from-bag");
+  assert.deepEqual(result.snapshot.items.before, original.items.before); assert.deepEqual(result.snapshot.items.after, original.items.after);
+  if (detachedParent) {
+    assert.deepEqual(result.snapshot.items.stays, original.items.stays);
+    assert.deepEqual(result.snapshot.containers.detached.itemIds, ["stays"]);
+  }
+  for (const mutate of [
+    state => { state.items.source.photos = [{ id: "photo" }]; },
+    state => { state.items.source.publicCatalogLayoutId = "other"; },
+    state => { delete state.layouts.from.arrangement.itemQuantities.source; },
+    state => { state.layouts.from.arrangement.containers["from-bag"].order = []; }
+  ]) {
+    const state = structuredClone(original); mutate(state); const before = structuredClone(state);
+    assert.throws(() => prepareAdminTemplateItemReplacement(state, request, options)); assert.deepEqual(state, before);
   }
 });

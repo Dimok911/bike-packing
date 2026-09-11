@@ -1478,16 +1478,20 @@ async function addExistingContainerToContainer(containerId) {
   });
 }
 
-function replaceExistingItemInLayout(replacementItemId) {
+async function replaceExistingItemInLayout(replacementItemId) {
   const sourceItemId = replacingPackingItemId;
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const source = state.items?.[sourceItemId];
   const replacement = state.items?.[replacementItemId];
   const changedAt = nowIso();
   if (!source || !replacement || warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(replacementItemId)) return;
-  const commit = preparePersonalPlacementAction({ layoutId, action: "replace-item", ids: [sourceItemId], replacementId: replacementItemId });
+  const administrative = adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId);
+  const commit = administrative ? await prepareCausalAdminPlacementCopy({ type: "item-replace", replacedId: sourceItemId,
+    sourceId: replacementItemId, sourceLayoutId: layoutId, targetLayoutId: layoutId,
+    targetParentId: state.layouts[layoutId]?.arrangement?.items?.[sourceItemId] })
+    : preparePersonalPlacementAction({ layoutId, action: "replace-item", ids: [sourceItemId], replacementId: replacementItemId });
   if (commit === false) return;
-  const replaced = commit ? commit() : replaceItemInLayoutState(state, layoutId, sourceItemId, replacementItemId, {
+  const replaced = commit ? await commit() : replaceItemInLayoutState(state, layoutId, sourceItemId, replacementItemId, {
     activeLayoutId: state.activeLayoutId,
     applyLayoutArrangement,
     changedAt,
