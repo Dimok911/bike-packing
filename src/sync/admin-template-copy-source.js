@@ -7,12 +7,12 @@ import { adminTemplateDataSourceSnapshot } from "./admin-template-save-plan.js";
 // `saved` and predecessor records are read through createAdminTemplateSavePlans, which verifies their hashes
 // and full plan grammar. The data write supplies the snapshot; the last step
 // supplies its prerequisite. Unsaved editor changes cannot enter this copy.
-export async function pendingAdminTemplateCopySource(source, saved, snapshot, records = []) {
+export async function pendingAdminTemplateCopySource(source, saved, snapshot, records = [], confirmed = {}) {
   const fail = () => { throw Error("Ожидающая версия шаблона не совпадает с сохранённым действием. Сначала сверьте исходный шаблон."); };
   const plan = saved?.plan, equal = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
   if (!source?.exists || source.deleted || !source.planId || !source.base?.operationId || !saved || saved.cancelRequested
     || ![1, 2, 3, 4].includes(plan?.version) || plan.id !== source.planId || !equal(plan.binding, source.binding)) fail();
-  const { operationId, payload, metadata, editorSnapshot } = adminTemplateDataSourceSnapshot(plan, records);
+  const { operationId, payload, metadata, editorSnapshot } = adminTemplateDataSourceSnapshot(plan, records, confirmed);
   // A whole copy has normalized editor IDs, but the next server operation must
   // hash the independent payload produced by that copy's original UUID.
   if (operationId !== source.base.operationId || !equal(editorSnapshot || { payload, metadata }, snapshot)) fail();

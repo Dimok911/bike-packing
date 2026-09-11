@@ -54,3 +54,17 @@ test("a draft created while preparation was waiting is preserved", async () => {
   assert.equal((await f.run()).restored, 0); assert.equal(f.counts().materialized, 0);
   assert.equal(f.layouts.local.name, "Created meanwhile");
 });
+
+test("hydration remembers the exact prepared source after editor metadata is applied", async () => {
+  const f = fixture(), captured = [];
+  f.options.rememberSource = async (layout, prepared) => {
+    captured.push(structuredClone(prepared)); assert.equal(layout.name, prepared.metadata.title);
+    assert.deepEqual(layout.adminCausalSource.base, { stateRevision: 7 });
+  };
+  await f.run(); assert.deepEqual(captured, [f.prepared]); assert.equal(f.counts().writes, 1);
+});
+
+test("changing context during baseline capture prevents a stale hydration write", async () => {
+  const f = fixture(); f.options.rememberSource = async () => { f.context.generation = "changed"; };
+  await assert.rejects(f.run()); assert.equal(f.counts().writes, 0);
+});

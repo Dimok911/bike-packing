@@ -138,6 +138,25 @@ test("metadata source rejects dependency cycles and commands without a retained 
   await assert.rejects(pendingAdminTemplateCopySource(source, { plan: command(a, { stateRevision: 7 }), cancelRequested: false }, editorSnapshot));
 });
 
+test("a confirmed data receipt supplies an exact revision predecessor for later metadata", async () => {
+  const f = adminClientFixture(), client = f.make().client, input = f.action(); input.body.payload = snapshot();
+  const parent = adminTemplateSavePlan({ binding: f.binding, ...input.body, operationId: input.operationId, exists: true, visibility: "private" });
+  await client.capture(input); await client.run(input.operationId); const confirmed = await client.read(input.operationId);
+  const editorSnapshot = { payload: structuredClone(input.body.payload), metadata: { ...input.body.metadata, title: "Following label" } };
+  Object.values(editorSnapshot.payload.layouts)[0].name = "Following label"; Object.values(editorSnapshot.payload.layouts)[0].language = "ru";
+  const plan = adminTemplateCommandPlan({ binding: f.binding, operationId: randomUUID(), kind: "template.metadata", editorSnapshot,
+    body: { version: 1, base: { stateRevision: 8 }, metadata: { title: "Following label", language: "ru" } } });
+  const source = { exists: true, binding: f.binding, planId: plan.id, base: { operationId: plan.id } }, saved = { plan, cancelRequested: false };
+  const records = [{ plan: parent, cancelRequested: false }];
+  const result = await pendingAdminTemplateCopySource(source, saved, editorSnapshot, records, { receipts: [confirmed] });
+  assert.deepEqual(result.payload, input.body.payload); assert.deepEqual(result.source.base, source.base);
+  for (const change of [entry => entry.receipt.result.payload.stateRevision = 9, entry => entry.receipt.operation.listId = "public-demo-state-other",
+    entry => entry.receipt.operation.state = "rejected", entry => entry.intent.id = randomUUID()]) {
+    const bad = structuredClone(confirmed); change(bad);
+    await assert.rejects(pendingAdminTemplateCopySource(source, saved, editorSnapshot, records, { receipts: [bad] }));
+  }
+});
+
 test("whole template copy freezes exact confirmed source, new target and private metadata", () => {
   const f = adminClientFixture(), input = action(), frozen = adminTemplateIntent({ ...f.binding, ...input });
   input.body.source.base.stateRevision = 99;

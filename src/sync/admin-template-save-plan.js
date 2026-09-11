@@ -99,21 +99,34 @@ function validatePlan(plan) {
 
 // A copied source reads the data snapshot but depends on the final operation of
 // the saved choice, including publication after save or hiding before save.
-export function adminTemplateDataSourceSnapshot(plan, records = [], visiting = new Set()) {
+export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline = null, receipts = [] } = {}, visiting = new Set()) {
   validatePlan(plan);
   if (visiting.has(plan.id)) throw paused();
   visiting.add(plan.id);
   if (plan.version === 2) {
     const operation = plan.operations[0];
-    if (operation.kind !== "template.metadata" || !operation.body.base.operationId) throw paused();
-    const parents = records.filter(row => row.plan?.operations?.at(-1)?.id === operation.body.base.operationId);
-    if (parents.length !== 1 || parents[0].cancelRequested !== false || !same(parents[0].plan.binding, plan.binding)) throw paused();
-    const previous = adminTemplateDataSourceSnapshot(parents[0].plan, records, visiting), choice = operation.body.metadata;
+    if (operation.kind !== "template.metadata") throw paused();
+    let previous;
+    if (operation.body.base.stateRevision && baseline?.stateRevision === operation.body.base.stateRevision && same(baseline.binding, plan.binding)) {
+      previous = clone({ payload: baseline.payload, metadata: baseline.metadata, editorSnapshot: baseline.editorSnapshot });
+    } else {
+      const parents = records.filter(row => {
+        const last = row.plan?.operations?.at(-1);
+        if (operation.body.base.operationId) return last?.id === operation.body.base.operationId;
+        return receipts.some(entry => same(entry.intent, last) && entry.receipt?.operation.state === "committed"
+          && entry.receipt.operation.id === last?.id && entry.receipt.operation.listId === plan.binding.listId
+          && entry.receipt.result?.payload.stateRevision === operation.body.base.stateRevision);
+      });
+      if (parents.length !== 1 || parents[0].cancelRequested !== false || !same(parents[0].plan.binding, plan.binding)) throw paused();
+      previous = adminTemplateDataSourceSnapshot(parents[0].plan, records, { baseline, receipts }, visiting);
+    }
+    const choice = operation.body.metadata;
     const metadata = { title: choice.title, description: previous.metadata.description, language: choice.language };
     const editorSnapshot = clone(plan.editorSnapshot), expected = clone(previous.editorSnapshot || { payload: previous.payload, metadata: previous.metadata });
     const layout = Object.values(expected.payload.layouts || {}), selected = Object.values(editorSnapshot.payload.layouts || {});
     if (layout.length !== 1 || selected.length !== 1) throw paused();
-    expected.metadata = metadata; layout[0].name = choice.title; layout[0].language = choice.language;
+    expected.metadata = { ...expected.metadata, title: choice.title, language: choice.language };
+    layout[0].name = choice.title; layout[0].language = choice.language;
     if (Object.hasOwn(choice, "layoutOrder")) layout[0].layoutOrder = choice.layoutOrder;
     // Touching the label changes only the editor's audit fields. SQL metadata
     // preserves the underlying data snapshot, including its old layout title.

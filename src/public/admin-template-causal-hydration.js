@@ -8,7 +8,7 @@ const paused = () => Object.assign(Error("Загрузка черновиков 
 // exact data, revision and current authority used to open a new editor. Existing
 // local drafts are never rebased or replaced by a background catalog refresh.
 export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts, getBinding, readCatalog, normalizeRecords,
-  readTemplate, materialize, acceptRecords = () => {}, persist = () => {} }) {
+  readTemplate, materialize, rememberSource = null, acceptRecords = () => {}, persist = () => {} }) {
   const initial = canonicalTemplateJson(getContext());
   if (getContext()?.admin !== true) throw paused();
   const guard = () => { if (canonicalTemplateJson(getContext()) !== initial) throw paused(); };
@@ -36,6 +36,7 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
     layout.adminCausalSource = source; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = false; layout.templateDraftServerHydrated = true;
     delete layout.templateDraftSyncPending; delete layout.templateUnpublishPending;
+    await rememberSource?.(layout, prepared); guard();
     persist(); restored++;
   }
   return { records, restored, migrationPending };

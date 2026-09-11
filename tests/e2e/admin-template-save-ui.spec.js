@@ -723,15 +723,18 @@ async function crossTemplateFixture(page, context, sourceShared, targetShared, d
   return server;
 }
 
-for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) for (const mode of ["confirmed", "lost", "cancel", "changed-source", "plan-quota", "source-conflict", "publication", "publication-lost", "hiding", "hiding-lost", "metadata", "metadata-lost", "metadata-language"]) {
+for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) for (const mode of ["confirmed", "lost", "cancel", "changed-source", "plan-quota", "source-conflict", "publication", "publication-lost", "hiding", "hiding-lost", "metadata", "metadata-lost", "metadata-language", "metadata-root", "metadata-root-lost", "metadata-root-language", "metadata-confirmed-data"]) {
   test(`admin pending source ${sourceShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
     const server = await crossTemplateFixture(page, context, sourceShared, !sourceShared, false, false, mode.startsWith("hiding")), target = server.target;
     server.blockBusiness = true;
     const publication = mode.startsWith("publication"), hiding = mode.startsWith("hiding");
-    const sourceName = publication ? "Насос шаблона" : "Ожидающая правка источника";
+    const rootMetadata = mode.startsWith("metadata-root");
+    if (mode === "metadata-confirmed-data") server.blockBusiness = false;
+    const sourceName = publication || rootMetadata ? "Насос шаблона" : "Ожидающая правка источника";
     if (publication || hiding) await capturePendingSourceVisibility(page, server, sourceShared, hiding, sourceName);
-    else await editItem(page, sourceName, "Насос шаблона");
-    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка ожидающего источника", mode === "metadata-language" ? "en" : "");
+    else if (!rootMetadata) await editItem(page, sourceName, "Насос шаблона");
+    if (mode === "metadata-confirmed-data") { await confirmedRevision(page, 8); server.blockBusiness = true; }
+    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка ожидающего источника", mode.endsWith("language") ? "en" : "");
     const before = await page.evaluate(({ targetListId, sourceName }) => {
       const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetListId);
       const source = Object.values(current.layouts).find(row => row.adminCausalSource && row !== target);
@@ -783,7 +786,7 @@ for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) 
     await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
     await page.evaluate(sourceShared => __adminUiTest.openPrepared(sourceShared ? { type: "shared", sharedId: "ui" }
       : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), sourceShared);
-    await confirmedRevision(page, publication || hiding || mode.startsWith("metadata") ? 9 : 8);
+    await confirmedRevision(page, !rootMetadata && (publication || hiding || mode.startsWith("metadata")) ? 9 : 8);
     expect(server.receipts.get(parentId).operation.state).toBe("committed");
     expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(server.payload));
     if (mode === "source-conflict") server.revision++;
@@ -1102,6 +1105,7 @@ async function newDraftFixture(page, context, options = {}) {
         }
         created.set(input.listId, { revision: 0, payload: projectAdminTemplateCopy(source.payload, id, input.body.metadata), metadata: input.body.metadata });
       }
+      if (state.blockCreated && created.has(input.listId) && !["template.copy", "template.create"].includes(input.kind)) return route.abort("failed");
       if (input.kind === "template.create") {
         expect(created.has(input.listId)).toBe(false); expect(input.body.base).toBeNull();
         created.set(input.listId, { revision: 0, payload: structuredClone(input.body.payload), metadata: input.body.metadata });
@@ -2345,7 +2349,7 @@ for (const shared of [false, true]) for (const pending of [false, true]) for (co
   });
 }
 
-for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"]) for (const mode of ["confirmed", "lost", "plan-quota", "source-conflict", "metadata", "metadata-language"]) {
+for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"]) for (const mode of ["confirmed", "lost", "plan-quota", "source-conflict", "metadata", "metadata-language", "metadata-confirmed-copy"]) {
   test(`pending copied source ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
     const state = await crossTemplateFixture(page, context, shared, !shared, true, false, false, true);
     state.blockBusiness = true;
@@ -2357,7 +2361,15 @@ for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"
     await expect.poll(() => state.posts.filter(post => post.kind === "template.copy").length).toBe(1);
     const parent = structuredClone(state.posts.find(post => post.kind === "template.copy"));
     expect(state.receipts.get(parent.operationId).operation.state).toBe("waiting");
-    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка промежуточной копии", mode === "metadata-language" ? "en" : "");
+    if (mode === "metadata-confirmed-copy") {
+      state.blockBusiness = false;
+      await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" }
+        : { type: "demo", demoListId: "public-demo-state-ui" }), shared); await confirmedRevision(page, 8);
+      await page.evaluate(parent => __adminUiTest.openPrepared(parent.itemKey.startsWith("demo-state") ? { type: "demo", demoListId: parent.listId }
+        : { type: "shared", sharedId: parent.itemKey.slice(14) }), parent); await confirmedRevision(page, 1);
+      state.blockCreated = true;
+    }
+    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка промежуточной копии", mode.endsWith("language") ? "en" : "");
     const before = await page.evaluate(({ parentList, targetList }) => {
       const current = __adminUiTest.state(), source = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === parentList);
       const target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetList);
@@ -2397,9 +2409,9 @@ for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"
       expect(state.receipts.get(action.operationId).operation.state).toBe("waiting");
     }
     expect(action.body.source.listId).toBe(parent.listId); expect(action.body.source.base).toEqual({ operationId: before.parentId });
-    expect(state.created.size).toBe(0);
+    expect(state.created.size).toBe(mode === "metadata-confirmed-copy" ? 1 : 0);
     const chosen = await page.evaluate(id => __adminUiTest.snapshot(id), childLayout.id), targetBefore = structuredClone(state.target.payload);
-    state.blockBusiness = false;
+    state.blockBusiness = false; state.blockCreated = false;
     await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
     await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
     const open = binding => page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
@@ -2439,14 +2451,45 @@ for (const shared of [false, true]) for (const shape of ["whole", "item", "tree"
   });
 }
 
-for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "conflict", "inactive", "publication", "publication-lost", "hiding", "hiding-lost", "metadata", "metadata-lost", "metadata-language"]) {
+for (const shared of [false, true]) for (const mode of ["quota", "corrupt"]) {
+  test(`prepared source baseline ${shared ? "shared" : "demo"} ${mode} preserves the editor without a copy`, async ({ page, context }) => {
+    if (mode === "quota") await context.addInitScript(() => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-source-baseline-v1:")) throw new DOMException("Baseline quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    });
+    const state = await newDraftFixture(page, context, { shared, withContainers: true }); state.blockBusiness = true;
+    const sourceId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
+    await capturePendingSourceLabel(page, "Метка без доступного снимка");
+    if (mode === "corrupt") await page.evaluate(sourceId => {
+      const key = Object.keys(localStorage).find(key => key.startsWith("bike-packing-admin-source-baseline-v1:")
+        && JSON.parse(localStorage.getItem(key)).baseline.layoutId === sourceId);
+      if (!key) throw Error("Expected source baseline");
+      const record = JSON.parse(localStorage.getItem(key)); record.baseline.payload.items.extra = { id: "extra", name: "Corruption" };
+      localStorage.setItem(key, JSON.stringify(record));
+    }, sourceId);
+    const before = await page.evaluate(() => structuredClone(__adminUiTest.state().layouts));
+    await submitAdminTemplateCopy(page, "Не создавать без точного источника", sourceId);
+    await expect(page.locator("#layoutDialog")).toBeVisible();
+    await expect(page.locator("#saveLayoutBtn")).toBeEnabled();
+    expect(await page.evaluate(() => __adminUiTest.state().layouts)).toEqual(before);
+    expect(state.posts.filter(post => post.kind === "template.copy")).toEqual([]); expect(state.created.size).toBe(0);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "conflict", "inactive", "publication", "publication-lost", "hiding", "hiding-lost", "metadata", "metadata-lost", "metadata-language", "metadata-root", "metadata-root-lost", "metadata-root-language", "metadata-confirmed-data"]) {
   test(`whole pending admin template ${shared ? "shared" : "demo"} (${mode})`, async ({ page, context }) => {
     const state = await newDraftFixture(page, context, { shared, published: mode.startsWith("hiding"), withContainers: true, catalogPair: true, layoutOrder: 17 });
     state.blockBusiness = true;
-    const publication = mode.startsWith("publication"), hiding = mode.startsWith("hiding");
+    const publication = mode.startsWith("publication"), hiding = mode.startsWith("hiding"), rootMetadata = mode.startsWith("metadata-root");
+    if (mode === "metadata-confirmed-data") state.blockBusiness = false;
     if (publication || hiding) await capturePendingSourceVisibility(page, state, shared, hiding, "Ожидающая целая копия");
-    else await editItem(page, "Ожидающая целая копия", "Насос шаблона");
-    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка целого ожидающего источника", mode === "metadata-language" ? "en" : "");
+    else if (!rootMetadata) await editItem(page, "Ожидающая целая копия", "Насос шаблона");
+    if (mode === "metadata-confirmed-data") { await confirmedRevision(page, 8); state.blockBusiness = true; }
+    if (mode.startsWith("metadata")) await capturePendingSourceLabel(page, "Метка целого ожидающего источника", mode.endsWith("language") ? "en" : "");
     await expect.poll(() => state.posts.length).toBeGreaterThan(0);
     const before = await page.evaluate(() => {
       const source = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
@@ -2482,7 +2525,7 @@ for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "pl
     await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
     await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" }
       : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), shared);
-    await confirmedRevision(page, publication || hiding || mode.startsWith("metadata") ? 9 : 8);
+    await confirmedRevision(page, !rootMetadata && (publication || hiding || mode.startsWith("metadata")) ? 9 : 8);
     expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(state.payload));
     const expected = projectAdminTemplateCopy(state.payload, action.operationId, action.body.metadata);
     state.createLose = mode.endsWith("lost"); state.copyConflict = mode === "conflict";

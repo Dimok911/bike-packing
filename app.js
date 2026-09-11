@@ -207,6 +207,7 @@ import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "./src/
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans, adminTemplateCopyPlan, adminTemplateSavePlan, adminTemplateSourceSavePlan } from "./src/sync/admin-template-save-plan.js";
 import { pendingAdminTemplateCopySource } from "./src/sync/admin-template-copy-source.js";
+import { createAdminTemplateSourceBaseline } from "./src/sync/admin-template-source-baseline.js";
 import { adminTemplateCopyPayloadDigest } from "./src/sync/admin-template-copy-projection.js";
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
@@ -8709,6 +8710,7 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
       normalizeRecords: normalizeAdminTemplateHistoryRecords,
       readTemplate: binding => adminTemplateClient(binding, "", true).prepare(),
       materialize: (record, prepared) => materializeCausalAdminTemplate(targetForRecord(record), prepared),
+      rememberSource: rememberAdminTemplateSourceBaseline,
       acceptRecords: records => { adminTemplateHistoryRecords = records; }, persist: () => persistStateSnapshot(state, { recordAction: false }),
     });
     if (renderAfter && result.restored) render();
@@ -10765,6 +10767,13 @@ async function prepareCausalAdminToPersonalCopy(request) {
   }, { cancel() { if (!used) { used = true; restoreSourceView(); } },
     canLink: false, canMissing: Boolean(missingSelection), missingItemCount: missingSelection?.ownerTargets.length || 0 });
 }
+function adminTemplateSourceBaseline(binding, layoutId) {
+  return createAdminTemplateSourceBaseline({ binding, layoutId, getContext: () => adminTemplateOperationContext(binding, layoutId, true) });
+}
+async function rememberAdminTemplateSourceBaseline(layout, prepared) {
+  const snapshot = adminTemplateEditorSnapshot(layout.id); snapshot.payload = stripAdminTemplateEditorMetadata(snapshot.payload);
+  return adminTemplateSourceBaseline(layout.adminCausalSource.binding, layout.id).capture(prepared, snapshot);
+}
 
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
@@ -10832,8 +10841,10 @@ async function prepareCausalAdminPlacementCopy(request) {
       const plans = adminTemplatePlansFor(sourceOriginal.binding, sourceLayout.id);
       const saved = await plans.read(sourceOriginal.planId); guard();
       const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
+      const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(sourceOriginal.binding, sourceLayout.id).read() : null; guard();
+      const receipts = saved?.plan.version === 2 ? await adminTemplateClient(sourceOriginal.binding, sourceLayout.id, true).list() : []; guard();
       const observed = JSON.parse(sourceSnapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
-      const captured = await pendingAdminTemplateCopySource(sourceOriginal, saved, observed, records); guard();
+      const captured = await pendingAdminTemplateCopySource(sourceOriginal, saved, observed, records, { baseline, receipts }); guard();
       sourcePrepared = { payload: captured.payload }; sourceProof = captured.source;
     } else if (sourceLayout !== layout) {
       sourcePrepared = await adminTemplateClient(sourceOriginal.binding, sourceLayout.id, true).prepare(); guard();
@@ -10933,8 +10944,10 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
       getContext: () => adminTemplateOperationContext(observed.binding, sourceLayout.id, true) });
     const saved = await plans.read(observed.planId); guard();
     const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
+    const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(observed.binding, sourceLayout.id).read() : null; guard();
+    const receipts = saved?.plan.version === 2 ? await adminTemplateClient(observed.binding, sourceLayout.id, true).list() : []; guard();
     const current = JSON.parse(snapshot); current.payload = stripAdminTemplateEditorMetadata(current.payload);
-    const captured = await pendingAdminTemplateCopySource(observed, saved, current, records); guard();
+    const captured = await pendingAdminTemplateCopySource(observed, saved, current, records, { baseline, receipts }); guard();
     prepared = { payload: captured.payload, metadata: current.metadata }; sourceProof = captured.source;
   } else {
     prepared = await adminTemplateClient(observed.binding, sourceLayout.id, true).prepare(); guard();
@@ -11250,6 +11263,7 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
     layout.adminCausalSource = editorSource; layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
+    await rememberAdminTemplateSourceBaseline(layout, prepared);
     persistStateSnapshot(state, { recordAction: false }); activateAdminPublishedLayout(layout.id, { remember });
     return layout;
   } catch (error) { reportAdminTemplateSaveError(error); showToast(error.message, "error"); return null; }
