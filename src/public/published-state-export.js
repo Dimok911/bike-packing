@@ -8,6 +8,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   fallbackName = "",
   locations = [],
   categories = [],
+  preserveEntityIds = false,
   normalizePublishedStatePayload,
   stripPublishedPublicOriginMarkers,
   onMappedEntity = () => {}
@@ -21,7 +22,9 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   const mapContainerId = (containerId) => {
     if (containerIdMap.has(containerId)) return containerIdMap.get(containerId);
     const container = targetState.containers?.[containerId];
-    const nextId = uniquePublishedRecordId(containers, cleanPublishedEntityId("container", container, containerId, { cssSafeId }));
+    const preferredId = cleanPublishedEntityId("container", container, containerId, { cssSafeId, preserveEntityIds });
+    if (preserveEntityIds && Object.hasOwn(containers, preferredId)) throw new Error("Повторный идентификатор сумки шаблона требует сверки.");
+    const nextId = uniquePublishedRecordId(containers, preferredId);
     containerIdMap.set(containerId, nextId);
     onMappedEntity({ type: "containers", sourceId: containerId, targetId: nextId });
     return nextId;
@@ -29,7 +32,9 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   const mapItemId = (itemId) => {
     if (itemIdMap.has(itemId)) return itemIdMap.get(itemId);
     const item = targetState.items?.[itemId];
-    const nextId = uniquePublishedRecordId(items, cleanPublishedEntityId("item", item, itemId, { cssSafeId }));
+    const preferredId = cleanPublishedEntityId("item", item, itemId, { cssSafeId, preserveEntityIds });
+    if (preserveEntityIds && Object.hasOwn(items, preferredId)) throw new Error("Повторный идентификатор вещи шаблона требует сверки.");
+    const nextId = uniquePublishedRecordId(items, preferredId);
     itemIdMap.set(itemId, nextId);
     onMappedEntity({ type: "items", sourceId: itemId, targetId: nextId });
     return nextId;
@@ -126,7 +131,10 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
     if (!container || containerIdMap.has(containerId)) return;
     if (container.publicCatalogLayoutId !== layoutId) return;
-    if (publishedSourceAlreadyExported("container", containers, container, containerId, { cssSafeId })) return;
+    if (publishedSourceAlreadyExported("container", containers, container, containerId, { cssSafeId, preserveEntityIds })) {
+      if (preserveEntityIds) throw new Error("Повторный идентификатор сумки шаблона требует сверки.");
+      return;
+    }
     // Catalog enumeration can place a detached child before its parent.
     // Export that owned tree from its root so the earlier visit cannot freeze
     // the child as a second root and lose its parent during normalization.
@@ -143,7 +151,10 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
     if (!item || itemIdMap.has(itemId)) return;
     if (item.publicCatalogLayoutId !== layoutId) return;
-    if (publishedSourceAlreadyExported("item", items, item, itemId, { cssSafeId })) return;
+    if (publishedSourceAlreadyExported("item", items, item, itemId, { cssSafeId, preserveEntityIds })) {
+      if (preserveEntityIds) throw new Error("Повторный идентификатор вещи шаблона требует сверки.");
+      return;
+    }
     copyItemRecord(itemId, "");
   });
   const dictionaryOwner = ensureLayoutDictionaries(layout);
@@ -182,10 +193,16 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   return normalizePublishedStatePayload(demoState, { preserveCatalog: Boolean(layout.adminCausalSource) }) || demoState;
 }
 
-export function cleanPublishedEntityId(type, entity, fallbackId = "", { cssSafeId } = {}) {
+export function cleanPublishedEntityId(type, entity, fallbackId = "", { cssSafeId, preserveEntityIds = false } = {}) {
   const prefix = type === "container" ? "container" : "item";
   const toSafeId = typeof cssSafeId === "function" ? cssSafeId : fallbackSafeId;
-  const sourceSeed = cleanGeneratedEntityId(entity?.sharedSourceId || entity?.id || fallbackId);
+  const sourceSeed = preserveEntityIds && entity?.sharedSourceId ? entity.sharedSourceId : cleanGeneratedEntityId(entity?.sharedSourceId || entity?.id || fallbackId);
+  if (preserveEntityIds) {
+    if (typeof sourceSeed !== "string" || !sourceSeed || !/^[a-zа-я0-9_-]+$/i.test(sourceSeed) || ["__proto__", "constructor", "prototype"].includes(sourceSeed)) {
+      throw new Error("Исходный идентификатор шаблона требует сверки.");
+    }
+    return sourceSeed;
+  }
   const nameSeed = entity?.name ? toSafeId(entity.name) : "";
   let seed = sourceSeed || nameSeed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   seed = String(seed).trim();
@@ -203,9 +220,9 @@ function fallbackSafeId(value) {
     .replace(/^-|-$/g, "");
 }
 
-function publishedSourceAlreadyExported(type, records, entity, fallbackId, { cssSafeId } = {}) {
+function publishedSourceAlreadyExported(type, records, entity, fallbackId, { cssSafeId, preserveEntityIds = false } = {}) {
   if (!entity?.sharedSourceId && !entity?._publicCopySourceId && !entity?.publicCopySourceId) return false;
-  const id = cleanPublishedEntityId(type, entity, fallbackId, { cssSafeId });
+  const id = cleanPublishedEntityId(type, entity, fallbackId, { cssSafeId, preserveEntityIds });
   return Boolean(id && records?.[id]);
 }
 

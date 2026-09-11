@@ -216,7 +216,7 @@ import { createAdminTemplateStopChoice } from "./src/public/admin-template-stop-
 import { createAdminTemplateRecovery } from "./src/public/admin-template-recovery.js";
 import { createAdminTemplateRecoveryDialog } from "./src/ui/admin-template-recovery-dialog.js";
 import { adminTemplateComparisonHtml } from "./src/ui/admin-template-comparison.js";
-import { projectAdminTemplateServerVariant, applyAdminTemplateServerVariant } from "./src/public/admin-template-server-variant.js";
+import { projectAdminTemplateServerVariant, applyAdminTemplateServerVariant, adminTemplateCopiedLayoutId, isCausalCopyLayoutId } from "./src/public/admin-template-server-variant.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource, stripAdminTemplateEditorMetadata } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -10829,7 +10829,11 @@ async function prepareCausalAdminPlacementCopy(request) {
     const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(original.binding, layout.id).read() : null; guard();
     const receipts = saved?.plan.version === 2 ? await adminTemplateClient(original.binding, layout.id, true).list() : []; guard();
     const observed = JSON.parse(snapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
-    await pendingAdminTemplateCopySource(original, saved, observed, records, { baseline, receipts }); guard();
+    const captured = await pendingAdminTemplateCopySource(original, saved, observed, records, { baseline, receipts }); guard();
+    if (saved.plan.version === 3 && (observed.payload.activeLayoutId !== captured.payload.activeLayoutId
+      || ["items", "containers"].some(type => canonicalTemplateJson(Object.keys(observed.payload[type]).sort()) !== canonicalTemplateJson(Object.keys(captured.payload[type]).sort())))) {
+      throw Error("Новая копия использует прежние идентификаторы редактора. Сначала подтвердите её создание и сверьте серверный вариант.");
+    }
   };
   try {
     layout = state.layouts[request.targetLayoutId]; original = clone(layout?.adminCausalSource || null);
@@ -11005,12 +11009,12 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
   const payload = plan.editorSnapshot.payload, id = payload.activeLayoutId;
   if (state.layouts[id] || Object.keys(payload.items).some(key => state.items[key]) || Object.keys(payload.containers).some(key => state.containers[key])) throw Error("Идентификатор копии уже используется.");
   const layout = { ...clone(payload.layouts[id]), locations: clone(payload.locations || []), categories: clone(payload.categories || []),
-    adminTemplateCopy: true, templatePublished: false, adminCausalCopyPlan: plan,
+    adminTemplateCopy: true, sharedSourceId: id, templatePublished: false, adminCausalCopyPlan: plan,
     ...(kind === "demo" ? { adminDemo: true, adminDemoLanguage: body.metadata.language, adminDemoListId: binding.listId } : { adminSharedSourceId: targetId }),
     adminCausalSource: { version: 1, binding, exists: false, visibility: null, base: null, indexes: [], planId: null } };
   state.layouts[id] = layout;
   for (const type of ["items", "containers"]) for (const [key, row] of Object.entries(payload[type])) {
-    state[type][key] = { ...clone(row), publicCatalogLayoutId: id, adminDemo: kind === "demo" };
+    state[type][key] = { ...clone(row), sharedSourceId: key, publicCatalogLayoutId: id, adminDemo: kind === "demo" };
   }
   try {
     const editorSnapshot = adminTemplateEditorSnapshot(id); editorSnapshot.payload = stripAdminTemplateEditorMetadata(editorSnapshot.payload);
@@ -11095,8 +11099,13 @@ function adminTemplateEditorSnapshot(layoutId, options = {}) {
   return withLayoutArrangementApplied(layoutId, () => {
     const layout = state.layouts[layoutId], target = publishedLayoutTarget(layout, { defaultToDemo: true });
     const language = normalizeUiLanguage(target.language || layout.language || uiLanguage);
-    let payload = exportLayoutAsDemoState(layoutId, options);
+    const originalLayoutId = layout.adminCausalSource && layout.adminTemplateCopy && isCausalCopyLayoutId(layout.sharedSourceId) ? layout.sharedSourceId : null;
+    let payload = exportLayoutAsDemoState(layoutId, { ...options, preserveEntityIds: Boolean(originalLayoutId) });
     if (target.type === "demo") payload = normalizeDemoPayloadForLanguage(payload, language, { preserveCatalog: true }) || payload;
+    if (originalLayoutId) {
+      const exported = Object.values(payload.layouts)[0]; exported.id = originalLayoutId;
+      payload.layouts = { [originalLayoutId]: exported }; payload.activeLayoutId = originalLayoutId;
+    }
     return { payload, metadata: { title: target.type === "demo" ? normalizeDemoLayoutName(layout.name || "", language) : String(layout.name || "").trim(),
       description: String(layout.note || "").trim(), language } };
   });
@@ -11206,7 +11215,10 @@ function materializeCausalAdminTemplate(target, prepared) {
     return projection.layout;
   }
   const before = { items: new Set(Object.keys(state.items || {})), containers: new Set(Object.keys(state.containers || {})) };
-  const layout = importDemoStateAsEditableLayout(prepared.payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true, recordAction: false });
+  const copiedLayoutId = adminTemplateCopiedLayoutId(prepared.payload), payload = clone(prepared.payload);
+  if (copiedLayoutId) for (const type of ["items", "containers"]) for (const row of Object.values(payload[type])) row.sharedSourceId = row.id;
+  const layout = importDemoStateAsEditableLayout(payload, { language: prepared.metadata.language, listId: binding.listId, activate: false, renderAfter: false, preserveCatalog: true, recordAction: false });
+  if (layout && copiedLayoutId) { layout.adminTemplateCopy = true; layout.sharedSourceId = copiedLayoutId; }
   if (layout) for (const kind of ["items", "containers"]) for (const [id, record] of Object.entries(state[kind] || {})) {
     if (!before[kind].has(id)) record.publicCatalogLayoutId = layout.id;
   }
@@ -11379,10 +11391,11 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, option
   });
 }
 
-function exportLayoutAsDemoState(layoutId = state.activeLayoutId, { onMappedEntity } = {}) {
+function exportLayoutAsDemoState(layoutId = state.activeLayoutId, { onMappedEntity, preserveEntityIds = false } = {}) {
   captureActiveLayoutArrangement();
   return exportLayoutAsPublishedState(state, layoutId, {
     onMappedEntity,
+    preserveEntityIds,
     categories,
     clone,
     createLayoutArrangementFromCurrentState,

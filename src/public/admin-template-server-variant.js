@@ -3,6 +3,12 @@ import { createLayoutArrangementFromCurrentState } from "../state/layout-arrange
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const paused = () => Error("Серверный вариант требует отдельной сверки связей. Местный черновик сохранён.");
+export const isCausalCopyLayoutId = id => typeof id === "string" && id.startsWith("layout-") && validTemplateOperationId(id.slice(7));
+export function adminTemplateCopiedLayoutId(payload) {
+  const id = payload?.activeLayoutId;
+  return isCausalCopyLayoutId(id)
+    && Object.keys(payload.layouts || {}).length === 1 && payload.layouts[id]?.id === id ? id : null;
+}
 const mapIds = (values, map) => (values || []).map(id => { if (!map.has(id)) throw paused(); return map.get(id); });
 const ref = (id, map) => { if (!id) return ""; if (!map.has(id)) throw paused(); return map.get(id); };
 const order = (values, containers, items) => (values || []).map(row => {
@@ -16,18 +22,19 @@ export function projectAdminTemplateServerVariant(layout, server, decisionId) {
   if (!layout?.id || !validTemplateOperationId(decisionId) || !server?.exists || server.deleted
     || Object.keys(server.payload?.layouts || {}).length !== 1) throw paused();
   const payload = server.payload, sourceLayout = Object.values(payload.layouts)[0], items = {}, containers = {};
+  const copiedLayoutId = adminTemplateCopiedLayoutId(payload);
   const containerMap = new Map(Object.keys(payload.containers || {}).sort().map((id, i) => [id, `admin-server-container-${decisionId}-${i}`]));
   const itemMap = new Map(Object.keys(payload.items || {}).sort().map((id, i) => [id, `admin-server-item-${decisionId}-${i}`]));
   const placement = row => ({ ...clone(row), parentId: ref(row.parentId, containerMap), childIds: mapIds(row.childIds, containerMap),
     itemIds: mapIds(row.itemIds, itemMap), order: order(row.order, containerMap, itemMap) });
   for (const [id, nextId] of containerMap) {
     const row = payload.containers[id]; if (row.id !== id) throw paused();
-    containers[nextId] = { ...placement(row), id: nextId, sharedSourceId: row.sharedSourceId || id,
+    containers[nextId] = { ...placement(row), id: nextId, sharedSourceId: copiedLayoutId ? id : row.sharedSourceId || id,
       publicCatalogLayoutId: layout.id, adminDemo: Boolean(layout.adminDemo) };
   }
   for (const [id, nextId] of itemMap) {
     const row = payload.items[id]; if (row.id !== id) throw paused();
-    items[nextId] = { ...clone(row), id: nextId, containerId: ref(row.containerId, containerMap), sharedSourceId: row.sharedSourceId || id,
+    items[nextId] = { ...clone(row), id: nextId, containerId: ref(row.containerId, containerMap), sharedSourceId: copiedLayoutId ? id : row.sharedSourceId || id,
       publicCatalogLayoutId: layout.id, adminDemo: Boolean(layout.adminDemo) };
   }
   const rootContainerIds = mapIds(sourceLayout.rootContainerIds, containerMap);
@@ -43,6 +50,7 @@ export function projectAdminTemplateServerVariant(layout, server, decisionId) {
     delete next[field]; if (Object.hasOwn(layout, field)) next[field] = clone(layout[field]);
   }
   for (const field of ["adminCausalSource", "adminCausalCopyPlan", "templateDraftSyncPending", "templateUnpublishPending", "publicCatalogLayoutId"]) delete next[field];
+  if (copiedLayoutId) { next.adminTemplateCopy = true; next.sharedSourceId = copiedLayoutId; }
   return { layoutId: layout.id, layout: next, items, containers };
 }
 

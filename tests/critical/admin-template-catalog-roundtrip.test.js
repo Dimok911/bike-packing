@@ -2,10 +2,53 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizePublishedDemoTemplatePayload } from "../../src/public/demo-template-state.js";
 import { importDemoStateAsEditableLayout } from "../../src/public/admin-demo-layout.js";
-import { exportLayoutAsPublishedState } from "../../src/public/published-state-export.js";
+import { exportLayoutAsPublishedState, cleanPublishedEntityId } from "../../src/public/published-state-export.js";
+import { projectAdminTemplateCopy } from "../../src/sync/admin-template-copy-projection.js";
+import { projectAdminTemplateServerVariant, adminTemplateCopiedLayoutId } from "../../src/public/admin-template-server-variant.js";
 import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 
 const clone = structuredClone;
+
+test("a confirmed causal copy keeps its server identities when projected into and exported from another editor", () => {
+  const original = source(); original.layouts.main.arrangement = createLayoutArrangementFromCurrentState(original, ["root"]);
+  const operationId = "11111111-1111-4111-8111-111111111111", metadata = { title: "Copied", description: "", language: "ru" };
+  const copied = projectAdminTemplateCopy(original, operationId, metadata);
+  const projection = projectAdminTemplateServerVariant({ id: "local-editor", adminSharedSourceId: "target" },
+    { exists: true, deleted: false, payload: copied, metadata }, "22222222-2222-4222-8222-222222222222");
+  assert.equal(adminTemplateCopiedLayoutId(copied), copied.activeLayoutId);
+  assert.equal(projection.layout.sharedSourceId, copied.activeLayoutId); assert.equal(projection.layout.adminTemplateCopy, true);
+  const state = { items: projection.items, containers: projection.containers, layouts: { "local-editor": { ...projection.layout, adminCausalSource: {} } } };
+  const mappings = [];
+  const exported = exportLayoutAsPublishedState(state, "local-editor", { clone, createLayoutArrangementFromCurrentState,
+    preserveEntityIds: true, ensureLayoutDictionaries: value => value, normalizePublishedStatePayload: clone,
+    stripPublishedPublicOriginMarkers: () => {}, onMappedEntity: row => mappings.push(row) });
+  for (const type of ["items", "containers"]) {
+    assert.deepEqual(Object.keys(exported[type]).sort(), Object.keys(copied[type]).sort());
+    for (const row of mappings.filter(row => row.type === type)) {
+      assert.equal(row.targetId, state[type][row.sourceId].sharedSourceId); assert.ok(copied[type][row.targetId]);
+    }
+  }
+  for (const [id, row] of Object.entries(copied.items)) assert.equal(exported.items[id].containerId || "", row.containerId || "");
+  for (const [id, row] of Object.entries(copied.containers)) {
+    for (const field of ["childIds", "itemIds", "order"]) assert.deepEqual(exported.containers[id][field], row[field]);
+  }
+});
+
+test("an explicit server identity is never stripped as a legacy editor prefix", () => {
+  const row = { id: "local", sharedSourceId: "item-shared-original" };
+  assert.equal(cleanPublishedEntityId("item", row, row.id, { preserveEntityIds: true }), "item-shared-original");
+  assert.throws(() => cleanPublishedEntityId("item", { id: "unsafe/id" }, "", { preserveEntityIds: true }), /идентификатор/);
+});
+
+test("identity-preserving export blocks duplicate server identities instead of dropping or renaming a catalog record", () => {
+  const state = source(); state.layouts.main.adminCausalSource = {};
+  state.layouts.main.arrangement = createLayoutArrangementFromCurrentState(state, ["root"]);
+  state.items.placed.sharedSourceId = "server-item";
+  state.items.orphan.sharedSourceId = "server-item"; state.items.orphan.publicCatalogLayoutId = "main";
+  assert.throws(() => exportLayoutAsPublishedState(state, "main", { clone, createLayoutArrangementFromCurrentState,
+    preserveEntityIds: true, ensureLayoutDictionaries: value => value, normalizePublishedStatePayload: clone,
+    stripPublishedPublicOriginMarkers: () => {} }), /идентификатор/);
+});
 const source = () => ({ layouts: { main: { id: "main", name: "Template", layoutOrder: 17, rootContainerIds: ["root"] } }, activeLayoutId: "main",
   containers: {
     root: { id: "root", parentId: null, childIds: [], itemIds: ["placed"], order: [{ type: "item", id: "placed" }] },
