@@ -34,7 +34,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "", nestableTree = false, detachedItemLink = false, replacementTarget = "", bagReplacement = "", placementMove = false, missingItems = false } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
@@ -100,6 +100,19 @@ async function fixture(page, context, { published = false, shared = false, hydra
         itemIds: ["pump", "second"], order: [{ type: "item", id: "pump" }, { type: "item", id: "second" }]
       });
     }
+  }
+  if (missingItems === true) {
+    const arrangement = state.payload.layouts["layout-a"].arrangement;
+    for (const [id, parentId, name, quantity] of [["missing-root", "bag", "Недостающее в сумке", 3], ["missing-pocket", "pocket", "Недостающее в кармане", 4]]) {
+      state.payload.items[id] = { id, containerId: parentId, name, quantity: 1, weight: 31, categories: [] };
+      const placement = arrangement.containers[parentId]; placement.itemIds.push(id); placement.order.push({ type: "item", id });
+      Object.assign(state.payload.containers[parentId], { itemIds: [...placement.itemIds], order: structuredClone(placement.order) });
+      arrangement.items[id] = parentId; arrangement.itemQuantities[id] = quantity;
+    }
+  }
+  if (missingItems === "local") {
+    const source = state.payload.containers.bag;
+    Object.assign(state.payload.containers.spare, { name: source.name, weight: source.weight, location: source.location, categories: [...source.categories] });
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
@@ -198,15 +211,26 @@ async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
 
-async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false) {
-  const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true, catalogPair: detachedItem });
+async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false) {
+  const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });
   const target = { payload: structuredClone(server.payload), revision: 19, visibility: "private",
     listId: targetShared ? "public-shared-layout-cross" : "public-demo-state-cross",
     itemKey: targetShared ? "shared-layout:cross" : "demo-state:cross",
     metadata: { title: "Целевой шаблон", description: "", language: "ru" } };
   target.payload.layouts["layout-a"].name = target.metadata.title;
-  target.payload.containers.bag.name = "Целевая сумка"; target.payload.containers.pocket.name = "Целевой карман";
-  target.payload.items.pump.name = "Вещь цели"; server.target = target;
+  if (missingItems) {
+    const arrangement = target.payload.layouts["layout-a"].arrangement;
+    for (const id of ["missing-root", "missing-pocket"]) {
+      delete target.payload.items[id]; for (const field of ["items", "itemQuantities", "packedItems"]) delete arrangement[field][id];
+      for (const row of [...Object.values(target.payload.containers), ...Object.values(arrangement.containers)]) {
+        row.itemIds = row.itemIds.filter(key => key !== id); row.order = (row.order || []).filter(entry => entry.id !== id);
+      }
+    }
+  } else {
+    target.payload.containers.bag.name = "Целевая сумка"; target.payload.containers.pocket.name = "Целевой карман";
+    target.payload.items.pump.name = "Вещь цели";
+  }
+  server.target = target;
   await context.route("**/bike-packing/admin/template-operations**", async route => {
     const request = route.request(), headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true" };
     if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
@@ -350,6 +374,150 @@ for (const { sourceShared, targetShared, shape, mode } of crossTreeCases) {
     expect(server.errors).toEqual([]);
   });
 }
+
+const missingTreeCases = [];
+for (const sourceShared of [false, true]) for (const targetShared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota"])
+  missingTreeCases.push({ sourceShared, targetShared, shape: "tree", mode });
+for (const mode of ["source-conflict", "target-conflict", "changed-source", "changed-target", "changed-account", "pending-source", "pending-target", "cancel"])
+  missingTreeCases.push({ sourceShared: false, targetShared: true, shape: "tree", mode });
+for (const { sourceShared, targetShared, shape, mode } of missingTreeCases) {
+  test(`admin missing items ${sourceShared ? "shared" : "demo"} to ${targetShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
+    const itemCopy = shape.startsWith("item-"), detached = shape === "item-detached";
+    const server = await crossTemplateFixture(page, context, sourceShared, targetShared, detached, true), target = server.target;
+    const before = await page.evaluate(({ targetListId, detached, itemCopy }) => {
+      const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetListId);
+      const source = Object.values(current.layouts).find(row => row.adminCausalSource && row !== target);
+      const find = (layout, name) => Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === name).id;
+      return { sourceId: source.id, targetId: target.id, sourceBag: find(source, "Сумка шаблона"), sourceChild: find(source, "Карман шаблона"),
+        targetBag: find(target, "Сумка шаблона"), targetChild: find(target, "Карман шаблона"),
+        sourceItem: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === (detached ? "Вторая вещь шаблона" : "Насос шаблона")).id,
+        source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id), ids: Object.keys(itemCopy ? current.items : current.containers) };
+    }, { targetListId: target.listId, detached, itemCopy });
+    const sourceRoot = shape === "nested" ? before.sourceChild : before.sourceBag;
+    if (itemCopy) await page.evaluate(id => __adminUiTest.openItem(id), before.sourceItem);
+    else if (shape === "shell") {
+      await page.locator('[data-view="bags"]').click(); await page.locator(`#bagsView [data-root-card="${sourceRoot}"] [data-root-title]`).click();
+    } else await page.evaluate(id => __adminUiTest.openContainer(id), sourceRoot);
+    await expect(page.locator(itemCopy ? "#itemDialog" : "#rootContainerDialog")).toBeVisible();
+    await page.locator(itemCopy ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
+    await expect(page.locator("#containerPickerDialog")).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption(before.targetId);
+    if (itemCopy) await page.locator(`#containerPickerBoard [data-pick-container="${shape === "item-nested" ? before.targetChild : before.targetBag}"]`).click();
+    else if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.targetBag}"][data-pick-container-index="0"]`).click();
+    else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
+    await expect(page.locator("#confirmDialog")).toContainText(itemCopy ? "Скопировать вещь" : shape === "shell" ? "пустую копию" : "со всем содержимым");
+    await expect(page.locator("#confirmAlternateBtn")).toHaveText("Только недостающие");
+    if (mode.startsWith("changed-") || mode.startsWith("pending-")) await page.evaluate(({ mode, before, itemCopy }) => {
+      const current = __adminUiTest.state();
+      if (mode === "changed-source") (itemCopy ? current.items[before.sourceItem] : current.containers[before.sourceBag]).name = "Позднее изменение";
+      if (mode === "changed-target") current.containers[before.targetBag].name = "Поздняя цель";
+      if (mode === "changed-account") __adminUiTest.user().id = "admin-b";
+      if (mode === "pending-source") current.layouts[before.sourceId].templateDraftSyncPending = true;
+      if (mode === "pending-target") current.layouts[before.targetId].templateDraftSyncPending = true;
+    }, { mode, before, itemCopy });
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false;
+      Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:") || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Cross copy quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    if (mode === "source-conflict") server.revision++;
+    if (mode === "target-conflict") target.revision++;
+    server.lose = mode === "lost";
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmAlternateBtn").click();
+    if (mode === "cancel" || mode === "mirror-quota" || mode.startsWith("changed-") || mode.startsWith("pending-")) {
+      if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Cross copy quota" : "Шаблон изменился");
+      expect(server.posts).toEqual([]); expect(await page.evaluate(itemCopy => Object.keys(__adminUiTest.state()[itemCopy ? "items" : "containers"]), itemCopy)).toEqual(before.ids);
+      if (mode === "cancel" || mode === "mirror-quota") expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId)).toEqual(before.target);
+      expect(server.errors).toEqual([]); return;
+    }
+    const snapshot = async () => {
+      const value = await page.evaluate(id => __adminUiTest.snapshot(id), before.targetId); value.payload = stripAdminTemplateEditorMetadata(value.payload); return value;
+    };
+    const collection = "items";
+    await expect.poll(async () => Object.keys((await snapshot()).payload[collection]).length).toBe(Object.keys(before.target.payload[collection]).length + (shape === "tree" ? 2 : 1));
+    const chosen = await snapshot(); let planId;
+    if (["plan-quota", "pointer-quota"].includes(mode)) {
+      planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.targetId); expect(server.posts).toEqual([]);
+    } else { await expect.poll(() => server.posts.length).toBe(1); planId = server.posts[0].operationId; }
+    if (mode === "lost") await expect.poll(() => server.hidden).toBe(true);
+    server.lose = false; server.hidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), targetShared ? { type: "shared", sharedId: "cross" } : { type: "demo", demoListId: target.listId, language: "ru" });
+    expect(server.posts).toHaveLength(1); const action = server.posts[0]; expect(action.operationId).toBe(planId);
+    expect(action.kind).toBe("template.save"); expect(action.body.base).toEqual({ stateRevision: 19 }); expect(action.body.source.base).toEqual({ stateRevision: 7 });
+    expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(server.payload)); expect(action.body.payload).toEqual(chosen.payload);
+    if (mode.endsWith("conflict")) { expect(server.receipts.get(planId).operation.state).toBe("rejected"); return; }
+    await confirmedRevision(page, 20); expect(target.payload).toEqual(chosen.payload);
+    expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.sourceId)).toEqual(before.source);
+    const added = Object.values(target.payload.items).filter(row => !before.target.payload.items[row.id]);
+    expect(added).toHaveLength(2);
+    expect(Object.keys(target.payload.containers).sort()).toEqual(Object.keys(before.target.payload.containers).sort());
+    for (const [id, row] of Object.entries(before.target.payload.items)) expect(target.payload.items[id]).toEqual(row);
+    const arrangement = Object.values(target.payload.layouts)[0].arrangement, previous = structuredClone(arrangement);
+    for (const row of added) {
+      const nested = row.name === "Недостающее в кармане";
+      expect(["Недостающее в кармане", "Недостающее в сумке"]).toContain(row.name);
+      const destination = Object.values(before.target.payload.containers).find(row => row.name === (nested ? "Карман шаблона" : "Сумка шаблона")).id;
+      expect(arrangement.itemQuantities[row.id]).toBe(nested ? 4 : 3); expect(row.quantity).toBe(1); expect(arrangement.packedItems[row.id]).toBeUndefined();
+      expect(arrangement.items[row.id]).toBe(destination); expect(arrangement.containers[destination].order.at(-1)).toEqual({ type: "item", id: row.id });
+      delete previous.items[row.id]; delete previous.itemQuantities[row.id]; delete previous.packedItems[row.id];
+      previous.containers[destination].itemIds = previous.containers[destination].itemIds.filter(id => id !== row.id);
+      previous.containers[destination].order = previous.containers[destination].order.filter(entry => entry.id !== row.id);
+    }
+    expect(previous).toEqual(Object.values(before.target.payload.layouts)[0].arrangement);
+    await editItem(page, "Правка после недостающих", "Насос шаблона", before.targetId); await confirmedRevision(page, 21);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 20 }); expect(server.posts[1].body.source).toBeUndefined();
+    expect(server.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const choice of ["missing", "copy", "link", "cancel-first", "cancel-second"])
+  test(`admin missing local ${shared ? "shared" : "demo"} retains all copy choices (${choice})`, async ({ page, context }) => {
+    const server = await fixture(page, context, { shared, withContainers: true, hydrate: true, detachedTree: "tree", detachedItemLink: true, missingItems: "local" });
+    const before = await page.evaluate(() => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const source = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Сумка шаблона" && !layout.arrangement.containers[row.id]);
+      return { layoutId: layout.id, sourceId: source.id, snapshot: __adminUiTest.snapshot(layout.id) };
+    });
+    await page.evaluate(id => __adminUiTest.openContainer(id), before.sourceId); await page.locator("#rootContainerCopyToContainerBtn").click();
+    await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
+    await expect(page.locator("#confirmDialog")).toContainText("Часть содержимого уже есть");
+    await expect(page.locator("#confirmOkBtn")).toHaveText("Только недостающие");
+    await expect(page.locator("#confirmAlternateBtn")).toHaveText("Вся сумка");
+    await page.locator(choice === "cancel-first" ? "#confirmCancelBtn" : choice === "missing" ? "#confirmOkBtn" : "#confirmAlternateBtn").click();
+    if (!["cancel-first", "missing"].includes(choice)) {
+      await expect(page.locator("#confirmAlternateBtn")).toHaveText("Добавить существующую");
+      await page.locator(choice === "cancel-second" ? "#confirmCancelBtn" : choice === "link" ? "#confirmAlternateBtn" : "#confirmOkBtn").click();
+    }
+    if (choice.startsWith("cancel")) {
+      await expect(page.locator("#confirmDialog")).not.toBeVisible(); expect(server.posts).toEqual([]);
+      expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
+      expect(server.errors).toEqual([]); return;
+    }
+    await confirmedRevision(page, 8); expect(server.posts).toHaveLength(1); const action = structuredClone(server.posts[0]);
+    expect(action.body.source).toBeUndefined(); expect(action.body.base).toEqual({ stateRevision: 7 });
+    const local = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(target => __adminUiTest.openPrepared(target), shared ? { type: "shared", sharedId: "ui" } : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" });
+    await confirmedRevision(page, 8); expect(server.posts).toEqual([action]); expect(server.payload).toEqual(stripAdminTemplateEditorMetadata(local.payload));
+    const original = before.snapshot.payload, arrangement = Object.values(server.payload.layouts)[0].arrangement;
+    expect(Object.keys(server.payload.containers).length).toBe(Object.keys(original.containers).length + (choice === "copy" ? 2 : 0));
+    expect(Object.keys(server.payload.items).length).toBe(Object.keys(original.items).length + (choice === "link" ? 0 : 2));
+    const previous = Object.values(original.layouts)[0].arrangement;
+    const added = Object.keys(arrangement.items).filter(id => !Object.hasOwn(previous.items, id)); expect(added).toHaveLength(2);
+    expect(added.map(id => arrangement.itemQuantities[id]).sort()).toEqual([3, 4]);
+    expect(arrangement.rootContainerIds).toHaveLength(choice === "missing" ? 1 : 2);
+    if (choice === "missing") for (const id of added) expect(arrangement.items[id]).toBe(previous.rootContainerIds[0]);
+    for (const id of Object.keys(previous.items)) expect(arrangement.itemQuantities[id]).toBe(previous.itemQuantities[id]);
+    await editItem(page, "Правка после выбора способа", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(server.posts).toHaveLength(2); expect(server.posts[1].body.base).toEqual({ stateRevision: 8 }); expect(server.errors).toEqual([]);
+  });
 
 async function newDraftFixture(page, context, options = {}) {
   const state = await fixture(page, context, options), created = new Map(); state.created = created;

@@ -69,6 +69,7 @@ import { prepareAdminTemplatePlacementMove } from "./src/sync/admin-template-pla
 import { prepareAdminTemplatePlacementGroup } from "./src/sync/admin-template-placement-group.js";
 import { prepareAdminTemplatePlacementRemoval } from "./src/sync/admin-template-placement-remove.js";
 import { prepareAdminTemplateCatalogDeletion } from "./src/sync/admin-template-catalog-delete.js";
+import { prepareAdminTemplateMissingItems } from "./src/sync/admin-template-missing-items.js";
 import {
   bindCategoryFilterResetVisibility,
   bindCategorySearch,
@@ -10659,7 +10660,7 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
 }
 async function prepareCausalAdminPlacementCopy(request) {
   request = clone(request);
-  let layout, original, snapshot, initial, prepared, copyPrepared, linked, operationId, changedAt;
+  let layout, original, snapshot, initial, prepared, copyPrepared, linked, missingPrepared, operationId, changedAt;
   let sourceLayout, sourceOriginal, sourceSnapshot, sourcePrepared, sourceProof;
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
@@ -10708,7 +10709,11 @@ async function prepareCausalAdminPlacementCopy(request) {
     copyPrepared = prepared;
     try { linked = ["item", "item-replace", "container-replace", "placement-move", "placement-group", "placement-remove", "catalog-delete"].includes(request.type) ? null : await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
       hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
-    guard(); if (!linked && !capacity()) return false;
+    try { missingPrepared = request.includeContents === true ? await prepareAdminTemplateMissingItems(state, request, {
+      operationId, changedAt, currentEditMeta, markEdited, normalizeContainerColor,
+      hasPhotos: row => normalizeItemPhotos(row).length > 0
+    }) : null; } catch { missingPrepared = null; }
+    guard(); if (!linked && !missingPrepared && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
   let used = false;
   return Object.assign(async (mode = "copy") => {
@@ -10716,7 +10721,7 @@ async function prepareCausalAdminPlacementCopy(request) {
     const priorUpdates = [];
     try {
       if (used) return false; guard();
-      prepared = mode === "copy" ? copyPrepared : mode === "link" ? linked : null;
+      prepared = mode === "copy" ? copyPrepared : mode === "link" ? linked : mode === "missing" ? missingPrepared : null;
       if (!prepared || !capacity()) return false;
       if (prepared.entries.some(({ targetId }) => state.items[targetId] || state.containers[targetId] || state.layouts[targetId])) throw Error("Идентификатор копии уже занят.");
       used = true;
@@ -10753,7 +10758,7 @@ async function prepareCausalAdminPlacementCopy(request) {
       catch (error) { reportAdminTemplateSaveError(error); }
       return prepared.itemId || prepared.rootId;
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
-  }, { canLink: Boolean(linked) });
+  }, { canLink: Boolean(linked), canMissing: Boolean(missingPrepared), missingItemCount: missingPrepared?.missingItemCount || 0 });
 }
 async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "" } = {}) {
   const observed = clone(sourceLayout?.adminCausalSource || null), coordinator = adminTemplateSaveCoordinator();

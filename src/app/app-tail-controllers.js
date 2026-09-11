@@ -2623,13 +2623,27 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (adminTemplateUiEnabled() && targetIsPublic) {
     const commit = await prepareCausalAdminPlacementCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
     if (!commit) return;
-    const choice = await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
-      text: includeContents ? localText("Create an independent copy with all contents at the selected position?", "Создать отдельную копию со всем содержимым в выбранном месте?")
-        : localText("Create an empty copy at the selected position?", "Создать пустую копию в выбранном месте?"),
-      okText: localText("Copy", "Копировать"),
-      alternateText: commit.canLink ? localText("Add existing", "Добавить существующую") : "", tone: "safe" });
-    if (!choice) return;
-    const rootId = await commit(choice === "alternate" ? "link" : "copy"); if (!rootId) return;
+    let mode = "";
+    if (commit.canLink && commit.canMissing) {
+      const missing = await askConfirmDialog({ title: localText("Some contents are already present", "Часть содержимого уже есть"),
+        text: localText(`Add ${commit.missingItemCount} missing items to the matching bags, or add the whole bag?`,
+          `Добавить ${commit.missingItemCount} недостающих вещей в найденные сумки или добавить сумку целиком?`),
+        okText: localText("Missing only", "Только недостающие"), alternateText: localText("Whole bag", "Вся сумка"), tone: "safe" });
+      if (!missing) return;
+      if (missing === true) mode = "missing";
+    }
+    if (!mode) {
+      const choice = await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
+        text: includeContents ? localText("Create an independent copy with all contents at the selected position?", "Создать отдельную копию со всем содержимым в выбранном месте?")
+          : localText("Create an empty copy at the selected position?", "Создать пустую копию в выбранном месте?"),
+        okText: localText("Copy", "Копировать"),
+        alternateText: commit.canLink ? localText("Add existing", "Добавить существующую") : commit.canMissing ? localText("Missing only", "Только недостающие") : "",
+        highlightText: commit.canMissing ? localText(`${commit.missingItemCount} missing items can be added to matching bags without changing existing contents.`,
+          `${commit.missingItemCount} недостающих вещей можно добавить в найденные сумки, сохранив имеющееся содержимое.`) : "", tone: "safe" });
+      if (!choice) return;
+      mode = choice === "alternate" ? commit.canLink ? "link" : "missing" : "copy";
+    }
+    const rootId = await commit(mode); if (!rootId) return;
     markRecentlyAddedContainer(rootId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
     refs.containerPickerDialog.close(); closeSourceEditorAfterCopy("container", containerId);
     render(); requestAnimationFrame(() => focusRecentlyAddedContainer(rootId)); return;
