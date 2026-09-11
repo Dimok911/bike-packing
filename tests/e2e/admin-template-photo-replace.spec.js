@@ -27,6 +27,7 @@ test.afterEach(async ({ page }, info) => {
     stages: server.stagePosts.map(({ bytes, thumbBytes, ...row }) => row), stageGets: server.stageGets,
     operationGets: server.operationGets, revision: server.revision }), contentType: "application/json" });
   await info.attach("replacement-page", { body: JSON.stringify(await page.evaluate(() => ({ state: window.__adminUiTest?.state(),
+    quotaAttempts: window.__replacementQuotaAttempts, binaryAttempts: window.__replacementAddAttempts,
     journals: Object.entries(localStorage).filter(([key]) => /bike-packing-admin-(save-plans|template)-v1:/.test(key))
   })).catch(error => ({ error: error.message }))), contentType: "application/json" });
   await info.attach("replacement-idb", { body: JSON.stringify(await nativeAdminPhotoRecords(page).catch(error => ({ error: error.message }))),
@@ -204,4 +205,86 @@ test("replacement OFF preserves established fileless deletion and order without 
   expect(server.posts[0].body.photoAppend).toBeUndefined(); expect(await nativeAdminPhotoRecords(page)).toEqual({ actions: [], claims: [] });
   expect(server.payload.containers.bag.photos).toEqual([server.initialPayload.containers.bag.photos[2], server.initialPayload.containers.bag.photos[1]]);
   expect((await plans(page))[0].version).toBe(6); expect(server.errors).toEqual([]);
+});
+
+test("replacement binary quota retains the mixed form and retries the exact action and original bytes", async ({ page, context }) => {
+  const server = await fixture(page, context), selected = await mixedForm(page, server, "item");
+  await page.evaluate(() => {
+    const add = IDBObjectStore.prototype.add; window.__replacementRejectAdds = true; window.__replacementAddAttempts = [];
+    IDBObjectStore.prototype.add = function(value, ...args) {
+      if (this.transaction.db.name === "bike-packing-admin-template-photo-actions-v1" && this.name === "actions") {
+        window.__replacementAddAttempts.push({ intentJson: value.intentJson, intentHash: value.intentHash,
+          files: value.files.map(part => ({ stageOperationId: part.stageOperationId,
+            bytes: Array.from(new Uint8Array(part.file)), thumb: part.thumb ? Array.from(new Uint8Array(part.thumb)) : null })) });
+        if (window.__replacementRejectAdds) {
+          this.transaction.abort(); throw new DOMException("Replacement action storage quota", "QuotaExceededError");
+        }
+      }
+      return add.call(this, value, ...args);
+    };
+  });
+  await save(page, selected);
+  await expect.poll(() => page.evaluate(() => window.__replacementAddAttempts.length)).toBe(1);
+  await expect(page.locator(selected.ui.dialog)).toBeVisible(); await expect(page.locator(selected.ui.save)).toBeEnabled();
+  await expect(page.locator(selected.ui.name)).toHaveValue(selected.changedName); await expect(page.locator(selected.ui.note)).toHaveValue(selected.note);
+  await expect(page.locator(`${selected.ui.preview} [data-photo-index]`)).toHaveCount(4);
+  expect(await nativeAdminPhotoRecords(page)).toEqual({ actions: [], claims: [] }); expect(await plans(page)).toEqual([]);
+  expect(server.posts).toEqual([]); expect(server.stagePosts).toEqual([]); expect(server.payload).toEqual(server.initialPayload);
+  const first = await page.evaluate(() => window.__replacementAddAttempts[0]), intent = JSON.parse(first.intentJson);
+  expect(intent.action.body.photoAppend.version).toBe(2);
+  expect(photoReferences(intent.action.body.payload)).toEqual(photoReferences(server.initialPayload));
+  for (const file of first.files) expect(Buffer.from(file.bytes).equals(selectedGif)).toBe(true);
+  await page.evaluate(() => { window.__replacementRejectAdds = false; });
+  await save(page, selected); await confirmed(page, server);
+  const after = await assertReplacement(page, server, selected);
+  expect(await page.evaluate(() => window.__replacementAddAttempts)).toEqual([first, first]);
+  expect(after.action.operationId).toBe(intent.action.operationId); expect(after.action.body).toEqual(intent.action.body);
+  expect(after.stored.actions[0].intentHash).toBe(first.intentHash);
+  expect(after.stored.claims.map(claim => claim.stageOperationId).sort()).toEqual(first.files.map(file => file.stageOperationId).sort());
+});
+
+test("replacement mirror quota preserves its durable plan and selected files through cold recovery", async ({ page, context }) => {
+  const server = await fixture(page, context, { shared: true }), selected = await mixedForm(page, server, "container");
+  await page.evaluate(() => {
+    const set = Storage.prototype.setItem; window.__replacementQuotaAttempts = 0;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-prototype-state-v1") && String(value).includes('"photoAppendPending"')) {
+        window.__replacementQuotaAttempts++; throw new DOMException("Replacement selected mirror quota", "QuotaExceededError");
+      }
+      return set.call(this, key, value);
+    };
+  });
+  await save(page, selected);
+  await expect.poll(() => page.evaluate(() => window.__replacementQuotaAttempts)).toBeGreaterThan(0);
+  const before = await nativeAdminPhotoRecords(page), beforePlans = await plans(page);
+  expect(before.actions).toHaveLength(1); expect(before.claims).toEqual([]); expect(beforePlans).toHaveLength(1);
+  expect(server.posts).toEqual([]); expect(server.stagePosts).toEqual([]); expect(server.payload).toEqual(server.initialPayload);
+  const record = before.actions[0], action = record.intent.action, candidate = record.intent.snapshot.state;
+  expect(action.body.photoAppend.version).toBe(2); expect(record.checkedIntentHash).toBe(record.intentHash);
+  expect(beforePlans[0].id).toBe(action.operationId); expect(beforePlans[0].operations[0].body).toEqual(action.body);
+  expect(action.body.payload.layouts).toEqual(server.initialPayload.layouts);
+  expect(photoReferences(action.body.payload)).toEqual(photoReferences(server.initialPayload));
+  const chosen = candidate.containers[selected.entityId];
+  expect(chosen.name).toBe(selected.changedName); expect(chosen.note).toBe(selected.note);
+  expect(chosen.photos.map(photo => photo.id)).toEqual(action.body.photoAppend.photoIds);
+  expect(chosen.photos.filter(photo => photo.status === "pending").map(photo => photo.fileName)).toEqual([selected.files[1].name, selected.files[0].name]);
+  let releaseStage, opening; server.stageHold = new Promise(resolve => { releaseStage = resolve; });
+  try {
+    await page.reload(); opening = openAdminPhotoEditor(page, server); opening.catch(() => {});
+    await expect.poll(() => server.stagePosts.length).toBe(1);
+    const restored = await page.evaluate(({ layoutId, entityId }) => ({
+      owner: structuredClone(__adminUiTest.state().containers[entityId]),
+      source: structuredClone(__adminUiTest.state().layouts[layoutId].adminCausalSource)
+    }), { layoutId: selected.layoutId, entityId: selected.entityId });
+    expect(restored.owner.name).toBe(selected.changedName); expect(restored.owner.note).toBe(selected.note);
+    expect(restored.owner.photos).toEqual(chosen.photos); expect(restored.source.photoAppendPending).toBeTruthy();
+    expect((await nativeAdminPhotoRecords(page)).actions).toEqual(before.actions);
+    expect(await plans(page)).toEqual(beforePlans); expect(server.posts).toEqual([]);
+    releaseStage(); await opening; await confirmed(page, server);
+    const after = await assertReplacement(page, server, selected);
+    expect(after.action.operationId).toBe(action.operationId); expect(after.action.body).toEqual(action.body);
+    expect(after.stored.actions).toEqual(before.actions); expect(after.savedPlans).toEqual(beforePlans);
+    expect(new Set(server.stagePosts.map(row => row.manifest.operationId)).size).toBe(selected.files.length);
+    expect(after.stored.claims.map(claim => claim.stageOperationId).sort()).toEqual(before.actions[0].files.map(file => file.stageOperationId).sort());
+  } finally { releaseStage(); await opening?.catch(() => {}); }
 });

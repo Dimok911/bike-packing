@@ -53,13 +53,18 @@ Verified local continuation:
   to the identical frontend bytes. Later test registration/documentation does
   not change that tested runtime.
 
-- 16 distinct browser cases passed: eight each in Chromium and mobile WebKit,
+- 20 distinct browser cases passed: ten each in Chromium and mobile WebKit,
   without retries or skips. They exercise mixed replacement for both owner
   types, retaining/interleaving old photos with a new main photo, lost stage
   and save acknowledgements, cold recovery with unchanged IDs, cancellation,
   and the disabled replacement gate with ordinary append/edit still available.
   These use isolated test builds and the real application dialogs, IDB and
   queue, with a simulated browser API; the separate MySQL run covers the server.
+- Four additional quota cases (two per engine) abort a real IDB action commit
+  before dispatch, then retry the identical intent/files/IDs; and fail the
+  editor mirror after the durable v2 plan, reload, restore the exact selection,
+  fields and order, and complete unique stages plus one final save. Earlier
+  cases and unit suites were not repeated; only browser tests changed.
 - Final broader frontend checks passed: 912 critical, 1564 transport across
   five suites, and source syntax checks. No runtime changed after the paired
   MySQL run or during browser acceptance; the first browser assertion correction
@@ -70,7 +75,9 @@ Evidence is retained in the original frontend's
 `node_modules/.cache/causal-evidence/2026-09-08/continuation-after-v1608-*`
 files and the backend continuation's private evidence directory. Browser logs
 are `continuation-replacement-ui-4.txt` (one Chromium case), `-5.txt` (seven
-Chromium cases), and `-6.txt` (eight WebKit cases). Broader check logs are
+Chromium cases), and `-6.txt` (eight WebKit cases); quota evidence is
+`continuation-replacement-quota-ui-1.txt` and `continuation-replacement-quota-final.json`.
+Broader check logs are
 `continuation-final-{critical,transport,source}-1.txt`. The unit contracts are
 registered in `test:transport`; the browser suite is included in both ordinary
 CI projects. No physical iPhone/Safari, public activation or new full Linux CI
