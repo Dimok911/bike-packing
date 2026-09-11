@@ -641,8 +641,25 @@ for (const { shared, shape, mode } of personalAdminCases) test(`admin personal s
   expect(server.errors).toEqual([]);
 });
 
-async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false) {
-  const server = await fixture(page, context, { shared: sourceShared, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });
+async function capturePendingSourceVisibility(page, server, shared, hiding, nextName) {
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await page.locator("#publishEditedTemplateBtn").click();
+  if (hiding) { await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click(); }
+  await expect.poll(() => server.posts.length).toBeGreaterThan(0);
+  await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled();
+  await page.locator("#layoutEditDialog").getByRole("button", { name: "Закрыть", exact: true }).click();
+  if (hiding) {
+    const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui";
+    const pointer = () => page.evaluate(listId => Object.values(__adminUiTest.state().layouts)
+      .find(row => row.adminCausalSource?.binding.listId === listId).adminCausalSource.planId, listId);
+    const unpublishId = await pointer();
+    await editItem(page, nextName, "Насос шаблона");
+    await expect.poll(pointer).not.toBe(unpublishId);
+  }
+}
+
+async function crossTemplateFixture(page, context, sourceShared, targetShared, detachedItem = false, missingItems = false, sourcePublished = false) {
+  const server = await fixture(page, context, { shared: sourceShared, published: sourcePublished, withContainers: true, hydrate: true, catalogPair: detachedItem, missingItems });
   const target = { payload: structuredClone(server.payload), revision: 19, visibility: "private",
     listId: targetShared ? "public-shared-layout-cross" : "public-demo-state-cross",
     itemKey: targetShared ? "shared-layout:cross" : "demo-state:cross",
@@ -705,20 +722,23 @@ async function crossTemplateFixture(page, context, sourceShared, targetShared, d
   return server;
 }
 
-for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) for (const mode of ["confirmed", "lost", "cancel", "changed-source", "plan-quota", "source-conflict"]) {
+for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) for (const mode of ["confirmed", "lost", "cancel", "changed-source", "plan-quota", "source-conflict", "publication", "publication-lost", "hiding", "hiding-lost"]) {
   test(`admin pending source ${sourceShared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
-    const server = await crossTemplateFixture(page, context, sourceShared, !sourceShared), target = server.target;
+    const server = await crossTemplateFixture(page, context, sourceShared, !sourceShared, false, false, mode.startsWith("hiding")), target = server.target;
     server.blockBusiness = true;
-    await editItem(page, "Ожидающая правка источника", "Насос шаблона");
-    const before = await page.evaluate(targetListId => {
+    const publication = mode.startsWith("publication"), hiding = mode.startsWith("hiding");
+    const sourceName = publication ? "Насос шаблона" : "Ожидающая правка источника";
+    if (publication || hiding) await capturePendingSourceVisibility(page, server, sourceShared, hiding, sourceName);
+    else await editItem(page, sourceName, "Насос шаблона");
+    const before = await page.evaluate(({ targetListId, sourceName }) => {
       const current = __adminUiTest.state(), target = Object.values(current.layouts).find(row => row.adminCausalSource?.binding.listId === targetListId);
       const source = Object.values(current.layouts).find(row => row.adminCausalSource && row !== target);
       return { sourceId: source.id, targetId: target.id, source: __adminUiTest.snapshot(source.id), target: __adminUiTest.snapshot(target.id),
-        item: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === "Ожидающая правка источника").id,
+        item: Object.values(current.items).find(row => row.publicCatalogLayoutId === source.id && row.name === sourceName).id,
         bag: source.rootContainerIds[0], targetBag: target.rootContainerIds[0] };
-    }, target.listId);
+    }, { targetListId: target.listId, sourceName });
     await expect.poll(() => page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.sourceId)).toBeTruthy();
-    const parentId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.planId, before.sourceId);
+    const parentId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalSource.base.operationId, before.sourceId);
     const originalSourcePayload = structuredClone(server.payload), originalTargetPayload = structuredClone(target.payload);
     await page.evaluate(({ shape, before }) => shape === "item" ? __adminUiTest.openItem(before.item) : __adminUiTest.openContainer(before.bag), { shape, before });
     await page.locator(shape === "item" ? "#itemCopyToContainerBtn" : "#rootContainerCopyToContainerBtn").click();
@@ -761,14 +781,14 @@ for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) 
     await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
     await page.evaluate(sourceShared => __adminUiTest.openPrepared(sourceShared ? { type: "shared", sharedId: "ui" }
       : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), sourceShared);
-    await confirmedRevision(page, 8);
+    await confirmedRevision(page, publication || hiding ? 9 : 8);
     expect(server.receipts.get(parentId).operation.state).toBe("committed");
     expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(server.payload));
     if (mode === "source-conflict") server.revision++;
-    server.lose = mode === "lost";
+    server.lose = mode.endsWith("lost");
     await page.evaluate(target => __adminUiTest.openPrepared(target), !sourceShared ? { type: "shared", sharedId: "cross" }
       : { type: "demo", demoListId: target.listId, language: "ru" });
-    if (mode === "lost") {
+    if (mode.endsWith("lost")) {
       await expect.poll(() => server.hidden).toBe(true); server.lose = false; server.hidden = false;
       await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
       await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
@@ -785,7 +805,7 @@ for (const sourceShared of [false, true]) for (const shape of ["item", "tree"]) 
     expect(targetPosts()).toHaveLength(mode === "plan-quota" ? 1 : 2); for (const post of targetPosts()) expect(post).toEqual(action);
     expect(target.payload).toEqual(stripAdminTemplateEditorMetadata(chosen.payload));
     const added = Object.values(target.payload.items).filter(row => !before.target.payload.items[row.id]);
-    expect(added).toHaveLength(1); expect(added[0].name).toBe(shape === "item" ? "Ожидающая правка источника копия" : "Ожидающая правка источника");
+    expect(added).toHaveLength(1); expect(added[0].name).toBe(shape === "item" ? sourceName + " копия" : sourceName);
     expect(Object.values(target.payload.layouts)[0].arrangement.itemQuantities[added[0].id]).toBe(shape === "item" ? 1 : 2);
     const sourceAfter = await page.evaluate(id => __adminUiTest.snapshot(id), before.sourceId);
     expect(sourceAfter.metadata).toEqual(before.source.metadata);
@@ -2323,15 +2343,17 @@ for (const shared of [false, true]) for (const pending of [false, true]) for (co
   });
 }
 
-for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "conflict", "inactive"]) {
+for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "conflict", "inactive", "publication", "publication-lost", "hiding", "hiding-lost"]) {
   test(`whole pending admin template ${shared ? "shared" : "demo"} (${mode})`, async ({ page, context }) => {
-    const state = await newDraftFixture(page, context, { shared, withContainers: true, catalogPair: true, layoutOrder: 17 });
+    const state = await newDraftFixture(page, context, { shared, published: mode.startsWith("hiding"), withContainers: true, catalogPair: true, layoutOrder: 17 });
     state.blockBusiness = true;
-    await editItem(page, "Ожидающая целая копия", "Насос шаблона");
+    const publication = mode.startsWith("publication"), hiding = mode.startsWith("hiding");
+    if (publication || hiding) await capturePendingSourceVisibility(page, state, shared, hiding, "Ожидающая целая копия");
+    else await editItem(page, "Ожидающая целая копия", "Насос шаблона");
     await expect.poll(() => state.posts.length).toBeGreaterThan(0);
     const before = await page.evaluate(() => {
       const source = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
-      return { id: source.id, snapshot: __adminUiTest.snapshot(source.id), parentId: source.adminCausalSource.planId };
+      return { id: source.id, snapshot: __adminUiTest.snapshot(source.id), parentId: source.adminCausalSource.base.operationId };
     });
     expect(before.parentId).toBeTruthy();
     const sourceBefore = structuredClone(state.payload);
@@ -2363,13 +2385,13 @@ for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "pl
     await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
     await page.evaluate(shared => __adminUiTest.openPrepared(shared ? { type: "shared", sharedId: "ui" }
       : { type: "demo", demoListId: "public-demo-state-ui", language: "ru" }), shared);
-    await confirmedRevision(page, 8);
+    await confirmedRevision(page, publication || hiding ? 9 : 8);
     expect(action.body.source.payloadDigest).toBe(await adminTemplateCopyPayloadDigest(state.payload));
     const expected = projectAdminTemplateCopy(state.payload, action.operationId, action.body.metadata);
-    state.createLose = mode === "lost"; state.copyConflict = mode === "conflict";
+    state.createLose = mode.endsWith("lost"); state.copyConflict = mode === "conflict";
     await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
       ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), binding);
-    if (mode === "lost") {
+    if (mode.endsWith("lost")) {
       await expect.poll(() => state.createHidden.size).toBe(1); state.createLose = false; state.createHidden.clear();
       await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
       await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");

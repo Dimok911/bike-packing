@@ -5,7 +5,7 @@ import { adminTemplateIntent } from "../../src/sync/admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { adminClientFixture } from "../fixtures/admin-template-client-fixture.js";
 import { validateAdminTemplateReceipt } from "../../src/sync/admin-template-client.js";
-import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSavePlans, adminTemplateSavePlan } from "../../src/sync/admin-template-save-plan.js";
 import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 
 const metadata = { title: "Copy", description: "Retained", language: "ru" };
@@ -48,6 +48,24 @@ test("pending copy source must match the durable data plan and exact displayed s
     await assert.rejects(pendingAdminTemplateCopySource(source, altered, { payload: saved.plan.operations[0].body.payload, metadata: action.body.metadata }));
   }
   await assert.rejects(pendingAdminTemplateCopySource({ ...source, base: { operationId: randomUUID() } }, saved, snapshot));
+});
+
+for (const published of [false, true]) test(`pending source preserves the final prerequisite of a ${published ? "publication" : "hiding"} chain`, async () => {
+  const f = adminClientFixture(), action = f.action(), publicationId = randomUUID();
+  const plan = adminTemplateSavePlan({ binding: f.binding, ...action.body, operationId: action.operationId, publicationId,
+    exists: true, visibility: published ? "private" : "public", published });
+  const finalId = published ? publicationId : action.operationId;
+  const source = { exists: true, binding: f.binding, planId: plan.id, base: { operationId: finalId } };
+  const snapshot = { payload: action.body.payload, metadata: action.body.metadata }, saved = { plan, cancelRequested: false };
+  const prepared = await pendingAdminTemplateCopySource(source, saved, snapshot);
+  assert.deepEqual(prepared.source.base, { operationId: finalId }); assert.deepEqual(prepared.payload, snapshot.payload);
+  assert.equal(prepared.source.payloadDigest, await adminTemplateCopyPayloadDigest(snapshot.payload));
+  await assert.rejects(pendingAdminTemplateCopySource({ ...source, base: { operationId: plan.operations[0].id } }, saved, snapshot));
+  await assert.rejects(pendingAdminTemplateCopySource(source, { ...saved, cancelRequested: true }, snapshot));
+  const reordered = structuredClone(saved); reordered.plan.operations.reverse();
+  await assert.rejects(pendingAdminTemplateCopySource(source, reordered, snapshot));
+  const altered = structuredClone(saved); altered.plan.operations[1].body.base = { stateRevision: 77 };
+  await assert.rejects(pendingAdminTemplateCopySource(source, altered, snapshot));
 });
 
 test("whole template copy freezes exact confirmed source, new target and private metadata", () => {

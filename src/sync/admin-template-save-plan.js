@@ -97,6 +97,15 @@ function validatePlan(plan) {
   return plan;
 }
 
+// A copied source reads the data snapshot but depends on the final operation of
+// the saved choice, including publication after save or hiding before save.
+export function adminTemplateDataSourceSnapshot(plan) {
+  validatePlan(plan);
+  if (![1, 4].includes(plan.version)) throw paused();
+  const write = plan.operations.find(operation => ["template.create", "template.save"].includes(operation.kind));
+  return { operationId: plan.operations.at(-1).id, payload: clone(write.body.payload), metadata: clone(write.body.metadata) };
+}
+
 export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
