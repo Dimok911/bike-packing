@@ -99,8 +99,35 @@ function validatePlan(plan) {
 
 // A copied source reads the data snapshot but depends on the final operation of
 // the saved choice, including publication after save or hiding before save.
-export function adminTemplateDataSourceSnapshot(plan) {
+export function adminTemplateDataSourceSnapshot(plan, records = [], visiting = new Set()) {
   validatePlan(plan);
+  if (visiting.has(plan.id)) throw paused();
+  visiting.add(plan.id);
+  if (plan.version === 2) {
+    const operation = plan.operations[0];
+    if (operation.kind !== "template.metadata" || !operation.body.base.operationId) throw paused();
+    const parents = records.filter(row => row.plan?.operations?.at(-1)?.id === operation.body.base.operationId);
+    if (parents.length !== 1 || parents[0].cancelRequested !== false || !same(parents[0].plan.binding, plan.binding)) throw paused();
+    const previous = adminTemplateDataSourceSnapshot(parents[0].plan, records, visiting), choice = operation.body.metadata;
+    const metadata = { title: choice.title, description: previous.metadata.description, language: choice.language };
+    const editorSnapshot = clone(plan.editorSnapshot), expected = clone(previous.editorSnapshot || { payload: previous.payload, metadata: previous.metadata });
+    const layout = Object.values(expected.payload.layouts || {}), selected = Object.values(editorSnapshot.payload.layouts || {});
+    if (layout.length !== 1 || selected.length !== 1) throw paused();
+    expected.metadata = metadata; layout[0].name = choice.title; layout[0].language = choice.language;
+    if (Object.hasOwn(choice, "layoutOrder")) layout[0].layoutOrder = choice.layoutOrder;
+    // Touching the label changes only the editor's audit fields. SQL metadata
+    // preserves the underlying data snapshot, including its old layout title.
+    for (const field of ["updatedAt", "updatedByDeviceId", "updatedByDeviceName"]) {
+      if (Object.hasOwn(selected[0], field)) layout[0][field] = selected[0][field]; else delete layout[0][field];
+    }
+    if (!same(expected, editorSnapshot)) throw paused();
+    const payload = clone(previous.payload);
+    if (Object.hasOwn(choice, "layoutOrder")) {
+      const layouts = Object.values(payload.layouts || {}); if (layouts.length !== 1) throw paused();
+      layouts[0].layoutOrder = choice.layoutOrder;
+    }
+    return { operationId: plan.id, payload, metadata, editorSnapshot };
+  }
   if (plan.version === 3) return { operationId: plan.id,
     payload: projectAdminTemplateCopy(plan.sourceSnapshot, plan.id, plan.operations[0].body.metadata),
     metadata: clone(plan.operations[0].body.metadata), editorSnapshot: clone(plan.editorSnapshot) };

@@ -10829,9 +10829,11 @@ async function prepareCausalAdminPlacementCopy(request) {
         planningState[type][id] = clone(row);
       }
     } else if (pendingSource) {
-      const saved = await adminTemplatePlansFor(sourceOriginal.binding, sourceLayout.id).read(sourceOriginal.planId); guard();
+      const plans = adminTemplatePlansFor(sourceOriginal.binding, sourceLayout.id);
+      const saved = await plans.read(sourceOriginal.planId); guard();
+      const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
       const observed = JSON.parse(sourceSnapshot); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
-      const captured = await pendingAdminTemplateCopySource(sourceOriginal, saved, observed); guard();
+      const captured = await pendingAdminTemplateCopySource(sourceOriginal, saved, observed, records); guard();
       sourcePrepared = { payload: captured.payload }; sourceProof = captured.source;
     } else if (sourceLayout !== layout) {
       sourcePrepared = await adminTemplateClient(sourceOriginal.binding, sourceLayout.id, true).prepare(); guard();
@@ -10930,8 +10932,9 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
       client: adminTemplateClient(observed.binding, sourceLayout.id, true),
       getContext: () => adminTemplateOperationContext(observed.binding, sourceLayout.id, true) });
     const saved = await plans.read(observed.planId); guard();
+    const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
     const current = JSON.parse(snapshot); current.payload = stripAdminTemplateEditorMetadata(current.payload);
-    const captured = await pendingAdminTemplateCopySource(observed, saved, current); guard();
+    const captured = await pendingAdminTemplateCopySource(observed, saved, current, records); guard();
     prepared = { payload: captured.payload, metadata: current.metadata }; sourceProof = captured.source;
   } else {
     prepared = await adminTemplateClient(observed.binding, sourceLayout.id, true).prepare(); guard();

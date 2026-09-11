@@ -5,7 +5,7 @@ import { adminTemplateIntent } from "../../src/sync/admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { adminClientFixture } from "../fixtures/admin-template-client-fixture.js";
 import { validateAdminTemplateReceipt } from "../../src/sync/admin-template-client.js";
-import { createAdminTemplateSavePlans, adminTemplateSavePlan, adminTemplateCopyPlan } from "../../src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSavePlans, adminTemplateSavePlan, adminTemplateCopyPlan, adminTemplateCommandPlan, adminTemplateDataSourceSnapshot } from "../../src/sync/admin-template-save-plan.js";
 import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 
 const metadata = { title: "Copy", description: "Retained", language: "ru" };
@@ -90,6 +90,52 @@ test("pending whole copy uses its own server projection while guarding the separ
   Object.values(editorSnapshot.payload.items)[0].name = "Later local change";
   await assert.rejects(pendingAdminTemplateCopySource(source, { plan, cancelRequested: false }, editorSnapshot));
   assert.deepEqual(prepared.payload, projected);
+});
+
+for (const copied of [false, true]) test(`pending metadata source retains ${copied ? "copy" : "data"} payload and permits only the captured label edits`, async () => {
+  const f = adminClientFixture(), input = action(), payload = snapshot(); input.body.source.payloadDigest = await adminTemplateCopyPayloadDigest(payload);
+  const parent = copied ? adminTemplateCopyPlan({ binding: f.binding, ...input, sourceSnapshot: payload })
+    : adminTemplateSavePlan({ binding: f.binding, operationId: input.operationId, base: { stateRevision: 7 }, exists: true, visibility: "private", payload, metadata });
+  const data = adminTemplateDataSourceSnapshot(parent), editorSnapshot = structuredClone(data.editorSnapshot || { payload: data.payload, metadata: data.metadata });
+  editorSnapshot.metadata.title = "New label"; const layout = Object.values(editorSnapshot.payload.layouts)[0];
+  layout.name = "New label"; layout.language = "ru"; layout.layoutOrder = 12; layout.updatedAt = "2026-09-11T10:00:00.000Z";
+  const command = adminTemplateCommandPlan({ binding: f.binding, operationId: randomUUID(), kind: "template.metadata", editorSnapshot,
+    body: { version: 1, base: { operationId: parent.id }, metadata: { title: "New label", language: "ru", layoutOrder: 12 } } });
+  const source = { exists: true, binding: f.binding, planId: command.id, base: { operationId: command.id } };
+  const records = [{ plan: parent, cancelRequested: false }], saved = { plan: command, cancelRequested: false };
+  const expected = structuredClone(data.payload); Object.values(expected.layouts)[0].layoutOrder = 12;
+  const result = await pendingAdminTemplateCopySource(source, saved, editorSnapshot, records);
+  assert.deepEqual(result.payload, expected); assert.deepEqual(result.source.base, source.base);
+  assert.equal(result.source.payloadDigest, await adminTemplateCopyPayloadDigest(expected));
+  assert.notEqual(Object.values(result.payload.layouts)[0].name, "New label");
+  for (const badRecords of [[], [...records, ...records], [{ ...records[0], cancelRequested: true }]]) {
+    await assert.rejects(pendingAdminTemplateCopySource(source, saved, editorSnapshot, badRecords));
+  }
+  for (const change of [value => Object.values(value.payload.items)[0].name = "Unrecorded item",
+    value => value.metadata.description = "Unrecorded description", value => Object.values(value.payload.layouts)[0].note = "Unrecorded note"]) {
+    const changed = structuredClone(editorSnapshot); change(changed);
+    const forged = adminTemplateCommandPlan({ binding: f.binding, operationId: command.id, kind: "template.metadata", body: command.operations[0].body, editorSnapshot: changed });
+    await assert.rejects(pendingAdminTemplateCopySource(source, { plan: forged, cancelRequested: false }, changed, records));
+  }
+  const cycle = structuredClone(saved); cycle.plan.operations[0].body.base.operationId = randomUUID();
+  await assert.rejects(pendingAdminTemplateCopySource(source, cycle, editorSnapshot, records));
+  const lastSnapshot = structuredClone(editorSnapshot); lastSnapshot.metadata.title = "Final label";
+  Object.values(lastSnapshot.payload.layouts)[0].name = "Final label";
+  const last = adminTemplateCommandPlan({ binding: f.binding, operationId: randomUUID(), kind: "template.metadata", editorSnapshot: lastSnapshot,
+    body: { version: 1, base: { operationId: command.id }, metadata: { title: "Final label", language: "ru" } } });
+  const final = await pendingAdminTemplateCopySource({ ...source, planId: last.id, base: { operationId: last.id } },
+    { plan: last, cancelRequested: false }, lastSnapshot, [...records, saved]);
+  assert.deepEqual(final.payload, expected); assert.deepEqual(final.source.base, { operationId: last.id });
+});
+
+test("metadata source rejects dependency cycles and commands without a retained data predecessor", async () => {
+  const f = adminClientFixture(), editorSnapshot = { payload: snapshot(), metadata }, a = randomUUID(), b = randomUUID();
+  const command = (id, base) => adminTemplateCommandPlan({ binding: f.binding, operationId: id, kind: "template.metadata", editorSnapshot,
+    body: { version: 1, base, metadata: { title: metadata.title, language: metadata.language } } });
+  const first = { plan: command(a, { operationId: b }), cancelRequested: false }, second = { plan: command(b, { operationId: a }), cancelRequested: false };
+  const source = { exists: true, binding: f.binding, planId: a, base: { operationId: a } };
+  await assert.rejects(pendingAdminTemplateCopySource(source, first, editorSnapshot, [first, second]));
+  await assert.rejects(pendingAdminTemplateCopySource(source, { plan: command(a, { stateRevision: 7 }), cancelRequested: false }, editorSnapshot));
 });
 
 test("whole template copy freezes exact confirmed source, new target and private metadata", () => {
