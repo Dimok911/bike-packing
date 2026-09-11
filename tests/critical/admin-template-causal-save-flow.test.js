@@ -53,6 +53,39 @@ test("reload after an unknown write resumes the saved chain without collecting a
   const result = await f.make().flush(f.layout.id); assert.equal(result.applied, true); assert.equal(f.layout.templatePublished, true);
   assert.equal(f.posts().length, 2); assert.deepEqual(f.layout.adminCausalSource.base, { stateRevision: 9 });
 });
+
+for (const nextEdit of [false, true]) test(`an externally captured copy releases its predecessor without reload nextEdit=${nextEdit}`, async () => {
+  const f = fixture(), flow = f.make(), parent = await flow.capture(f.layout.id);
+  f.snapshot.payload.items.copy = { id: "copy", name: "Captured copy" };
+  const childId = f.action().operationId;
+  await f.plans().capture({ operationId: childId, exists: true, visibility: "private",
+    base: { operationId: parent.operationId }, payload: f.snapshot.payload, metadata: f.snapshot.metadata });
+  f.layout.adminCausalCopyPlan = { id: childId };
+  await flow.releasePredecessorCapture(f.layout.id, parent.operationId);
+  delete f.layout.adminCausalCopyPlan;
+  f.layout.adminCausalSource = { ...f.layout.adminCausalSource, planId: childId, base: { operationId: childId } };
+  if (nextEdit) {
+    f.snapshot.payload.items.a.name = "Edited after copy";
+    const next = await flow.capture(f.layout.id);
+    const saved = await f.plans().read(next.operationId);
+    assert.deepEqual(saved.plan.operations[0].body.base, { operationId: childId });
+  }
+  assert.equal((await flow.flush(f.layout.id)).applied, true);
+  assert.deepEqual(f.layout.adminCausalSource.base, { stateRevision: nextEdit ? 10 : 9 });
+  assert.equal(flow.hasPendingCapture(f.layout.id), false);
+  assert.equal(f.layout.templateDraftSyncPending, undefined);
+  assert.equal(f.posts().length, nextEdit ? 3 : 2);
+});
+
+test("releasing a copy predecessor cannot discard a newer captured edit", async () => {
+  const f = fixture(), flow = f.make(), parent = await flow.capture(f.layout.id);
+  f.snapshot.payload.items.a.name = "Newer captured edit";
+  const next = await flow.capture(f.layout.id);
+  await assert.rejects(flow.releasePredecessorCapture(f.layout.id, parent.operationId));
+  assert.equal(flow.hasPendingCapture(f.layout.id), true);
+  assert.equal(f.layout.adminCausalSource.planId, next.operationId);
+  assert.equal((await flow.flush(f.layout.id)).applied, true);
+});
 test("an old ACK cannot clear a newer visible edit even if it was not queued yet", async () => {
   const f = fixture(), flow = f.make(); await flow.capture(f.layout.id, { published: false });
   f.state.afterPost = () => { f.snapshot.metadata.title = "New unsent title"; };

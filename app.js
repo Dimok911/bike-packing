@@ -10582,6 +10582,7 @@ async function resumeCausalAdminTemplateCopy(layout) {
       || canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id)) !== initial) throw Error("Контекст копирования изменился.");
   }
   if (sourceChecked) await plans.captureSourceSave(input); else if (catalog) await plans.capture(input); else await plans.captureCopy(input);
+  if (pendingCatalog) await adminTemplateSaveCoordinator().releasePredecessorCapture(layout.id, original.planId);
   if (state.layouts[layout.id] !== layout || layout.adminCausalSource !== original || layout.adminCausalCopyPlan !== pending
     || canonicalTemplateJson(adminTemplateOperationContext(binding, layout.id)) !== initial) throw Error("Контекст копирования изменился.");
   layout.adminCausalSource = { ...original, exists: true, visibility: catalog ? original.visibility : "private", base: { operationId: pending.id }, planId: pending.id };

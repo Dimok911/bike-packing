@@ -242,5 +242,20 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     const recovered = await recover(layoutId);
     if (captureError && !layout.adminCausalSource.planId && !recovered.resolved) throw captureError;
   };
-  return Object.freeze({ capture, captureCommand, recover, flush, prepareRecovery, hasPendingCapture: layoutId => captures.has(layoutId) });
+  const releasePredecessorCapture = async (layoutId, planId) => {
+    if (enabled !== true || !planId) throw blocked();
+    const layout = getLayout(layoutId), observed = layout?.adminCausalSource, pending = captures.get(layoutId);
+    if (!observed?.binding || observed.planId !== planId) throw blocked();
+    const binding = clone(observed.binding), initial = clone(getContext(binding));
+    if (pending?.layout === layout) await pending.promise;
+    guard(layoutId, layout, initial, binding);
+    if (layout.adminCausalSource !== observed || observed.planId !== planId || captures.get(layoutId) !== pending
+      || pending && (pending.layout !== layout || pending.id !== planId || !equal(pending.binding, binding))) throw blocked();
+    // The copy adapter has durably captured its successor. Its mirror still
+    // blocks ordinary edits until the pointer is persisted. Retire only the
+    // completed predecessor's in-memory capture; every durable record stays.
+    captures.delete(layoutId);
+  };
+  return Object.freeze({ capture, captureCommand, recover, flush, prepareRecovery, releasePredecessorCapture,
+    hasPendingCapture: layoutId => captures.has(layoutId) });
 }

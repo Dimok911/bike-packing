@@ -2260,6 +2260,7 @@ for (const shared of [false, true]) {
   for (const shape of ["bulk-item", "bulk-bag"]) for (const mode of ["lost", "plan-quota", "pointer-quota", "mirror-quota"]) pendingCatalogCases.push({ shared, shape, mode });
   for (const mode of ["changed-source", "cancel", "corrupt-parent"]) pendingCatalogCases.push({ shared, shape: "item", mode });
   for (const shape of ["item", "bulk-bag"]) pendingCatalogCases.push({ shared, shape, mode: "metadata" });
+  for (const shape of ["item", "bulk-bag"]) pendingCatalogCases.push({ shared, shape, mode: "live" });
 }
 for (const { shared, shape, mode } of pendingCatalogCases) {
   test(`pending admin catalog ${shared ? "shared" : "demo"} ${shape} (${mode})`, async ({ page, context }) => {
@@ -2327,8 +2328,14 @@ for (const { shared, shape, mode } of pendingCatalogCases) {
     }
     expect(plan.operations[0].body.base).toEqual({ operationId: before.parentId });
     expect(state.posts.every(post => post.operationId === before.parentId)).toBe(true);
-    state.blockBusiness = false; state.lose = mode === "lost";
-    await page.reload(); await openEditorForTarget(page, shared);
+    state.lose = mode === "lost";
+    if (mode === "live") {
+      await page.locator("#syncBtn").click();
+      const recovery = page.locator("#adminTemplateRecoveryDialog"), resume = recovery.locator("[data-admin-resume]");
+      await expect(resume).toBeEnabled(); state.blockBusiness = false;
+      await resume.click(); await confirmedRevision(page, 9);
+      const close = recovery.locator("[data-admin-recovery-close]"); await expect(close).toBeEnabled(); await close.click();
+    } else { state.blockBusiness = false; await page.reload(); await openEditorForTarget(page, shared); }
     if (mode === "lost") {
       await expect.poll(() => state.hidden).toBe(true); state.lose = false; state.hidden = false;
       await page.reload(); await openEditorForTarget(page, shared);
@@ -2343,6 +2350,12 @@ for (const { shared, shape, mode } of pendingCatalogCases) {
     if (placed) for (const row of added) {
       expect(Object.values(state.payload.layouts)[0].arrangement.items[row.id]).toBe(row.containerId);
       expect(row.containerId).toBeTruthy();
+    }
+    if (mode === "live") {
+      await editItem(page, "Правка после живой копии", "Ожидающая правка каталога", before.layoutId);
+      await confirmedRevision(page, 10);
+      expect(state.posts.at(-1).body.base).toEqual({ stateRevision: 9 });
+      for (const row of added) expect(state.payload[collection][row.id]).toEqual(row);
     }
     expect(state.errors).toEqual([]);
   });
