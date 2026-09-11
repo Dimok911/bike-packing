@@ -6,12 +6,19 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      webkit_diagnostic:
+        description: Compare Linux WebKit WPE and GTK on the same photo forms
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   quality:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.webkit_diagnostic }}
     runs-on: ubuntu-latest
     # Keep each browser's full suite on an isolated runner: both projects
     # share test build paths and cannot safely run as concurrent workers.
@@ -109,5 +116,59 @@ jobs:
             test-results/**/error-context.md
             test-results/**/trace.zip
             test-results/**/test-failed-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  webkit-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.webkit_diagnostic }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: [wpe-headless, gtk-headed]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install WebKit
+        run: npx playwright install --with-deps webkit
+      - name: Compare photo forms without retries
+        env:
+          DEBUG: "pw:browser"
+          BIKE_PERSONAL_UI_MODES: "photo-edit"
+          DIAGNOSTIC_RENDERER: ${{ matrix.renderer }}
+        shell: bash
+        run: |
+          echo "BIKE_BROWSER_SMOKE_STARTED=$(date --iso-8601=seconds)" >> "$GITHUB_ENV"
+          args=(tests/e2e/personal-save-ui.spec.js --project=mobile-webkit --grep 'composed item photo form preserves placement and availability \((create|move|quantity|unplace)\)' --repeat-each=5 --retries=0 --workers=1 --max-failures=3)
+          if [[ "$DIAGNOSTIC_RENDERER" == gtk-headed ]]; then
+            xvfb-run --auto-servernum npm run test:e2e -- "${args[@]}" --headed
+          else
+            npm run test:e2e -- "${args[@]}"
+          fi
+      - name: Collect Linux browser crash diagnostics
+        if: always()
+        run: |
+          mkdir -p browser-diagnostics
+          bash scripts/collect-linux-browser-diagnostics.sh > browser-diagnostics/linux-browser.txt 2>&1
+      - name: Preserve diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-diagnostic-${{ matrix.renderer }}
+          path: |
+            browser-diagnostics/
+            playwright-report/
+            test-results/**/error-context.md
+            test-results/**/trace.zip
+            test-results/**/test-failed-*.png
+            test-results/**/attachments/browser-*.json
           if-no-files-found: ignore
           retention-days: 7
