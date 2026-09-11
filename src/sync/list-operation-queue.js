@@ -14,8 +14,10 @@ import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, PERSONAL_PENDING_GUEST_UPDATE_CA
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, PERSONAL_PENDING_FORM_UPDATE_CAPABILITY, personalFormPhotoBodyResultReference, validatePersonalPendingFormUpdateResult } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY, assertPersonalGuestImportHashes, validatePersonalGuestImportResult } from "./personal-guest-import-protocol.js";
-import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY, assertPersonalPublicImportHashes, validatePersonalPublicImportResult } from "./personal-public-import-protocol.js";
-import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY } from "./personal-admin-template-source.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY, assertPersonalPublicImportHashes, validatePersonalPublicImportResult,
+  personalPublicImportManifest, personalPublicImportSourceReads } from "./personal-public-import-protocol.js";
+import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY,
+  PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED, PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_CAPABILITY } from "./personal-admin-template-source.js";
 import { PERSONAL_SERVER_IMPORT_ENABLED, PERSONAL_SERVER_IMPORT_CAPABILITY } from "./personal-server-import-source.js";
 import { assertPersonalServerImportHashes, validatePersonalServerImportResult } from "./personal-server-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY, personalArchivePhotoBodyResultReference } from "./personal-pending-archive-update.js";
@@ -115,6 +117,17 @@ export function validateListReceipt(data, expected) {
 export function validateWaitingOperation(data, expected) {
   const op = data?.operation;
   const declared = expected.body?.causal?.dependsOn?.map(dep => dep.operationId) || [];
+  if (expected.kind === "list.import" && expected.body?.publicImport?.source?.kind === "admin-template"
+    && Object.hasOwn(expected.body.publicImport.source, "base")) {
+    try {
+      const manifest = personalPublicImportManifest(expected.body.publicImport), source = manifest.source;
+      if (manifest.operationId !== expected.operationId || source.listId === expected.listId
+        || declared.includes(source.base.operationId)
+        || canonicalListOperationJson(expected.body.causal?.reads) !== canonicalListOperationJson(personalPublicImportSourceReads(source))) return false;
+      // This ID belongs to the administrative source resolver, not dependsOn.
+      declared.push(source.base.operationId);
+    } catch { return false; }
+  }
   return data?.ok === true && op?.state === "waiting" && op.id === expected.operationId
     && op.environment === environment && op.actorId === expected.actorId && op.kind === expected.kind
     && op.listId === expected.listId && op.payloadDigest === expected.payloadDigest && data.result === null
@@ -195,10 +208,16 @@ export function createListOperationQueue({ transport, getContext = () => null,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   adminTemplateImportEnabled = PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED,
+  pendingAdminTemplateImportEnabled = PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED,
   serverImportEnabled = PERSONAL_SERVER_IMPORT_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const serverFormBody = body => [6, 7].includes(body.ownerResult?.version) || [13, 14].includes(body.photoResults?.version);
+  const pendingAdminSource = body => body.publicImport?.source?.kind === "admin-template" && Object.hasOwn(body.publicImport.source, "base");
+  const canWriteAdminImport = body => body.publicImport?.source?.kind !== "admin-template"
+    || adminTemplateImportEnabled && (!pendingAdminSource(body) || pendingAdminTemplateImportEnabled);
+  const adminImportCapabilities = body => body.publicImport?.source?.kind === "admin-template"
+    ? [PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY, ...(pendingAdminSource(body) ? [PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_CAPABILITY] : [])] : [];
   const canWriteServerForm = body => serverPhotoFormEnabled && serverImportEnabled && formOwnerResultEnabled && photoFormEnabled && photoEnabled
     && (serverNewOwnerFormEnabled || body.ownerResult?.version !== 7 && body.photoResults?.version !== 14);
   const canWriteImportForm = reference => importPhotoFormEnabled && formOwnerResultEnabled && photoFormEnabled && photoEnabled
@@ -320,7 +339,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         }
         if (Object.hasOwn(body, "publicImport")) {
           if (route.kind !== "list.import" || !publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== operationId
-            || body.publicImport?.source?.kind === "admin-template" && !adminTemplateImportEnabled) {
+            || !canWriteAdminImport(body)) {
             throw paused(operationId, "Отмена копирования шаблона ещё не включена.");
           }
           await assertPersonalPublicImportHashes(body); assertCurrent();
@@ -344,7 +363,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
         if (Object.hasOwn(body, "publicImport") && (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(operationId,
           "Сервер ещё не поддерживает отмену копирования шаблона.");
-        if (body.publicImport?.source?.kind === "admin-template" && !capabilities.capabilities?.includes(PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY)) throw paused(operationId,
+        if (!adminImportCapabilities(body).every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId,
           "Сервер ещё не поддерживает копирование административного шаблона в личный список.");
         if (Object.hasOwn(body, "serverImport") && !capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(operationId, "Сервер ещё не поддерживает отмену серверной копии.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
@@ -648,7 +667,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           await assertPersonalServerImportHashes(body);
         } else if (Object.hasOwn(body, "publicImport")) {
           if (!publicImportEnabled || body.publicImport?.version === 2 && !publicEntityEnabled || !photoEnabled || body.publicImport?.operationId !== requestedId
-            || body.publicImport?.source?.kind === "admin-template" && !adminTemplateImportEnabled
+            || !canWriteAdminImport(body)
             || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) {
             throw paused(requestedId, "Копирование шаблона ещё не включено или не совпало с сохранённым действием.");
           }
@@ -740,6 +759,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry) data = await recover({ ...entry, recovery: { ...entry.recovery, body } }, { resumeWaiting: true,
           assertBeforeDispatch: async () => {
             if (!contextMatches(initial)) throw paused(entry.id);
+            if (body.publicImport?.source?.kind === "admin-template") {
+              const capabilities = await read("/bike-packing/capabilities");
+              if (!contextMatches(initial) || !canWriteAdminImport(body)
+                || ![LIST_OPERATION_CAPABILITY, PERSONAL_PUBLIC_IMPORT_CAPABILITY, ...adminImportCapabilities(body),
+                  ...(body.publicImport.version === 2 ? [PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY] : [])]
+                  .every(capability => capabilities.capabilities?.includes(capability))) throw paused(entry.id);
+            }
             if (serverFormBody(body)) {
               const capabilities = await read("/bike-packing/capabilities");
               if (!contextMatches(initial) || !canWriteServerForm(body) || ![LIST_OPERATION_CAPABILITY, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
@@ -798,7 +824,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "list.import" && Object.hasOwn(body, "serverImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_SERVER_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает копирование списка по ссылке через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
-            if (body.publicImport?.source?.kind === "admin-template" && !capabilities.capabilities?.includes(PERSONAL_ADMIN_TEMPLATE_IMPORT_CAPABILITY)) throw paused(requestedId,
+            if (!adminImportCapabilities(body).every(capability => capabilities.capabilities?.includes(capability))) throw paused(requestedId,
               "Сервер ещё не поддерживает копирование административного шаблона в личный список.");
             if ((!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(requestedId, "Сервер ещё не поддерживает копирование шаблона через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {

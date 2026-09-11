@@ -795,7 +795,7 @@ import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelect
 import { createPersonalPublicImportSelectionStore, PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
-import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, personalAdminTemplateImportSource } from "./src/sync/personal-admin-template-source.js";
+import { PERSONAL_ADMIN_TEMPLATE_IMPORT_ENABLED, PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED, personalAdminTemplateImportSource } from "./src/sync/personal-admin-template-source.js";
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { resolvePersonalServerPreparation, personalServerRecoverablePreparations } from "./src/sync/personal-server-preparation-resolution.js";
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
@@ -832,7 +832,7 @@ import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
-import { recoverPersonalAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
+import { recoverPersonalAdminDrafts, personalPayloadWithoutAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
 import { pendingPersonalTemplateSource } from "./src/sync/admin-template-pending-personal-source.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView, restoreAdminTemplatePhotoReferences } from "./src/sync/admin-template-photo-view.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
@@ -2485,7 +2485,9 @@ function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true
 }
 
 function restorePublicCopyBusinessView(payload) {
-  const exact = personalPublicImportSnapshot(payload, state);
+  const adminRecovery = { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() };
+  const privatePayload = personalPayloadWithoutAdminDrafts(payload, adminRecovery);
+  const exact = recoverPersonalAdminDrafts(personalPublicImportSnapshot(privatePayload, state), JSON.stringify(state), adminRecovery);
   Object.keys(state).forEach(key => delete state[key]);
   Object.assign(state, exact);
   installRuntimeActiveLayoutId(state, exact.activeLayoutId);
@@ -9293,6 +9295,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
     await recoverPersonalGuestImportLink({ entry: source.guestPreparation, outbox: source.outbox, store: source.store, getContext });
     source.guestPreparation = null;
   }
+  if (recovery) await resumePersonalCopyAdminSource(source);
   const queue = createListOperationQueue({ transport: experimentTransport, getContext });
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
   const archive = source.outbox.recover()?.action.kind === "list.import" || personalPendingImportSource(source.outbox)?.action.kind === "list.import";
@@ -10694,9 +10697,90 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   };
 }
+async function resumePersonalCopyAdminSource(source) {
+  const originalImport = () => (personalPendingImportSource(source.outbox, true, { allowDisabledPublic: true }) || source.outbox.recover())?.action;
+  const action = originalImport(), proof = action?.body.publicImport?.source;
+  if (proof?.kind !== "admin-template" || !proof.base?.operationId) return;
+  if (!PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED || !canOpenAdminPublishedEdit()) {
+    throw Error("Для продолжения выбранной правки шаблона нужны права администратора и включённый перенос.");
+  }
+  const matches = Object.values(state.layouts).filter(layout => {
+    const binding = layout.adminCausalSource?.binding;
+    return binding?.actorId === source.outbox.binding.actorId && binding.environment === source.outbox.binding.environment
+      && binding.listId === proof.listId && binding.itemKey === proof.itemKey;
+  });
+  // A confirmed source needs no new administrative dispatch: the private
+  // server runner verifies its original receipt and current full snapshot.
+  if (!matches.length || matches.length === 1 && !matches[0].adminCausalSource.planId) return;
+  const layout = matches[0], original = clone(layout.adminCausalSource), beforeContext = canonicalTemplateJson(personalSaveContext());
+  const beforePrivate = canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true })));
+  const beforeAction = canonicalTemplateJson(action), beforeHead = canonicalTemplateJson(source.outbox.recover()?.action), returnLayoutId = state.activeLayoutId;
+  const fail = () => { throw Error("Сохранённая правка исходного шаблона изменилась. Копия и её исходный выбор сохранены для сверки."); };
+  const confirmationFields = ["adminCausalSource", "templatePublished", "templateDraftServerHydrated", "templateDraftSyncPending"];
+  const namespace = value => {
+    const target = clone(value.layouts?.[layout.id] || null);
+    if (!target) fail();
+    for (const field of confirmationFields) delete target[field];
+    // Switching the active layout changes applied container/item links. The
+    // arrangement remains authoritative and is compared without normalization.
+    return canonicalTemplateJson(personalBusinessPayload({ layouts: { [layout.id]: target },
+      ...Object.fromEntries(["items", "containers"].map(collection => [collection,
+        Object.fromEntries(Object.entries(value[collection] || {}).filter(([, row]) => row.publicCatalogLayoutId === layout.id))])) }));
+  };
+  const beforeNamespace = namespace(state);
+  const selectionCurrent = () => source === personalPhotoRecoverySource && currentUser?.id === source.outbox.binding.actorId
+    && localStorageScopeKey === source.outbox.binding.scopeKey && currentPackingListId === source.outbox.binding.listId
+    && canOpenAdminPublishedEdit() && state.layouts[layout.id] === layout
+    && canonicalTemplateJson(source.outbox.recover()?.action) === beforeHead && canonicalTemplateJson(originalImport()) === beforeAction
+    && canonicalTemplateJson(personalBusinessPayload(serializeState({ forSync: true }))) === beforePrivate;
+  if (matches.length !== 1 || original.base?.operationId !== proof.base.operationId || layout.adminCausalCopyPlan || !selectionCurrent()) fail();
+  const plans = adminTemplatePlansFor(original.binding, layout.id, true), saved = await plans.read(original.planId);
+  const records = saved?.plan.version === 2 ? await plans.list() : [];
+  const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(original.binding, layout.id).read() : null;
+  const receipts = saved?.plan.version === 2 ? await adminTemplateClient(original.binding, layout.id, true).list() : [];
+  const observed = adminTemplateEditorSnapshot(layout.id); observed.payload = stripAdminTemplateEditorMetadata(observed.payload);
+  const captured = await pendingAdminTemplateCopySource(original, saved, observed, records, { baseline, receipts });
+  if (!selectionCurrent() || canonicalTemplateJson(personalSaveContext()) !== beforeContext
+    || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
+    || captured.source.payloadDigest !== proof.payloadDigest
+    || canonicalTemplateJson(captured.payload) !== canonicalTemplateJson(action.body.publicImport.sourcePayload)) fail();
+  // The private editor remains fenced until recovery completes. Change the
+  // actual view scope without invoking ordinary private snapshot persistence.
+  if (!restoreAdminPublishedLayoutContext(layout.id)) fail();
+  switchView("packing"); render();
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id));
+  updateSyncUi("Подтверждаю сохранённую правку исходного шаблона…");
+  let failure;
+  const persist = () => {
+    if (!selectionCurrent() || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial) fail();
+    const key = scopedLocalStorageKey(STORAGE_KEY), mirror = localStorage.getItem(key);
+    if (!mirror) fail();
+    const previous = JSON.parse(mirror), candidate = clone(previous), retained = candidate.layouts?.[layout.id];
+    const confirmed = layout.adminCausalSource;
+    if (!retained || namespace(previous) !== beforeNamespace || namespace(state) !== beforeNamespace
+      || confirmed?.planId || confirmed?.lastConfirmedOperation?.id !== proof.base.operationId
+      || canonicalTemplateJson(retained.adminCausalSource) !== canonicalTemplateJson(original)
+        && canonicalTemplateJson(retained.adminCausalSource) !== canonicalTemplateJson(confirmed)) fail();
+    // Persist only this template's confirmation markers. Private business and
+    // other admin drafts (including newer edits in another tab) stay exact.
+    for (const field of confirmationFields) {
+      if (Object.hasOwn(layout, field)) retained[field] = clone(layout[field]); else delete retained[field];
+    }
+    const merged = recoverPersonalAdminDrafts(previous, JSON.stringify(candidate), { scopeKey: localStorageScopeKey, enabled: true });
+    const encoded = JSON.stringify(merged); localStorage.setItem(key, encoded);
+    if (localStorage.getItem(key) !== encoded) fail();
+    return true;
+  };
+  try { await adminTemplateSaveCoordinator({ persist }).flush(layout.id); } catch (error) { failure = error; }
+  if (!selectionCurrent() || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial) fail();
+  captureActiveLayoutArrangement(); setActivePrivateScope(); state.activeLayoutId = returnLayoutId;
+  applyLayoutArrangement(returnLayoutId); render();
+  if (failure) throw failure;
+}
+
 async function prepareCausalAdminToPersonalCopy(request) {
   request = clone(request);
-  let sourceLayout, original, sourceSnapshot, privateInitial, privateSnapshot, outbox, selection, missingSelection, sourcePrepared, sourceId;
+  let sourceLayout, original, sourceSnapshot, privateInitial, privateSnapshot, outbox, selection, missingSelection, sourcePrepared, sourceId, pendingSource = false;
   const fail = (reason = "selection") => { throw Object.assign(Error("Шаблон или личный список изменился. Повторите выбор копии."), { adminCopyGuard: reason }); };
   const privateState = () => ({ ...serializeState({ forSync: true }), activeLayoutId: request.targetLayoutId });
   const coordinator = adminTemplateSaveCoordinator();
@@ -10709,7 +10793,7 @@ async function prepareCausalAdminToPersonalCopy(request) {
   const guard = (capturedId = "") => {
     const pending = outbox?.recover();
     const checks = { authority: !canOpenAdminPublishedEdit(), sourceObject: state.layouts[sourceLayout.id] !== sourceLayout,
-      sourcePending: coordinator.hasPendingCapture(sourceLayout.id) || sourceLayout.templateDraftSyncPending || sourceLayout.adminCausalCopyPlan,
+      sourcePending: sourceLayout.adminCausalCopyPlan || !pendingSource && (coordinator.hasPendingCapture(sourceLayout.id) || sourceLayout.templateDraftSyncPending),
       sourceIdentity: canonicalTemplateJson(sourceLayout.adminCausalSource) !== canonicalTemplateJson(original),
       sourceSnapshot: canonicalTemplateJson(adminTemplateEditorSnapshot(sourceLayout.id)) !== sourceSnapshot,
       privatePending: capturedId ? pending?.action.operationId !== capturedId : hasPendingPersonalSave(),
@@ -10723,23 +10807,42 @@ async function prepareCausalAdminToPersonalCopy(request) {
       throw Error("Копирование административного шаблона в личный список через очередь ещё не включено.");
     }
     sourceLayout = state.layouts[request.sourceLayoutId]; original = clone(sourceLayout?.adminCausalSource || null);
-    if (!original?.exists || original.planId || !original.base?.stateRevision || getPublishedEditLayoutId() !== sourceLayout.id
+    pendingSource = Boolean(original?.planId && original.base?.operationId);
+    if (!original?.exists || original.deleted || pendingSource && !PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED
+      || !pendingSource && (original.planId || !original.base?.stateRevision) || getPublishedEditLayoutId() !== sourceLayout.id
       || !state.layouts[request.targetLayoutId] || isAdminEditablePublishedLayout(request.targetLayoutId)) fail();
     const ids = { items: {}, containers: {} }, observed = adminTemplateEditorSnapshot(sourceLayout.id, {
       onMappedEntity: ({ type, sourceId, targetId }) => { ids[type][sourceId] = targetId; }
     });
     sourceSnapshot = canonicalTemplateJson(observed); guard();
-    sourcePrepared = await adminTemplateClient(original.binding, sourceLayout.id, true).prepare(); guard();
-    const verified = adminTemplateEditorSource(original.binding, sourcePrepared);
-    if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(original.base)
-      || canonicalTemplateJson(personalBusinessPayload(stripAdminTemplateEditorMetadata(observed.payload))) !== canonicalTemplateJson(personalBusinessPayload(sourcePrepared.payload))) {
-      throw Error("Шаблон отличается от подтверждённой серверной версии. Сначала сверьте его изменения.");
+    let source;
+    if (pendingSource) {
+      const plans = adminTemplatePlansFor(original.binding, sourceLayout.id, true);
+      const saved = await plans.read(original.planId); guard();
+      const records = saved?.plan.version === 2 ? await plans.list() : []; guard();
+      const baseline = saved?.plan.version === 2 ? await adminTemplateSourceBaseline(original.binding, sourceLayout.id).read() : null; guard();
+      const receipts = saved?.plan.version === 2 ? await adminTemplateClient(original.binding, sourceLayout.id, true).list() : []; guard();
+      const snapshot = clone(observed); snapshot.payload = stripAdminTemplateEditorMetadata(snapshot.payload);
+      const captured = await pendingAdminTemplateCopySource(original, saved, snapshot, records, { baseline, receipts }); guard();
+      if (saved.plan.version === 3 && (snapshot.payload.activeLayoutId !== captured.payload.activeLayoutId
+        || ["items", "containers"].some(type => canonicalTemplateJson(Object.keys(snapshot.payload[type]).sort()) !== canonicalTemplateJson(Object.keys(captured.payload[type]).sort())))) {
+        throw Error("Сначала подтвердите создание исходной копии и сверьте её серверный вариант.");
+      }
+      sourcePrepared = { payload: captured.payload };
+      source = personalAdminTemplateImportSource({ kind: "admin-template", ...captured.source, language: observed.metadata.language });
+    } else {
+      sourcePrepared = await adminTemplateClient(original.binding, sourceLayout.id, true).prepare(); guard();
+      const verified = adminTemplateEditorSource(original.binding, sourcePrepared);
+      if (!verified.exists || canonicalTemplateJson(verified.base) !== canonicalTemplateJson(original.base)
+        || canonicalTemplateJson(personalBusinessPayload(stripAdminTemplateEditorMetadata(observed.payload))) !== canonicalTemplateJson(personalBusinessPayload(sourcePrepared.payload))) {
+        throw Error("Шаблон отличается от подтверждённой серверной версии. Сначала сверьте его изменения.");
+      }
+      source = personalAdminTemplateImportSource({ kind: "admin-template", listId: original.binding.listId, itemKey: original.binding.itemKey,
+        stateRevision: sourcePrepared.stateRevision, language: sourcePrepared.metadata.language, payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) });
     }
     sourceId = request.type === "layout" ? Object.keys(sourcePrepared.payload.layouts)[0]
       : ids[request.type === "item" ? "items" : "containers"][request.sourceId || request.rootId];
     if (!sourceId) fail();
-    const source = personalAdminTemplateImportSource({ kind: "admin-template", listId: original.binding.listId, itemKey: original.binding.itemKey,
-      stateRevision: sourcePrepared.stateRevision, language: sourcePrepared.metadata.language, payloadDigest: await adminTemplateCopyPayloadDigest(sourcePrepared.payload) });
     // Keep the submitted creation form intact while preparing its private
     // context; rendering here would replace its template-source selector.
     guard(); switchActiveLayout(request.targetLayoutId, { remember: false, recordAction: false, renderAfter: request.type !== "layout" });
@@ -10787,7 +10890,38 @@ async function prepareCausalAdminToPersonalCopy(request) {
           updateSyncUi("Личная копия шаблона сохранена и ждёт подтверждения сервера.");
         }
       });
-      await commit(); scheduleRemoteSave();
+      await commit();
+      if (pendingSource) {
+        // The private selection, immutable action and view are durable before
+        // resuming the other journal. replaceState cloned the retained admin
+        // records, so validate the current record rather than an old pointer.
+        const action = canonicalTemplateJson(outbox.recover()?.action), returnLayoutId = state.activeLayoutId;
+        const current = state.layouts[sourceLayout.id];
+        const sameSelection = () => canOpenAdminPublishedEdit() && original.binding.actorId === String(currentUser?.id || "")
+          && canonicalTemplateJson(outbox.recover()?.action) === action
+          && canonicalTemplateJson(personalBusinessPayload(privateState())) === canonicalTemplateJson(outbox.recover()?.action.body.payload);
+        if (!sameSelection() || !current || current.adminCausalCopyPlan
+          || canonicalTemplateJson(current.adminCausalSource) !== canonicalTemplateJson(original)
+          || canonicalTemplateJson(adminTemplateEditorSnapshot(current.id)) !== sourceSnapshot) fail("captured-source");
+        if (!activateAdminPublishedLayout(current.id, { remember: false })) fail("source-scope");
+        const initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, current.id));
+        try { await coordinator.flush(current.id); }
+        catch (error) { reportAdminTemplateSaveError(error); }
+        // A user/account/view change during the wait must not be undone by
+        // this continuation. The child keeps its exact original prerequisite.
+        const after = current.adminCausalSource, observed = adminTemplateEditorSnapshot(current.id), selected = JSON.parse(sourceSnapshot);
+        observed.payload = stripAdminTemplateEditorMetadata(observed.payload); selected.payload = stripAdminTemplateEditorMetadata(selected.payload);
+        const ownConfirmation = !after?.planId && !after?.deleted && after?.lastConfirmedOperation?.id === original.base.operationId
+          && Number.isSafeInteger(after.base?.stateRevision) && after.base.stateRevision > 0
+          && canonicalTemplateJson(after.binding) === canonicalTemplateJson(original.binding);
+        if (!sameSelection() || state.layouts[current.id] !== current
+          || canonicalTemplateJson(observed) !== canonicalTemplateJson(selected)
+          || canonicalTemplateJson(after) !== canonicalTemplateJson(original) && !ownConfirmation
+          || canonicalTemplateJson(adminTemplateOperationContext(original.binding, current.id)) !== initial) fail("source-wait-context");
+        switchActiveLayout(returnLayoutId, { remember: false, recordAction: false, renderAfter: request.type !== "layout" });
+        if (current.adminCausalSource?.planId) updateSyncUi("Личная копия сохранена. Она ждёт подтверждения выбранной правки шаблона.");
+      }
+      scheduleRemoteSave();
       return chosen.layoutTargets?.[0]?.targetId || chosen.ownerTargets.find(row => row.sourceId === sourceId)?.targetId
         || request.targetParentId || state.layouts[request.targetLayoutId].rootContainerIds[0];
     } catch (error) {
@@ -11237,8 +11371,8 @@ async function prepareAdminTemplateRecovery(layoutId) {
     await recovery.resumeStop(shownSource.planId); assertEditor(); return inspect(false);
   } };
 }
-function adminTemplateSaveCoordinator() {
-  if (!administrativeSaveCoordinator) administrativeSaveCoordinator = createAdminTemplateSaveFlow({
+function adminTemplateSaveCoordinator({ persist = null } = {}) {
+  const create = () => createAdminTemplateSaveFlow({
     enabled: adminTemplateUiEnabled(), getLayout: id => state.layouts?.[id],
     getContext: binding => {
       const layout = Object.values(state.layouts || {}).find(value => value.adminCausalSource?.binding?.listId === binding.listId
@@ -11252,11 +11386,13 @@ function adminTemplateSaveCoordinator() {
         persist: () => persistStateSnapshot(state, { recordAction: false }), applyArrangement: applyLayoutArrangement });
       render(); return result;
     },
-    persist: () => persistStateSnapshot(state),
+    persist: persist || (() => persistStateSnapshot(state)),
     notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
       : status === "adopted" ? "Серверный вариант открыт. Новые изменения не отправлялись."
       : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),
   });
+  if (persist) return create();
+  if (!administrativeSaveCoordinator) administrativeSaveCoordinator = create();
   return administrativeSaveCoordinator;
 }
 function materializeCausalAdminTemplate(target, prepared) {

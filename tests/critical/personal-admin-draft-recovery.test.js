@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoverPersonalAdminDrafts } from "../../src/sync/personal-admin-draft-recovery.js";
+import { recoverPersonalAdminDrafts, personalPayloadWithoutAdminDrafts } from "../../src/sync/personal-admin-draft-recovery.js";
 
 const options = { enabled: true, scopeKey: "id:admin-a" };
 function fixture(shared = false) {
@@ -103,4 +103,38 @@ test("disabled and guest recovery do not interpret the mirror; corrupt active re
   }
   assert.throws(() => recoverPersonalAdminDrafts(snapshot, "corrupt", options), { isPersonalSaveBlocked: true });
   assert.deepEqual(recoverPersonalAdminDrafts(snapshot, null, options), snapshot);
+});
+
+test("exact private projection removes only validated administrative records without normalizing business fields", () => {
+  for (const shared of [false, true]) {
+    const { mirror: mixed } = fixture(shared);
+    mixed.items.personal.custom = { unknown: [2, 1] };
+    mixed.items.personal.photos = [{ photoId: "legacy", metadata: { credit: "Exact" }, fileName: "Original.png" }];
+    mixed.layouts.personal.arrangement = { rootContainerIds: [], containers: {}, items: { personal: "" },
+      itemQuantities: { personal: 7 }, packedItems: { personal: true }, unknown: { exact: true } };
+    mixed.packedItems = {}; mixed.categories = ["Unsorted", "A", "Unsorted"];
+    mixed.unknown = { preserve: [3, 2, 1] };
+    const before = structuredClone(mixed), expected = structuredClone(mixed);
+    delete expected.layouts.admin; delete expected.containers.bag; delete expected.items.copy; delete expected.items.detached;
+    const privatePayload = personalPayloadWithoutAdminDrafts(mixed, options);
+    assert.deepEqual(privatePayload, expected); assert.deepEqual(mixed, before);
+    privatePayload.items.personal.custom.unknown.push(3); assert.deepEqual(mixed, before);
+  }
+});
+
+test("exact private projection fails closed on cross-namespace references and leaves foreign origins unapproved", () => {
+  for (const change of [value => { value.layouts.admin.arrangement.items.personal = "bag"; },
+    value => { value.items.copy.id = "other"; }, value => { value.containers.bag.itemIds.push("personal"); }]) {
+    const { mirror } = fixture(); change(mirror); const before = structuredClone(mirror);
+    assert.throws(() => personalPayloadWithoutAdminDrafts(mirror, options), { isPersonalSaveBlocked: true });
+    assert.deepEqual(mirror, before);
+  }
+  for (const change of [value => { value.layouts.admin.adminCausalSource.binding.actorId = "other"; },
+    value => { value.layouts.admin.adminCausalSource.binding.environment = "production"; },
+    value => { delete value.layouts.admin.adminCausalSource; }]) {
+    const { mirror } = fixture(); change(mirror);
+    assert.deepEqual(personalPayloadWithoutAdminDrafts(mirror, options), mirror);
+  }
+  const { mirror } = fixture();
+  assert.deepEqual(personalPayloadWithoutAdminDrafts(mirror, { ...options, enabled: false }), mirror);
 });

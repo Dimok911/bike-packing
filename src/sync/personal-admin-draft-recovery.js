@@ -78,3 +78,15 @@ export function recoverPersonalAdminDrafts(snapshot, mirrorJson, { scopeKey, ena
     { value: clone(layout), enumerable: true, writable: true, configurable: true });
   return result;
 }
+
+// Remove only the independently owned namespace from a mixed local snapshot.
+// Private dictionaries, raw photos, arrangements and unknown fields are exact;
+// foreign or unverified public origins remain for the private validator to reject.
+export function personalPayloadWithoutAdminDrafts(payload, options = {}) {
+  const owned = recoverPersonalAdminDrafts({ layouts: {}, items: {}, containers: {} }, JSON.stringify(payload), options);
+  const result = clone(payload);
+  for (const collection of ["layouts", "items", "containers"]) {
+    for (const id of Object.keys(owned[collection])) delete result[collection][id];
+  }
+  return result;
+}

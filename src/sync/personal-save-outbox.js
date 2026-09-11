@@ -13,7 +13,7 @@ import { PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED, personalPendingPublicUpdateSour
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, isPersonalPendingFormUpdate, personalFormPhotoResultReference } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, assertPersonalArchivePhotoBody } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, assertPersonalGuestImportBody } from "./personal-guest-import-protocol.js";
-import { PERSONAL_PUBLIC_IMPORT_ENABLED, assertPersonalPublicImportBody } from "./personal-public-import-protocol.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED, assertPersonalPublicImportBody, personalPublicImportSourceReads } from "./personal-public-import-protocol.js";
 import { PERSONAL_SERVER_IMPORT_ENABLED } from "./personal-server-import-source.js";
 import { assertPersonalServerImportBody } from "./personal-server-import-protocol.js";
 import { personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
@@ -206,7 +206,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           || action.kind !== "list.create" && !updateKind(action.kind)
           || !record.snapshot || typeof record.snapshot !== "object"
           || !personalRecordPayload(record) || (Object.hasOwn(action.body, "publicImport") || Object.hasOwn(action.body, "serverImport")
-            ? canonicalListOperationJson(action.body.causal?.reads) !== canonicalListOperationJson([{ listId: (action.body.serverImport || action.body.publicImport).source?.listId, revision: (action.body.serverImport || action.body.publicImport).source?.stateRevision }])
+            ? canonicalListOperationJson(action.body.causal?.reads) !== canonicalListOperationJson(Object.hasOwn(action.body, "serverImport")
+              ? [{ listId: action.body.serverImport.source?.listId, revision: action.body.serverImport.source?.stateRevision }]
+              : personalPublicImportSourceReads(action.body.publicImport.source))
             : action.body.causal?.reads?.length !== 0)
           || !Array.isArray(action.body.causal?.dependsOn)
           || !Number.isSafeInteger(action.generation) || action.generation < 1) throw Error("Invalid record");
@@ -607,7 +609,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         throw blocked("photo-composite", "Для этого фотопакета ещё нужен составной локальный адаптер.");
       }
       const causal = { dependsOn: [], reads: [], ...(!baseline && head ? { baseOperationId: head.action.operationId } : {}) };
-      if (publicCopy) causal.reads.push({ listId: input.body.publicImport.source.listId, revision: input.body.publicImport.source.stateRevision });
+      if (publicCopy) causal.reads.push(...personalPublicImportSourceReads(input.body.publicImport.source));
       if (serverCopy) causal.reads.push({ listId: input.body.serverImport.source.listId, revision: input.body.serverImport.source.stateRevision });
       if (causal.baseOperationId) causal.dependsOn.push({ operationId: head.action.operationId, listId });
       if ([2, 5].includes(input.body.ownerResult?.version) && !causal.dependsOn.some(dep => dep.operationId === input.body.ownerResult.publicOperationId)) {

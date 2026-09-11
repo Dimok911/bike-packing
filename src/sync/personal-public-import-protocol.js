@@ -27,10 +27,18 @@ export function personalPublicImportSource(value) {
   return clone(value);
 }
 
+// Pending administrative sources are resolved in their own server namespace;
+// they never become personal list revision reads or personal dependencies.
+export function personalPublicImportSourceReads(value) {
+  const source = personalPublicImportSource(value);
+  return source.kind === "admin-template" && source.base ? [] : [{ listId: source.listId, revision: source.stateRevision }];
+}
+
 export function personalPublicImportManifest(value) {
   assertListOperationJsonValue(value);
   if (!value || !Object.hasOwn(value, "source")) fail();
   if (value.source?.kind === "admin-template" && (value.files?.length !== 0 || value.photoTargets?.length !== 0)) fail();
+  if (value.source?.kind === "admin-template" && value.source.base?.operationId === value.operationId) fail();
   if (value.version === 2) {
     if (!exact(value, ["version", "operationId", "sourcePayload", "sourceHash", "copy", "ownerTargets", "photoTargets", "editMeta", "targetStateRevision", "payloadHash", "files", "source"])
       || typeof value.operationId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.operationId)
@@ -55,7 +63,8 @@ export function assertPersonalPublicImportBody(body, options = {}) {
   if (!exact(body, ["baseStateRevision", "payload", "publicImport", ...(options.causal ? ["causal"] : [])])) fail();
   const manifest = personalPublicImportManifest(body.publicImport), source = manifest.source;
   if (source.listId === options.listId || manifest.ownerTargets.some(target => target.reuse !== false)) fail();
-  if (options.causal && !same(body.causal?.reads, [{ listId: source.listId, revision: source.stateRevision }])) fail();
+  if (options.causal && (!same(body.causal?.reads, personalPublicImportSourceReads(source))
+    || source.kind === "admin-template" && source.base && body.causal?.dependsOn?.some(dep => dep.operationId === source.base.operationId))) fail();
   if (body.baseStateRevision !== manifest.targetStateRevision || options.operationId !== manifest.operationId) fail();
   if (manifest.version === 1) return assertPersonalGuestImportBody(copyBody(body), options);
   const plan = personalPublicEntityPlan({ ...manifest, currentPayload: options.base, listId: options.listId }, manifest.files);
