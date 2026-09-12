@@ -1,7 +1,7 @@
 import { canonicalTemplateJson as canonical, validTemplateOperationId } from "./admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 import { adminTemplatePhotoCopyIntent, adminTemplatePhotoCopyStageManifests,
-  assertAdminTemplatePhotoCopyIntentDigests } from "./admin-template-photo-copy-protocol.js";
+  adminTemplatePhotoCopyStageDigest } from "./admin-template-photo-copy-protocol.js";
 import { assertAdminTemplatePhotoOwnerMap } from "./admin-template-photo-owner-map.js";
 import { assertAdminTemplatePhotoView } from "./admin-template-photo-view.js";
 import { recoverPersonalAdminDrafts } from "./personal-admin-draft-recovery.js";
@@ -142,13 +142,25 @@ function validate(input) {
 // Final source/manifest digests are mandatory: construction helpers may fill
 // placeholders earlier, but this boundary neither generates IDs nor accepts
 // placeholders as dispatch authority. There are no Blob or receipt fields.
+async function derive(input) {
+  // Detach the entire input before the first await. This proof is local to this
+  // invocation; later reads still validate their own actual stored bytes.
+  const frozen = clone(input), { binding, action, snapshot, intent } = validate(frozen);
+  const stages = await adminTemplatePhotoCopyStageManifests(intent);
+  for (const [index, stage] of stages.entries()) {
+    if (await adminTemplatePhotoCopyStageDigest(stage) !== intent.body.photoCopy.assets[index].assetDigest) invalid();
+  }
+  const envelope = { version: 1, kind, binding, action, snapshot, stages }, intentJson = canonical(envelope);
+  if (new TextEncoder().encode(intentJson).byteLength > 12 * 1024 * 1024) invalid();
+  return { envelope, intentJson };
+}
+
+const decoded = (value, intentHash) => clone({ binding: value.binding, action: value.action,
+  snapshot: value.snapshot, stages: value.stages, intentHash });
+
 export async function encodeAdminTemplatePhotoCopyRecord(input) {
   try {
-    const frozen = clone(input), { binding, action, snapshot, intent } = validate(frozen);
-    await assertAdminTemplatePhotoCopyIntentDigests(intent);
-    const stages = await adminTemplatePhotoCopyStageManifests(intent);
-    const envelope = { version: 1, kind, binding, action, snapshot, stages }, intentJson = canonical(envelope);
-    if (new TextEncoder().encode(intentJson).byteLength > 12 * 1024 * 1024) invalid();
+    const { envelope: { binding, action }, intentJson } = await derive(input);
     return { version: 1, kind, key: recordKey(binding, action.operationId), bindingKey: bindingKey(binding), intentJson, intentHash: await digest(intentJson) };
   } catch { invalid(); }
 }
@@ -163,15 +175,17 @@ export async function decodeAdminTemplatePhotoCopyRecord(input, bindingInput, op
     const value = JSON.parse(record.intentJson);
     if (!exact(value, ["version", "kind", "binding", "action", "snapshot", "stages"]) || value.version !== 1 || value.kind !== kind
       || value.action?.operationId !== operationId || !same(value.binding, binding) || canonical(value) !== record.intentJson) invalid();
-    const encoded = await encodeAdminTemplatePhotoCopyRecord({ binding, action: value.action, snapshot: value.snapshot });
-    if (!same(record, encoded)) invalid();
-    return { binding, action: value.action, snapshot: value.snapshot, stages: value.stages, intentHash: record.intentHash };
+    const expected = await derive({ binding, action: value.action, snapshot: value.snapshot });
+    // The actual envelope hash was checked above. Compare the complete derived
+    // content, including every stage, without hashing those same bytes again.
+    if (expected.intentJson !== record.intentJson) invalid();
+    return decoded(value, record.intentHash);
   } catch { invalid(); }
 }
 
 export async function prepareAdminTemplatePhotoCopyRecord(input) {
   try {
-    const frozen = clone(input), record = await encodeAdminTemplatePhotoCopyRecord(frozen);
-    return await decodeAdminTemplatePhotoCopyRecord(record, frozen.binding, frozen.action.operationId);
+    const { envelope, intentJson } = await derive(input);
+    return decoded(envelope, await digest(intentJson));
   } catch { invalid(); }
 }

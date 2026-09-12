@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
 import { encodeAdminTemplatePhotoCopyRecord, decodeAdminTemplatePhotoCopyRecord, prepareAdminTemplatePhotoCopyRecord } from "../../src/sync/admin-template-photo-copy-record.js";
 import { adminTemplatePhotoCopyIntent, adminTemplatePhotoCopyStageManifests, adminTemplatePhotoCopyStageDigest } from "../../src/sync/admin-template-photo-copy-protocol.js";
 import { adminPhotoCopyRecordInput } from "../fixtures/admin-template-photo-copy-record-fixture.js";
@@ -9,6 +10,16 @@ import { hash } from "../fixtures/admin-template-photo-copy-fixture.js";
 const blocked = { code: "admin-template-photo-copy-record", isAdminTemplateBlocked: true };
 const encode = input => encodeAdminTemplatePhotoCopyRecord(input);
 const source = input => input.snapshot.source.beforeState.layouts[input.snapshot.source.layoutId].adminCausalSource;
+async function observeDigests(run) {
+  const subtle = crypto.subtle, own = Object.getOwnPropertyDescriptor(subtle, "digest"), original = subtle.digest, inputs = [];
+  Object.defineProperty(subtle, "digest", { configurable: true, value(algorithm, data) {
+    assert.equal(algorithm, "SHA-256");
+    inputs.push(createHash("sha256").update(Buffer.from(data)).digest("hex"));
+    return original.call(this, algorithm, data);
+  } });
+  try { return { value: await run(), inputs }; }
+  finally { if (own) Object.defineProperty(subtle, "digest", own); else delete subtle.digest; }
+}
 async function redigest(input) {
   input.action.body.photoCopy.source.payloadDigest = hash(input.action.body.photoCopy.source.payload);
   const manifests = await adminTemplatePhotoCopyStageManifests(adminTemplatePhotoCopyIntent({ ...input.binding, ...input.action }));
@@ -37,6 +48,78 @@ test("prepare freezes both namespaces and final IDs before the first digest awai
   input.action.body.photoCopy.fields.name = "late edit"; input.snapshot.source.metadata.title = "changed during await";
   const result = await pending;
   assert.deepEqual(result.action, before.action); assert.deepEqual(result.snapshot, before.snapshot);
+});
+
+test("each codec operation hashes every required proof once without repeated derivation or retained authority", async () => {
+  for (const entityType of ["item", "container"]) {
+    const input = await adminPhotoCopyRecordInput({ entityType }), raw = await encode(input), envelope = JSON.parse(raw.intentJson);
+    const intent = adminTemplatePhotoCopyIntent({ ...input.binding, ...input.action }), selected = intent.body.photoCopy.source;
+    const photos = selected.payload[entityType === "item" ? "items" : "containers"][selected.entityId].photos;
+    const required = [selected.payload, intent.body.payload, ...photos, ...envelope.stages, envelope].map(hash).sort();
+    const expected = await decodeAdminTemplatePhotoCopyRecord(raw, input.binding, input.action.operationId);
+    for (const [name, run, result] of [
+      ["encode", () => encode(input), raw],
+      ["decode", () => decodeAdminTemplatePhotoCopyRecord(raw, input.binding, input.action.operationId), expected],
+      ["prepare", () => prepareAdminTemplatePhotoCopyRecord(input), expected]
+    ]) {
+      // Repeat the same UUID and bytes: every invocation still reads and hashes
+      // all its own proof inputs, rather than consulting a prior-ID cache.
+      for (let repeat = 0; repeat < 2; repeat++) {
+        const measured = await observeDigests(run);
+        assert.deepEqual(measured.value, result, `${entityType} ${name} representation`);
+        assert.deepEqual(measured.inputs.sort(), required, `${entityType} ${name} proof inputs`);
+        assert.equal(measured.inputs.length, 2 * photos.length + 3);
+      }
+    }
+  }
+});
+
+test("encode and cold decode detach nested input, raw bytes and binding before their first await", async () => {
+  const input = await adminPhotoCopyRecordInput(), original = structuredClone(input), preparing = encode(input);
+  input.action.body.photoCopy.assets[0].assetId = randomUUID();
+  input.snapshot.target.beforeState.layouts[input.snapshot.target.layoutId].name = "Late target edit";
+  const raw = await preparing, binding = structuredClone(original.binding), reading = decodeAdminTemplatePhotoCopyRecord(raw, binding, original.action.operationId);
+  raw.intentJson = "{\"late\":true}"; raw.intentHash = "0".repeat(64); binding.actorId = "late actor";
+  const value = await reading;
+  assert.deepEqual(value.action, original.action); assert.deepEqual(value.snapshot, original.snapshot); assert.deepEqual(value.binding, original.binding);
+  await assert.rejects(decodeAdminTemplatePhotoCopyRecord(raw, original.binding, original.action.operationId), blocked);
+  await assert.rejects(encode(input), blocked);
+});
+
+test("a prior valid decode cannot bless a rehashed wrong source, asset digest, stage order or envelope field", async () => {
+  const input = await adminPhotoCopyRecordInput(), raw = await encode(input);
+  const expected = await decodeAdminTemplatePhotoCopyRecord(raw, input.binding, input.action.operationId);
+  for (const mutate of [
+    value => { value.action.body.photoCopy.source.payloadDigest = "0".repeat(64); },
+    value => { value.action.body.photoCopy.assets[0].assetDigest = "0".repeat(64); },
+    value => { value.stages.reverse(); },
+    value => { value.stages[0].target.photoId = value.stages[1].target.photoId; },
+    value => { value.version = 2; },
+    value => { value.receipt = { operationCannotApply: true }; }
+  ]) {
+    const value = JSON.parse(raw.intentJson); mutate(value);
+    const changed = { ...raw, intentJson: canonicalTemplateJson(value), intentHash: hash(value) };
+    await assert.rejects(decodeAdminTemplatePhotoCopyRecord(changed, input.binding, input.action.operationId), blocked);
+    assert.deepEqual(await decodeAdminTemplatePhotoCopyRecord(raw, input.binding, input.action.operationId), expected);
+  }
+});
+
+test("cold byte and canonical-envelope limits stay strict and oversized UTF-8 is rejected before hashing", async () => {
+  const input = await adminPhotoCopyRecordInput(), raw = await encode(input);
+  for (const mutate of [
+    value => { value.intentJson += " "; value.intentHash = createHash("sha256").update(value.intentJson).digest("hex"); },
+    value => { value.intentHash = value.intentHash.toUpperCase(); },
+    value => { value.version = 2; },
+    value => { value.key += " "; },
+    value => { value.bindingKey += " "; }
+  ]) {
+    const changed = structuredClone(raw); mutate(changed);
+    await assert.rejects(decodeAdminTemplatePhotoCopyRecord(changed, input.binding, input.action.operationId), blocked);
+  }
+  const oversized = { ...raw, intentJson: "я".repeat(6 * 1024 * 1024) + "x" };
+  assert.ok(oversized.intentJson.length < 12 * 1024 * 1024);
+  const measured = await observeDigests(() => assert.rejects(decodeAdminTemplatePhotoCopyRecord(oversized, input.binding, input.action.operationId), blocked));
+  assert.equal(measured.inputs.length, 0);
 });
 
 test("unsaved source and target owner business edits, missing opaque fields and dictionary/packed changes cannot normalize away", async () => {

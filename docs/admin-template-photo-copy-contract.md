@@ -231,9 +231,25 @@ create a missing plan/journal or dispatch a new copy.
 Actual browser acceptance passed 14 distinct cases (7 Chromium and 7 WebKit),
 with zero retries/skips. It covers the item, root shell, repeated copy, lost
 stage/save responses, OFF recovery and real local-storage failures. Frozen
-source hashes are recorded with the acceptance run. Windows WebKit took 52s
-for two sequential copies and 24s for a root shell. This work is not the whole
+source hashes are recorded with the acceptance run. This work is not the whole
 stage 3 or real-device Safari acceptance or performance verification.
+
+## Local derivation cost
+
+Record preparation, encoding and decoding now each derive the immutable
+envelope once per invocation. For two photos, observed SHA-256 calls fell
+from 11/12/23 respectively to 7/7/7; all seven required proof inputs are still
+hashed on every invocation. The stored format and hashes are unchanged.
+There is no ID cache or retained proof authority. All external context checks,
+locks, fresh IDB reads and transaction/readback checks remain unchanged.
+
+The refactor passed 111 focused cases, all 1833 transport cases (including
+the separately registered tree foundation), then the same 14 UI scenarios
+with a fresh build and no retries/skips. Across the transport/UI runs, 841
+code/test file hashes remained stable. In this single Windows comparison,
+WebKit's two-copy case fell from 52.5s to 30.7s and its root shell from 27.3s
+to 14.7s; the entire 14-case run fell from 5.2 to 3.3 minutes. These are test
+run observations, not a formal benchmark or an iPhone performance guarantee.
 
 ## Local preparation checks
 
