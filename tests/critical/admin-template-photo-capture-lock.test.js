@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
+import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
 import { adminTemplatePhotoNamespace } from "../../src/public/admin-template-photo-state.js";
 import { createAdminTemplatePhotoFormController } from "../../src/ui/admin-template-photo-form-controller.js";
 import { adminPhotoRecordFixture } from "../fixtures/admin-template-photo-record-fixture.js";
@@ -28,19 +29,20 @@ async function fixture(entityType = "item") {
     ...(entityType === "item" ? { quantity: 1 } : { volume: 25, nestable: true }) },
     created: false, catalogSource: false, placementChanged: false, availabilityChanged: false };
   const view = { entityId, token: {}, source: owner, dialog: { open: true }, saveButton: { disabled: false }, draft: null };
-  const capture = (input, options, kind, captureComplete) => {
-    captures.push({ input, options, kind });
+  const capture = (input, options, kind, captureComplete, captureLease) => {
+    assert.equal(assertAdminTemplateCaptureLease(captureLease, [record.binding]), true);
+    captures.push({ input, options, kind, captureLease });
     return controls.capture ? controls.capture(input, options, kind, captureComplete) : Promise.resolve();
   };
-  const deps = { state, canonicalTemplateJson, clone, adminTemplatePhotoNamespace, currentUser: user, modeState: mode, location,
+  const deps = { state, canonicalTemplateJson, clone, adminTemplatePhotoNamespace, withAdminTemplateCapture, currentUser: user, modeState: mode, location,
     canOpenAdminPublishedEdit: () => controls.admin, isAdminPublicEditScope: () => controls.scope === "admin",
     getPublishedEditLayoutId: () => controls.layoutId, currentViewScope: () => controls.scope,
     adminTemplatePhotoFormEnabled: () => controls.append, adminTemplatePhotoEditFormEnabled: () => controls.edit,
     navigator: { locks: { request: (name, run) => new Promise((resolve, reject) => {
       locks.push({ name, release: () => Promise.resolve().then(run).then(resolve, reject) });
     }) } },
-    captureAdminTemplatePhotoAppendForm: (input, options, complete) => capture(input, options, "append", complete),
-    captureAdminTemplatePhotoEditForm: (input, options, complete) => capture(input, options, "edit", complete) };
+    captureAdminTemplatePhotoAppendForm: (input, options, complete, lease) => capture(input, options, "append", complete, lease),
+    captureAdminTemplatePhotoEditForm: (input, options, complete, lease) => capture(input, options, "edit", complete, lease) };
   const actual = new Function(...Object.keys(deps), `const administrativeObjectIds = new WeakMap(); let administrativeObjectCounter = 0;
     ${source}\nreturn { ${names.join(", ")} };`)(...Object.values(deps));
   const dispatch = (method, input, options) => {
@@ -75,6 +77,7 @@ test("durable capture releases the cross-tab fence before its network acknowledg
   f.controller.save("item");
   const save = f.submissions[0].promise.then(value => { settled = true; return value; });
   await f.release(); assert.equal(settled, false);
+  assert.throws(() => assertAdminTemplateCaptureLease(f.captures[0].captureLease, [f.record.binding]));
   finishNetwork("confirmed"); assert.equal(await save, "confirmed"); assert.equal(settled, true);
 });
 

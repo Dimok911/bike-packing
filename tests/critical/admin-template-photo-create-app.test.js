@@ -206,6 +206,7 @@ test("actual administrative order reads retained terminal V7 through its IDB pro
     const api = actual(app, ["openCausalAdminTemplateOrder"], { currentUser: { id: f.binding.actorId }, state: { layouts: {} },
       adminTemplateUiEnabled: () => true, administrativeSaveCoordinator: null, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: false,
       adminTemplateOperationContext: () => f.current, adminTemplateClient: () => off.client, adminTemplatePhotoStore: () => f.store,
+      adminTemplatePhotoCopyStore: () => null,
       createAdminTemplateSavePlans: options => createAdminTemplateSavePlans({ ...options, storage: f.storage, locks: f.locks }),
       createAdminTemplateOrderBatch: options => ({ async open(targets) { await options.assertNoPending(f.binding); return { targets }; } }) });
     if (committed) assert.deepEqual((await api.openCausalAdminTemplateOrder([])).targets, []);
