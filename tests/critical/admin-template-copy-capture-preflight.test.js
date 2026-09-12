@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { adminPhotoCopyClientFixture, copy, hash } from "../fixtures/admin-template-photo-copy-client-fixture.js";
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
+import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
+import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
@@ -24,6 +26,9 @@ async function fixture() {
     adminTemplateOperationContext: () => f.current,
     adminTemplatePhotoExcludedPlans: async () => { controls.afterExcluded?.(); return copy(controls.excluded); },
     createAdminTemplatePhotoCopyActionStore: options => { factories.push(options); return createAdminTemplatePhotoCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }); },
+    createAdminTemplatePhotoTreeCopyActionStore: options => createAdminTemplatePhotoTreeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
+    createAdminTemplatePhotoTreeCopyClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks: f.locks }),
+    experimentTransport: f.make().transport,
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,
     adminTemplateClient: () => ({ capture() { assert.fail("Preflight must not dispatch"); } }),
     adminTemplatePhotoCopyClient: (binding, selectedId, preparing) => {
@@ -32,7 +37,7 @@ async function fixture() {
         .map(method => [method, () => assert.fail(`Ordinary preflight must not call copy client ${method}`)])) };
     },
     adminTemplateRecoveryFor: () => ({ requiresCancellation: () => false }) };
-  const api = actual(["adminTemplatePhotoCopyStore", "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
+  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
   const ordinary = { operationId: crypto.randomUUID(), body: { version: 1, base: copy(f.intent.body.base),
     payload: copy(f.intent.body.payload), metadata: copy(f.intent.body.metadata) } };
   const check = (request = ordinary) => withAdminTemplateCapture({ bindings: [f.binding], locks: f.locks }, captureLease =>
@@ -86,7 +91,7 @@ test("actual app preflight rejects an invented or released lease before opening 
 test("actual legacy reconciliation cannot bypass an orphan copy record before its plan or editor marker exists", async () => {
   const f = await fixture(), layout = f.state.layouts[f.layoutId]; delete layout.adminCausalSource;
   let resumed = false;
-  const api = actual(["adminTemplatePhotoCopyStore", "assertAdminTemplateCopyCaptureAllowed", "reconcileLegacyAdminTemplate"], {
+  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "assertAdminTemplateCopyCaptureAllowed", "reconcileLegacyAdminTemplate"], {
     ...f.deps, state: f.state, canOpenAdminPublishedEdit: () => true, experimentTransport: {},
     createAdminTemplatePhotoActionStore: () => null, createAdminTemplateClient: () => ({}),
     createAdminTemplateLegacyChoice: ({ plans }) => ({ open: async () => ({ saved: true }), async resume() {

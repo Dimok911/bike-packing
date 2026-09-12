@@ -207,6 +207,8 @@ import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-sav
 import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson, validTemplateOperationId } from "./src/sync/admin-template-protocol.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./src/sync/admin-template-capture-lease.js";
 import { createAdminTemplatePhotoCopyActionStore } from "./src/sync/admin-template-photo-copy-action-store.js";
+import { createAdminTemplatePhotoTreeCopyActionStore } from "./src/sync/admin-template-photo-tree-copy-action-store.js";
+import { createAdminTemplatePhotoTreeCopyClient } from "./src/sync/admin-template-photo-tree-copy-client.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./src/sync/admin-template-photo-copy-protocol.js";
 import { createAdminTemplatePhotoCopyClient } from "./src/sync/admin-template-photo-copy-client.js";
 import { adminTemplatePhotoCopyEditorSnapshot, assertAdminTemplatePhotoCopyPlanRecord } from "./src/sync/admin-template-photo-copy-save-plan.js";
@@ -10949,6 +10951,25 @@ function adminTemplatePhotoCopyClient(binding, layoutId, preparing = false) {
     getContext: () => adminTemplateOperationContext(binding, layoutId, preparing), enabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED,
     adminEnabled: adminTemplateUiEnabled(), appendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, createEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED });
 }
+async function adminTemplatePhotoTreeCopyInventory(binding, layoutId, preparing = false) {
+  // Inventory remains visible with tree writes OFF. Use the actual typed
+  // readers: a journal without its complete IDB record is an error, not empty.
+  const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
+  const initial = canonicalTemplateJson(getContext()), guard = () => {
+    if (canonicalTemplateJson(getContext()) !== initial) throw Error("Контекст копирования дерева изменился.");
+  };
+  const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
+  const client = createAdminTemplatePhotoTreeCopyClient({ binding, getContext, store, transport: experimentTransport, enabled: false });
+  const ids = await store.ids(); guard(); const records = [];
+  for (const id of ids) {
+    const record = await store.read(id); guard();
+    if (!record || record.action.operationId !== id) throw Error("Исходная запись копирования дерева требует сверки.");
+    records.push(record);
+  }
+  const journals = await client.list(); guard();
+  // This does not interpret terminal facts as adoption or cleanup authority.
+  return { records, journals };
+}
 function adminTemplatePhotoCopyFormEnabled() {
   return ADMIN_TEMPLATE_PHOTO_COPY_ENABLED && adminTemplatePhotoCreateFormEnabled();
 }
@@ -11135,6 +11156,18 @@ async function assertAdminTemplateCopyCaptureAllowed(binding, layoutId,
     } else if (body.base?.operationId === id || !excluded.includes(id)
       && canonicalTemplateJson(body.base) === canonicalTemplateJson(record.action.body.base)) {
       throw Error("Сначала продолжите сохранённое копирование этой версии шаблона.");
+    }
+  }
+  const tree = await adminTemplatePhotoTreeCopyInventory(binding, layoutId, preparing); check();
+  for (const record of tree.records) {
+    if (record.action.operationId !== operationId) {
+      // V8 exclusions and even a different base cannot retire a V9 action.
+      // A future typed recovery choice must prove that transition explicitly.
+      throw Error("Сначала завершите сохранённое копирование дерева этого шаблона.");
+    }
+    if (body.photoCopy?.version !== 2 || recordIntentHash !== record.intentHash
+      || canonicalTemplateJson(body) !== canonicalTemplateJson(record.action.body)) {
+      throw Error("Идентификатор уже принадлежит другому сохранённому дереву.");
     }
   }
   check(); return true;
@@ -12100,6 +12133,8 @@ async function openCausalAdminTemplateOrder(sections) {
       if (layout && (layout.adminCausalCopyPlan || layout.adminCausalSource.planId || layout.templateDraftSyncPending || administrativeSaveCoordinator?.hasPendingCapture(layout.id))) {
         throw Error("Сначала завершите сохранение изменённого шаблона.");
       }
+      const tree = await adminTemplatePhotoTreeCopyInventory(binding, layout?.id || "", true);
+      if (tree.records.length) throw Error("Сначала завершите сохранённое копирование дерева шаблона.");
       const client = adminTemplateClient(binding, "", true);
       const plans = createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client,
         photoStore: adminTemplatePhotoStore(binding, "", true), photoCreateEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED,
