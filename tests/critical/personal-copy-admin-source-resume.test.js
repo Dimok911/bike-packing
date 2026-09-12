@@ -88,7 +88,7 @@ async function harness() {
     // activation/persistence or ordinary return must fail this regression.
     activateAdminPublishedLayout: privateFence, switchActiveLayout: privateFence, persistStateSnapshot: privateFence,
     personalSaveRecovery: { assertRunning: privateFence }, saveState: privateFence,
-    createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true,
+    createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true, resumeAdminTemplatePhotoTreeCopyForm: async () => null,
     applyAdminTemplateConfirmedPhotoCopyResult: () => assert.fail("Ordinary pending admin source must not apply a photo-copy result"),
     adminTemplateRecoveryFor: () => ({ resumeStop: async () => null }),
     adminTemplateStopChoiceFor: () => ({ resume: async () => null }), administrativeSaveCoordinator: null };

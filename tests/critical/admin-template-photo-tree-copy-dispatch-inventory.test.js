@@ -85,7 +85,7 @@ async function fixture({ actualStopFactories = false } = {}) {
     adminTemplatePhotoMechanismEnabled: () => false, adminTemplateEditorSnapshot: () => assert.fail("Readonly exclusions cannot snapshot live state") });
   const api = actual([...(actualStopFactories ? ["adminTemplateStopChoiceFor", "adminTemplateRecoveryFor"] : []),
     "adminTemplatePhotoTreeCopyInventory", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
-    "withAdminTemplatePhotoTreeCopyDispatchInventory"], deps);
+    "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory"], deps);
   const plan = adminTemplatePhotoTreeCopySavePlan({ binding: f.binding, operationId: f.id, body: f.record.action.body,
     editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(f.record), recordIntentHash: f.record.intentHash });
   const saved = { version: 1, plan, digest: hash(plan), cancelRequested: false }, planKey = prefix(planPrefix, f.binding) + f.id;

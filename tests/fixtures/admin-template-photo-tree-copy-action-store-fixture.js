@@ -16,8 +16,8 @@ export async function treeStoreInput({ targetRevision = 11, ...options } = {}) {
 
 // Reuse the eventful, serialized IDB transaction model. This proves orchestration
 // against cloned transaction snapshots; native browser quota remains a later proof.
-export async function treeActionStoreFixture(options = {}) {
-  const input = await treeStoreInput(options), prepared = await prepareAdminTemplatePhotoTreeCopyRecord(input), fake = adminPhotoIndexedDBFixture();
+export async function treeActionStoreFixture({ recordInput, ...options } = {}) {
+  const input = recordInput ? structuredClone(recordInput) : await treeStoreInput(options), prepared = await prepareAdminTemplatePhotoTreeCopyRecord(input), fake = adminPhotoIndexedDBFixture();
   const idb = { ...fake, rows: (name = "actions") => fake.databases.get("bike-packing-admin-template-photo-tree-copy-actions-v1")?.stores.get(name) };
   const context = { ...input.binding, scope: "admin-template", admin: true, generation: "tree-copy-generation" };
   const create = extra => createAdminTemplatePhotoTreeCopyActionStore({ binding: input.binding, indexedDB: idb.indexedDB,

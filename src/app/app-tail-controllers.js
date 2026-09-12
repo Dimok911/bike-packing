@@ -143,10 +143,53 @@ import {
 } from "../ui/picker-list-thumbnails.js";
 import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
+// Route from the immutable selection, so a contents copy can never become a
+// V8 shell on retry. The app supplies the full source/target eligibility proof.
+export function createAdminTemplatePhotoCopyPickerController({ getSelection, getSession,
+  adminTemplatePhotoCopyFormEnabled = () => false, adminTemplatePhotoCopyEligible = () => false, submitAdminTemplatePhotoCopyForm,
+  adminTemplatePhotoTreeCopyFormEnabled = () => false, adminTemplatePhotoTreeCopyEligible = () => false, submitAdminTemplatePhotoTreeCopyForm,
+  onBusy, onError, onDurable = () => {} }) {
+  let selectedIndex;
+  const currentSelection = index => {
+    const copyEnabled = adminTemplatePhotoCopyFormEnabled(), treeEnabled = adminTemplatePhotoTreeCopyFormEnabled();
+    if (!copyEnabled && !treeEnabled) return null;
+    const value = getSelection(); if (!value) return null;
+    if (value.entityType === "container" && value.includeContents === true) {
+      const chosen = index === undefined ? value : { ...value, placementIndex: index };
+      return treeEnabled ? chosen : null;
+    }
+    return copyEnabled && adminTemplatePhotoCopyEligible(value) ? value : null;
+  };
+  const selection = index => {
+    const value = currentSelection(index);
+    return value?.entityType === "container" && value.includeContents === true
+      ? adminTemplatePhotoTreeCopyEligible(value) ? value : null : value;
+  };
+  // V9 eligibility is admission, not picker lifetime: its own durable pending
+  // marker changes eligibility. The app still proves both namespaces after
+  // every await; this callback tracks only form/session/route/index continuity.
+  const controller = createAdminTemplatePhotoCopyController({ getSelection: () => currentSelection(selectedIndex), getSession, onBusy, onError,
+    submit: (input, options) => {
+      const tree = input.entityType === "container" && input.includeContents === true;
+      if (!options.isCurrent() || tree && !adminTemplatePhotoTreeCopyEligible(input)) throw Error("Выбор копирования изменился. Выберите место ещё раз.");
+      const submit = tree
+        ? submitAdminTemplatePhotoTreeCopyForm : submitAdminTemplatePhotoCopyForm;
+      return submit(input, { ...options, onDurable: record => options.onDurable({ record, input }) });
+    },
+    onDurable: ({ record, input }) => onDurable(record, input) });
+  return Object.freeze({ busy: controller.busy, selection,
+    save: index => {
+      if (controller.busy()) return controller.save();
+      selectedIndex = index;
+      return selection(index) ? controller.save() : Promise.resolve(false);
+    } });
+}
+
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     adminTemplatePhotoCreateFormEnabled = () => false, adminTemplatePhotoCreateFormContext, submitAdminTemplatePhotoCreateForm,
     adminTemplatePhotoCopyFormEnabled = () => false, adminTemplatePhotoCopyEligible = () => false, submitAdminTemplatePhotoCopyForm,
+    adminTemplatePhotoTreeCopyFormEnabled = () => false, adminTemplatePhotoTreeCopyEligible = () => false, submitAdminTemplatePhotoTreeCopyForm,
     adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false, adminTemplatePhotoReplaceFormEnabled = () => false,
     adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
     prepareCausalAdminCatalogCopy,
@@ -164,15 +207,17 @@ export function createAppTailControllers(ctx) {
   let rootContainerDialogCopyIncludesContents = true;
   let sharedPickerCopyIncludesContents = true;
   let adminTemplatePhotoCopyPickerSession = null;
-  const adminTemplatePhotoCopies = createAdminTemplatePhotoCopyController({
-    getSelection: () => adminTemplatePhotoCopyPickerSelection(), submit: (input, options) => submitAdminTemplatePhotoCopyForm(input, options),
+  const adminTemplatePhotoCopies = createAdminTemplatePhotoCopyPickerController({
+    getSelection: () => adminTemplatePhotoCopyPickerSelection(),
+    adminTemplatePhotoCopyFormEnabled, adminTemplatePhotoCopyEligible, submitAdminTemplatePhotoCopyForm,
+    adminTemplatePhotoTreeCopyFormEnabled, adminTemplatePhotoTreeCopyEligible, submitAdminTemplatePhotoTreeCopyForm,
     getSession: () => adminTemplatePhotoCopyPickerSession,
     onBusy: busy => { const button = refs.containerPickerBoard?.querySelector("[data-pick-admin-photo-catalog]"); if (button) button.disabled = busy; },
     onError: error => showToast(error.message, "error"),
-    onDurable: record => {
+    onDurable: (_record, input) => {
       closeDialogWithoutRestoringFocus(refs.containerPickerDialog);
-      closeDialogWithoutRestoringFocus(record.snapshot.copiedOwner.entityType === "item" ? refs.dialog : refs.rootContainerDialog);
-      switchView(record.snapshot.copiedOwner.entityType === "item" ? "items" : "bags"); render();
+      closeDialogWithoutRestoringFocus(input.entityType === "item" ? refs.dialog : refs.rootContainerDialog);
+      switchView(input.entityType === "item" ? "items" : "bags"); render();
     }
   });
   let itemFormDraftSaveTimer = null;
@@ -2017,12 +2062,15 @@ function renderContainerPicker() {
     refs.containerPickerBoard.querySelector("[data-pick-personal-catalog]").addEventListener("click", () =>
       copyItemToContainerInLayout(runtime.editingItemId, "", runtime.containerPickerLayoutId, { catalog: true }));
   }
-  if (adminTemplatePhotoCopyPickerSelection()) {
+  const photoCopySelection = adminTemplatePhotoCopies.selection();
+  if (photoCopySelection) {
     const shell = runtime.containerPickerMode === "container-copy";
+    const tree = shell && photoCopySelection.includeContents === true;
     refs.containerPickerBoard.insertAdjacentHTML("beforeend", `<article class="container-picker-column">
       <button class="container-picker-root" type="button" data-pick-admin-photo-catalog>
-        <strong>${escapeHtml(localText("To template catalog", "В каталог шаблона"))}</strong>
-        <span>${escapeHtml(shell ? localText("Independent photos, empty bag, without placement", "Независимые фото, без содержимого и размещения")
+        <strong>${escapeHtml(tree ? localText("Copy to layout", "Скопировать в укладку") : localText("To template catalog", "В каталог шаблона"))}</strong>
+        <span>${escapeHtml(tree ? localText("With contents and photos", "С содержимым и фотографиями")
+          : shell ? localText("Independent photos, empty bag, without placement", "Независимые фото, без содержимого и размещения")
           : localText("Independent photos, without placement", "Независимые фото, без размещения"))}</span>
       </button></article>`);
     const button = refs.containerPickerBoard.querySelector("[data-pick-admin-photo-catalog]");
@@ -2032,7 +2080,7 @@ function renderContainerPicker() {
   resetHorizontalTouchScroll(refs.containerPickerBoard);
 }
 function adminTemplatePhotoCopyPickerSelection() {
-  if (!adminTemplatePhotoCopyFormEnabled() || !["item-copy", "container-copy"].includes(runtime.containerPickerMode)
+  if (!["item-copy", "container-copy"].includes(runtime.containerPickerMode)
     || !refs.containerPickerDialog?.open) return null;
   const item = runtime.containerPickerMode === "item-copy", sourceId = item ? runtime.editingItemId : runtime.editingRootContainerId;
   const dialog = item ? refs.dialog : refs.rootContainerDialog, initial = item ? runtime.itemDialogInitialSnapshot : runtime.rootContainerDialogInitialSnapshot;
@@ -2043,7 +2091,17 @@ function adminTemplatePhotoCopyPickerSelection() {
   const selection = { entityType: item ? "item" : "container", sourceId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
     targetLayoutId: runtime.containerPickerLayoutId, includeContents: item ? false : containerPickerCopyIncludesContents,
     formSnapshot: clone(current) };
-  return adminTemplatePhotoCopyEligible(selection) ? selection : null;
+  if (!item && selection.includeContents === true) {
+    const roots = state.layouts?.[selection.targetLayoutId]?.rootContainerIds;
+    if (!Array.isArray(roots)) return null;
+    selection.placementIndex = roots.length;
+  }
+  return selection;
+}
+
+function isAdminTemplatePhotoTreeCopyPickerRoute() {
+  return adminTemplatePhotoTreeCopyFormEnabled() && runtime.containerPickerMode === "container-copy" && containerPickerCopyIncludesContents === true
+    && isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId) && isAdminEditablePublishedLayout(runtime.containerPickerLayoutId);
 }
 
 function renderRootCopyPlacementBoard() {
@@ -2374,6 +2432,10 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
     return;
   }
   if (runtime.containerPickerMode === "container-copy") {
+    if (isAdminTemplatePhotoTreeCopyPickerRoute()) {
+      showToast(localText("Copy the bag with its contents to a top-level position in the layout.", "Выберите место в корне укладки для сумки с содержимым."), "error");
+      return;
+    }
     await copyContainerTreeToLayout(runtime.editingRootContainerId, runtime.containerPickerLayoutId, containerId, {
       includeContents: containerPickerCopyIncludesContents,
       sourceLayoutId: runtime.containerPickerSourceLayoutId,
@@ -2397,6 +2459,13 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
 
 async function selectContainerPickerRootTarget(targetIndex = null) {
   if (runtime.containerPickerMode === "container-copy") {
+    if (isAdminTemplatePhotoTreeCopyPickerRoute()) {
+      if (!Number.isSafeInteger(targetIndex) || targetIndex < 0 || !adminTemplatePhotoCopies.selection(targetIndex)) {
+        showToast(localText("Check the saved source and selected target before copying the tree.", "Проверьте сохранённый источник и выбранную укладку перед копированием дерева."), "error");
+        return;
+      }
+      return adminTemplatePhotoCopies.save(targetIndex);
+    }
     await copyContainerTreeToLayout(runtime.editingRootContainerId, runtime.containerPickerLayoutId, "", {
       includeContents: containerPickerCopyIncludesContents,
       sourceLayoutId: runtime.containerPickerSourceLayoutId,

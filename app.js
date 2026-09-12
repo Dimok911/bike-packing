@@ -213,6 +213,12 @@ import { adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSna
 import { ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED } from "./src/sync/admin-template-photo-tree-copy-protocol.js";
 import { createAdminTemplatePhotoTreeCopyAdmission } from "./src/sync/admin-template-photo-tree-copy-admission.js";
 import { prepareAdminTemplatePhotoTreeCopyNamespaces } from "./src/public/admin-template-photo-tree-copy-namespaces.js";
+import { prepareAdminTemplatePhotoTreeCopyRecord } from "./src/sync/admin-template-photo-tree-copy-record.js";
+import { allocateAdminTemplatePhotoTreeCopySelection } from "./src/public/admin-template-photo-tree-copy-selection.js";
+import { prepareAdminTemplatePhotoTreeCopyForm } from "./src/public/admin-template-photo-tree-copy-flow.js";
+import { persistAdminTemplatePhotoTreeCopyPending } from "./src/public/admin-template-photo-tree-copy-pending.js";
+import { applyAdminTemplatePhotoTreeCopyResult } from "./src/public/admin-template-photo-tree-copy-apply.js";
+import { assertAdminTemplatePhotoTreeCopyExternalReferences } from "./src/public/admin-template-photo-tree-copy-projection.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./src/sync/admin-template-photo-copy-protocol.js";
 import { createAdminTemplatePhotoCopyClient } from "./src/sync/admin-template-photo-copy-client.js";
 import { adminTemplatePhotoCopyEditorSnapshot, assertAdminTemplatePhotoCopyPlanRecord } from "./src/sync/admin-template-photo-copy-save-plan.js";
@@ -1826,6 +1832,7 @@ const appTailControllerDeps = {
   adminTemplatePhotoFormEnabled, adminTemplatePhotoEditFormEnabled, adminTemplatePhotoReplaceFormEnabled, adminTemplatePhotoFormContext,
   adminTemplatePhotoCreateFormEnabled, adminTemplatePhotoCreateFormContext, submitAdminTemplatePhotoCreateForm,
   adminTemplatePhotoCopyFormEnabled, adminTemplatePhotoCopyEligible, submitAdminTemplatePhotoCopyForm,
+  adminTemplatePhotoTreeCopyFormEnabled, adminTemplatePhotoTreeCopyEligible, submitAdminTemplatePhotoTreeCopyForm,
   submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
   runCausalAdminTemplateCommand,
   prepareCausalAdminCatalogCopy,
@@ -10975,14 +10982,20 @@ async function adminTemplatePhotoTreeCopyInventory(binding, layoutId, preparing 
   return { records, journals };
 }
 async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
-  // Dispatch only: an IDB orphan is retained, but is not an executable V9 plan.
-  // The outer runner owns both common leases BEFORE taking command locks. This
-  // reader never takes the actor-order lock or grants capture/cancel authority.
+  return withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, "dispatch");
+}
+async function withAdminTemplatePhotoTreeCopyCaptureInventory(proof, task) {
+  return withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, "capture");
+}
+async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) {
+  // Capture may observe an absent own plan/record, before their first durable
+  // write. Dispatch still requires both. The named scopes cannot substitute
+  // for one another; neither authorizes cancellation or takes common locks.
   const clone = value => JSON.parse(canonicalTemplateJson(value));
   const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
   const pause = () => { throw Object.assign(Error("Сохранённое дерево и действия обоих шаблонов требуют сверки."),
     { code: "admin-template-photo-tree-copy-inventory-paused", isAdminTemplateBlocked: true }); };
-  if (typeof task !== "function" || typeof proof?.assertCurrent !== "function") pause();
+  if (!["capture", "dispatch"].includes(phase) || typeof task !== "function" || typeof proof?.assertCurrent !== "function") pause();
   const record = clone(proof.record), bindings = clone(proof.bindings), captureLease = proof.captureLease;
   const upstream = proof.assertCurrent.bind(proof), operationId = record.action.operationId;
   const expectedPlan = adminTemplatePhotoTreeCopySavePlan({ binding: record.binding, operationId, body: record.action.body,
@@ -11047,7 +11060,11 @@ async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
   };
   try {
     guard(); snapshot = rawInventory();
-    if (typeof storage.getItem(ownPlanKey) !== "string") pause();
+    if (phase === "dispatch" && typeof storage.getItem(ownPlanKey) !== "string") pause();
+    if (phase === "capture") {
+      const expected = await prepareAdminTemplatePhotoTreeCopyRecord({ binding: record.binding, action: record.action, snapshot: record.snapshot }); guard();
+      if (!same(expected, record)) pause();
+    }
     const { id: ignoredId, ...encodedIntent } = intent;
     payloadDigest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalTemplateJson(encodedIntent)))),
       byte => byte.toString(16).padStart(2, "0")).join(""); guard();
@@ -11106,9 +11123,9 @@ async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
       const orders = await readAdminTemplateOrderInventory({ binding, guard }); guard();
       for (const row of orders) other(row.intent);
     }
-    if (!ownPlan || !ownRecord) pause(); guard();
+    if (phase === "dispatch" && (!ownPlan || !ownRecord)) pause(); guard();
     const frozenBindings = Object.freeze(bindings.map(binding => Object.freeze(binding)));
-    const scope = Object.freeze({ kind: "admin-template-photo-tree-copy-inventory-v1", bindings: frozenBindings,
+    const scope = Object.freeze({ kind: phase === "dispatch" ? "admin-template-photo-tree-copy-inventory-v1" : "admin-template-photo-tree-copy-capture-inventory-v1", bindings: frozenBindings,
       recordIntentHash: record.intentHash, assertCurrent: guard });
     const result = await task(scope); guard(); return result;
   } finally { active = false; }
@@ -11215,6 +11232,189 @@ async function runAdminTemplatePhotoTreeCopyPlan(input) {
 }
 function adminTemplatePhotoCopyFormEnabled() {
   return ADMIN_TEMPLATE_PHOTO_COPY_ENABLED && adminTemplatePhotoCreateFormEnabled();
+}
+function adminTemplatePhotoTreeCopyFormEnabled() {
+  return ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED && adminTemplatePhotoCopyFormEnabled();
+}
+function adminTemplatePhotoTreeCopyEligible(input) {
+  if (!adminTemplatePhotoTreeCopyFormEnabled() || input?.entityType !== "container" || input.includeContents !== true
+    || input.sourceLayoutId === input.targetLayoutId) return false;
+  const layouts = [input.sourceLayoutId, input.targetLayoutId].map(id => state.layouts[id]);
+  if (layouts.some(layout => !layout || layout.adminCausalCopyPlan || layout.templateDraftSyncPending || administrativePhotoForms.has(layout.id)
+    || adminTemplateSaveCoordinator().hasPendingCapture(layout.id) || !layout.adminCausalSource?.photoOwnerMap || !layout.adminCausalSource.photoView
+    || layout.adminCausalSource.exists !== true || layout.adminCausalSource.visibility !== "private" || layout.adminCausalSource.deleted
+    || layout.adminCausalSource.planId || !Number.isSafeInteger(layout.adminCausalSource.base?.stateRevision) || layout.adminCausalSource.base.stateRevision < 1
+    || ["treePending", "photoTreeCopyPending"].some(key => Object.hasOwn(layout.adminCausalSource, key))
+    || layout.adminCausalSource.binding?.actorId !== String(currentUser?.id || ""))) return false;
+  if (layouts[0].adminCausalSource.binding.listId === layouts[1].adminCausalSource.binding.listId
+    || !layouts[0].arrangement?.rootContainerIds?.includes(input.sourceId)) return false;
+  const roots = layouts[1].arrangement?.rootContainerIds;
+  if (!Array.isArray(roots) || input.placementIndex !== undefined
+    && (!Number.isSafeInteger(input.placementIndex) || input.placementIndex < 0 || input.placementIndex > roots.length)) return false;
+  const seen = new Set(), pending = [["container", input.sourceId, 1]]; let photos = 0;
+  while (pending.length) {
+    const [type, id, depth] = pending.pop(), row = state[type === "container" ? "containers" : "items"]?.[id];
+    if (!row || seen.has(id) || seen.size >= 100 || depth > 32 || row.publicCatalogLayoutId !== layouts[0].id) return false;
+    seen.add(id); photos += row.photos?.length || 0; if (photos > 50) return false;
+    if (type === "container") {
+      const placement = layouts[0].arrangement?.containers?.[id]; if (!placement) return false;
+      for (const child of placement.childIds || []) pending.push(["container", child, depth + 1]);
+      for (const item of placement.itemIds || []) pending.push(["item", item, depth]);
+    }
+  }
+  return photos > 0;
+}
+const administrativePhotoTreeCopyAttempts = new WeakMap();
+async function captureAdminTemplatePhotoTreeCopyForm(record, isCurrent) {
+  const { binding, snapshot } = record, targetId = snapshot.target.layoutId;
+  const sides = [snapshot.source, snapshot.target], bindings = sides.map(side => side.ownerMap.binding);
+  const actor = currentUser, stateIdentity = state, initial = canonicalTemplateJson(adminTemplateOperationContext(binding, targetId));
+  const pending = clone(snapshot.target.beforeState), layout = pending.layouts[targetId];
+  layout.adminCausalSource = { ...layout.adminCausalSource, planId: record.action.operationId,
+    base: { operationId: record.action.operationId }, photoTreeCopyPending: record.action.operationId };
+  layout.templateDraftSyncPending = true;
+  const guard = () => {
+    if (state !== stateIdentity || currentUser !== actor || !isCurrent() || !adminTemplatePhotoTreeCopyFormEnabled()
+      || canonicalTemplateJson(adminTemplateOperationContext(binding, targetId)) !== initial) throw Error("Выбор копии или аккаунт изменился.");
+    for (const side of sides) {
+      const actual = canonicalTemplateJson(adminTemplatePhotoNamespace(state, side.layoutId));
+      if (actual !== canonicalTemplateJson(side.beforeState)
+        && !(side === snapshot.target && actual === canonicalTemplateJson(pending))) throw Error("Исходная укладка или получатель изменились. Выбор сохранён для сверки.");
+    }
+    for (const owner of snapshot.copiedOwners) for (const id of [owner.localId, owner.serverId]) {
+      if (["layouts", "items", "containers"].some(type => Object.hasOwn(state[type], id))) throw Error("Идентификатор новой копии уже занят.");
+    }
+    assertAdminTemplatePhotoTreeCopyExternalReferences(state, targetId, snapshot.copiedOwners.map(owner => owner.localId));
+  };
+  return withAdminTemplateCapture({ bindings, locks: navigator.locks }, async captureLease => {
+    guard();
+    const getContext = () => { guard(); return adminTemplateOperationContext(binding, targetId); };
+    const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: true });
+    const inventory = async () => withAdminTemplatePhotoTreeCopyCaptureInventory({ record, bindings, captureLease, assertCurrent: guard }, scope => scope.assertCurrent());
+    await inventory(); guard();
+    await store.capture({ action: record.action, snapshot }); guard();
+    const client = createAdminTemplatePhotoTreeCopyClient({ binding, store, getContext, transport: experimentTransport,
+      enabled: true, adminEnabled: adminTemplateUiEnabled(), appendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED,
+      createEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, copyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED });
+    const plans = createAdminTemplateSavePlans({ binding, getContext, enabled: true, photoTreeCopyEnabled: true,
+      client: adminTemplateClient(binding, targetId), photoTreeCopyStore: store, photoTreeCopyClient: client,
+      assertCaptureAllowed: async ({ guard: checked }) => { checked(); await inventory(); checked(); return true; } });
+    await plans.capturePhotoTreeCopy({ operationId: record.action.operationId, body: record.action.body,
+      editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(record), recordIntentHash: record.intentHash }, { captureLease }); guard();
+    await inventory(); guard(); await client.capture(record.action); guard();
+    // All durable pointers now exist. Dispatch inventory proves their exact
+    // bytes through the final mirror write, before any live pending marker.
+    return withAdminTemplatePhotoTreeCopyDispatchInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
+      persistAdminTemplatePhotoTreeCopyPending({ record, captureLease, getState: () => state,
+        getContext: () => adminTemplateOperationContext(binding, targetId),
+        getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
+  });
+}
+async function applyAdminTemplatePhotoTreeCopyFormResult(result) {
+  const { plan, record, receipt, stageReceipts } = result, binding = plan.binding, layoutId = record.snapshot.target.layoutId;
+  const bindings = [record.snapshot.source.ownerMap.binding, binding];
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
+  const getContext = () => adminTemplateOperationContext(binding, layoutId);
+  const guard = () => {
+    if (canonicalTemplateJson(getContext()) !== initial || getContext().admin !== true) throw Error("Контекст подтверждённой копии изменился.");
+  };
+  return withAdminTemplateCapture({ bindings, locks: navigator.locks }, async captureLease => {
+    guard();
+    const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
+    return withAdminTemplatePhotoTreeCopyDispatchInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
+      applyAdminTemplatePhotoTreeCopyResult({ plan, store, receipt, stageReceipts, getState: () => state, getContext,
+        getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
+  });
+}
+async function submitAdminTemplatePhotoTreeCopyForm(input, { isCurrent, onDurable }) {
+  let attempt = administrativePhotoTreeCopyAttempts.get(input);
+  if (!attempt) {
+    if (!isCurrent() || !adminTemplatePhotoTreeCopyEligible(input)) throw Error("Сначала сохраните обе приватные укладки и их фотографии.");
+    const before = id => {
+      const layout = state.layouts[id]; return { layoutId: id, ownerMap: clone(layout.adminCausalSource.photoOwnerMap),
+        beforeState: adminTemplatePhotoNamespace(state, id), metadata: { title: String(layout.name || "").trim(),
+          description: String(layout.note || "").trim(), language: normalizeUiLanguage(layout.language || uiLanguage) } };
+    };
+    const source = before(input.sourceLayoutId), target = before(input.targetLayoutId), changedAt = nowIso(), meta = currentEditMeta();
+    const selection = allocateAdminTemplatePhotoTreeCopySelection({ binding: target.ownerMap.binding, source, target, sourceRootLocalId: input.sourceId,
+      placementIndex: input.placementIndex ?? target.beforeState.layouts[target.layoutId].arrangement.rootContainerIds.length,
+      occupiedIds: ["layouts", "items", "containers"].flatMap(type => Object.keys(state[type])), fields: {
+        name: `${state.containers[input.sourceId].name} (${uiLanguage === "en" ? "copy" : "копия"})`.slice(0, 255).trim(),
+        createdAt: changedAt, updatedAt: changedAt, updatedByDeviceId: String(meta.updatedByDeviceId || ""), updatedByDeviceName: String(meta.updatedByDeviceName || "") } });
+    attempt = { selection, record: null }; administrativePhotoTreeCopyAttempts.set(input, attempt);
+  }
+  const { selection } = attempt, layoutId = selection.snapshot.target.layoutId;
+  if (!isCurrent() || !adminTemplatePhotoTreeCopyFormEnabled() || !restoreAdminPublishedLayoutContext(layoutId)) throw Error("Откройте выбранную приватную укладку.");
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(selection.binding, layoutId));
+  const contextGuard = () => {
+    const context = adminTemplateOperationContext(selection.binding, layoutId);
+    if (context.admin !== true || canonicalTemplateJson(context) !== initial) throw Error("Контекст копирования дерева изменился.");
+  };
+  const guard = () => {
+    contextGuard();
+    if (!isCurrent()) throw Error("Выбор копии изменился.");
+  };
+  if (!attempt.record) {
+    const payload = async side => {
+      const source = side.beforeState.layouts[side.layoutId].adminCausalSource;
+      if (source.canonicalPayload) return clone(source.canonicalPayload);
+      const baseline = await adminTemplateSourceBaseline(source.binding, side.layoutId).read(); guard();
+      if (baseline?.stateRevision !== source.base.stateRevision) throw Error("Не найден исходный снимок этой версии укладки.");
+      return baseline.payload;
+    };
+    const sourcePayload = await payload(selection.snapshot.source); guard();
+    const targetPayload = await payload(selection.snapshot.target); guard();
+    attempt.record = await prepareAdminTemplatePhotoTreeCopyForm({ ...selection, sourcePayload, targetPayload }); guard();
+  }
+  await captureAdminTemplatePhotoTreeCopyForm(attempt.record, isCurrent); contextGuard(); onDurable(attempt.record); contextGuard();
+  const result = await runAdminTemplatePhotoTreeCopyPlan({ binding: selection.binding, layoutId, operationId: selection.operationId }); contextGuard();
+  if (result.receipt.operation.state !== "committed") throw Error("Копирование остановлено сервером. Исходный выбор сохранён для сверки.");
+  const applied = await applyAdminTemplatePhotoTreeCopyFormResult(result);
+  render(); return { state: "committed", applied: true, operationId: selection.operationId, result: applied };
+}
+async function resumeAdminTemplatePhotoTreeCopyForm(layoutId) {
+  const layout = state.layouts[layoutId], source = layout?.adminCausalSource, binding = source?.binding;
+  if (!binding || !canOpenAdminPublishedEdit() || !adminTemplateOperationContext(binding, layoutId).admin) return null;
+  const getContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(getContext());
+  const contextGuard = () => {
+    const context = getContext();
+    if (context.admin !== true || canonicalTemplateJson(context) !== initial) throw Error("Контекст восстановления дерева изменился.");
+  };
+  const guard = () => {
+    contextGuard();
+    if (state.layouts[layoutId] !== layout) throw Error("Контекст восстановления дерева изменился.");
+  };
+  const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false }), candidates = [];
+  const hasPending = Object.hasOwn(source, "photoTreeCopyPending");
+  if (hasPending && (!validTemplateOperationId(source.photoTreeCopyPending) || source.planId !== source.photoTreeCopyPending)) throw Error("Указатель сохранённого дерева требует сверки.");
+  const ids = hasPending ? [source.photoTreeCopyPending] : await store.ids(); guard();
+  for (const id of ids) {
+    const record = await store.read(id); guard();
+    if (!record) throw Error("Не найдена исходная запись сохранённого дерева.");
+    if (hasPending && record.snapshot.target.layoutId !== layoutId) throw Error("Сохранённое дерево принадлежит другой укладке.");
+    if (record.snapshot.target.layoutId === layoutId && (source.planId === id
+      || !source.planId && record.action.body.base.stateRevision === source.base?.stateRevision)) candidates.push(record);
+  }
+  if (!candidates.length) return null;
+  if (candidates.length !== 1) throw Error("Сохранено несколько копий одной версии. Нужна сверка.");
+  const record = candidates[0], operationId = record.action.operationId;
+  const plans = adminTemplatePlansFor(binding, layoutId, true), saved = await plans.read(operationId); guard();
+  const client = createAdminTemplatePhotoTreeCopyClient({ binding, store, getContext, transport: experimentTransport, enabled: false });
+  const journal = await client.read(operationId); guard();
+  if (journal?.cancelRequested === true) throw Error("Для этого дерева выбрана отмена. Продолжение отправки остановлено; данные сохранены для сверки.");
+  if (!saved || !journal) {
+    if (!adminTemplatePhotoTreeCopyFormEnabled()) throw Error("Исходная копия сохранена, но её создание выключено. Повторная копия не создавалась.");
+    await captureAdminTemplatePhotoTreeCopyForm(record, () => canonicalTemplateJson(getContext()) === initial); contextGuard();
+  }
+  // A terminal journal still gets full plan/record/receipt/stage proof in the
+  // apply adapter under newly acquired inventory authority. No expired runner
+  // scope is reused. Unknown commands use the dedicated GET/dispatch runner.
+  const result = saved && journal?.receipt ? { plan: saved.plan, record, receipt: journal.receipt, stageReceipts: journal.stageReceipts }
+    : await runAdminTemplatePhotoTreeCopyPlan({ binding, layoutId, operationId });
+  contextGuard();
+  if (result.receipt.operation.state !== "committed") throw Error("Копирование остановлено сервером. Исходная запись сохранена для сверки.");
+  const applied = await applyAdminTemplatePhotoTreeCopyFormResult(result);
+  render(); return { state: "committed", applied: true, operationId, result: applied };
 }
 function adminTemplatePhotoCopyEligible({ entityType, sourceId, sourceLayoutId, targetLayoutId, includeContents = false }) {
   if (!adminTemplatePhotoCopyFormEnabled() || !["item", "container"].includes(entityType)
@@ -12710,7 +12910,8 @@ function persistAdminTemplateCoordinatorState() {
   } catch { layout.adminCausalSource = source; return false; }
 }
 function adminTemplateSaveCoordinator({ persist = null } = {}) {
-  const create = () => createAdminTemplateSaveFlow({
+  const create = () => {
+    const flow = createAdminTemplateSaveFlow({
     enabled: adminTemplateUiEnabled(), getLayout: id => state.layouts?.[id],
     getContext: binding => {
       const layout = Object.values(state.layouts || {}).find(value => value.adminCausalSource?.binding?.listId === binding.listId
@@ -12732,7 +12933,10 @@ function adminTemplateSaveCoordinator({ persist = null } = {}) {
     notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
       : status === "adopted" ? "Серверный вариант открыт. Новые изменения не отправлялись."
       : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),
-  });
+    });
+    return Object.freeze({ ...flow, flush: async layoutId =>
+      await resumeAdminTemplatePhotoTreeCopyForm(layoutId) || flow.flush(layoutId) });
+  };
   if (persist) return create();
   if (!administrativeSaveCoordinator) administrativeSaveCoordinator = create();
   return administrativeSaveCoordinator;

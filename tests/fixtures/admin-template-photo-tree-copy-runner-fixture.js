@@ -21,8 +21,8 @@ const actual = (names, deps) => new Function(...Object.keys(deps), names.map(nam
 }).join("\n") + `\nreturn {${names.join(",")}};`)(...Object.values(deps));
 export const planPrefix = "bike-packing-admin-save-plans-v1:";
 
-export async function treeAppRunnerFixture() {
-  const f = await treeCopyClientFixture(), sides = [f.record.snapshot.source, f.record.snapshot.target];
+export async function treeAppRunnerFixture(options = {}) {
+  const f = await treeCopyClientFixture(options), sides = [f.record.snapshot.source, f.record.snapshot.target];
   const state = { ...copy(sides[1].beforeState), layouts: {}, items: {}, containers: {}, privateMarker: { preserve: "private" } };
   for (const side of sides) for (const type of ["layouts", "items", "containers"]) Object.assign(state[type], copy(side.beforeState[type]));
   state.layouts.private = { id: "private", name: "Unrelated personal draft", arrangement: {} };
@@ -43,7 +43,7 @@ export async function treeAppRunnerFixture() {
     location: { pathname: "/experiment/", search: "", hash: "" } });
   const context = contextParts.adminTemplateOperationContext, transport = f.make({ locks }).transport;
   const flags = { tree: true, copy: true, create: true, append: true, admin: true };
-  const build = () => {
+  const build = (extra = {}) => {
     const storeOptions = options => ({ ...options, indexedDB: f.idb.indexedDB });
     const get = (binding, id, preparing) => () => context(binding, id, preparing);
     const upload = (binding, id, preparing) => createAdminTemplatePhotoActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
@@ -78,8 +78,10 @@ export async function treeAppRunnerFixture() {
       adminTemplateRecoveryFor: () => ({ requiresCancellation: () => assert.fail("Runner must not use generic cancellation") }),
       assertAdminTemplateCopyCaptureAllowed: () => assert.fail("Runner cannot capture a new plan"),
       readAdminTemplateOrderInventory: options => readAdminTemplateOrderInventory({ ...options, storage: f.storage }) };
-    return actual(["adminTemplatePhotoTreeCopyInventory", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
-      "withAdminTemplatePhotoTreeCopyDispatchInventory", "withAdminTemplatePhotoTreeCopyNamespaceScope", "runAdminTemplatePhotoTreeCopyPlan"], deps);
+    const names = ["adminTemplatePhotoTreeCopyInventory", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
+      "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory", "withAdminTemplatePhotoTreeCopyNamespaceScope", "runAdminTemplatePhotoTreeCopyPlan", ...(extra.names || [])];
+    for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);
+    return actual(names.filter(name => !Object.hasOwn(extra.replace || {}, name)), { ...deps, ...extra.deps, ...extra.replace });
   };
   const plan = adminTemplatePhotoTreeCopySavePlan({ binding: f.binding, operationId: f.id, body: f.record.action.body,
     editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(f.record), recordIntentHash: f.record.intentHash });
