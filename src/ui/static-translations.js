@@ -53,7 +53,7 @@ export function applyStaticTranslationsUi({
   const locationLabel = documentRef.querySelector("#locationFilterLabel");
   const categoryLabel = documentRef.querySelector("#categoryFilterLabel");
   if (appTitle && experimentLabel) {
-    appTitle.replaceChildren(documentRef.createTextNode(`${t("app.title")} — `), experimentLabel);
+    appTitle.replaceChildren(documentRef.createTextNode(`${t("app.title")} —\u00a0`), experimentLabel);
     setText(experimentLabel, t("app.experimentalBanner").toLowerCase());
   } else setText(appTitle, t("app.title"));
   setAttr(appStartup, "lang", startupLanguage || uiLanguage);

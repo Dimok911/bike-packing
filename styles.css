@@ -499,6 +499,7 @@ button.button-loading::before {
 
 .experiment-title-label {
   color: #a51d1d;
+  font-size: 0.75em;
 }
 
 .topbar {

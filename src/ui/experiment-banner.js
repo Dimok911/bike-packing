@@ -11,6 +11,6 @@ export function installExperimentBanner({ documentRef = document, locationLike =
   label.className = "experiment-title-label";
   label.textContent = "эксперимент";
   title.setAttribute("data-experiment-title", "");
-  title.append(documentRef.createTextNode(" — "), label);
+  title.append(documentRef.createTextNode(" —\u00a0"), label);
   return label;
 }

@@ -5326,6 +5326,7 @@ test("stale draft choices can be postponed and must be compared again if the oth
 test("Experiment is a red inline title label without a sticky banner and remains translated", async ({ page, context }, info) => {
   await setup(page, context);
   const label = page.locator("#experimentTitleLabel"), title = page.locator(".topbar h1");
+  await title.scrollIntoViewIfNeeded();
   await expect(label).toHaveText("эксперимент");
   await expect(title).toHaveText("Сборы в велопоход — эксперимент");
   await expect(page.locator("#experimentBanner, .experiment-banner")).toHaveCount(0);
