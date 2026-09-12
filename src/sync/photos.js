@@ -304,7 +304,7 @@ export async function cacheRecordRemotePhotosForUploadFallback(record, { changed
       height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0,
       createdAt: changedAt,
       updatedAt: changedAt
-    });
+    }, activePhotoCacheScopeKey, { binary: true });
     photo.id = localId;
     photo.localId = localId;
     photo.status = "synced";

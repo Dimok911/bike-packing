@@ -4,11 +4,26 @@ import { resolve } from "node:path";
 import { isCanonicalExperimentApi, experimentApiCors } from "../fixtures/experiment-api-route.js";
 
 const origin = "https://experiment.vniipo-help.ru";
+const remoteCachePath = "/bike-packing/lists/public-demo-state/photos/remote-cache-photo/";
+const remoteFull = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
+const remoteThumb = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+function remoteCacheRecord() {
+  const base = `https://api.vniipo-help.ru/experiment/letters-vniipo/api${remoteCachePath}`;
+  return { id: "guest-item", name: "Guest template item", photos: [{ id: "remote-cache-photo", localId: "", status: "synced",
+    url: `${base}file`, thumbUrl: `${base}thumb`, listId: "public-demo-state", fileName: "Original.png", type: "image/png",
+    size: remoteFull.length, width: 1, height: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z",
+    error: "", copyToCurrentList: true }] };
+}
 async function fixture(page, context) {
   await context.route("**/*", async route => {
     const url = new URL(route.request().url());
     if (url.origin === origin && /^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(url.pathname)) {
       return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve(`.${url.pathname}`), "utf8") });
+    }
+    if (isCanonicalExperimentApi(url) && ["file", "thumb"].some(variant => url.pathname.endsWith(remoteCachePath + variant))) {
+      expect(route.request().method()).toBe("GET");
+      const thumb = url.pathname.endsWith("/thumb");
+      return route.fulfill({ contentType: thumb ? "image/gif" : "image/png", body: thumb ? remoteThumb : remoteFull, headers: experimentApiCors });
     }
     if (url.origin === origin && url.pathname === "/__photo-storage-test") return route.fulfill({ contentType: "text/html", body:
       `<script type="module">
@@ -200,6 +215,94 @@ test("opt-in prepared form cache preserves native binary full/thumb bytes throug
       foreign: await window.photos.getCachedPhoto("prepared-binary", "id:other") };
   })).toEqual({ id: "prepared-binary", name: "Фото.png", full: [0, 255, 128, 1], type: "image/png",
     thumb: "prepared thumbnail", thumbType: "image/webp", verified: true, foreign: null });
+});
+
+test("remote fallback commits exact full and thumbnail bytes in native IndexedDB and restores them after reload", async ({ page, context }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await fixture(page, context);
+  const original = remoteCacheRecord();
+  const captured = await page.evaluate(async record => {
+    const native = IDBDatabase.prototype.transaction; let committed = false;
+    IDBDatabase.prototype.transaction = function (...args) {
+      const tx = native.apply(this, args);
+      if (args[1] === "readwrite") tx.addEventListener("complete", () => { committed = true; });
+      return tx;
+    };
+    try {
+      const changed = await window.photos.cacheRecordRemotePhotosForUploadFallback(record, { changedAt: "2026-09-12T01:00:00.000Z" });
+      const raw = await window.photos.photoDbStore("readonly", store => store.getAll());
+      return { changed, committed, photo: record.photos[0], binary: raw.length === 1 && raw[0].binaryPhotoCache?.version === 1
+        && raw[0].binaryPhotoCache.file.bytes instanceof ArrayBuffer && raw[0].binaryPhotoCache.thumb.bytes instanceof ArrayBuffer
+        && !Object.hasOwn(raw[0], "blob") && !Object.hasOwn(raw[0], "thumbBlob") };
+    } finally { IDBDatabase.prototype.transaction = native; }
+  }, original);
+  expect(captured).toMatchObject({ changed: 1, committed: true, binary: true,
+    photo: { localId: captured.photo.id, url: original.photos[0].url, thumbUrl: original.photos[0].thumbUrl, _copyToCurrentList: true } });
+  expect(captured.photo.id).not.toBe(original.photos[0].id);
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  expect(await page.evaluate(async id => {
+    const cached = await window.photos.getCachedPhoto(id, "guest");
+    return { full: [...new Uint8Array(await cached.blob.arrayBuffer())], thumb: [...new Uint8Array(await cached.thumbBlob.arrayBuffer())],
+      fullType: cached.blob.type, thumbType: cached.thumbBlob.type, verified: cached.fullBlobVerified, fileName: cached.fileName,
+      foreign: await window.photos.getCachedPhoto(id, "id:another-actor") };
+  }, captured.photo.id)).toEqual({ full: [...remoteFull], thumb: [...remoteThumb], fullType: "image/png", thumbType: "image/gif",
+    verified: true, fileName: "Original.png", foreign: null });
+  expect(errors).toEqual([]);
+});
+
+test("remote fallback succeeds when native Blob writes are refused while the legacy Blob path rejects", async ({ page, context }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await fixture(page, context);
+  const result = await page.evaluate(async record => {
+    const native = IDBObjectStore.prototype.put; let rejectedBlobs = 0, binaryWrites = 0, legacyRejected = false;
+    const containsBlob = value => value instanceof Blob || value && typeof value === "object" && Object.values(value).some(containsBlob);
+    IDBObjectStore.prototype.put = function (...args) {
+      if (containsBlob(args[0])) {
+        rejectedBlobs++;
+        throw new DOMException("Error preparing Blob/File data to be stored in object store", "UnknownError");
+      }
+      if (args[0]?.binaryPhotoCache) binaryWrites++;
+      return native.apply(this, args);
+    };
+    try {
+      // This is the original raw-Blob storage boundary. Prove that the fault
+      // injector rejects it before verifying the real remote fallback path.
+      try { await window.photos.putCachedPhoto({ id: "legacy-blob-control", blob: new Blob(["control"], { type: "image/png" }) }, "guest"); }
+      catch (error) { legacyRejected = error.name === "UnknownError"; }
+      const changed = await window.photos.cacheRecordRemotePhotosForUploadFallback(record);
+      const cached = await window.photos.getCachedPhoto(record.photos[0].localId);
+      return { legacyRejected, rejectedBlobs, binaryWrites, changed,
+        full: [...new Uint8Array(await cached.blob.arrayBuffer())], thumb: [...new Uint8Array(await cached.thumbBlob.arrayBuffer())],
+        legacyRow: await window.photos.getCachedPhoto("legacy-blob-control", "guest") };
+    } finally { IDBObjectStore.prototype.put = native; }
+  }, remoteCacheRecord());
+  expect(result).toEqual({ legacyRejected: true, rejectedBlobs: 1, binaryWrites: 1, changed: 1,
+    full: [...remoteFull], thumb: [...remoteThumb], legacyRow: null });
+  expect(errors).toEqual([]);
+});
+
+test("remote fallback transaction abort preserves the original remote references without a false local cache ID", async ({ page, context }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await fixture(page, context);
+  const original = remoteCacheRecord();
+  const result = await page.evaluate(async record => {
+    const native = IDBObjectStore.prototype.put; let putSucceeded = false, aborted = false, cacheId = "";
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = native.apply(this, args), tx = this.transaction;
+      cacheId = args[0].photoId;
+      request.addEventListener("success", () => { putSucceeded = true; tx.abort(); });
+      return request;
+    };
+    try { await window.photos.cacheRecordRemotePhotosForUploadFallback(record); }
+    catch { aborted = true; }
+    finally { IDBObjectStore.prototype.put = native; }
+    return { aborted, putSucceeded, record, cached: await window.photos.getCachedPhoto(cacheId),
+      rows: await window.photos.photoDbStore("readonly", store => store.getAll()) };
+  }, original);
+  expect(result).toEqual({ aborted: true, putSucceeded: true, record: original, cached: null, rows: [] });
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  expect(await page.evaluate(() => window.photos.listCachedPhotos("guest"))).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("photo cache preserves actual Blob bytes and MIME through browser reload", async ({ page, context, browserName }) => {
