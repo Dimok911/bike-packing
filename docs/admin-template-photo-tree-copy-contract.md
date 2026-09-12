@@ -164,7 +164,7 @@ Codec прошёл 15 отдельных проверок с настоящим 
 
 BE: catalog + обе sorted head/list locks; повторные rights/private/base/full digest proofs; отсутствие каждого нового SQL owner/photo/head/tombstone; все stage proofs; независимые regular files; единая транзакция owners/photos/heads/full payload/revision/history/receipt с rollback всего дерева и assembled roundtrip до commit. Чистая проекция ещё не проверена реальным assembled API.
 
-FE: отдельный typed durable record/plan (предложенный V9), все постоянные IDs до await, общий capture lease и journal admission, полный parent cancellation/fence discriminator, partial stage/save lost ACK и cold recovery, native quota без новых IDs, явный UI «с содержимым». V1/V8 не должны молча принимать tree v2. HTTP/IDB/UI и их проверки — отдельная работа; карточка 3 этим foundation не закрывается.
+FE: отдельный typed durable record/plan (предложенный V9), все постоянные IDs до await, общий capture lease и journal admission, полный parent cancellation/fence discriminator, partial stage/save lost ACK и cold recovery, native quota без новых IDs, явный UI «с содержимым». V1/V8 не должны молча принимать tree v2. HTTP/UI и сквозные проверки — отдельная работа; карточка 3 этим foundation не закрывается.
 
 ## Проверка foundation
 
@@ -173,3 +173,11 @@ Focused команда: `node --test tests/critical/admin-template-photo-tree-co
 14 случаев: вложенное дерево и владельцы без фото; точное обратное удаление проекции до исходного target; raw/opaque/quantity/packed/timestamp сохранность; limits по обе стороны границы; incomplete/cyclic/malformed closure; глобальные коллизии; mutual exclusion; прежние parsers закрыты; полные snapshot/mapping/actor/UUID/base commitments; отсутствие circular hash; подмена projected owner/photo; async input mutation; wire size. Без серверов, БД, сборки или broad-suite запуска.
 
 Receipt команда: `node --test tests/critical/admin-template-photo-tree-copy-receipt.test.js`. 16 случаев: exact all-owner proof/actual relative routes, mode/unknown-field rejection, source/copied bytes и counterpart metadata, foreign/reordered stages, cross-owner path collisions, consistent source aliases, unavailable history/unknown distinction, cross-v1/create refusal, fixed URL policy, collateral/partial projection, timestamps/stored metadata, outer identity/revision/digest, strong cancellation/rejection, full-intent commitment даже при cancellation, detached async inputs, maximum 100-owner/32-depth/50-photo package и oversized receipt refusal. Это pure tests с явными synthetic server facts, не реальные API/MySQL/FS проверки.
+
+## Отдельное хранилище команды дерева
+
+`admin-template-photo-tree-copy-action-store.js` сохраняет JSON-команду и обе полные проекции в отдельной IndexedDB `bike-packing-admin-template-photo-tree-copy-actions-v1`. Все чтения, включая список команд и stage, повторно проверяют полный codec и binding; повреждённая запись своего аккаунта блокирует работу, а чужая не раскрывается. Строгая транзакция повторно сверяет снимок всех записей до добавления. Один UUID нельзя переопределить; другой UUID на той же базе отвергается. Поздняя квота или потеря readback сохраняют исходный выбор и постоянные IDs.
+
+`claimStage` атомарно связывает stage с полным intentHash и assetDigest. Только один конкурентный запрос получает `fresh:true`. Потерянный ответ после commit не освобождает claim и не разрешает повтор POST. Смена аккаунта/поколения проверяется после ожиданий и не раскрывает прежний private snapshot. При выключенном флаге сохранение и claims запрещены, полные чтения для исходного аккаунта доступны. Удаления, отмены и доверенного списка исключений здесь нет.
+
+Защита от других видов команд требует общего capture lease, полного списка журналов и отдельного typed cancellation/fence. Этот store проверяет конкуренцию только внутри своей базы. Клиент, общий допуск, план, UI и сквозная проверка остаются отдельной работой. 18 тестов store используют событийную модель IndexedDB; проверка реальных браузеров проводится отдельно и не подменяется моделью квоты.
