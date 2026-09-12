@@ -9,6 +9,7 @@ export { adminTemplatePhotoCreateSavePlan } from "./admin-template-photo-create-
 import { adminTemplatePhotoCopySavePlan, assertAdminTemplatePhotoCopyPlanRecord } from "./admin-template-photo-copy-save-plan.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./admin-template-photo-copy-protocol.js";
 export { adminTemplatePhotoCopySavePlan } from "./admin-template-photo-copy-save-plan.js";
+import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./admin-template-capture-lease.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -187,7 +188,7 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
 export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, getExcludedPlans = null, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   photoCreateEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore = null,
-  photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null }) {
+  photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null, assertCaptureAllowed = () => {} }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
   const key = id => { if (!validTemplateOperationId(id)) throw paused(); return prefix + id; };
@@ -283,25 +284,41 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       return { state: cancelled ? "cancelled" : rejected ? "rejected" : "committed", receipts };
     });
   };
-  const capturePlan = async (input, makePlan) => {
-      if (enabled !== true) throw paused(); const initial = context();
-      const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
+  const capturePlan = async (input, makePlan, { captureLease } = {}) => {
+    if (enabled !== true || typeof assertCaptureAllowed !== "function") throw paused(); const initial = context();
+    const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
+    const bindings = [plan.binding];
+    if (plan.version === 8) {
+      const source = plan.operations[0].body.photoCopy.source;
+      bindings.push({ actorId: plan.binding.actorId, environment: plan.binding.environment, listId: source.listId, itemKey: source.itemKey });
+    }
+    const underLease = async lease => {
+      const captureGuard = () => { guard(initial); assertAdminTemplateCaptureLease(lease, bindings); };
+      captureGuard();
       if (plan.version === 7) {
-        await assertAdminTemplatePhotoCreatePlanRecord(plan, photoStore, () => guard(initial)); guard(initial);
+        await assertAdminTemplatePhotoCreatePlanRecord(plan, photoStore, captureGuard); captureGuard();
       }
       if (plan.version === 8) {
-        await assertAdminTemplatePhotoCopyPlanRecord(plan, photoCopyStore, () => guard(initial)); guard(initial);
+        await assertAdminTemplatePhotoCopyPlanRecord(plan, photoCopyStore, captureGuard); captureGuard();
       }
       if ([3, 4].includes(plan.version) && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
-      const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
+      captureGuard();
+      const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; captureGuard();
       const capture = () => lock(plan.id, async () => {
-        const existing = await read(plan.id); guard(initial);
-        if (existing) { if (!same(existing.plan, plan)) throw paused(); return clone(existing); }
+        captureGuard();
+        const existing = await read(plan.id); captureGuard();
+        if (existing && !same(existing.plan, plan)) throw paused();
+        // The caller checks the other durable journals even for an exact
+        // retained plan with its own feature OFF. This hook cannot mutate the
+        // frozen action, and a lease alone never grants capture authority.
+        const allowed = await assertCaptureAllowed({ plan: clone(plan), captureLease: lease, guard: captureGuard }); captureGuard();
+        if (allowed === false) throw paused();
+        if (existing) return clone(existing);
         if (plan.version === 7 && photoCreateEnabled !== true) throw paused();
         if (plan.version === 8 && photoCopyEnabled !== true) throw paused();
         // Only the caller's validated adopted-stop resolution may exclude a
         // retained action. A cancellation marker alone proves no adoption.
-        const excluded = getExcludedPlans ? await getExcludedPlans() : []; guard(initial);
+        const excluded = getExcludedPlans ? await getExcludedPlans() : []; captureGuard();
         if (!Array.isArray(excluded) || excluded.some(id => !validTemplateOperationId(id)) || new Set(excluded).size !== excluded.length) throw paused();
         // A new photo selection cannot overtake an already retained action.
         // Legacy forms mutate/persist before capture: keep their later intent
@@ -313,7 +330,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           const name = storage.key(i); if (name?.startsWith(prefix)) ids.push(name.slice(prefix.length));
         }
         for (const id of ids) {
-          const other = await read(id); guard(initial);
+          const other = await read(id); captureGuard();
           if (!other) continue;
           if (!excluded.includes(id) && plan.version === 6 && same(other.plan.operations[0].body.base, base)) throw paused();
           if (!excluded.includes(id) && ([7, 8].includes(plan.version) || [7, 8].includes(other.plan.version)) && same(other.plan.operations[0].body.base, base)) throw paused();
@@ -321,25 +338,29 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           // pointing at its UUID. A reconciled editor uses its numeric receipt.
           if ([6, 7, 8].includes(other.plan.version) && base?.operationId === other.plan.operations.at(-1).id) throw paused();
         }
-        if (plan.version === 8) { await assertAdminTemplatePhotoCopyPlanRecord(plan, photoCopyStore, () => guard(initial)); guard(initial); }
+        if (plan.version === 8) { await assertAdminTemplatePhotoCopyPlanRecord(plan, photoCopyStore, captureGuard); captureGuard(); }
+        captureGuard();
         return clone(persist(saved, initial));
       });
       const base = plan.operations[0].body.base;
+      let result;
       if (base?.stateRevision) {
         if (!locks?.request) throw paused();
-        return locks.request(prefix + "confirmed-base:" + base.stateRevision, capture);
-      }
-      return capture();
+        result = await locks.request(prefix + "confirmed-base:" + base.stateRevision, capture);
+      } else result = await capture();
+      captureGuard(); return result;
+    };
+    return captureLease === undefined ? withAdminTemplateCapture({ bindings, locks }, underLease) : underLease(captureLease);
   };
   return Object.freeze({
-    capture: input => capturePlan(input, adminTemplateSavePlan),
-    captureCommand: input => capturePlan(input, adminTemplateCommandPlan),
-    captureCopy: input => capturePlan(input, adminTemplateCopyPlan),
-    captureSourceSave: input => capturePlan(input, adminTemplateSourceSavePlan),
-    capturePhoto: input => capturePlan(input, adminTemplatePhotoSavePlan),
-    capturePhotoEdit: input => capturePlan(input, adminTemplatePhotoEditSavePlan),
-    capturePhotoCreate: input => capturePlan(input, adminTemplatePhotoCreateSavePlan),
-    capturePhotoCopy: input => capturePlan(input, adminTemplatePhotoCopySavePlan),
+    capture: (input, options) => capturePlan(input, adminTemplateSavePlan, options),
+    captureCommand: (input, options) => capturePlan(input, adminTemplateCommandPlan, options),
+    captureCopy: (input, options) => capturePlan(input, adminTemplateCopyPlan, options),
+    captureSourceSave: (input, options) => capturePlan(input, adminTemplateSourceSavePlan, options),
+    capturePhoto: (input, options) => capturePlan(input, adminTemplatePhotoSavePlan, options),
+    capturePhotoEdit: (input, options) => capturePlan(input, adminTemplatePhotoEditSavePlan, options),
+    capturePhotoCreate: (input, options) => capturePlan(input, adminTemplatePhotoCreateSavePlan, options),
+    capturePhotoCopy: (input, options) => capturePlan(input, adminTemplatePhotoCopySavePlan, options),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];
