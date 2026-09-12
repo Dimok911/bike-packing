@@ -20,22 +20,26 @@ export function renderExperimentTransportSettings({ language = "ru", locationLik
     <select id="${controlId}" data-transport-choice aria-describedby="${controlId}Help">
       ${["auto", "direct", "eu"].map(value => `<option value="${value}"${selection === value ? " selected" : ""}${value === "eu" && !euEnabled ? " disabled" : ""}>${label(value, en)}</option>`).join("")}
     </select>
-    <button type="button" data-transport-apply>${en ? "Save for next reload" : "Применить после обновления"}</button>
+    <button type="button" data-transport-apply>${en ? "Save selection" : "Сохранить выбор"}</button>
     <p id="${controlId}Help">${en
-      ? "Automatic checks Russia first, then Europe if unreachable. Manual selection overrides automatic choice. Reload this tab to apply; current sends are not interrupted."
-      : "Автоматически: сначала российский маршрут, при недоступности — европейский. Ручной выбор важнее автоматического. Применение — после обновления вкладки, без прерывания текущей отправки."}</p>
+      ? "Save your selection, wait for current saves to finish, then reload this page. The selected route takes effect after reloading."
+      : "Сохраните выбор, дождитесь завершения текущих сохранений и обновите страницу. После обновления начнёт использоваться выбранный маршрут."}</p>
+    ${autoEnabled ? `<p>${en
+      ? "Automatic checks Russia first, then Europe if unreachable. A manual selection uses only the selected route."
+      : "В режиме «Автоматически» сначала проверяется российский маршрут, при его недоступности — европейский. При ручном выборе используется только выбранный маршрут."}</p>` : ""}
     <p>${en ? "One database, one queue. Changing the route does not permit repeating an unconfirmed save."
       : "База и очередь общие. Смена маршрута не разрешает повтор неподтверждённого сохранения."}</p>
     ${!euEnabled || !autoEnabled ? `<p data-transport-release-note>${!autoEnabled
       ? (en ? "Automatic selection is not activated yet; Auto currently uses the Russian route. " : "Автовыбор пока не включён: режим «Автоматически» использует российский маршрут. ") : ""}${!euEnabled
       ? (en ? "The European route is awaiting release checks." : "Европейский маршрут ожидает проверок перед включением.") : ""}</p>` : ""}
     <details><summary>${en ? "Connection diagnostics" : "Проверка подключения"}</summary>
-    <button type="button" data-transport-check="ip">${en ? "Check IP (anonymous only)" : "Проверить IP (без входа)"}</button>
-    <button type="button" data-transport-check="eu">${en ? "Check EU domain" : "Проверить зарубежный домен"}</button>
+    <p>${en ? "Check whether the European server responds and you are signed in. This check does not change your selected route or send your changes."
+      : "Проверка покажет, отвечает ли европейский сервер и выполнен ли вход. Выбранный маршрут не изменится, ваши изменения отправлены не будут."}</p>
+    <button type="button" data-transport-check="eu">${en ? "Check European route" : "Проверить европейский маршрут"}</button>
     </details>
     <p data-transport-status role="status">${transport.uncertainWrite
       ? (en ? "A write has an unknown outcome. Further writes are paused until server state is reconciled. Local data is retained." : "Результат сохранения не подтверждён, повтор приостановлен. Локальные данные сохранены. Просмотр и локальное редактирование доступны; для отправки нужна проверка на сервере.")
-      : (en ? "IP diagnostics do not confirm sign-in or sync readiness." : "Проверка IP не подтверждает вход или готовность синхронизации.")}</p>
+      : (en ? "To change the route, save your selection and reload this page." : "Для смены маршрута сохраните выбор и обновите страницу.")}</p>
   </section>`;
 }
 
@@ -73,12 +77,9 @@ export function bindExperimentTransportSettings(root, { language = "ru", transpo
     button.disabled = true;
     status.textContent = en ? "Checking…" : "Проверяем…";
     try {
-      const target = button.dataset.transportCheck;
-      const result = await probeExperimentProxy({ target, fetchImpl });
-      if (target === "ip") {
-        status.textContent = en ? "IP is reachable anonymously. Sign-in and sync are not available on IP." : "IP доступен без входа. Вход и синхронизация через IP не включаются.";
-      } else if (!result.usable) {
-        status.textContent = en ? "EU route is verified, but its write gate is closed. Transport was not changed." : "Маршрут EU подтверждён, но запись ещё запрещена. Подключение не изменено.";
+      const result = await probeExperimentProxy({ target: "eu", fetchImpl });
+      if (!result.usable) {
+        status.textContent = en ? "The European server responds, but sending changes through it is not allowed yet. Selected route unchanged." : "Европейский сервер отвечает, но отправка изменений через него пока запрещена. Выбранный маршрут не изменён.";
       } else {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 7000);
@@ -89,8 +90,8 @@ export function bindExperimentTransportSettings(root, { language = "ru", transpo
           const data = await response.json();
           if (!response.ok || data?.ok !== true) throw new Error(`Auth check: HTTP ${response.status}`);
           status.textContent = data.user?.id
-            ? (en ? "EU session read succeeded. Activation remains subject to the release gate; writes and automatic recovery are not confirmed." : "Чтение сессии EU удалось. Включение ограничено проверками выпуска; запись и автоматическое восстановление не подтверждены.")
-            : (en ? "EU route is ready, but sign-in is not confirmed. No authenticated sync was tested." : "Маршрут EU готов, но вход не подтверждён. Авторизованная синхронизация не проверена.");
+            ? (en ? "The European server responds. Sign-in is confirmed. No changes were sent. Selected route unchanged." : "Европейский сервер отвечает. Вход подтверждён. Изменения не отправлялись. Выбранный маршрут не изменён.")
+            : (en ? "The European server responds. You are not signed in on this route. Selected route unchanged." : "Европейский сервер отвечает. Вход для этого маршрута не выполнен. Выбранный маршрут не изменён.");
         } finally { clearTimeout(timer); }
       }
     } catch (error) {
@@ -108,7 +109,7 @@ export function bindExperimentTransportSettings(root, { language = "ru", transpo
     }
     try {
       saveTransportSelection(mode, { storage, locationLike });
-      status.textContent = `${en ? "Saved for next reload" : "Сохранено для следующего обновления"}: ${label(readTransportSelection(storage), en)}. ${transport.uncertainWrite
+      status.textContent = `${en ? "Selection saved" : "Выбор сохранён"}: ${label(readTransportSelection(storage), en)}. ${transport.uncertainWrite
         ? (en ? "The unconfirmed operation is retained. Changing the route does not permit a repeat send." : "Неподтверждённое действие сохранено. Смена маршрута не разрешает повторную отправку.")
         : (en ? "Finish current operations, then reload this tab." : "Завершите текущие действия и затем обновите вкладку.")}`;
     } catch (error) { status.textContent = error.message; }

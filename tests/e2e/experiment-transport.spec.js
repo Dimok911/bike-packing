@@ -148,16 +148,15 @@ test("EU transport keeps frontend/local state and credential options for fetch, 
   }
 });
 
-test("read-only gate blocks authenticated transport; IP never claims sign-in or enables EU", async ({ page, context }) => {
+test("read-only gate blocks authenticated transport; the single connection check cannot enable EU", async ({ page, context }) => {
   const requests = await fixture(page, context, { gate: "read-only" });
   await page.locator("#run").click();
   await expect(page.locator("#result")).toContainText("read-only");
   await page.getByText("Connection diagnostics", { exact: true }).click();
-  await page.getByRole("button", { name: "Check IP (anonymous only)", exact: true }).click();
-  await expect(page.locator("[data-transport-status]")).toContainText("Sign-in and sync are not available on IP");
+  await expect(page.locator("[data-transport-check]")).toHaveCount(1);
   await expect(page.locator('[data-transport-choice] option[value="eu"]')).toBeDisabled();
-  await page.getByRole("button", { name: "Check EU domain", exact: true }).click();
-  await expect(page.locator("[data-transport-status]")).toContainText("write gate is closed");
+  await page.getByRole("button", { name: "Check European route", exact: true }).click();
+  await expect(page.locator("[data-transport-status]")).toContainText("sending changes through it is not allowed yet");
   expect(requests.filter(({ method }) => method !== "OPTIONS").every(({ url, headers }) => url.endsWith("/capabilities") && !headers.cookie)).toBe(true);
 });
 
@@ -181,8 +180,8 @@ test("release gate blocks shipped EU transport even with enabled proxy and valid
     catch (error) { return error.message; }
   })).toContain("not approved");
   await page.getByText("Connection diagnostics", { exact: true }).click();
-  await page.getByRole("button", { name: "Check EU domain", exact: true }).click();
-  await expect(page.locator("[data-transport-status]")).toContainText("Activation remains subject to the release gate");
+  await page.getByRole("button", { name: "Check European route", exact: true }).click();
+  await expect(page.locator("[data-transport-status]")).toContainText("Sign-in is confirmed. No changes were sent. Selected route unchanged.");
   await expect(page.locator('[data-transport-choice] option[value="eu"]')).toBeDisabled();
 });
 
@@ -193,14 +192,14 @@ test("API menu preserves manual priority and can return to automatic RU-first se
   expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
   expect(requests.filter(request => request.url.endsWith("/capabilities"))).toHaveLength(1);
   await page.getByRole("combobox", { name: "Route selection" }).selectOption("eu");
-  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await page.getByRole("button", { name: "Save selection" }).click();
   await expect(page.locator("[data-transport-status]")).toContainText("European");
   expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
   await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
   await page.evaluate(() => window.fixtureTransport.prepare());
   expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("eu");
   await page.getByRole("combobox", { name: "Route selection" }).selectOption("auto");
-  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await page.getByRole("button", { name: "Save selection" }).click();
   await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
   await page.evaluate(() => window.fixtureTransport.prepare());
   await page.evaluate(() => window.renderRouteSettings());
@@ -223,7 +222,7 @@ test("top-menu route dialog works without sign-in and does not collide with the 
   await page.screenshot({ path: testInfo.outputPath("api-route-menu.png") });
   await expect(dialog.getByRole("combobox", { name: "Route selection" })).toHaveValue("auto");
   await dialog.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
-  await dialog.getByRole("button", { name: "Save for next reload" }).click();
+  await dialog.getByRole("button", { name: "Save selection" }).click();
   await expect(dialog.locator("[data-transport-status]")).toContainText("Russian");
   expect(await page.evaluate(() => [...document.querySelectorAll("[data-transport-choice]")].map(node => node.id)))
     .toEqual(["experimentApiRouteDialogChoice", "experimentApiRoute"]);
@@ -241,7 +240,7 @@ test("automatic uses EU after a failed RU probe; forced Russian never falls back
   expect(requests.filter(request => request.method !== "OPTIONS").map(request => new URL(request.url).origin))
     .toEqual([canonicalExperimentApiOrigin, "https://api-eu.vniipo-help.ru"]);
   await page.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
-  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await page.getByRole("button", { name: "Save selection" }).click();
   requests.length = 0;
   await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
   await page.locator("#run").click();
@@ -256,7 +255,7 @@ test("API menu keeps a lost operation and its data when selecting a manual route
   await page.locator("#run").click(); await expect(page.locator("#result")).toContainText("ERROR:");
   const id = await page.evaluate(() => window.fixtureTransport.uncertainWrite.id);
   await page.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
-  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await page.getByRole("button", { name: "Save selection" }).click();
   await expect(page.locator("[data-transport-status]")).toContainText("does not permit a repeat send");
   await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
   expect(await page.evaluate(() => window.fixtureTransport.uncertainWrite.id)).toBe(id);
