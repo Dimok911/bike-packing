@@ -2209,6 +2209,7 @@ manufacturerCatalogReviewDialogController = createManufacturerCatalogReviewDialo
   apiErrorMessage
 });
 
+const offlineLayoutStorageEstimators = new WeakMap();
 init();
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
@@ -2320,6 +2321,7 @@ function bindOfflineLayoutSettingsControls() {
     if (target) target.textContent = `${count}/${total}`;
   };
   const updateStorageEstimate = async () => {
+    if (getCurrentView() !== "settings" || !root.isConnected) return;
     const target = root.querySelector(".offline-layout-storage-estimate");
     const catalogTarget = root.querySelector(".offline-catalog-status");
     const capacityTarget = root.querySelector(".offline-storage-capacity");
@@ -2470,6 +2472,7 @@ function bindOfflineLayoutSettingsControls() {
     showToast(en ? "Offline catalog removed." : "Офлайн-каталог удалён.", "success");
   });
   updateCount();
+  offlineLayoutStorageEstimators.set(root, updateStorageEstimate);
   updateStorageEstimate();
 }
 
@@ -14369,6 +14372,9 @@ function switchView(view) {
   refs.itemsView.classList.toggle("hidden", view !== "items");
   refs.bagsView.classList.toggle("hidden", view !== "bags");
   refs.settingsView.classList.toggle("hidden", view !== "settings");
+  if (viewChanged && view === "settings") {
+    offlineLayoutStorageEstimators.get(refs.settingsView.querySelector(".offline-layout-settings-panel"))?.();
+  }
   if (viewChanged) {
     syncMainViewScrollHost(view, {
       documentRef: document,
