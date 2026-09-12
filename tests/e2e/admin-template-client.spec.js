@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { adminTemplateIntent, canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
+import { isCanonicalExperimentApi, experimentApiCors } from "../fixtures/experiment-api-route.js";
 
 const origin = "https://experiment.vniipo-help.ru", pageUrl = origin + "/__admin-template-client";
 const save = () => ({ operationId: randomUUID(), kind: "template.save", body: { version: 1, base: { stateRevision: 7 },
@@ -11,9 +12,8 @@ async function fixture(context) {
   const state = { receipts: new Map(), posts: [], hidden: "", lose: "", admin: true, beforeAck: null };
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.origin !== origin) throw Error("Unexpected admin test origin");
-    if (url.pathname.startsWith("/src/")) return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve("." + url.pathname), "utf8") });
-    if (url.pathname === "/__admin-template-client") return route.fulfill({ contentType: "text/html", body: '<!doctype html><script type="module">' +
+    if (url.origin === origin && url.pathname.startsWith("/src/")) return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve("." + url.pathname), "utf8") });
+    if (url.origin === origin && url.pathname === "/__admin-template-client") return route.fulfill({ contentType: "text/html", body: '<!doctype html><script type="module">' +
       "import {createAdminTemplateClient} from '/src/sync/admin-template-client.js';" +
       "import {createExperimentTransport} from '/src/sync/experiment-transport.js';" +
       "window.actor='admin-a';window.generation='one';window.adminMode=true;" +
@@ -21,6 +21,8 @@ async function fixture(context) {
       "const transport=createExperimentTransport({selection:'direct'});return {transport,client:createAdminTemplateClient({binding,enabled,transport,getContext:()=>({...binding,actorId:window.actor,scope:'admin-template',admin:window.adminMode,generation:window.generation})})};};" +
       "window.invoke=async(method,input,suffix='a',enabled=true)=>{try{return {ok:true,value:await adminClient(suffix,enabled).client[method](input)};}catch(error){return {ok:false,code:error.code||'blocked'};}};" +
       "</script>" });
+    if (!isCanonicalExperimentApi(url)) throw Error("Unexpected admin test API destination: " + url.origin + url.pathname);
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: experimentApiCors });
     let data;
     if (url.pathname.endsWith("/auth/me")) data = { ok: true, user: { id: "admin-a" } };
     else if (url.pathname.endsWith("/authorization")) data = { ok: true, authorization: { version: 1, role: state.admin ? "admin" : "user", capabilities: state.admin ? ["templates:write"] : [] } };
@@ -40,7 +42,7 @@ async function fixture(context) {
       const id = url.pathname.split("/").at(-1); if (id === state.hidden) return route.abort("failed");
       data = { ok: true, ...(state.receipts.get(id) || { operation: { id, state: "unknown" } }) };
     }
-    return route.fulfill({ json: data });
+    return route.fulfill({ json: data, headers: experimentApiCors });
   });
   return state;
 }

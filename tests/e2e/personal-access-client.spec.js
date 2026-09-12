@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { personalAccessIntent, canonicalAccessJson } from "../../src/sync/personal-access-protocol.js";
+import { isCanonicalExperimentApi, experimentApiCors } from "../fixtures/experiment-api-route.js";
 
 const origin = "https://experiment.vniipo-help.ru", pageUrl = origin + "/__access-client";
 const grant = (listId = "list-a") => ({ operationId: randomUUID(), listId, kind: "access.grant",
@@ -13,9 +14,8 @@ async function fixture(context) {
   const state = { receipts: new Map(), posts: [], hidden: "", lose: "", beforeAck: null };
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.origin !== origin) throw Error("Unexpected access test origin");
-    if (url.pathname.startsWith("/src/")) return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve("." + url.pathname), "utf8") });
-    if (url.pathname === "/__access-client") return route.fulfill({ contentType: "text/html", body: '<!doctype html><script type="module">' +
+    if (url.origin === origin && url.pathname.startsWith("/src/")) return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve("." + url.pathname), "utf8") });
+    if (url.origin === origin && url.pathname === "/__access-client") return route.fulfill({ contentType: "text/html", body: '<!doctype html><script type="module">' +
       "import {createPersonalAccessClient} from '/src/sync/personal-access-client.js';" +
       "import {createExperimentTransport} from '/src/sync/experiment-transport.js';" +
       "window.actor='actor-a'; window.generation='one';" +
@@ -24,6 +24,8 @@ async function fixture(context) {
       "return {transport,client:createPersonalAccessClient({binding,enabled,transport,getContext:()=>({...binding,actorId:window.actor,scope:'personal',scopeKey:'id:'+window.actor,generation:window.generation})})};};" +
       "window.invoke=async(method,input,listId='list-a',enabled=true)=>{try {return {ok:true,value:await access(listId,enabled).client[method](input)};}catch(error){return {ok:false,code:error.code||'blocked'};}};" +
       "</script>" });
+    if (!isCanonicalExperimentApi(url)) throw Error("Unexpected access test API destination: " + url.origin + url.pathname);
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: experimentApiCors });
     let data;
     if (url.pathname.endsWith("/auth/me")) data = { ok: true, user: { id: "actor-a" } };
     else if (url.pathname.endsWith("/capabilities")) data = { ok: true, service: "bikepacking-api", capabilities: ["personalCausalListAccessV1"] };
@@ -48,7 +50,7 @@ async function fixture(context) {
       if (id === state.hidden) return route.abort("failed");
       data = { ok: true, ...(state.receipts.get(id) || { operation: { id, state: "unknown" } }) };
     }
-    return route.fulfill({ json: data });
+    return route.fulfill({ json: data, headers: experimentApiCors });
   });
   return state;
 }

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
+import { isCanonicalExperimentApi, canonicalExperimentApiOrigin } from "../fixtures/experiment-api-route.js";
 
 const frontend = "https://experiment.vniipo-help.ru";
 const euBase = "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api";
@@ -77,12 +78,12 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false,
       </script></body></html>` });
     }
     if (["https://api-eu.vniipo-help.ru", "https://201.51.16.219"].includes(url.origin)
-      || (url.origin === frontend && url.pathname.startsWith("/letters-vniipo/api/"))) {
+      && url.pathname.startsWith("/experiment/letters-vniipo/api/") || isCanonicalExperimentApi(url)) {
       const method = route.request().method();
       const headers = await route.request().allHeaders();
       requests.push({ url: url.href, method, headers });
       if (method === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-      if (ruFailure && url.origin === frontend) return route.fulfill({ status: ruFailure, headers: cors, body: "RU unavailable" });
+      if (ruFailure && url.origin === canonicalExperimentApiOrigin) return route.fulfill({ status: ruFailure, headers: cors, body: "RU unavailable" });
       if (url.pathname.endsWith("/capabilities")) return route.fulfill({
         contentType: "application/json", headers: { ...cors, "X-Vniipo-Proxy-Target": "bike-packing-experiment", "X-Vniipo-Proxy-Write-Gate": gate },
         body: JSON.stringify({ ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
@@ -205,7 +206,7 @@ test("API menu preserves manual priority and can return to automatic RU-first se
   await page.evaluate(() => window.renderRouteSettings());
   await expect(page.locator("[data-transport-current]")).toContainText("Russian");
   expect(requests.filter(request => request.url.endsWith("/capabilities")).map(request => new URL(request.url).origin))
-    .toEqual([frontend, "https://api-eu.vniipo-help.ru", frontend]);
+    .toEqual([canonicalExperimentApiOrigin, "https://api-eu.vniipo-help.ru", canonicalExperimentApiOrigin]);
   expect(requests.some(request => request.method === "POST")).toBe(false);
 });
 
@@ -238,7 +239,7 @@ test("automatic uses EU after a failed RU probe; forced Russian never falls back
   await page.evaluate(() => window.fixtureTransport.prepare());
   expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("eu");
   expect(requests.filter(request => request.method !== "OPTIONS").map(request => new URL(request.url).origin))
-    .toEqual([frontend, "https://api-eu.vniipo-help.ru"]);
+    .toEqual([canonicalExperimentApiOrigin, "https://api-eu.vniipo-help.ru"]);
   await page.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
   await page.getByRole("button", { name: "Save for next reload" }).click();
   requests.length = 0;
@@ -246,7 +247,7 @@ test("automatic uses EU after a failed RU probe; forced Russian never falls back
   await page.locator("#run").click();
   await expect(page.locator("#result")).toContainText("HTTP 503");
   expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
-  expect(requests.every(request => new URL(request.url).origin === frontend)).toBe(true);
+  expect(requests.every(request => new URL(request.url).origin === canonicalExperimentApiOrigin)).toBe(true);
   expect(requests.some(request => request.method === "POST")).toBe(false);
 });
 
