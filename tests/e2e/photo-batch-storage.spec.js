@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { isCanonicalExperimentApi, experimentApiCors } from "../fixtures/experiment-api-route.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -227,9 +228,12 @@ test("native batch queue loses file and owner ACKs then reloads their exact rece
   let phase = "files", ownerReceipt;
   await context.route("**/letters-vniipo/api/**", async route => {
     const request = route.request(), url = new URL(request.url()), leaf = url.pathname.split("/").at(-1);
-    if (leaf === "me") return route.fulfill({ json: { user: { id: "actor-a" } } });
-    if (leaf === "capabilities") return route.fulfill({ json: { capabilities: ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalCausalPhotoFormV1"] } });
-    if (leaf === "freshness") return route.fulfill({ json: { stateRevision: ownerReceipt ? 2 : 1 } });
+    if (!isCanonicalExperimentApi(url)) throw Error("Unexpected photo batch API destination");
+    const fulfill = options => route.fulfill({ ...options, headers: { ...experimentApiCors, ...options.headers } });
+    if (request.method() === "OPTIONS") return fulfill({ status: 204 });
+    if (leaf === "me") return fulfill({ json: { user: { id: "actor-a" } } });
+    if (leaf === "capabilities") return fulfill({ json: { capabilities: ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalCausalPhotoFormV1"] } });
+    if (leaf === "freshness") return fulfill({ json: { stateRevision: ownerReceipt ? 2 : 1 } });
     if (request.method() === "POST" && leaf === "photo-assets") {
       const multipart = await new Request(request.url(), { method: "POST", headers: request.headers(), body: request.postDataBuffer() }).formData();
       const id = multipart.get("operationId"), change = record.action.body.changes.find(change => change.assetId === id);
@@ -259,9 +263,9 @@ test("native batch queue loses file and owner ACKs then reloads their exact rece
     }
     if (url.pathname.includes("/photo-assets/")) {
       const last = leaf === record.action.body.changes[1].assetId;
-      return route.fulfill({ json: phase === "files" && last ? { ok: true, operation: { state: "unknown" } } : stages.get(leaf) });
+      return fulfill({ json: phase === "files" && last ? { ok: true, operation: { state: "unknown" } } : stages.get(leaf) });
     }
-    if (url.pathname.includes("/list-operations/")) return route.fulfill({ json: phase === "done" && ownerReceipt || { ok: true, operation: { state: "unknown" } } });
+    if (url.pathname.includes("/list-operations/")) return fulfill({ json: phase === "done" && ownerReceipt || { ok: true, operation: { state: "unknown" } } });
     return route.abort();
   });
   expect(await page.evaluate(() => drainBatch())).toMatchObject({ blocked: true });

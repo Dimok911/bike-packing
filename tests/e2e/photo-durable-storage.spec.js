@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { isCanonicalExperimentApi, experimentApiCors } from "../fixtures/experiment-api-route.js";
 
 const origin = "https://experiment.vniipo-help.ru";
 async function fixture(page, context) {
@@ -408,8 +409,11 @@ test("native pre-dispatch claim cancellation survives a lost response and reload
   let receipt = null, hidden = true; const posts = [];
   await context.route("**/letters-vniipo/api/**", async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.pathname.endsWith("/auth/me")) return route.fulfill({ json: { user: { id: "actor-a" } } });
-    if (url.pathname.endsWith("/capabilities")) return route.fulfill({ json: { capabilities: ["personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1"] } });
+    if (!isCanonicalExperimentApi(url)) throw Error("Unexpected photo storage API destination");
+    const fulfill = options => route.fulfill({ ...options, headers: { ...experimentApiCors, ...options.headers } });
+    if (request.method() === "OPTIONS") return fulfill({ status: 204 });
+    if (url.pathname.endsWith("/auth/me")) return fulfill({ json: { user: { id: "actor-a" } } });
+    if (url.pathname.endsWith("/capabilities")) return fulfill({ json: { capabilities: ["personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1"] } });
     if (request.method() === "POST") {
       posts.push(url.pathname); expect(url.pathname.endsWith("/cancel")).toBe(true);
       const body = request.postDataJSON(), operationId = url.pathname.split("/").at(-2);
@@ -419,7 +423,7 @@ test("native pre-dispatch claim cancellation survives a lost response and reload
       return route.abort("failed");
     }
     const operationId = url.pathname.split("/").at(-1);
-    return route.fulfill({ json: !hidden && receipt || { ok: true, operation: { id: operationId, state: "unknown",
+    return fulfill({ json: !hidden && receipt || { ok: true, operation: { id: operationId, state: "unknown",
       environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a" } } });
   });
   const id = await page.evaluate(async () => {
