@@ -26,6 +26,11 @@ async function fixture() {
     createAdminTemplatePhotoCopyActionStore: options => { factories.push(options); return createAdminTemplatePhotoCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }); },
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,
     adminTemplateClient: () => ({ capture() { assert.fail("Preflight must not dispatch"); } }),
+    adminTemplatePhotoCopyClient: (binding, selectedId, preparing) => {
+      assert.deepEqual(binding, f.binding); assert.equal(selectedId, layoutId); assert.equal(preparing, false);
+      return { binding: copy(binding), ...Object.fromEntries(["capture", "read", "inspect", "run", "cancel"]
+        .map(method => [method, () => assert.fail(`Ordinary preflight must not call copy client ${method}`)])) };
+    },
     adminTemplateRecoveryFor: () => ({ requiresCancellation: () => false }) };
   const api = actual(["adminTemplatePhotoCopyStore", "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
   const ordinary = { operationId: crypto.randomUUID(), body: { version: 1, base: copy(f.intent.body.base),
@@ -118,20 +123,30 @@ test("actual create form wrapper holds a genuine lease through durable capture a
 
 test("actual cold recovery shares one lease with append/edit/create and refuses stale namespace during its lock wait", async () => {
   for (const changed of [false, true]) {
-    const f = await fixture(), layout = f.state.layouts[f.layoutId], calls = []; let release, entered;
+    const f = await fixture(), layout = f.state.layouts[f.layoutId], calls = []; let release, entered, requested;
     const waiting = new Promise(resolve => { entered = resolve; });
+    const recoveryWaiting = new Promise(resolve => { requested = resolve; });
+    let copyRecoveryCalls = 0;
     const holder = withAdminTemplateCapture({ bindings: [f.binding], locks: f.locks }, () => { entered(); return new Promise(resolve => { release = resolve; }); });
     await waiting;
     const api = actual(["resumeAdminTemplatePhotoForm"], { state: f.state, canonicalTemplateJson, adminTemplatePhotoNamespace,
       ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: true, ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED: true, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: true,
-      adminTemplateOperationContext: () => f.current, navigator: { locks: f.locks }, withAdminTemplateCapture,
+      adminTemplateOperationContext: () => f.current,
+      navigator: { locks: { request(name, task) { requested(); return f.locks.request(name, task); } } }, withAdminTemplateCapture,
+      // Copy recovery runs first and owns its separate source/target lease. This
+      // case isolates the following append/edit/create lease with no copy work.
+      resumeAdminTemplatePhotoCopyForm: async selected => { assert.equal(selected, layout); copyRecoveryCalls++; return null; },
       ...Object.fromEntries(["Append", "Edit", "Create"].map(kind => [`resumeAdminTemplatePhoto${kind}Form`, async (selected, lease) => {
         assert.equal(selected, layout); assert.equal(assertAdminTemplateCaptureLease(lease, [f.binding]), true); calls.push({ kind, lease });
       }])) });
     const pending = api.resumeAdminTemplatePhotoForm(layout);
     const rejected = changed ? assert.rejects(pending, /Редактор изменился/) : null;
+    // Mutate only after the actual wrapper has captured its namespace and is
+    // waiting for the held lease, including its preceding asynchronous check.
+    await recoveryWaiting;
     if (changed) layout.name = "Changed while waiting";
     release(); await holder; if (changed) await rejected; else await pending;
+    assert.equal(copyRecoveryCalls, 1);
     assert.deepEqual(calls.map(row => row.kind), changed ? [] : ["Append", "Edit", "Create"]);
     if (!changed) { assert.ok(calls.every(row => row.lease === calls[0].lease)); assert.throws(() => assertAdminTemplateCaptureLease(calls[0].lease, [f.binding])); }
   }
