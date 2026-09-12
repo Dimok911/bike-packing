@@ -46,10 +46,11 @@ export async function adminPhotoCopyClientFixture(options = {}) {
     stateRevision: intent.body.base.stateRevision + 1, visibility: "private", indexes: [], photoCopy: result } } };
   const values = new Map(), controls = { quota: false, rejectWrite: null, afterRequest: null, mutateStage: null, mutateSave: null,
     wrongActor: false, noRights: false, unknownStage: false, loseStage: false, unknownSave: false, loseSave: false, hideSave: false,
-    throwAfterSaveBegin: false, capabilities: ["adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1", "adminTemplatePhotoCreateV1", "adminTemplatePhotoCopyV1"] };
+    throwAfterSaveBegin: false, unknownCancel: false, loseCancel: false, commitBeforeCancel: false, mutateCancel: null,
+    capabilities: ["adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1", "adminTemplatePhotoCreateV1", "adminTemplatePhotoCopyV1"] };
   const storage = { get length() { return values.size; }, key: index => [...values.keys()][index], getItem: key => values.get(key) ?? null,
     setItem(key, value) { if (controls.quota || controls.rejectWrite?.(key, value)) throw Error("Quota"); values.set(key, value); }, removeItem: key => values.delete(key) };
-  const server = { calls: [], stagePosts: [], savePosts: [], stages: new Map(), saved: null };
+  const server = { calls: [], stagePosts: [], savePosts: [], cancelPosts: [], stages: new Map(), saved: null };
   const fetchImpl = async (url, request = {}) => {
     const path = new URL(url).pathname, method = request.method || "GET"; server.calls.push({ path, method });
     assert.equal(request.credentials, "include"); assert.equal(request.redirect, "error"); let value;
@@ -67,14 +68,26 @@ export async function adminPhotoCopyClientFixture(options = {}) {
     } else if (path.includes("/template-photo-assets/") && method === "GET") {
       const stageId = path.split("/").at(-1);
       value = server.stages.get(stageId) || { ok: true, operation: { id: stageId, environment: binding.environment, actorId: binding.actorId, state: "unknown" } };
-    } else if (path.endsWith("/template-operations") && method === "POST") {
+    } else if ((path.endsWith("/template-operations") || path.endsWith(`/template-operations/${id}/cancel`)) && method === "POST") {
       const body = JSON.parse(request.body);
       assert.deepEqual(body, { expectedActorId: binding.actorId, environment: binding.environment, operationId: id, kind: "template.save",
         listId: binding.listId, itemKey: binding.itemKey, body: record.action.body });
-      server.savePosts.push(copy(body));
-      if (!controls.unknownSave) { server.saved = copy(receipt); controls.mutateSave?.(server.saved); }
-      controls.afterRequest?.(path, method);
-      if (controls.unknownSave || controls.loseSave) throw TypeError("Save ACK lost"); value = { ok: true, ...server.saved };
+      const cancel = path.endsWith("/cancel");
+      if (cancel) {
+        server.cancelPosts.push(copy(body));
+        if (controls.commitBeforeCancel) server.saved = copy(receipt);
+        else if (!controls.unknownCancel && !server.saved) server.saved = { operation: { ...copy(receipt.operation), state: "rejected" },
+          result: { status: 409, payload: { ok: false, code: "operation_cancelled", cancellation: {
+            version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } } };
+        if (server.saved) controls.mutateCancel?.(server.saved);
+        controls.afterRequest?.(path, method);
+        if (controls.unknownCancel || controls.loseCancel) throw TypeError("Cancel ACK lost"); value = { ok: true, ...server.saved };
+      } else {
+        server.savePosts.push(copy(body));
+        if (!controls.unknownSave) { server.saved = copy(receipt); controls.mutateSave?.(server.saved); }
+        controls.afterRequest?.(path, method);
+        if (controls.unknownSave || controls.loseSave) throw TypeError("Save ACK lost"); value = { ok: true, ...server.saved };
+      }
     } else if (path.endsWith(`/template-operations/${id}`) && method === "GET") value = server.saved && !controls.hideSave
       ? { ok: true, ...server.saved } : { ok: true, operation: { id, state: "unknown" } };
     else throw Error(`Unexpected request ${method} ${path}`);

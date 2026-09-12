@@ -26,7 +26,7 @@ for (const entityType of ["item", "container"]) test(`${entityType}: real BE rel
   assert.deepEqual(await off.run(f.id), f.receipt); assert.deepEqual((await off.capture(f.record.action)).intent, f.intent);
   assert.equal(f.server.stagePosts.length, 2); assert.equal(f.server.savePosts.length, 1);
   assert.equal(f.idb.rows().size, 1); assert.equal(f.idb.rows("stage-dispatches").size, 2);
-  assert.deepEqual((await off.list()).map(row => row.intent.id), [f.id]); assert.equal(Object.hasOwn(off, "cancel"), false);
+  assert.deepEqual((await off.list()).map(row => row.intent.id), [f.id]); assert.equal(typeof off.cancel, "function");
   assert.equal(canonicalTemplateJson((await off.read(f.id)).receipt), originalResult);
   assert.equal(canonicalTemplateJson(f.receipt), originalResult);
 });

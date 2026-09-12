@@ -305,9 +305,13 @@ export function createExperimentTransport({
     const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
     const createPhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
       && cancellation.stageProtocol === "admin-template-photo-create-stage-v2" && hash(cancellation.recordIntentHash);
+    const copyPhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
+      && cancellation.stageProtocol === "admin-template-photo-copy-stage-v1" && hash(cancellation.recordIntentHash)
+      && exact(recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "kind", "payloadDigest", "recordIntentHash"])
+      && recovery.recordIntentHash === cancellation.recordIntentHash;
     const adminPhotoCancellation = admin && recovery.kind === "template.save"
       && path === `/bike-packing/admin/template-operations/${recovery.operationId}/cancel`
-      && (exact(cancellation, ["operationId", "payloadDigest", "assets"]) || createPhotoCancellation)
+      && (exact(cancellation, ["operationId", "payloadDigest", "assets"]) || createPhotoCancellation || copyPhotoCancellation)
       && cancellation.operationId === recovery.operationId && cancellation.payloadDigest === recovery.payloadDigest
       && Array.isArray(cancellation.assets) && cancellation.assets.length > 0 && cancellation.assets.length <= 50
       && Object.keys(cancellation.assets).length === cancellation.assets.length
@@ -315,11 +319,11 @@ export function createExperimentTransport({
         && asset.assetId !== recovery.operationId && hash(asset.assetDigest))
       && new Set(cancellation.assets.map(asset => asset.assetId)).size === cancellation.assets.length;
     const ownCancelledAdminStage = entry => adminPhotoCancellation && entry.mode === mode && entry.method === "POST"
-      && entry.path === "/bike-packing/admin/template-photo-assets"
+      && entry.path === (copyPhotoCancellation ? "/bike-packing/admin/template-photo-assets/copy" : "/bike-packing/admin/template-photo-assets")
       && exact(entry.recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "actionOperationId", "assetDigest", "intentHash"])
       && entry.recovery.type === "admin-template-photo-stage"
-      && entry.recovery.protocol === (createPhotoCancellation ? cancellation.stageProtocol : "admin-template-photo-stage-v1")
-      && (!createPhotoCancellation || entry.recovery.intentHash === cancellation.recordIntentHash)
+      && entry.recovery.protocol === (createPhotoCancellation || copyPhotoCancellation ? cancellation.stageProtocol : "admin-template-photo-stage-v1")
+      && (!(createPhotoCancellation || copyPhotoCancellation) || entry.recovery.intentHash === cancellation.recordIntentHash)
       && ["environment", "actorId", "listId", "itemKey"].every(key => entry.recovery[key] === recovery[key])
       && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id && hash(entry.recovery.intentHash)
       && cancellation.assets.some(asset => asset.assetId === entry.id && asset.assetDigest === entry.recovery.assetDigest);

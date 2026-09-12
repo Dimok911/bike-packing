@@ -79,7 +79,9 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
     guard(); const text = storage?.getItem(key(id)); if (text == null) return null;
     if (typeof text !== "string" || new TextEncoder().encode(text).byteLength > 12 * 1024 * 1024) throw blocked("journal");
     let saved; try { saved = JSON.parse(text); } catch (cause) { throw blocked("journal", cause); }
-    if (!exact(saved, ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"])
+    const keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
+    if (!(exact(saved, keys) || exact(saved, [...keys, "cancelRequested"]))
+      || Object.hasOwn(saved, "cancelRequested") && typeof saved.cancelRequested !== "boolean"
       || saved.version !== 1 || saved.kind !== kind || typeof saved.dispatched !== "boolean" || !hash(saved.recordIntentHash)
       || !exact(saved.intent, ["id", "environment", "actorId", "listId", "itemKey", "kind", "body"])
       || canonical(saved) !== text || !same(saved.intent, adminTemplatePhotoCopyIntent({ ...binding, ...actionFor(saved.intent) }))
@@ -109,9 +111,11 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
     assetDigest: saved.intent.body.photoCopy.assets[index].assetDigest, intentHash: saved.recordIntentHash });
   const entry = (metadata, path) => {
     const value = transport.writes.find(value => value.id === metadata.operationId);
-    if (value && (value.path !== path || value.method !== "POST" || value.mode !== transport.mode || !same(value.recovery, metadata))) throw blocked("transport-binding");
+    if (value && (!(Array.isArray(path) ? path : [path]).includes(value.path) || value.method !== "POST" || value.mode !== transport.mode || !same(value.recovery, metadata))) throw blocked("transport-binding");
     return value;
   };
+  const cancelPath = saved => `${commandPath}/${saved.intent.id}/cancel`;
+  const commandEntry = saved => entry(commandMetadata(saved), saved.cancelRequested ? [commandPath, cancelPath(saved)] : commandPath);
   const execute = (id, work) => {
     const initial = context(), controller = new AbortController(), abort = () => controller.abort();
     const guard = () => { if (controller.signal.aborted) throw blocked("document-ended"); localGuard(initial); };
@@ -195,28 +199,51 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
             if (ok !== true || !await validateAdminTemplatePhotoCopyReceipt(receipt, { intent: saved.intent,
               payloadDigest: saved.payloadDigest, stageReceipts: saved.stageReceipts })) throw blocked("receipt");
             guard(); await refresh(); if (saved.receipt && !same(saved.receipt, receipt)) throw blocked("receipt-changed");
-            const transportEntry = entry(commandMetadata(saved), commandPath);
+            const transportEntry = commandEntry(saved);
             if (transportEntry?.confirmed && !same(transportEntry.receipt, receipt)) throw blocked("receipt-changed");
             saved = persist({ ...saved, receipt }, saved, guard);
             if (transportEntry && transport.confirmWrite(id, { receipt }) !== true) throw blocked("confirm-storage");
             guard(); return clone(receipt);
           };
           const inspect = async () => {
-            const transportEntry = entry(commandMetadata(saved), commandPath), data = await request(`${commandPath}/${id}`);
+            const transportEntry = commandEntry(saved), data = await request(`${commandPath}/${id}`);
             if (exact(data, ["ok", "operation"]) && exact(data.operation, ["id", "state"]) && data.operation.id === id && data.operation.state === "unknown") {
               if (saved.receipt || transportEntry?.confirmed) throw blocked("receipt-disappeared"); return null;
             }
             return settle(data);
           };
-          if (work !== "run" && work !== "inspect") {
+          if (!["run", "inspect", "cancel"].includes(work)) {
             const index = saved.intent.body.photoCopy.assets.findIndex(asset => asset.assetId === work);
             if (index < 0) throw blocked("stage-missing");
             return await inspectStage(index) || { ok: true, operation: { id: work, environment: binding.environment, actorId: binding.actorId, state: "unknown" } };
           }
           const known = await inspect(); if (known || work === "inspect") return known;
+          const envelope = { expectedActorId: binding.actorId, environment: binding.environment, operationId: id, kind: "template.save",
+            listId: binding.listId, itemKey: binding.itemKey, body: saved.intent.body };
+          if (work === "cancel") {
+            // Own photo gates may be OFF: this endpoint fences an existing exact
+            // action and never creates stages or attaches their results.
+            if (adminEnabled !== true) throw blocked("disabled");
+            const caps = await request("/bike-packing/capabilities");
+            if (caps.service !== "bikepacking-api" || !Array.isArray(caps.capabilities) || !caps.capabilities.includes(TEMPLATE_OPERATION_CAPABILITY)) throw blocked("capabilities");
+            await refresh();
+            if (!saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, saved, guard);
+            const path = cancelPath(saved), metadata = commandMetadata(saved), permission = {
+              operationId: id, payloadDigest: saved.payloadDigest, stageProtocol: "admin-template-photo-copy-stage-v1", recordIntentHash: saved.recordIntentHash,
+              assets: saved.intent.body.photoCopy.assets.map(({ assetId, assetDigest }) => ({ assetId, assetDigest }))
+            };
+            transport.assertWritable(path, "POST", metadata, permission);
+            if (!commandEntry(saved)) await transport.beginWrite(path, "POST", null, metadata, permission);
+            guard(); await refresh();
+            // Only another explicit cancel() may retry this idempotent fence.
+            // Its terminal receipt does NOT acknowledge unknown stage outcomes.
+            try { return await settle(await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: canonical(envelope) })); }
+            catch (cause) { transport.noteFailure(cause, path, "POST", id); guard(); const recovered = await inspect(); if (recovered) return recovered; throw cause; }
+          }
+          if (saved.cancelRequested) throw blocked("cancel-requested");
           // Unlike generic administrative replay, this first copy client never
           // resends a save whose durable dispatch claim already exists.
-          if (saved.dispatched || entry(commandMetadata(saved), commandPath)) throw blocked("save-unknown");
+          if (saved.dispatched || commandEntry(saved)) throw blocked("save-unknown");
           await capabilities();
           for (let index = 0; index < saved.stageReceipts.length; index++) {
             const receipt = await stage(index); guard(); if (receipt.assetState !== "ready") throw blocked("stage-unavailable");
@@ -226,8 +253,6 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
           const metadata = commandMetadata(saved); transport.assertWritable(commandPath, "POST", metadata);
           saved = persist({ ...saved, dispatched: true }, saved, guard);
           await transport.beginWrite(commandPath, "POST", null, metadata); guard();
-          const envelope = { expectedActorId: binding.actorId, environment: binding.environment, operationId: id, kind: "template.save",
-            listId: binding.listId, itemKey: binding.itemKey, body: saved.intent.body };
           try { return await settle(await request(commandPath, { method: "POST", headers: { "content-type": "application/json" }, body: canonical(envelope) })); }
           catch (cause) { transport.noteFailure(cause, commandPath, "POST", id); guard(); const recovered = await inspect(); if (recovered) return recovered; throw cause; }
         });
@@ -245,7 +270,7 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
         const previous = await read(intent.id, guard);
         if (previous) { if (!same(previous.intent, intent) || previous.recordIntentHash !== record.intentHash) throw blocked("journal"); return clone(previous); }
         writing(); const payloadDigest = await digest(intent); guard();
-        return clone(persist({ version: 1, kind, intent, payloadDigest, recordIntentHash: record.intentHash, dispatched: false,
+        return clone(persist({ version: 1, kind, intent, payloadDigest, recordIntentHash: record.intentHash, dispatched: false, cancelRequested: false,
           stageReceipts: record.stages.map(() => null), receipt: null }, null, guard));
       });
     },
@@ -255,9 +280,7 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
       for (let index = 0; index < storage.length; index++) { const name = storage.key(index); if (name?.startsWith(prefix)) ids.push(name.slice(prefix.length)); }
       const result = []; for (const id of ids.sort()) result.push(await read(id, guard)); guard(); return clone(result);
     },
-    run: id => execute(id, "run"), inspect: id => execute(id, "inspect"),
+    run: id => execute(id, "run"), inspect: id => execute(id, "inspect"), cancel: id => execute(id, "cancel"),
     inspectStage: (id, stageId) => { if (!validTemplateOperationId(stageId)) throw blocked("operation-id"); return execute(id, stageId); }
-    // Copy cancellation needs its own transport exception and retry authority.
-    // No cancel entrypoint can impersonate uploaded-stage proof in this slice.
   });
 }
