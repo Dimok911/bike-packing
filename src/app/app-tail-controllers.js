@@ -18,6 +18,7 @@ import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "../sync/photo-up
 import { createPersonalPhotoFormController } from "../ui/personal-photo-form-controller.js";
 import { createAdminTemplatePhotoCreateFormController } from "../ui/admin-template-photo-create-form-controller.js";
 import { createAdminTemplatePhotoFormController } from "../ui/admin-template-photo-form-controller.js";
+import { createAdminTemplatePhotoCopyController } from "../ui/admin-template-photo-copy-controller.js";
 import {
   isLayoutNotesCollapsed,
   LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
@@ -145,6 +146,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
     adminTemplatePhotoCreateFormEnabled = () => false, adminTemplatePhotoCreateFormContext, submitAdminTemplatePhotoCreateForm,
+    adminTemplatePhotoCopyFormEnabled = () => false, adminTemplatePhotoCopyEligible = () => false, submitAdminTemplatePhotoCopyForm,
     adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false, adminTemplatePhotoReplaceFormEnabled = () => false,
     adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
     prepareCausalAdminCatalogCopy,
@@ -161,6 +163,18 @@ export function createAppTailControllers(ctx) {
   let containerPickerCopyIncludesContents = true;
   let rootContainerDialogCopyIncludesContents = true;
   let sharedPickerCopyIncludesContents = true;
+  let adminTemplatePhotoCopyPickerSession = null;
+  const adminTemplatePhotoCopies = createAdminTemplatePhotoCopyController({
+    getSelection: () => adminTemplatePhotoCopyPickerSelection(), submit: (input, options) => submitAdminTemplatePhotoCopyForm(input, options),
+    getSession: () => adminTemplatePhotoCopyPickerSession,
+    onBusy: busy => { const button = refs.containerPickerBoard?.querySelector("[data-pick-admin-photo-catalog]"); if (button) button.disabled = busy; },
+    onError: error => showToast(error.message, "error"),
+    onDurable: record => {
+      closeDialogWithoutRestoringFocus(refs.containerPickerDialog);
+      closeDialogWithoutRestoringFocus(record.snapshot.copiedOwner.entityType === "item" ? refs.dialog : refs.rootContainerDialog);
+      switchView(record.snapshot.copiedOwner.entityType === "item" ? "items" : "bags"); render();
+    }
+  });
   let itemFormDraftSaveTimer = null;
   let rootContainerFormDraftSaveTimer = null;
   let templateCopyCreationPending = false;
@@ -1355,9 +1369,9 @@ function normalizeRootPlacementIndex(containerId, slotIndex) {
   return slotIndex;
 }
 
-function getRootContainerDialogLayoutRootIds() {
+function getRootContainerDialogLayoutRootIds(layoutId = "") {
   if (runtime.rootContainerDialogPendingRootIds) return [...runtime.rootContainerDialogPendingRootIds];
-  const layout = getPublishedWorkLayout();
+  const layout = layoutId ? state.layouts[layoutId] : getPublishedWorkLayout();
   return [...getVisibleLayoutRootIds(layout)];
 }
 
@@ -1830,8 +1844,9 @@ async function openItemCopyContainerPickerDialog(event) {
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
   if (await offerCreateLayoutWhenNoCopyTargets()) return;
-  renderContainerPicker();
+  adminTemplatePhotoCopyPickerSession = {};
   openModalDialog(refs.containerPickerDialog);
+  renderContainerPicker();
 }
 
 function openContainerParentPickerDialog(event) {
@@ -1860,8 +1875,9 @@ async function openRootContainerCopyPickerDialog(event) {
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
   if (await offerCreateLayoutWhenNoCopyTargets()) return;
-  renderContainerPicker();
+  adminTemplatePhotoCopyPickerSession = {};
   openModalDialog(refs.containerPickerDialog);
+  renderContainerPicker();
 }
 
 function orderedPersonalCopyTargetLayouts() {
@@ -2001,8 +2017,33 @@ function renderContainerPicker() {
     refs.containerPickerBoard.querySelector("[data-pick-personal-catalog]").addEventListener("click", () =>
       copyItemToContainerInLayout(runtime.editingItemId, "", runtime.containerPickerLayoutId, { catalog: true }));
   }
+  if (adminTemplatePhotoCopyPickerSelection()) {
+    const shell = runtime.containerPickerMode === "container-copy";
+    refs.containerPickerBoard.insertAdjacentHTML("beforeend", `<article class="container-picker-column">
+      <button class="container-picker-root" type="button" data-pick-admin-photo-catalog>
+        <strong>${escapeHtml(localText("To template catalog", "В каталог шаблона"))}</strong>
+        <span>${escapeHtml(shell ? localText("Independent photos, empty bag, without placement", "Независимые фото, без содержимого и размещения")
+          : localText("Independent photos, without placement", "Независимые фото, без размещения"))}</span>
+      </button></article>`);
+    const button = refs.containerPickerBoard.querySelector("[data-pick-admin-photo-catalog]");
+    button.disabled = adminTemplatePhotoCopies.busy(); button.addEventListener("click", () => adminTemplatePhotoCopies.save());
+  }
   bindHorizontalTouchScroll(refs.containerPickerBoard);
   resetHorizontalTouchScroll(refs.containerPickerBoard);
+}
+function adminTemplatePhotoCopyPickerSelection() {
+  if (!adminTemplatePhotoCopyFormEnabled() || !["item-copy", "container-copy"].includes(runtime.containerPickerMode)
+    || !refs.containerPickerDialog?.open) return null;
+  const item = runtime.containerPickerMode === "item-copy", sourceId = item ? runtime.editingItemId : runtime.editingRootContainerId;
+  const dialog = item ? refs.dialog : refs.rootContainerDialog, initial = item ? runtime.itemDialogInitialSnapshot : runtime.rootContainerDialogInitialSnapshot;
+  const current = item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot(runtime.containerPickerSourceLayoutId);
+  // Copy only saved source fields/photos. A pending form cannot be silently
+  // discarded when the destination becomes the active administrative editor.
+  if (!dialog?.open || !initial || !snapshotsEqual(current, initial)) return null;
+  const selection = { entityType: item ? "item" : "container", sourceId, sourceLayoutId: runtime.containerPickerSourceLayoutId,
+    targetLayoutId: runtime.containerPickerLayoutId, includeContents: item ? false : containerPickerCopyIncludesContents,
+    formSnapshot: clone(current) };
+  return adminTemplatePhotoCopyEligible(selection) ? selection : null;
 }
 
 function renderRootCopyPlacementBoard() {
@@ -9583,7 +9624,7 @@ function updateItemQuantityUi() {
   updateItemDialogSaveState();
 }
 
-function getRootContainerDialogSnapshot() {
+function getRootContainerDialogSnapshot(sourceLayoutId = "") {
   const dimensions = readRootContainerDialogDimensions();
   return {
     name: refs.rootContainerName.value.trim(),
@@ -9609,7 +9650,7 @@ function getRootContainerDialogSnapshot() {
       ? getRootContainerDialogParentIndex()
       : "",
     layoutRootIds: runtime.editingRootContainerId && !state.containers[runtime.editingRootContainerId]?.parentId && runtime.rootContainerDialogPendingParentId === undefined
-      ? getRootContainerDialogLayoutRootIds().join("\u0000")
+      ? getRootContainerDialogLayoutRootIds(sourceLayoutId).join("\u0000")
       : ""
   };
 }

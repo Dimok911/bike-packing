@@ -1,17 +1,21 @@
-# Administrative photo copy: isolated preparation contract
+# Administrative photo copy: first private-catalog slice
 
-This is a **pure, inactive preparation slice** on BE `99ce3be`, in the
-`admin-photo-copy-after-v1608` worktree. It implements no HTTP handler, SQL,
-filesystem copy, migration, FE integration or deployment. The existing general,
-upload and PhotoCreate v1 parsers remain unchanged. The new module is mirrored byte-for-byte from
+This is a local, inactive implementation in the `admin-photo-copy-after-v1608`
+worktrees. The API, independent file materialization, durable client records,
+V8 plans and actual item/root-bag forms are implemented; browser acceptance is
+being completed. BE runtime is `e5b912cf`, with strengthened paired API tests in
+`fab16f5a`. Nothing in this slice is enabled in the v1608/v1609 release.
+The existing general, upload and PhotoCreate v1 parsers remain unchanged.
+The pure module is mirrored byte-for-byte from
 `src/lib/guest-import/sync/admin-template-photo-copy-protocol.js` into the FE
-`src/sync` directory and recorded in `source-hashes.json`. Both runtime
-gateways still reject this extension; the mirror alone enables no operation.
+`src/sync` directory and recorded in `source-hashes.json`. Dedicated copy
+handlers and clients accept this extension only under their own gates.
 
 `ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = false`;
-`TEMPLATE_PHOTO_COPY_CAPABILITY = "adminTemplatePhotoCopyV1"`. A future runtime
-must add its own OFF gate, alongside the existing admin/staging/absent-owner
-prerequisites; this module advertises nothing. Trello stage 3 remains incomplete.
+`TEMPLATE_PHOTO_COPY_CAPABILITY = "adminTemplatePhotoCopyV1"`. The copy gate
+remains OFF, alongside the existing admin/staging/absent-owner prerequisites.
+Trello stage 3 remains incomplete: trees, whole templates and personal/admin
+directions are outside this first slice.
 
 ## First supported action
 
@@ -131,7 +135,8 @@ digests hash the canonical JSON string of the lowercase validated relative path
 path, including another photo's source or destination. Source/target original
 and thumbnail may each share their own path only when metadata/hashes agree.
 No physical path is transmitted. `adminTemplatePhotoCopyMaterialization` only
-checks strings/digests; future server code must prove actual filesystem identity.
+checks strings/digests; the dedicated server handler independently proves actual
+filesystem identity and copied bytes.
 
 The exact final `result.payload.photoCopy` extension is:
 
@@ -152,18 +157,18 @@ fallback upload or cancellation of another operation is authorized here.
 
 These are server attestations bound to immutable requests, not a cryptographic
 proof against a malicious server: without locally known bytes the client cannot
-independently recompute their hashes. A future client must receive and durably
-retain receipts from its authenticated, selected API origin, validate outer
-action identity, and restrict accepted reference URL origins as transport policy.
+independently recompute their hashes. The client retains receipts from its
+authenticated, selected API origin, validates outer action identity and restricts
+reference URLs to the exact supported relative API paths or approved API origins.
 
-## Required server transaction and remaining acceptance work
+## Server transaction
 
 `assertAdminTemplatePhotoCopyPrepared` is only a pure contract for **trusted
 locked observations**: exact actor/admin permission; both private, live, exact
 binding/revision/payload/owner observations. Never expose its `canManage` input
 as client authority. Actor, source owner and target owner may all differ.
 
-Future gateway work must independently perform:
+The dedicated gateway independently performs:
 
 1. Acquire the catalog lock and **both** sorted list/head locks; verify exact
    source types/bindings, live private revisions, current rights and full
@@ -183,21 +188,52 @@ Future gateway work must independently perform:
 5. At save, under both locks, repeat source/base/rights/row/file checks and every
    exact stage binding. Atomically commit only the new target owner/photos/heads,
    target payload/revision/history and bounded receipt. Source remains unchanged.
-   Failure rolls back all business effects; stage assets remain independent and
-   reclaimable. Recover by exact immutable UUID; no new IDs or blind retry.
+   Failure rolls back all business effects; stage assets and claims remain
+   retained. Recover by exact immutable UUID; no new IDs or blind retry. Their
+   eventual cleanup requires the separate retention work in stage 7.
 
 The personal `deriveCopiedPhotoAsset` is not reused: it assumes actor==owner,
 personal stages/heads and shared physical paths. Legacy `copyPhotoRecord` copies
 files independently but performs an unjournaled upsert. Source file trash cleanup
 physically deletes old paths after 30 days, so sharing source paths is unsafe.
 
-Before runtime acceptance: real paired API tests for both owner types, stale/
-deleted/public/revoked source, owner mismatch, deleted/cross-type/new-ID collision,
-byte disappearance and path sharing, atomic rollback of owner+photos+history,
-lost-ACK restart/replay/cancel, and source deletion without breaking the copy.
-Actual UI must then prove durable IDs, quota selection retention, interruption/
-cold recovery, no duplicate owner/files, and safe actor/scope changes. None of
-those server/UI claims is established by this pure preparation slice.
+The paired API/MySQL suite covers both owner types, source/base/rights refusals,
+identity and file independence, atomic failure and immutable replay/cancellation.
+The strengthened 11-case run validates actual API receipts with the FE validator,
+including unchanged relative photo URLs. Its 740 source hashes remained stable;
+the isolated MySQL process was stopped after the run.
+
+## Client capture, recovery and actual forms
+
+The explicit catalog command only accepts saved source fields. A root-bag copy
+clearly excludes contents and placement. The picker retains the same immutable
+attempt through quota failure, while a new completed copy receives new IDs.
+
+Source and target capture use sorted shared locks also respected by ordinary
+saves, uploads and template ordering. Existing plans, upload/copy records and
+order journals are checked before capture, including records whose gates are
+OFF. Applied flags alone do not grant permission to reuse a pending base.
+
+The full copy record, V8 plan and client journal are durable before dispatch;
+the target receives a pending marker without an optimistic new owner. Recovery
+keeps the original IDs after a lost stage/save response. Unknown stages are
+inspected by GET, never blindly reposted. A validated parent cancellation fence
+can remove its own transport barrier without inventing a successful stage or
+deleting the raw journal/IDB evidence.
+
+Confirmed application replaces only the target namespace. A copy-specific
+adapter preserves existing target local owner IDs and uses the new ID from the
+immutable record; source, private drafts and opaque business data remain intact.
+Mirror quota failure restores the pending target and retains its record for a
+cold retry. An OFF copy gate may inspect an existing validated action; it cannot
+create a missing plan/journal or dispatch a new copy.
+
+Actual browser acceptance passed 14 distinct cases (7 Chromium and 7 WebKit),
+with zero retries/skips. It covers the item, root shell, repeated copy, lost
+stage/save responses, OFF recovery and real local-storage failures. Frozen
+source hashes are recorded with the acceptance run. Windows WebKit took 52s
+for two sequential copies and 24s for a root shell. This work is not the whole
+stage 3 or real-device Safari acceptance or performance verification.
 
 ## Local preparation checks
 
@@ -213,10 +249,10 @@ with no failures/skips. Command:
 node --test test/bike-packing-template-photo-copy-protocol.test.js test/bike-packing-template-photo-create-protocol.test.js test/bike-packing-template-operation-protocol.test.js
 ```
 
-The log `photo-copy-pure-1.txt`, pre/post hashes of 218 source/test files and
-the final four-file whitelist are retained in ignored
-`node_modules/.cache/causal-evidence` in this worktree. No runtime activation,
-HTTP/MySQL/filesystem-copy check, FE write, commit, push or deployment occurred.
+The original pure preparation log `photo-copy-pure-1.txt`, pre/post hashes of
+218 source/test files and its four-file whitelist remain as historical evidence.
+The implementation and paired/UI evidence described above extend those checks;
+local implementation is separate from publication.
 
 ## Reviewed FE mirror verification
 
@@ -227,6 +263,5 @@ with no skips or retries; the separate BE source-manifest check passed 1/1.
 Existing-parser rejection is also covered inside the copy suite.
 
 Shared module SHA-256: `b7f88c593432d611f59b664b68d01c9f6c91e2c1cf7e50981675f02bda2b0939`.
-The FE copy suite is registered in `test:transport`. This remains pure
-preparation: no database, filesystem materialization, HTTP, UI or live test has
-been implemented or claimed for photoCopy.
+The FE copy suites are registered in `test:transport`. PhotoCopy has not been
+published or tested with real user data on the live service.

@@ -5,10 +5,15 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/").split("?")[0];
+    if (["admin-photo-copy", "admin-photo-copy-off"].includes(mode) && source.endsWith("/src/app/app-tail-controllers.js")) {
+      const anchor = 'onError: error => showToast(error.message, "error"),';
+      if (!code.includes(anchor)) throw Error("Copy form diagnostic anchor changed");
+      code = code.replace(anchor, 'onError: error => { globalThis.__adminUiLastError = { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || "") }; showToast(error.message, "error"); },');
+    }
     if (["admin-photo-edit", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-edit-protocol.js")) {
       return code.replace("ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = true");
     }
-    if ((["admin-photo-append", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off"].includes(mode) || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
+    if ((["admin-photo-append", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off", "admin-photo-copy", "admin-photo-copy-off"].includes(mode) || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
       && source.endsWith("/src/sync/admin-template-photo-append-protocol.js")) {
       code = code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
       return mode === "admin-photo-replace" ? code.replace("ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = true") : code;
@@ -33,7 +38,8 @@ export default defineConfig(({ mode }) => ({
   } catch (error) { globalThis.__adminPhotoCandidateDiagnosticError = String(error.message); }
 `);
     }
-    if (mode === "admin-photo-create" && source.endsWith("/src/sync/admin-template-photo-create-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = true");
+    if (["admin-photo-create", "admin-photo-copy", "admin-photo-copy-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-create-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = true");
+    if (mode === "admin-photo-copy" && source.endsWith("/src/sync/admin-template-photo-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = true");
     if (mode === "personal-import" && source.endsWith("/app.js")) {
       code = code.replace('return outbox.capture({ snapshot, body, operationId });', 'globalThis.__adminUiCaptureCalls ||= []; globalThis.__adminUiCaptureCalls.push({ stack: new Error().stack, scope: currentViewScope(), activeLayoutId: state.activeLayoutId }); return outbox.capture({ snapshot, body, operationId });');
       code = code.replace('function reportAdminTemplateSaveError(error) {', 'function reportAdminTemplateSaveError(error) { globalThis.__adminUiLastError = String(error.adminCopyGuard || "") + String(error.message) + String(error.stack || error);')
@@ -47,6 +53,8 @@ export default defineConfig(({ mode }) => ({
     return code;
   } }],
   build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build"
+    : mode === "admin-photo-copy" ? "test-results/admin-template-photo-copy-ui-build"
+    : mode === "admin-photo-copy-off" ? "test-results/admin-template-photo-copy-off-ui-build"
     : mode === "admin-photo-create" ? "test-results/admin-template-photo-create-ui-build"
     : mode === "admin-photo-create-off" ? "test-results/admin-template-photo-create-off-ui-build"
     : mode === "admin-photo-replace" ? "test-results/admin-template-photo-replace-ui-build"
