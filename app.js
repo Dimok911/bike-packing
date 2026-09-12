@@ -12905,7 +12905,16 @@ async function createLocalDemoCopy({
     }
     const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { activate, remember, exactTemplateName });
     prepareCreatedLayoutForSync(layoutId);
-    await cacheGuestTemplatePhotoFallbacks(layoutId);
+    try {
+      await cacheGuestTemplatePhotoFallbacks(layoutId);
+    } catch {
+      // The layout is already saved and still has its remote photo references.
+      // Optional offline caching must not turn a usable guest copy into a failed startup.
+      showToast(localText(
+        "Layout opened. Photos could not be saved for offline use; they remain available online.",
+        "Укладка открыта. Не удалось сохранить фото для работы без сети; они доступны через интернет."
+      ), "error");
+    }
     await syncCreatedPrivateLayoutEntities(layoutId);
     updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));
     return layoutId;
