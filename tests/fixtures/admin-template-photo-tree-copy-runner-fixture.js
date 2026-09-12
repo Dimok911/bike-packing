@@ -14,6 +14,7 @@ import { adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSna
 import { prepareAdminTemplatePhotoTreeCopyNamespaces } from "../../src/public/admin-template-photo-tree-copy-namespaces.js";
 import { assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
 import { readAdminTemplateOrderInventory } from "../../src/public/admin-template-order-batch.js";
+import * as treeAcceptance from "../../src/public/admin-template-photo-tree-copy-acceptance.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 const actual = (names, deps) => new Function(...Object.keys(deps), names.map(name => {
@@ -48,7 +49,9 @@ export async function treeAppRunnerFixture(options = {}) {
     const get = (binding, id, preparing) => () => context(binding, id, preparing);
     const upload = (binding, id, preparing) => createAdminTemplatePhotoActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const copyStore = (binding, id, preparing) => createAdminTemplatePhotoCopyActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
-    const deps = { state, globalThis: { localStorage: f.storage }, canonicalTemplateJson, validTemplateOperationId,
+    const deps = { state, globalThis: { localStorage: f.storage }, localStorage: f.storage,
+      scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
+      ...treeAcceptance, canonicalTemplateJson, validTemplateOperationId,
       adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot, assertAdminTemplateCaptureLease,
       adminTemplateOperationContext: context, adminTemplateUiEnabled: () => flags.admin,
       ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED: flags.tree, ADMIN_TEMPLATE_PHOTO_COPY_ENABLED: flags.copy,
@@ -78,7 +81,7 @@ export async function treeAppRunnerFixture(options = {}) {
       adminTemplateRecoveryFor: () => ({ requiresCancellation: () => assert.fail("Runner must not use generic cancellation") }),
       assertAdminTemplateCopyCaptureAllowed: () => assert.fail("Runner cannot capture a new plan"),
       readAdminTemplateOrderInventory: options => readAdminTemplateOrderInventory({ ...options, storage: f.storage }) };
-    const names = ["adminTemplatePhotoTreeCopyInventory", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
+    const names = ["adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
       "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory", "withAdminTemplatePhotoTreeCopyNamespaceScope", "runAdminTemplatePhotoTreeCopyPlan", ...(extra.names || [])];
     for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);
     return actual(names.filter(name => !Object.hasOwn(extra.replace || {}, name)), { ...deps, ...extra.deps, ...extra.replace });

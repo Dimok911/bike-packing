@@ -22,6 +22,7 @@ import { adminTemplatePhotoCopySavePlan, adminTemplatePhotoCopyEditorSnapshot } 
 import { createAdminTemplateStopChoice } from "../../src/public/admin-template-stop-choice.js";
 import { createAdminTemplateRecovery } from "../../src/public/admin-template-recovery.js";
 import { projectAdminTemplateServerVariant } from "../../src/public/admin-template-server-variant.js";
+import { ADMIN_TEMPLATE_PHOTO_TREE_COPY_ACCEPTANCE_PREFIX, readAdminTemplatePhotoTreeCopyAcceptance } from "../../src/public/admin-template-photo-tree-copy-acceptance.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 const prefix = (kind, binding) => kind + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -62,6 +63,8 @@ async function fixture({ actualStopFactories = false } = {}) {
   const ordinary = (binding, layoutId, preparing = true) => createAdminTemplateClient({ binding, getContext: get(binding, layoutId, preparing), storage: f.storage,
     locks: f.locks, transport, photoStore: upload(binding), enabled: false });
   const deps = { globalThis: { localStorage: f.storage }, state, canonicalTemplateJson, validTemplateOperationId,
+    localStorage: f.storage, STORAGE_KEY: "mirror", scopedLocalStorageKey: key => key, localStorageScopeKey: `id:${f.binding.actorId}`,
+    ADMIN_TEMPLATE_PHOTO_TREE_COPY_ACCEPTANCE_PREFIX, readAdminTemplatePhotoTreeCopyAcceptance,
     adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot, assertAdminTemplateCaptureLease,
     createAdminTemplatePhotoTreeCopyActionStore: wrap("tree-store", createAdminTemplatePhotoTreeCopyActionStore),
     createAdminTemplatePhotoTreeCopyClient: wrap("tree-client", createAdminTemplatePhotoTreeCopyClient),
@@ -84,7 +87,7 @@ async function fixture({ actualStopFactories = false } = {}) {
     createAdminTemplateStopChoice: wrap("stop-choice", createAdminTemplateStopChoice), projectAdminTemplateServerVariant,
     adminTemplatePhotoMechanismEnabled: () => false, adminTemplateEditorSnapshot: () => assert.fail("Readonly exclusions cannot snapshot live state") });
   const api = actual([...(actualStopFactories ? ["adminTemplateStopChoiceFor", "adminTemplateRecoveryFor"] : []),
-    "adminTemplatePhotoTreeCopyInventory", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
+    "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
     "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory"], deps);
   const plan = adminTemplatePhotoTreeCopySavePlan({ binding: f.binding, operationId: f.id, body: f.record.action.body,
     editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(f.record), recordIntentHash: f.record.intentHash });

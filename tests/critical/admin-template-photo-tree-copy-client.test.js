@@ -175,6 +175,24 @@ test("unavailable history allows terminal reconciliation but never authorizes a 
   assert.equal(f.idb.rows("stage-dispatches").size, 0);
 });
 
+test("committed GET settles a retained stage transport ACK even when its typed receipt was already durable", async () => {
+  const f = await fixture(); await capture(f);
+  const stageId = f.record.stages[0].operationId;
+  f.controls.rejectWrite = (name, value) => name.startsWith(AMBIGUOUS_WRITE_KEY + ":")
+    && JSON.parse(value).id === stageId && JSON.parse(value).confirmed === true;
+  await assert.rejects(f.make().client.run(f.id));
+  assert.deepEqual(saved(f).stageReceipts[0], f.stages[0]);
+  assert.equal(f.make().transport.writes.find(row => row.id === stageId).blocksWrites, true);
+  f.controls.rejectWrite = null; seedStages(f); f.server.saved = copy(f.receipt);
+  const calls = f.server.calls.length, posts = f.server.stagePosts.length;
+  const off = f.make({ enabled: false, withDispatchAdmission: null });
+  assert.deepEqual(await off.client.inspect(f.id), f.receipt);
+  assert.equal(off.transport.writes.find(row => row.id === stageId).confirmed, true);
+  assert.ok(f.server.calls.slice(calls).some(row => row.method === "GET" && row.path.endsWith("/" + stageId)));
+  assert.equal(f.server.stagePosts.length, posts); assert.equal(f.server.savePosts.length, 0);
+  assert.equal(f.idb.rows().size, 1); assert.equal(f.idb.rows("stage-dispatches").size, 1);
+});
+
 test("strong cancelled fact is readable with OFF and fences only its exact parent without confirming the stage", async () => {
   const f = await fixture(); await capture(f); f.controls.unknownStage = true; await assert.rejects(f.make().client.run(f.id));
   const stageId = f.record.stages[0].operationId; f.server.saved = cancelFact(f);

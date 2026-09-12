@@ -8,6 +8,7 @@ import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-tem
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
+import { readAdminTemplatePhotoTreeCopyAcceptance } from "../../src/public/admin-template-photo-tree-copy-acceptance.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 function actual(names, deps) {
@@ -19,6 +20,8 @@ function actual(names, deps) {
 async function fixture() {
   const f = await treeCopyClientFixture(), layoutId = f.record.snapshot.target.layoutId, controls = { excluded: [], afterTreeRead: null }, factories = [];
   const deps = { canonicalTemplateJson, validTemplateOperationId, assertAdminTemplateCaptureLease,
+    readAdminTemplatePhotoTreeCopyAcceptance, localStorage: f.storage, STORAGE_KEY: "mirror",
+    scopedLocalStorageKey: key => key, localStorageScopeKey: `id:${f.binding.actorId}`,
     ADMIN_TEMPLATE_PHOTO_COPY_ENABLED: false, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: false,
     adminTemplateOperationContext: () => f.current, adminTemplatePhotoExcludedPlans: async () => copy(controls.excluded),
     createAdminTemplatePhotoCopyActionStore: options => createAdminTemplatePhotoCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
@@ -32,7 +35,8 @@ async function fixture() {
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,
     adminTemplateClient: () => ({ capture() { assert.fail("Inventory cannot dispatch"); } }),
     adminTemplatePhotoCopyClient: () => null, adminTemplateRecoveryFor: () => ({ requiresCancellation: () => false }) };
-  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
+  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted",
+    "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
   const ordinary = { operationId: crypto.randomUUID(), body: { version: 1, base: copy(f.intent.body.base), payload: copy(f.intent.body.payload), metadata: copy(f.intent.body.metadata) } };
   const check = (request = ordinary) => withAdminTemplateCapture({ bindings: [f.binding], locks: f.locks }, captureLease =>
     api.assertAdminTemplateCopyCaptureAllowed(f.binding, layoutId, { ...request, captureLease, guard() {} }));
@@ -102,6 +106,7 @@ test("actual order opening detects an orphan tree before checking older plan kin
   const f = await fixture();
   const api = actual(["openCausalAdminTemplateOrder"], { ...f.deps, currentUser: { id: f.binding.actorId }, state: { layouts: {} },
     administrativeSaveCoordinator: null, adminTemplatePhotoTreeCopyInventory: f.api.adminTemplatePhotoTreeCopyInventory,
+    readAdminTemplatePhotoTreeCopyAccepted: f.api.readAdminTemplatePhotoTreeCopyAccepted,
     createAdminTemplateOrderBatch: options => ({ async open() { await options.assertNoPending(f.binding); assert.fail("Orphan tree must pause order"); } }) });
   await assert.rejects(api.openCausalAdminTemplateOrder([]), /копирование дерева/); noDispatch(f);
 });

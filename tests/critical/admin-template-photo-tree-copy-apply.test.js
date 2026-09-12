@@ -2,14 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { treeCopyProjectionFixture } from "../fixtures/admin-template-photo-tree-copy-projection-fixture.js";
 import { applyAdminTemplatePhotoTreeCopyResult as apply } from "../../src/public/admin-template-photo-tree-copy-apply.js";
+import { seedTreeCopyAcceptanceFacts } from "../fixtures/admin-template-photo-tree-copy-acceptance-fixture.js";
 
 const copy = value => structuredClone(value);
 async function fixture() {
   const f = await treeCopyProjectionFixture(), targetId = f.record.snapshot.target.layoutId;
-  const key = "test-private-mirror", values = new Map([[key, JSON.stringify(f.state)]]), hooks = { set: null, get: null }, writes = [];
+  await seedTreeCopyAcceptanceFacts(f);
+  const key = "test-private-mirror", values = new Map([...f.values, [key, JSON.stringify(f.state)]]), hooks = { set: null, get: null }, writes = [];
   const storage = {
-    getItem(name) { hooks.get?.(name); return values.get(name) ?? null; },
-    setItem(name, value) { writes.push([name, value]); if (hooks.set) hooks.set(name, value); else values.set(name, value); }
+    getItem(name) { if (name === key) hooks.get?.(name); return values.get(name) ?? null; },
+    setItem(name, value) { if (name !== key) { values.set(name, value); return; }
+      writes.push([name, value]); if (hooks.set) hooks.set(name, value); else values.set(name, value); }
   };
   const mirrorContext = { storage, key, scopeKey: `id:${f.binding.actorId}` };
   const input = { plan: f.plan, store: f.store, receipt: copy(f.receipt), stageReceipts: copy(f.stages),

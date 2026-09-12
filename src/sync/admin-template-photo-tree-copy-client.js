@@ -214,8 +214,13 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
           };
           const settle = async data => {
             if (!exact(data, ["ok", "operation", "result"])) throw blocked("receipt");
-            if (data.operation.state === "committed" && saved.stageReceipts.some(value => value === null)) {
-              for (const [index, receipt] of saved.stageReceipts.entries()) if (receipt === null && !await inspectStage(index)) throw blocked("stage-unknown");
+            if (data.operation.state === "committed") {
+              for (const [index, receipt] of saved.stageReceipts.entries()) {
+                // A stage receipt may outlive a failed transport ACK write.
+                // Only the original typed GET can settle that retained entry.
+                const pending = entry(stageMetadata(saved, index), copyPath);
+                if ((receipt === null || pending && !pending.confirmed) && !await inspectStage(index)) throw blocked("stage-unknown");
+              }
             }
             const { ok, ...receipt } = data;
             if (ok !== true || !await validateAdminTemplatePhotoTreeCopyReceipt(receipt, { intent: saved.intent,

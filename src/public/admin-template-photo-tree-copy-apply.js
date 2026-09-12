@@ -2,6 +2,7 @@ import { canonicalTemplateJson as canonical } from "../sync/admin-template-proto
 import { adminTemplatePhotoActionBinding } from "../sync/admin-template-photo-record.js";
 import { assertAdminTemplatePhotoTreeCopyPlanRecord } from "../sync/admin-template-photo-tree-copy-save-plan.js";
 import { prepareAdminTemplatePhotoTreeCopyProjection, assertAdminTemplatePhotoTreeCopyExternalReferences } from "./admin-template-photo-tree-copy-projection.js";
+import { prepareAdminTemplatePhotoTreeCopyAcceptance } from "./admin-template-photo-tree-copy-acceptance.js";
 
 const collections = ["layouts", "items", "containers"], types = ["items", "containers"];
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
@@ -43,7 +44,8 @@ function merge(state, selected) {
 // Call after dispatch has returned, under a NEW genuine common/inventory scope.
 // This function proves the complete receipt itself; a detached runner result
 // does not grant apply authority. No command/stage/receipt is deleted here.
-// Persist first, then change live collections without an intervening await.
+// Persist mirror, then exact typed acceptance, then change live collections
+// without an intervening await. Ordinary saves cannot drop this separate row.
 // A quota/readback failure leaves live state intact. Never blindly roll back a
 // mirror which may already contain the result or another tab's newer data.
 export async function applyAdminTemplatePhotoTreeCopyResult(input, externalGuard) {
@@ -85,6 +87,8 @@ export async function applyAdminTemplatePhotoTreeCopyResult(input, externalGuard
   const accepted = value => [target.beforeState, pending, confirmed].some(expected => same(value, expected));
   const currentTarget = namespace(initial, target.layoutId);
   if (!accepted(currentTarget)) pause("target");
+  const acceptance = await prepareAdminTemplatePhotoTreeCopyAcceptance({ plan, store, receipt, stageReceipts,
+    targetSnapshot: prepared.targetSnapshot, getContext, getMirrorContext }, guard); guard();
   const raw = storage.getItem(key); guard();
   if (typeof raw !== "string") pause("mirror-missing");
   let mirror; try { mirror = JSON.parse(raw); } catch { pause("mirror-json"); }
@@ -101,10 +105,13 @@ export async function applyAdminTemplatePhotoTreeCopyResult(input, externalGuard
   guard();
   if (storage.getItem(key) !== (mirrorNeedsWrite ? encoded : raw)) pause("mirror-changed");
   guard();
+  acceptance.persist(); acceptance.assertCurrent();
+  if (storage.getItem(key) !== (mirrorNeedsWrite ? encoded : raw)) pause("mirror-changed");
+  acceptance.assertCurrent(); guard();
   const nextLive = merge(live, confirmed);
   // No callback, await, request or storage operation occurs after this point.
   for (const type of collections) live[type] = nextLive[type];
   if (live.activeLayoutId === target.layoutId) live.packedItems = nextLive.packedItems;
   return { state: alreadyApplied ? "already-applied" : "applied", operationId: plan.id,
-    layoutId: target.layoutId, recordIntentHash: record.intentHash, targetSnapshot: copy(prepared.targetSnapshot) };
+    layoutId: target.layoutId, recordIntentHash: record.intentHash, targetSnapshot: copy(prepared.targetSnapshot), acceptance: copy(acceptance.acceptance) };
 }
