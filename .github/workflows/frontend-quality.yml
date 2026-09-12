@@ -20,15 +20,15 @@ jobs:
   quality:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.webkit_diagnostic }}
     runs-on: ubuntu-latest
-    # Keep each browser's full suite on an isolated runner: both projects
-    # share test build paths and cannot safely run as concurrent workers.
+    # Separate runners isolate test build paths; each runs one worker.
+    # Native exact test lists divide the large files without changing hook modes.
     strategy:
       fail-fast: false
       matrix:
         browser: [chromium, mobile-webkit]
-    # A measured WebKit run spent 23 minutes installing system dependencies
-    # and reached test 743/760 at the old 75-minute job limit. Keep individual
-    # test timeouts unchanged and allow the full suite to report its result.
+        partition: [1, 2, 3, 4]
+    # The 1433-test admin file alone took 86 minutes; the full run hit 120.
+    # Balance independent tests across runners while retaining all timeouts.
     timeout-minutes: 120
 
     steps:
@@ -49,6 +49,9 @@ jobs:
 
       - name: Critical contracts
         run: npm run test:critical
+
+      - name: Browser partition contracts
+        run: node --test tests/critical/browser-partitions.test.js
 
       - name: Experiment transport isolation
         run: npm run test:transport
@@ -72,7 +75,7 @@ jobs:
           DEBUG: "pw:browser"
         run: |
           echo "BIKE_BROWSER_SMOKE_STARTED=$(date --iso-8601=seconds)" >> "$GITHUB_ENV"
-          npm run test:e2e -- --project=${{ matrix.browser }}
+          node scripts/run-browser-partition.mjs --project ${{ matrix.browser }} --partition ${{ matrix.partition }}
 
       - name: Collect Linux browser crash diagnostics
         if: always()
@@ -86,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-smoke-${{ matrix.browser }}
+          name: playwright-smoke-${{ matrix.browser }}-${{ matrix.partition }}
           path: |
             browser-diagnostics/
             playwright-report/
@@ -99,6 +102,7 @@ jobs:
 
       - name: Disabled owner forms with their parent imports enabled
         id: disabled_owner
+        if: matrix.partition == 1
         env:
           BIKE_PERSONAL_UI_MODES: "photo-edit"
           BIKE_PERSONAL_PUBLIC_IMPORT: "1"
@@ -110,7 +114,7 @@ jobs:
         if: always() && steps.disabled_owner.outcome != 'skipped' && steps.disabled_owner.outcome != ''
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-disabled-owner-${{ matrix.browser }}
+          name: playwright-disabled-owner-${{ matrix.browser }}-${{ matrix.partition }}
           path: |
             playwright-report/
             test-results/**/error-context.md
