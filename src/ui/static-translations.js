@@ -41,7 +41,7 @@ export function applyStaticTranslationsUi({
   documentRef.documentElement.lang = uiLanguage;
   documentRef.title = t("app.title");
   const appTitle = documentRef.querySelector(".topbar h1");
-  const experimentBanner = documentRef.querySelector("#experimentBanner");
+  const experimentLabel = documentRef.querySelector("#experimentTitleLabel");
   const appStartup = documentRef.querySelector(".app-startup");
   const appStartupTitle = documentRef.querySelector("#appStartupTitle");
   const appStartupText = documentRef.querySelector("#appStartupText");
@@ -52,8 +52,10 @@ export function applyStaticTranslationsUi({
   const searchLabel = documentRef.querySelector("#searchFilterLabel");
   const locationLabel = documentRef.querySelector("#locationFilterLabel");
   const categoryLabel = documentRef.querySelector("#categoryFilterLabel");
-  setText(appTitle, t("app.title"));
-  setText(experimentBanner, t("app.experimentalBanner"));
+  if (appTitle && experimentLabel) {
+    appTitle.replaceChildren(documentRef.createTextNode(`${t("app.title")} — `), experimentLabel);
+    setText(experimentLabel, t("app.experimentalBanner").toLowerCase());
+  } else setText(appTitle, t("app.title"));
   setAttr(appStartup, "lang", startupLanguage || uiLanguage);
   setText(appStartupTitle, startupTitle || t("startup.title"));
   setText(appStartupText, startupText || t("startup.loading"));

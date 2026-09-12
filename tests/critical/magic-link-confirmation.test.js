@@ -87,7 +87,7 @@ test("production shell has no experimental banner and only the experiment host s
   assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/experiment\/letters-vniipo\/api"/);
 });
 
-test("prominent banner is mounted once on the exact Experiment frontend and never on production or API hosts", async () => {
+test("inline title label is mounted once on the exact Experiment frontend and never on production or API hosts", async () => {
   const { installExperimentBanner } = await import("../../src/ui/experiment-banner.js");
   for (const origin of ["https://vniipo-help.ru", "https://dimok911.github.io", "https://api-eu.vniipo-help.ru",
     "http://experiment.vniipo-help.ru", "https://experiment.vniipo-help.ru.evil.test"]) {
@@ -95,11 +95,11 @@ test("prominent banner is mounted once on the exact Experiment frontend and neve
       querySelector() { throw Error("Must not touch production DOM"); }
     } }), null);
   }
-  const children = [], app = { prepend: value => children.unshift(value) };
-  const documentRef = { querySelector: selector => selector === ".app" ? app : children[0] || null,
-    createElement: () => ({ setAttribute() {} }) };
+  const children = [], title = { append: (...values) => children.push(...values), setAttribute() {} };
+  const documentRef = { querySelector: selector => selector === ".topbar h1" ? title : children.find(value => value.id === "experimentTitleLabel") || null,
+    createTextNode: textContent => ({ textContent }), createElement: () => ({}) };
   const options = { documentRef, locationLike: { origin: "https://experiment.vniipo-help.ru" } };
-  const banner = installExperimentBanner(options);
-  assert.equal(banner.textContent, "ЭКСПЕРИМЕНТ"); assert.equal(banner.id, "experimentBanner");
-  assert.equal(installExperimentBanner(options), banner); assert.equal(children.length, 1);
+  const label = installExperimentBanner(options);
+  assert.equal(label.textContent, "эксперимент"); assert.equal(label.id, "experimentTitleLabel");
+  assert.equal(installExperimentBanner(options), label); assert.equal(children.length, 2);
 });

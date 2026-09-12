@@ -5323,24 +5323,26 @@ test("stale draft choices can be postponed and must be compared again if the oth
   expect(f.errors).toEqual([]);
 });
 
-test("Experiment is prominent above the header, fits mobile and remains translated", async ({ page, context }, info) => {
+test("Experiment is a red inline title label without a sticky banner and remains translated", async ({ page, context }, info) => {
   await setup(page, context);
-  const banner = page.locator("#experimentBanner");
-  await expect(banner).toHaveText("ЭКСПЕРИМЕНТ");
-  const bounds = await banner.evaluate(element => {
+  const label = page.locator("#experimentTitleLabel"), title = page.locator(".topbar h1");
+  await expect(label).toHaveText("эксперимент");
+  await expect(title).toHaveText("Сборы в велопоход — эксперимент");
+  await expect(page.locator("#experimentBanner, .experiment-banner")).toHaveCount(0);
+  const bounds = await label.evaluate(element => {
     const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
-    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth,
-      headerTop: document.querySelector(".topbar").getBoundingClientRect().top,
-      fontSize: parseFloat(style.fontSize), weight: Number(style.fontWeight), position: style.position };
+    return { left: rect.left, right: rect.right, width: innerWidth, color: style.color,
+      titleColor: getComputedStyle(element.parentElement).color, position: style.position,
+      offset: getComputedStyle(document.documentElement).getPropertyValue("--sticky-banner-height").trim() };
   });
   expect(bounds.left).toBeGreaterThanOrEqual(0); expect(bounds.right).toBeLessThanOrEqual(bounds.width);
-  expect(bounds.bottom).toBeLessThanOrEqual(bounds.headerTop);
-  expect(bounds.fontSize).toBeGreaterThanOrEqual(24); expect(bounds.weight).toBe(900);
-  expect(bounds.position).toBe("sticky");
-  await page.screenshot({ path: info.outputPath("experiment-banner.png") });
+  expect(bounds.color).toBe("rgb(165, 29, 29)"); expect(bounds.titleColor).toBe("rgb(17, 17, 17)");
+  expect(bounds.position).toBe("static"); expect(bounds.offset).toBe("0px");
+  await page.screenshot({ path: info.outputPath("experiment-title.png") });
   await page.locator("#menuBtn").click();
   await page.locator("#languageSelect").selectOption("en");
-  await expect(banner).toHaveText("EXPERIMENT");
+  await expect(label).toHaveText("experiment");
+  await expect(title).toHaveText("Bikepacking List — experiment");
 });
 
 test("public template copying stays paused with its own flag off and cannot fall through to legacy writes", async ({ page, context }) => {

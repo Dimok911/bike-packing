@@ -493,22 +493,12 @@ button.button-loading::before {
   overflow-anchor: none;
 }
 
-.experiment-banner {
-  position: sticky;
-  top: env(safe-area-inset-top, 0px);
-  z-index: 120;
-  margin: -18px -18px 18px;
-  padding: 12px 18px;
-  border-bottom: 4px solid #5c0d0d;
-  background: #a51d1d;
-  box-shadow: 0 5px 18px rgba(77, 10, 10, 0.32);
-  color: #fff;
-  font-size: clamp(24px, 5vw, 34px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  line-height: 1.15;
-  text-align: center;
-  text-transform: uppercase;
+.topbar h1[data-experiment-title] {
+  color: #111;
+}
+
+.experiment-title-label {
+  color: #a51d1d;
 }
 
 .topbar {
@@ -11396,11 +11386,6 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
   .app {
     padding: 8px;
-  }
-
-  .experiment-banner {
-    margin: -8px -8px 12px;
-    padding-inline: 8px;
   }
 
   .topbar {

@@ -2,15 +2,15 @@
 // this label through a stored preference, query string or API route selection.
 export function installExperimentBanner({ documentRef = document, locationLike = location } = {}) {
   if (locationLike?.origin !== "https://experiment.vniipo-help.ru") return null;
-  const app = documentRef.querySelector(".app");
-  if (!app) return null;
-  const existing = documentRef.querySelector("#experimentBanner");
+  const title = documentRef.querySelector(".topbar h1");
+  if (!title) return null;
+  const existing = documentRef.querySelector("#experimentTitleLabel");
   if (existing) return existing;
-  const banner = documentRef.createElement("div");
-  banner.id = "experimentBanner";
-  banner.className = "experiment-banner";
-  banner.setAttribute("role", "note");
-  banner.textContent = "ЭКСПЕРИМЕНТ";
-  app.prepend(banner);
-  return banner;
+  const label = documentRef.createElement("span");
+  label.id = "experimentTitleLabel";
+  label.className = "experiment-title-label";
+  label.textContent = "эксперимент";
+  title.setAttribute("data-experiment-title", "");
+  title.append(documentRef.createTextNode(" — "), label);
+  return label;
 }
