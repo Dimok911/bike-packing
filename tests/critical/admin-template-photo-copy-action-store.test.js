@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoActionStore } from "../../src/sync/admin-template-photo-action-store.js";
-import { prepareAdminTemplatePhotoCopyRecord } from "../../src/sync/admin-template-photo-copy-record.js";
+import { prepareAdminTemplatePhotoCopyRecord, encodeAdminTemplatePhotoCopyRecord } from "../../src/sync/admin-template-photo-copy-record.js";
 import { adminPhotoCopyRecordInput, adminPhotoCopyIndexedDBFixture } from "../fixtures/admin-template-photo-copy-record-fixture.js";
 
 const error = code => ({ code: `admin-template-photo-copy-storage-${code}`, isAdminTemplateBlocked: true });
@@ -153,4 +153,81 @@ test("foreign/corrupt claims and an action changed between decode and claim tran
   f.idb.controls.onCommit = ({ mode }) => { if (mode === "readonly") [...f.idb.rows().values()][0].intentHash = "0".repeat(64); };
   await assert.rejects(f.store.claimStage(saveId(f), second), error("action-changed"));
   assert.equal(f.idb.rows("stage-dispatches").size, 1);
+});
+
+test("only the validated adoption callback releases an old base and retains its complete record and original stage claim", async () => {
+  const f = await fixture(), next = await adminPhotoCopyRecordInput(), value = { action: next.action, snapshot: next.snapshot };
+  await f.store.capture(f.value); const claim = await f.store.claimStage(saveId(f), stageId(f));
+  const before = structuredClone([...f.idb.rows().values()]), claims = structuredClone([...f.idb.rows("stage-dispatches").values()]);
+  await assert.rejects(f.create().capture(value), error("base-already-captured"));
+  await assert.rejects(f.create({ getExcludedOperations: async () => [] }).capture(value), error("base-already-captured"));
+  // The application supplies these IDs only after actual stop-choice proof.
+  const adopted = f.create({ getExcludedOperations: async () => [saveId(f)] });
+  const saved = await adopted.capture(value); assert.equal(saved.action.operationId, next.action.operationId);
+  assert.equal(f.idb.rows().size, 2); assert.deepEqual([...f.idb.rows().values()].filter(row => row.key === before[0].key), before);
+  assert.deepEqual([...f.idb.rows("stage-dispatches").values()], claims);
+  assert.deepEqual(await adopted.read(saveId(f)), f.prepared);
+  assert.deepEqual(await adopted.claimStage(saveId(f), stageId(f)), { ...claim, fresh: false });
+});
+
+test("exclusion IDs must be unique UUIDs and cannot bypass same-UUID immutable intent checks", async () => {
+  const f = await fixture(), next = await adminPhotoCopyRecordInput(); await f.store.capture(f.value);
+  for (const excluded of [null, {}, "all", ["bad-id"], [saveId(f), saveId(f)], [42]]) {
+    await assert.rejects(f.create({ getExcludedOperations: async () => excluded }).capture({ action: next.action, snapshot: next.snapshot }), error("excluded-operations"));
+  }
+  const same = f.create({ getExcludedOperations: async () => [saveId(f)] });
+  assert.deepEqual(await same.capture(f.value), f.prepared);
+  const changed = structuredClone(f.value); changed.action.body.photoCopy.fields.name = "Cannot replace stopped action";
+  await assert.rejects(same.capture(changed), error("operation-id-reused"));
+  assert.equal(f.idb.rows().size, 1); assert.deepEqual(await f.store.read(saveId(f)), f.prepared);
+});
+
+test("excluded records still require full decode; corruption is not hidden by adoption authority", async () => {
+  for (const fault of ["hash", "malformed-json"]) {
+    const f = await fixture(), next = await adminPhotoCopyRecordInput(); await f.store.capture(f.value);
+    const raw = [...f.idb.rows().values()][0];
+    if (fault === "hash") raw.intentHash = "0".repeat(64); else raw.intentJson = "{";
+    let callbacks = 0;
+    await assert.rejects(f.create({ getExcludedOperations: async () => { callbacks++; return [saveId(f)]; } })
+      .capture({ action: next.action, snapshot: next.snapshot }), { isAdminTemplateBlocked: true });
+    assert.equal(callbacks, 0); assert.equal(f.idb.rows().size, 1);
+  }
+});
+
+test("an excluded record changed or removed across the adoption await cannot become authority inside the write transaction", async () => {
+  for (const fault of ["changed", "valid-replacement", "removed"]) {
+    const f = await fixture(), next = await adminPhotoCopyRecordInput(); await f.store.capture(f.value);
+    const key = [...f.idb.rows().keys()][0];
+    const altered = structuredClone(f.value); altered.action.body.photoCopy.fields.name = "Valid but different retained action";
+    const replacement = await encodeAdminTemplatePhotoCopyRecord({ binding: f.input.binding, ...altered });
+    const store = f.create({ getExcludedOperations: async () => {
+      await Promise.resolve();
+      if (fault === "changed") f.idb.rows().get(key).intentHash = "0".repeat(64);
+      else if (fault === "valid-replacement") f.idb.rows().set(key, replacement);
+      else f.idb.rows().delete(key);
+      return [saveId(f)];
+    } });
+    await assert.rejects(store.capture({ action: next.action, snapshot: next.snapshot }), error("excluded-record-changed"));
+    assert.equal(f.idb.requests.filter(row => row.operation === "add").length, 1);
+  }
+});
+
+test("scope changes during exclusion proof stop capture without exposing the earlier actor's selection", async () => {
+  const f = await fixture(), next = await adminPhotoCopyRecordInput(); await f.store.capture(f.value);
+  const store = f.create({ getExcludedOperations: async () => { await Promise.resolve(); f.context.actorId = "different"; return [saveId(f)]; } });
+  await assert.rejects(store.capture({ action: next.action, snapshot: next.snapshot }), cause => {
+    assert.equal(cause.code, error("context-changed").code); assert.equal(Object.hasOwn(cause, "unconfirmedAdminPhotoCopy"), false); return true;
+  });
+  assert.equal(f.idb.rows().size, 1);
+});
+
+test("two fresh attempts after adoption still capture at most one new copy and preserve the excluded claim", async () => {
+  const f = await fixture(), first = await adminPhotoCopyRecordInput(), second = await adminPhotoCopyRecordInput();
+  await f.store.capture(f.value); await f.store.claimStage(saveId(f), stageId(f));
+  const claims = structuredClone([...f.idb.rows("stage-dispatches").values()]);
+  const make = () => f.create({ getExcludedOperations: async () => [saveId(f)] });
+  const attempts = await Promise.allSettled([make().capture({ action: first.action, snapshot: first.snapshot }), make().capture({ action: second.action, snapshot: second.snapshot })]);
+  assert.equal(attempts.filter(row => row.status === "fulfilled").length, 1);
+  assert.equal(attempts.find(row => row.status === "rejected").reason.code, error("base-already-captured").code);
+  assert.equal(f.idb.rows().size, 2); assert.deepEqual([...f.idb.rows("stage-dispatches").values()], claims);
 });

@@ -14,7 +14,7 @@ const blocked = (code, cause) => Object.assign(Error("Сохранённое к�
 // transaction excludes competing copies in THIS DB. The future app must also
 // lock/preflight ordinary/upload plans before capture; IDB cannot cover them.
 export function createAdminTemplatePhotoCopyActionStore({ binding, getContext, indexedDB = globalThis.indexedDB,
-  enabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } = {}) {
+  enabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, getExcludedOperations = null } = {}) {
   binding = Object.freeze(adminTemplatePhotoActionBinding(binding));
   const bindingKey = canonical(binding), key = operationId => canonical([bindingKey, operationId]);
   const operation = value => { if (!validTemplateOperationId(value)) throw blocked("operation-id"); };
@@ -96,11 +96,17 @@ export function createAdminTemplatePhotoCopyActionStore({ binding, getContext, i
         for (const raw of await scan(initial)) {
           const value = header(raw); await decode(raw, value.action.operationId, initial); prior.set(raw.key, raw);
         }
+        // This callback is the app's validated stop-choice.excludedPlans
+        // authority. A local cancelRequested marker is never an exclusion.
+        // Retained actions and stage claims remain immutable and recoverable.
+        const excluded = clone(getExcludedOperations ? await getExcludedOperations() : []); guard(initial);
+        if (!Array.isArray(excluded) || excluded.some(id => !validTemplateOperationId(id)) || new Set(excluded).size !== excluded.length) throw blocked("excluded-operations");
         await transaction("readwrite", initial, (tx, finish, abort) => {
           const store = tx.objectStore("actions"), request = store.index("binding").getAllKeys(bindingKey);
           request.onsuccess = () => {
             try {
               guard(initial); let remaining = request.result.length, exists = false;
+              if (excluded.some(id => prior.has(key(id)) && !request.result.includes(key(id)))) throw blocked("excluded-record-changed");
               const commit = () => { if (!exists) store.add(record); finish(record.key); };
               if (!remaining) { commit(); return; }
               for (const previousKey of request.result) {
@@ -111,10 +117,14 @@ export function createAdminTemplatePhotoCopyActionStore({ binding, getContext, i
                     if (!same(raw, record)) throw blocked("operation-id-reused"); exists = true;
                   } else {
                     const value = header(raw);
-                    if (value.action.body.base.stateRevision === frozen.action.body.base.stateRevision) throw blocked("base-already-captured");
                     // Hash validation happens outside the active IDB tx. A new
                     // or changed row cannot become authority during that await.
-                    if (!prior.has(previousKey) || !same(raw, prior.get(previousKey))) throw blocked("inventory-changed");
+                    if (excluded.includes(value.action.operationId)) {
+                      if (!prior.has(previousKey) || !same(raw, prior.get(previousKey))) throw blocked("excluded-record-changed");
+                    } else {
+                      if (value.action.body.base.stateRevision === frozen.action.body.base.stateRevision) throw blocked("base-already-captured");
+                      if (!prior.has(previousKey) || !same(raw, prior.get(previousKey))) throw blocked("inventory-changed");
+                    }
                   }
                   if (--remaining === 0) commit();
                 } catch (cause) { abort(cause); } };
