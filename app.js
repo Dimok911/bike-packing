@@ -210,6 +210,9 @@ import { createAdminTemplatePhotoCopyActionStore } from "./src/sync/admin-templa
 import { createAdminTemplatePhotoTreeCopyActionStore } from "./src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "./src/sync/admin-template-photo-tree-copy-client.js";
 import { adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot } from "./src/sync/admin-template-photo-tree-copy-save-plan.js";
+import { ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED } from "./src/sync/admin-template-photo-tree-copy-protocol.js";
+import { createAdminTemplatePhotoTreeCopyAdmission } from "./src/sync/admin-template-photo-tree-copy-admission.js";
+import { prepareAdminTemplatePhotoTreeCopyNamespaces } from "./src/public/admin-template-photo-tree-copy-namespaces.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./src/sync/admin-template-photo-copy-protocol.js";
 import { createAdminTemplatePhotoCopyClient } from "./src/sync/admin-template-photo-copy-client.js";
 import { adminTemplatePhotoCopyEditorSnapshot, assertAdminTemplatePhotoCopyPlanRecord } from "./src/sync/admin-template-photo-copy-save-plan.js";
@@ -11034,7 +11037,8 @@ async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
     sawOwnJournal = true;
     if (typeof raw !== "string" || new TextEncoder().encode(raw).byteLength > 12 * 1024 * 1024) pause();
     const row = JSON.parse(raw), keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
-    if (!row || Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))
+    if (!row || Object.keys(row).length !== keys.length + (Object.hasOwn(row, "cancelRequested") ? 1 : 0) || keys.some(key => !Object.hasOwn(row, key))
+      || Object.hasOwn(row, "cancelRequested") && (typeof row.cancelRequested !== "boolean" || row.cancelRequested)
       || row.version !== 1 || row.kind !== "admin-template-photo-tree-copy" || canonicalTemplateJson(row) !== raw
       || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash
       || payloadDigest !== null && row.payloadDigest !== payloadDigest || typeof row.dispatched !== "boolean"
@@ -11107,6 +11111,106 @@ async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
     const scope = Object.freeze({ kind: "admin-template-photo-tree-copy-inventory-v1", bindings: frozenBindings,
       recordIntentHash: record.intentHash, assertCurrent: guard });
     const result = await task(scope); guard(); return result;
+  } finally { active = false; }
+}
+async function withAdminTemplatePhotoTreeCopyNamespaceScope(proof, task) {
+  const clone = value => JSON.parse(canonicalTemplateJson(value));
+  const record = clone(proof.record), bindings = clone(proof.bindings), binding = record.binding, layoutId = record.snapshot.target.layoutId;
+  const pause = () => { throw Object.assign(Error("Оба шаблона и исходный план копирования дерева требуют сверки."),
+    { code: "admin-template-photo-tree-copy-scope-paused", isAdminTemplateBlocked: true }); };
+  if (typeof proof.assertCurrent !== "function" || typeof task !== "function") pause();
+  const key = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":" + record.action.operationId;
+  const raw = globalThis.localStorage.getItem(key); if (typeof raw !== "string") pause();
+  let active = true;
+  const guard = () => {
+    if (!active) pause();
+    const checked = proof.assertCurrent();
+    if (checked && typeof checked.then === "function") { Promise.resolve(checked).catch(() => {}); pause(); }
+    assertAdminTemplateCaptureLease(proof.captureLease, bindings);
+    if (globalThis.localStorage.getItem(key) !== raw) pause();
+  };
+  try {
+    guard(); const saved = await adminTemplatePlansFor(binding, layoutId, true).read(record.action.operationId); guard();
+    const expected = adminTemplatePhotoTreeCopySavePlan({ binding, operationId: record.action.operationId, body: record.action.body,
+      editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(record), recordIntentHash: record.intentHash });
+    if (!saved || canonicalTemplateJson(saved.plan) !== canonicalTemplateJson(expected) || saved.cancelRequested) pause();
+    const getContext = () => adminTemplateOperationContext(binding, layoutId);
+    const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
+    const prepared = await prepareAdminTemplatePhotoTreeCopyNamespaces({ plan: saved.plan, store, getState: () => state, getContext }, guard); guard();
+    const assertCurrent = () => { guard(); prepared.assertCurrent(); guard(); };
+    const scope = Object.freeze({ kind: "admin-template-photo-tree-copy-namespaces-v1",
+      bindings: Object.freeze(bindings.map(value => Object.freeze(value))), recordIntentHash: record.intentHash, assertCurrent });
+    assertCurrent(); const result = await task(scope); assertCurrent(); return result;
+  } finally { active = false; }
+}
+async function runAdminTemplatePhotoTreeCopyPlan(input) {
+  // Only an already durable V9 is runnable here. No new selection, record,
+  // plan, cancellation or editor persistence is exposed by this adapter.
+  const clone = value => JSON.parse(canonicalTemplateJson(value)), chosen = clone(input);
+  const { binding, layoutId, operationId } = chosen;
+  const pause = () => { throw Object.assign(Error("Продолжите исходное сохранённое дерево в его шаблоне."),
+    { code: "admin-template-photo-tree-copy-runner-paused", isAdminTemplateBlocked: true }); };
+  if (Object.keys(chosen).length !== 3 || !binding || typeof layoutId !== "string" || !layoutId || !validTemplateOperationId(operationId)) pause();
+  const rawContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(rawContext());
+  const key = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":" + operationId;
+  const raw = globalThis.localStorage.getItem(key); if (typeof raw !== "string") pause();
+  const stopKey = "bike-packing-admin-stop-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":" + operationId;
+  let active = true, writing = false;
+  const getContext = () => {
+    const current = rawContext();
+    if (!active || current.admin !== true || current.scope !== "admin-template"
+      || canonicalTemplateJson(current) !== initial || globalThis.localStorage.getItem(key) !== raw
+      || writing && globalThis.localStorage.getItem(stopKey) !== null) pause();
+    return current;
+  };
+  try {
+    getContext(); const original = await adminTemplatePlansFor(binding, layoutId, true).read(operationId); getContext();
+    if (!original || original.plan.version !== 9 || original.cancelRequested || original.plan.id !== operationId
+      || canonicalTemplateJson(original.plan.binding) !== canonicalTemplateJson(binding)) pause();
+    // Presence is only a refusal to send, never evidence of cancellation or
+    // V8 adoption. Even a damaged old stop must remain effective before POST.
+    writing = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED === true && ADMIN_TEMPLATE_PHOTO_COPY_ENABLED === true
+      && ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED === true && ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED === true && adminTemplateUiEnabled();
+    getContext();
+    const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: writing });
+    let inventory = null;
+    const admission = createAdminTemplatePhotoTreeCopyAdmission({ binding, store, getContext,
+      withInventory: (proof, task) => withAdminTemplatePhotoTreeCopyDispatchInventory(proof, async scope => {
+        const previous = inventory; inventory = scope;
+        try { return await task(scope); } finally { inventory = previous; }
+      }),
+      withNamespaces: (proof, task) => {
+        const currentInventory = inventory;
+        if (!currentInventory) pause();
+        // Pass the actual enclosing inventory guard through every namespace
+        // await, including nested pre-POST admission. It is never an ID/boolean.
+        return withAdminTemplatePhotoTreeCopyNamespaceScope({ ...proof, assertCurrent: () => {
+          proof.assertCurrent(); currentInventory.assertCurrent(); getContext();
+        } }, task);
+      } });
+    const output = await admission.run(operationId, async session => {
+      session.assertCurrent();
+      if (session.record.snapshot.target.layoutId !== layoutId || session.record.intentHash !== original.plan.recordIntentHash) pause();
+      const client = createAdminTemplatePhotoTreeCopyClient({ binding, store, transport: experimentTransport,
+        getContext: session.getContext, withDispatchAdmission: session.withDispatchAdmission, enabled: writing,
+        adminEnabled: adminTemplateUiEnabled(), appendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED,
+        createEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, copyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED });
+      // The registry's common gate opens this tightly scoped read/execute
+      // adapter. Own OFF selects its known read/inspect branch, never capture or
+      // POST. V1–8 cannot reach this instance; generic stop/adoption is absent.
+      const plans = createAdminTemplateSavePlans({ binding, getContext: session.getContext, enabled: true,
+        client: adminTemplateClient(binding, layoutId), photoTreeCopyStore: store, photoTreeCopyClient: client, photoTreeCopyEnabled: writing });
+      const current = await plans.read(operationId); session.assertCurrent();
+      if (!current || canonicalTemplateJson(current) !== canonicalTemplateJson(original)) pause();
+      const result = await plans.run(operationId, { captureLease: session.captureLease }); session.assertCurrent();
+      const retained = await plans.read(operationId); session.assertCurrent();
+      const journal = await client.read(operationId); session.assertCurrent();
+      if (!retained || canonicalTemplateJson(retained) !== canonicalTemplateJson(original) || !journal?.receipt
+        || canonicalTemplateJson(result) !== canonicalTemplateJson({ state: journal.receipt.operation.state, receipts: [journal.receipt] })
+        || journal.recordIntentHash !== session.record.intentHash) pause();
+      return clone({ plan: retained.plan, record: session.record, receipt: journal.receipt, stageReceipts: journal.stageReceipts });
+    });
+    getContext(); return output;
   } finally { active = false; }
 }
 function adminTemplatePhotoCopyFormEnabled() {

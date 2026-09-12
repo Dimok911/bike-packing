@@ -13,7 +13,15 @@ const freeze = value => {
 };
 const blocked = code => Object.assign(Error("Копирование дерева сохранено и требует проверки исходных шаблонов."),
   { code: `admin-template-photo-tree-copy-admission-${code}`, isAdminTemplateBlocked: true });
-const synchronous = check => { const result = check(); if (result?.then) throw blocked("async-guard"); };
+const synchronous = check => {
+  const result = check();
+  if (result?.then) {
+    // Invalid asynchronous authority still pauses immediately. Consume its
+    // rejection so the rejected guard cannot escape as an unhandled promise.
+    Promise.resolve(result).catch(() => {});
+    throw blocked("async-guard");
+  }
+};
 
 // This module orders and bounds admission; it does not implement application
 // inventory or namespace policy. Both injected implementations are trusted code,

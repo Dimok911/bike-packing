@@ -280,3 +280,37 @@ test("inventory revalidation failure before a later stage never grants the paren
   const text = [...f.values].find(([name]) => name.startsWith(commandPrefix))[1];
   assert.deepEqual(JSON.parse(text).stageReceipts, [f.stages[0], null, null, null]); assert.equal(f.locks.held.size, 0);
 });
+
+for (const boundary of ["inventory", "namespace", "requested"]) test(`rejected asynchronous ${boundary} guard after beginWrite pauses without POST or unhandled rejection`, async t => {
+  const f = await fixture(), unhandled = [], cause = Error(`Rejected ${boundary} authority`);
+  const observe = reason => unhandled.push(reason);
+  process.on("unhandledRejection", observe); t.after(() => process.off("unhandledRejection", observe));
+  let rejectGuard = false, session, guardCalls = 0;
+  const guarded = original => () => {
+    if (rejectGuard) { guardCalls++; return Promise.reject(cause); }
+    return original();
+  };
+  const options = { ...f.options };
+  if (boundary !== "requested") {
+    const name = boundary === "inventory" ? "withInventory" : "withNamespaces", enter = options[name];
+    options[name] = (proof, task) => enter(proof, scope => task({ ...scope, assertCurrent: guarded(scope.assertCurrent.bind(scope)) }));
+  }
+  const runner = createAdminTemplatePhotoTreeCopyAdmission(options);
+  f.controls.afterBegin = () => { rejectGuard = true; };
+  await assert.rejects(runner.run(f.id, async current => {
+    session = current;
+    const client = f.make({ locks: f.locks, getContext: current.getContext,
+      withDispatchAdmission: boundary === "requested" ? (request, task) => current.withDispatchAdmission({
+        ...request, assertCurrent: guarded(request.assertCurrent.bind(request)) }, task) : current.withDispatchAdmission }).client;
+    await client.capture(current.record.action); current.assertCurrent(); return await client.run(f.id);
+  }), { code: "admin-template-photo-tree-copy-admission-async-guard" });
+  assert.ok(guardCalls > 0); noPosts(f);
+  assert.equal(f.idb.rows("stage-dispatches").size, 1, "The original claimed stage remains retained after the pause");
+  assert.equal(f.locks.held.size, 0); assert.equal(f.admission.active, false);
+  assert.deepEqual(await f.store.read(f.id), f.record);
+  assert.throws(session.assertCurrent); assert.throws(session.getContext);
+  await assert.rejects(session.withDispatchAdmission({ intent: f.intent, recordIntentHash: f.record.intentHash,
+    assertCurrent() {} }, () => assert.fail("Expired scope dispatched")));
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(unhandled, []);
+});

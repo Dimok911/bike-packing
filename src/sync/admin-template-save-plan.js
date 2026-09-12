@@ -267,7 +267,9 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       if (typeof photoTreeCopyClient.read !== "function") throw paused();
       const value = await photoTreeCopyClient.read(intent.id); current(); const row = value ? clone(value) : null;
       const record = await proof(); current(); if (!row) return null;
-      if (!exact(row, ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"])
+      const keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
+      if (!(exact(row, keys) || exact(row, [...keys, "cancelRequested"]))
+        || Object.hasOwn(row, "cancelRequested") && typeof row.cancelRequested !== "boolean"
         || row.version !== 1 || row.kind !== "admin-template-photo-tree-copy" || !same(row.intent, intent) || row.payloadDigest !== payloadDigest
         || row.recordIntentHash !== plan.recordIntentHash || typeof row.dispatched !== "boolean"
         || !Array.isArray(row.stageReceipts) || row.stageReceipts.length !== record.stages.length) throw paused();
@@ -303,6 +305,8 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       // A stop observed while capturing pauses before business dispatch. It is
       // not persisted as a cancellation request by this registry version.
       if (await shouldCancel?.(plan.id)) throw paused(); current();
+      const beforeDispatch = await known(); current();
+      if (!beforeDispatch || beforeDispatch.cancelRequested === true) throw paused();
       receipt = clone(await photoTreeCopyClient.run(intent.id)); current(); await proof(); current();
       readback = await known(); current();
       if (!readback || !same(readback.receipt, receipt)) throw paused();

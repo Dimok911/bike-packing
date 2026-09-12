@@ -6,9 +6,34 @@ import { copy, hash } from "../fixtures/admin-template-photo-tree-copy-client-fi
 import { adminTemplatePhotoTreeCopySavePlan } from "../../src/sync/admin-template-photo-tree-copy-save-plan.js";
 import { adminTemplateDataSourceSnapshot } from "../../src/sync/admin-template-save-plan.js";
 import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
+import { canonicalTemplateJson as canonical } from "../../src/sync/admin-template-protocol.js";
 
 const noPosts = f => { assert.equal(f.server.stagePosts.length, 0); assert.equal(f.server.savePosts.length, 0); assert.deepEqual(f.ordinaryCalls, []); };
 const ordinary = f => ({ operationId: randomUUID(), exists: true, visibility: "private", base: copy(f.intent.body.base), payload: copy(f.intent.body.payload), metadata: copy(f.intent.body.metadata) });
+
+test("V9 optional cancellation marker is typed, blocks business dispatch and preserves OFF terminal inspection", async () => {
+  for (const marker of [undefined, false, true, "true"]) {
+    const f = await fixture(); await f.capture(); await f.makeRegistry().treeClient.capture(f.record.action);
+    const key = [...f.values.keys()].find(key => key.startsWith("bike-packing-admin-photo-tree-copy-commands-v1:"));
+    const row = JSON.parse(f.values.get(key));
+    if (marker !== undefined) row.cancelRequested = marker;
+    f.values.set(key, canonical(row)); const original = f.values.get(key);
+    if (marker === true || typeof marker === "string") {
+      await assert.rejects(f.run()); noPosts(f); assert.equal(f.values.get(key), original);
+    } else {
+      assert.equal((await f.run()).state, "committed");
+      assert.equal(Object.hasOwn(JSON.parse(f.values.get(key)), "cancelRequested"), marker !== undefined);
+    }
+    if (marker === true) {
+      f.server.saved = { operation: { ...copy(f.receipt.operation), state: "rejected" }, result: { status: 409, payload: { ok: false,
+        code: "operation_cancelled", cancellation: { version: 1, operationId: f.id, noBusinessEffects: true, operationCannotApply: true } } } };
+      const start = f.server.calls.length;
+      assert.equal((await f.makeRegistry(null, { photoTreeCopyEnabled: false }).plans.run(f.id)).state, "rejected");
+      assert.ok(f.server.calls.slice(start).every(row => row.method === "GET")); noPosts(f);
+      assert.equal(JSON.parse(f.values.get(key)).cancelRequested, true);
+    }
+  }
+});
 
 test("registered V9 captures, reads and executes one exact tree through actual outer admission without reentering common locks", async () => {
   const f = await fixture(), saved = await f.capture();

@@ -27,7 +27,7 @@ test("all tree owners use typed routes, one claim each and full raw receipts thr
     withDispatchAdmission: null, store: f.makeStore({ enabled: false }) }).client;
   assert.deepEqual((await off.read(f.id)).receipt, f.receipt); assert.deepEqual(await off.inspect(f.id), f.receipt);
   assert.deepEqual(await off.run(f.id), f.receipt); assert.deepEqual((await off.capture(f.record.action)).intent, f.intent);
-  assert.deepEqual((await off.list()).map(row => row.intent.id), [f.id]); assert.equal(Object.hasOwn(off, "cancel"), false);
+  assert.deepEqual((await off.list()).map(row => row.intent.id), [f.id]); assert.equal(typeof off.cancel, "function");
   assert.equal(f.server.stagePosts.length, 4); assert.equal(f.server.savePosts.length, 1);
 });
 
@@ -175,14 +175,14 @@ test("unavailable history allows terminal reconciliation but never authorizes a 
   assert.equal(f.idb.rows("stage-dispatches").size, 0);
 });
 
-test("strong cancelled fact is readable with OFF but grants no parent fence, stage confirmation or cancellation method", async () => {
+test("strong cancelled fact is readable with OFF and fences only its exact parent without confirming the stage", async () => {
   const f = await fixture(); await capture(f); f.controls.unknownStage = true; await assert.rejects(f.make().client.run(f.id));
   const stageId = f.record.stages[0].operationId; f.server.saved = cancelFact(f);
   const { client, transport } = f.make({ enabled: false, withDispatchAdmission: null });
-  assert.deepEqual(await client.inspect(f.id), f.server.saved); assert.equal(Object.hasOwn(client, "cancel"), false);
+  assert.deepEqual(await client.inspect(f.id), f.server.saved); assert.equal(typeof client.cancel, "function");
   const stage = transport.writes.find(row => row.id === stageId); assert.equal(stage.uncertain, true); assert.notEqual(stage.confirmed, true);
-  assert.equal(stage.parentFenced, false); assert.equal(stage.blocksWrites, true); assert.equal(f.idb.rows("stage-dispatches").size, 1);
-  assert.throws(() => transport.assertWritable("/bike-packing/other", "POST")); assert.equal(f.server.savePosts.length, 0);
+  assert.equal(stage.parentFenced, true); assert.equal(stage.blocksWrites, false); assert.equal(f.idb.rows("stage-dispatches").size, 1);
+  assert.doesNotThrow(() => transport.assertWritable("/bike-packing/other", "POST")); assert.equal(f.server.savePosts.length, 0);
   const corrupt = saved(f); corrupt.receipt.result.payload.cancellation.operationCannotApply = false;
   f.values.set(key(f), canonical(corrupt)); await assert.rejects(client.read(f.id));
 });

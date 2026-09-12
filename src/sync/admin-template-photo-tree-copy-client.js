@@ -28,11 +28,14 @@ const assets = intent => intent.body.photoCopy.owners.flatMap(owner => owner.pho
 // scope through the entire callback, including claims, readback, POST and settle.
 // It provides {assertCurrent()} to recheck that scope after every await/effect.
 // Absence pauses new POSTs; known immutable GET reconciliation remains available.
+// Cancellation has its own withCancellationAdmission: exact retained plan/record
+// and actor authority, without requiring an unchanged business namespace/base.
+// Neither cancellation nor its terminal fact retires any separate stage claim.
 export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, store, transport, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window, timeoutMs = 10000,
   enabled = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED, adminEnabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   appendEnabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, createEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED,
-  copyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, withDispatchAdmission = null } = {}) {
+  copyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, withDispatchAdmission = null, withCancellationAdmission = null } = {}) {
   binding = Object.freeze(adminTemplatePhotoActionBinding(binding));
   if (!store || !same(store.binding, binding)) throw blocked("store-binding");
   const prefix = "bike-packing-admin-photo-tree-copy-commands-v1:" + encodeURIComponent(canonical(binding)) + ":";
@@ -57,7 +60,8 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
     if (typeof text !== "string" || new TextEncoder().encode(text).byteLength > 12 * 1024 * 1024) throw blocked("journal");
     let saved; try { saved = JSON.parse(text); } catch (cause) { throw blocked("journal", cause); }
     const keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
-    if (!exact(saved, keys)
+    if (!(exact(saved, keys) || exact(saved, [...keys, "cancelRequested"]))
+      || Object.hasOwn(saved, "cancelRequested") && typeof saved.cancelRequested !== "boolean"
       || saved.version !== 1 || saved.kind !== kind || typeof saved.dispatched !== "boolean" || !hash(saved.recordIntentHash)
       || !exact(saved.intent, ["id", "environment", "actorId", "listId", "itemKey", "kind", "body"])
       || canonical(saved) !== text || !same(saved.intent, adminTemplatePhotoTreeCopyIntent({ ...binding, ...actionFor(saved.intent) }))
@@ -94,7 +98,8 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
     if (value && (!(Array.isArray(path) ? path : [path]).includes(value.path) || value.method !== "POST" || value.mode !== transport.mode || !same(value.recovery, metadata))) throw blocked("transport-binding");
     return value;
   };
-  const commandEntry = saved => entry(commandMetadata(saved), commandPath);
+  const cancelPath = saved => `${commandPath}/${saved.intent.id}/cancel`;
+  const commandEntry = saved => entry(commandMetadata(saved), saved.cancelRequested ? [commandPath, cancelPath(saved)] : commandPath);
   const execute = (id, work) => {
     const initial = context(), controller = new AbortController(), abort = () => controller.abort();
     let admission = null;
@@ -108,13 +113,22 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
       try {
         return await withLock(id, async () => {
           guard(); let saved = await read(id, guard); guard(); if (!saved) throw blocked("missing");
-          const admitted = async task => {
-            guard(); if (typeof withDispatchAdmission !== "function" || admission) throw blocked("admission");
+          const admitted = async (task, cancellation = false) => {
+            const enter = cancellation ? withCancellationAdmission : withDispatchAdmission;
+            guard(); if (typeof enter !== "function" || admission) throw blocked(cancellation ? "cancellation-admission" : "admission");
             let entered = false, complete = false, active = true, result;
             try {
-              await withDispatchAdmission({ intent: clone(saved.intent), recordIntentHash: saved.recordIntentHash, assertCurrent: baseGuard }, async scope => {
-                if (!active || entered || typeof scope?.assertCurrent !== "function") throw blocked("admission");
-                entered = true; admission = { active: () => active, assertCurrent: () => scope.assertCurrent() };
+              await enter({ intent: clone(saved.intent), recordIntentHash: saved.recordIntentHash, assertCurrent: baseGuard }, async scope => {
+                if (!active || entered || typeof scope?.assertCurrent !== "function"
+                  || cancellation && !exact(scope, ["assertCurrent"])) throw blocked("admission");
+                const scopeGuard = scope.assertCurrent.bind(scope);
+                entered = true; admission = { active: () => active, assertCurrent: () => {
+                  const result = scopeGuard();
+                  if (cancellation && result?.then) {
+                    Promise.resolve(result).catch(() => {}); throw blocked("cancellation-admission");
+                  }
+                  if (cancellation && result === false) throw blocked("cancellation-admission");
+                } };
                 try { guard(); result = await task(); guard(); complete = true; return result; }
                 finally { admission = null; }
               });
@@ -145,7 +159,7 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
           };
           const refresh = async () => {
             const current = await read(id, guard); guard();
-            if (!current || !same(current, saved)) throw blocked("journal-changed");
+            if (!current || !same(current, saved) || storage.getItem(key(id)) !== canonical(saved)) throw blocked("journal-changed");
           };
           const settleStage = async (index, data) => {
             const record = await loadRecord(id, guard), asset = assets(saved.intent)[index], metadata = stageMetadata(saved, index);
@@ -204,6 +218,10 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
             if (transportEntry?.confirmed && !same(transportEntry.receipt, receipt)) throw blocked("receipt-changed");
             saved = persist({ ...saved, receipt }, saved, guard);
             if (transportEntry && transport.confirmWrite(id, { receipt }) !== true) throw blocked("confirm-storage");
+            if (receipt.result.payload.code === "operation_cancelled") {
+              if (typeof transport.fenceTreeCopyParent !== "function") throw blocked("parent-fence");
+              await transport.fenceTreeCopyParent({ intent: saved.intent, recordIntentHash: saved.recordIntentHash, receipt, assertCurrent: guard });
+            }
             guard(); return clone(receipt);
           };
           const inspect = async () => {
@@ -213,7 +231,7 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
             }
             return settle(data);
           };
-          if (!["run", "inspect"].includes(work)) {
+          if (!["run", "inspect", "cancel"].includes(work)) {
             const index = assets(saved.intent).findIndex(asset => asset.assetId === work);
             if (index < 0) throw blocked("stage-missing");
             return await inspectStage(index) || { ok: true, operation: { id: work, environment: binding.environment, actorId: binding.actorId, state: "unknown" } };
@@ -221,6 +239,40 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
           const known = await inspect(); if (known || work === "inspect") return known;
           const envelope = { expectedActorId: binding.actorId, environment: binding.environment, operationId: id, kind: "template.save",
             listId: binding.listId, itemKey: binding.itemKey, body: saved.intent.body };
+          if (work === "cancel") {
+            if (adminEnabled !== true) throw blocked("disabled");
+            await refresh();
+            // Preserve the explicit stop before awaiting the separate admission.
+            // Missing authority or a later error cannot silently resume the save.
+            // Legacy journals retain their original eight keys until this write.
+            if (!saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, saved, guard);
+            await refresh();
+            return admitted(async () => {
+              await refresh();
+              const caps = await request("/bike-packing/capabilities");
+              if (caps.service !== "bikepacking-api" || !Array.isArray(caps.capabilities)
+                || !caps.capabilities.includes(TEMPLATE_OPERATION_CAPABILITY)) throw blocked("capabilities");
+              await refresh();
+              const path = cancelPath(saved), metadata = commandMetadata(saved), permission = {
+                operationId: id, payloadDigest: saved.payloadDigest, stageProtocol: "admin-template-photo-tree-copy-stage-v2",
+                recordIntentHash: saved.recordIntentHash, assets: assets(saved.intent).map(({ assetId, assetDigest }) => ({ assetId, assetDigest }))
+              };
+              // The transport may still reject an unknown tree-stage barrier.
+              // Never downgrade it to V8 metadata or acknowledge those stages.
+              transport.assertWritable(path, "POST", metadata, permission);
+              try {
+                if (!commandEntry(saved)) await transport.beginWrite(path, "POST", null, metadata, permission);
+                guard(); await refresh();
+                return await settle(await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: canonical(envelope) }));
+              } catch (cause) {
+                transport.noteFailure(cause, path, "POST", id); guard();
+                const recovered = await inspect(); if (recovered) return recovered; throw cause;
+              }
+            }, true);
+          }
+          // Only another explicit cancel() may repeat the idempotent fence.
+          // Ordinary continuation reads the same UUID and never resumes stages.
+          if (saved.cancelRequested) throw blocked("cancel-requested");
           // Unlike generic administrative replay, this first copy client never
           // resends a save whose durable dispatch claim already exists.
           if (saved.dispatched || commandEntry(saved)) throw blocked("save-unknown");
@@ -265,7 +317,7 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
       const result = []; for (const id of ids.sort()) { const saved = await read(id, guard); guard(); if (!saved) throw blocked("journal-changed"); result.push(saved); }
       guard(); return clone(result);
     },
-    run: id => execute(id, "run"), inspect: id => execute(id, "inspect"),
+    run: id => execute(id, "run"), inspect: id => execute(id, "inspect"), cancel: id => execute(id, "cancel"),
     inspectStage: (id, stageId) => { if (!validTemplateOperationId(stageId)) throw blocked("operation-id"); return execute(id, stageId); }
   });
 }

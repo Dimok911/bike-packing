@@ -36,9 +36,18 @@ function assertBefore(state, proof, intent) {
   }
   for (const owner of proof.copiedOwners) if (collections.some(type => Object.hasOwn(state[type], owner.localId))) paused();
 
+  assertAdminTemplatePhotoTreeCopyExternalReferences(state, proof.target.layoutId,
+    [...proof.target.ownerMap.owners.map(owner => owner.localId), ...proof.copiedOwners.map(owner => owner.localId)]);
+}
+
+// Shared by projection and the final latest-state mirror/live merge. This is
+// only a reference check; callers derive the IDs from the complete V9 proof.
+export function assertAdminTemplatePhotoTreeCopyExternalReferences(state, layoutId, ownerIds) {
+  if (!plain(state) || !collections.every(type => plain(state[type])) || typeof layoutId !== "string"
+    || !Array.isArray(ownerIds) || ownerIds.some(id => typeof id !== "string" || !id)) paused();
   // Check only schema-defined links. An opaque string that resembles an owner
   // ID is business data, not permission to relabel or remove that attribute.
-  const targetIds = new Set([...proof.target.ownerMap.owners.map(owner => owner.localId), ...proof.copiedOwners.map(owner => owner.localId)]);
+  const targetIds = new Set(ownerIds);
   const ref = id => { if (targetIds.has(id)) paused(); };
   const ids = values => { if (Array.isArray(values)) values.forEach(ref); };
   const placement = row => {
@@ -47,7 +56,7 @@ function assertBefore(state, proof, intent) {
     if (Array.isArray(row.order)) row.order.forEach(entry => { if (["item", "container"].includes(entry?.type)) ref(entry.id); });
   };
   for (const [id, layout] of Object.entries(state.layouts)) {
-    if (id === proof.target.layoutId || !plain(layout)) continue;
+    if (id === layoutId || !plain(layout)) continue;
     ids(layout.rootContainerIds); const a = layout.arrangement;
     if (!plain(a)) continue;
     ids(a.rootContainerIds);
@@ -55,8 +64,8 @@ function assertBefore(state, proof, intent) {
     for (const [key, parent] of Object.entries(a.items || {})) { ref(key); ref(parent); }
     for (const key of [...Object.keys(a.itemQuantities || {}), ...Object.keys(a.packedItems || {})]) ref(key);
   }
-  for (const row of Object.values(state.containers)) if (row?.publicCatalogLayoutId !== proof.target.layoutId) placement(row);
-  for (const row of Object.values(state.items)) if (row?.publicCatalogLayoutId !== proof.target.layoutId) ref(row?.containerId);
+  for (const row of Object.values(state.containers)) if (row?.publicCatalogLayoutId !== layoutId) placement(row);
+  for (const row of Object.values(state.items)) if (row?.publicCatalogLayoutId !== layoutId) ref(row?.containerId);
 }
 
 const intentBinding = intent => Object.fromEntries(["actorId", "environment", "listId", "itemKey"].map(key => [key, intent[key]]));
