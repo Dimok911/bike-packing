@@ -189,3 +189,5 @@ export async function prepareAdminTemplatePhotoCopyRecord(input) {
     return decoded(envelope, await digest(intentJson));
   } catch { invalid(); }
 }
+
+export { assertEditor as assertAdminTemplatePhotoCopyEditor };
