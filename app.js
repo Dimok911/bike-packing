@@ -1677,7 +1677,7 @@ const remoteListRecords = createRemoteListRecordSelector({
   isMeaningfulPackingState,
   remoteUpdatedAt,
   timeValue,
-  isReadOnlyRecord: isReadOnlyBikePackingRecord
+  isReadOnlyRecord: record => isPublicTemplateListId(remoteRecordId(record)) || isReadOnlyBikePackingRecord(record)
 });
 
 const appTailRuntime = {
@@ -3691,7 +3691,7 @@ function ensurePrivateDictionaries(sourceState = state) {
 
 function ensureLayoutDictionaries(layout, sourceState = null) {
   if (!layout) return null;
-  if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && layout.adminCausalSource?.photoOwnerMap) return layout;
+  if (layout.adminCausalSource?.photoOwnerMap) return layout;
   const source = sourceState || state;
   const pruneUnusedCustomDictionaries = isGuestDemoCopyLayoutRecord(layout) && !guestLayoutHasUserContentEdits(source, layout);
   return ensureLayoutDictionariesForState(layout, {
@@ -5203,7 +5203,7 @@ function captureActiveLayoutArrangement(targetState = state) {
   if (applyingLayoutArrangement) return;
   const layout = targetState.layouts?.[targetState.activeLayoutId];
   if (!layout) return;
-  if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && layout.adminCausalSource?.photoOwnerMap) return;
+  if (layout.adminCausalSource?.photoOwnerMap) return;
   layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || [], {
     itemQuantities: layout.arrangement?.itemQuantities
   });
@@ -5259,9 +5259,25 @@ function persistActiveLayoutSelection({ sync = false, recordAction = true } = {}
 }
 
 function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state, { preserveCatalog = false } = {}) {
-  if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && targetState.layouts[layoutId]?.adminCausalSource?.photoOwnerMap) return applyAdminTemplatePhotoCreateArrangement(layoutId, targetState);
+  if (targetState.layouts[layoutId]?.adminCausalSource?.photoOwnerMap) return applyAdminTemplatePhotoCreateArrangement(layoutId, targetState);
+  const protectedLayouts = new Set(Object.entries(targetState.layouts || {})
+    .filter(([id, layout]) => id !== layoutId && layout?.adminCausalSource?.photoOwnerMap).map(([id]) => id));
+  const collections = ["layouts", "items", "containers"];
+  const originalCollections = Object.fromEntries(collections.map(type => [type, targetState[type]]));
+  for (const id of protectedLayouts) {
+    const ownerIds = ["items", "containers"].flatMap(type => Object.entries(targetState[type] || {})
+      .filter(([, row]) => row?.publicCatalogLayoutId === id).map(([ownerId]) => ownerId));
+    assertAdminTemplatePhotoTreeCopyExternalReferences(targetState, id, ownerIds);
+  }
+  // Legacy display repair owns only its editable catalog. Keep the original
+  // state object for quantity-migration tracking, but hide confirmed catalogs
+  // from both repair and fallback root discovery until this synchronous call ends.
+  const editableCollections = protectedLayouts.size ? Object.fromEntries(collections.map(type => [type,
+    Object.fromEntries(Object.entries(targetState[type] || {}).filter(([id, row]) =>
+      !protectedLayouts.has(type === "layouts" ? id : row?.publicCatalogLayoutId))) ])) : null;
   applyingLayoutArrangement = true;
   try {
+    if (editableCollections) Object.assign(targetState, editableCollections);
     applyLayoutArrangementToState(targetState, layoutId, {
       migrateContainerOrder,
       normalizeLayoutArrangement,
@@ -5269,6 +5285,7 @@ function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = s
       preserveCatalog
     });
   } finally {
+    if (editableCollections) Object.assign(targetState, originalCollections);
     applyingLayoutArrangement = false;
   }
 }
@@ -5280,7 +5297,10 @@ function applyAdminTemplatePhotoCreateArrangement(layoutId, targetState) {
   for (const [id, placement] of Object.entries(arrangement.containers)) {
     const row = targetState.containers[id];
     if (!row || row.publicCatalogLayoutId !== layoutId) throw Error("Размещение сумки относится к другому черновику.");
-    Object.assign(row, { parentId: placement.parentId || null, childIds: clone(placement.childIds),
+    // Reopening is not a placement change. Keep the exact existing root
+    // representation so an interrupted acceptance can prove its saved mirror.
+    if (placement.parentId || row.parentId) row.parentId = placement.parentId || null;
+    Object.assign(row, { childIds: clone(placement.childIds),
       itemIds: clone(placement.itemIds), order: clone(placement.order) });
   }
   for (const [id, containerId] of Object.entries(arrangement.items)) {
@@ -7508,7 +7528,7 @@ function normalizePackingListsResponse(data) {
 }
 
 function chooseDefaultPackingList(lists) {
-  const editableLists = lists.filter((list) => !isReadOnlyBikePackingRecord(list));
+  const editableLists = lists.filter((list) => !isPublicTemplateListId(remoteRecordId(list)) && !isReadOnlyBikePackingRecord(list));
   const saved = currentPackingListId && editableLists.find((list) => list?.id === currentPackingListId);
   if (saved) return saved;
   return editableLists.find((list) => list?.isDefault || list?.default || list?.itemKey === DATA_ITEM_KEY) ||
@@ -7957,9 +7977,21 @@ async function syncNow(options = {}) {
 
 async function runSyncNow(options = {}) {
   const adminLayoutId = getPublishedEditLayoutId();
-  if (options.force && adminTemplateUiEnabled() && isAdminPublicEditScope(modeState)
-    && (state.layouts?.[adminLayoutId]?.adminCausalSource?.planId || administrativeSaveCoordinator?.hasPendingCapture(adminLayoutId))) {
-    return showAdminTemplateRecovery(adminLayoutId);
+  if (options.force && adminTemplateUiEnabled() && isAdminPublicEditScope(modeState)) {
+    const layout = state.layouts?.[adminLayoutId], source = layout?.adminCausalSource;
+    let pending = source?.planId || administrativeSaveCoordinator?.hasPendingCapture(adminLayoutId);
+    if (!pending && source?.binding) {
+      // A confirmed mirror may still lack its separate acceptance. Discover it
+      // through the full record proof even after the pending pointer is gone.
+      const context = canonicalTemplateJson(adminTemplateOperationContext(source.binding, adminLayoutId));
+      pending = await findAdminTemplatePhotoTreeCopyFormRecord(adminLayoutId);
+      if (state.layouts?.[adminLayoutId] !== layout || layout.adminCausalSource !== source
+        || getPublishedEditLayoutId() !== adminLayoutId
+        || canonicalTemplateJson(adminTemplateOperationContext(source.binding, adminLayoutId)) !== context) {
+        throw Error("Контекст восстановления дерева изменился.");
+      }
+    }
+    if (pending) return showAdminTemplateRecovery(adminLayoutId);
   }
   if (personalSavePilotEnabled() && currentUser && !isReadOnlyBikePackingContext()
     && !isAdminPublicEditScope(modeState)) return saveRemoteState({ notify: Boolean(options.force) });
@@ -8097,6 +8129,9 @@ async function ensurePrivateStateForSharedCopy() {
 
 function normalizeRemoteListRecord(data) {
   const list = data?.list || data?.entityLink || data?.record || data;
+  // The /state response keeps listId on the envelope, outside its record.
+  // Retain that identity when the nested record only carries payload/integrity.
+  const envelopeListId = !remoteRecordId(list) && (data?.listId || data?.list_id);
   const integrityMeta = stateIntegrityMetaFromResponse(data, list);
   const payload =
     list?.payload ||
@@ -8111,6 +8146,7 @@ function normalizeRemoteListRecord(data) {
     null;
   return {
     ...(list || {}),
+    ...(envelopeListId ? { id: String(envelopeListId) } : {}),
     ...integrityMeta,
     payload,
     updatedAt: remoteUpdatedAt(list) || integrityMeta.updatedAt || data?.updatedAt || data?.serverUpdatedAt || null
@@ -13259,6 +13295,7 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
         await adminTemplateSaveCoordinator().capture(existing.id, { published: false });
       }
       if (existing.adminCausalSource.planId) await adminTemplateSaveCoordinator().flush(existing.id);
+      else await resumeAdminTemplatePhotoTreeCopyForm(existing.id);
       return existing;
     }
     const prepared = await adminTemplateClient(binding, "", true).prepare();

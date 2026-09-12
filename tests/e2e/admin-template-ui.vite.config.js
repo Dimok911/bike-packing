@@ -5,7 +5,23 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/").split("?")[0];
-    if (["admin-photo-copy", "admin-photo-copy-off"].includes(mode) && source.endsWith("/src/app/app-tail-controllers.js")) {
+    if (["admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode) && source.endsWith("/src/public/admin-template-photo-tree-copy-flow.js")) {
+      const anchor = "} catch { throw paused(); }";
+      if (code.split(anchor).length !== 2) throw Error("Tree form diagnostic anchor changed");
+      code = code.replace(anchor, '} catch (error) { globalThis.__treeFormFailure = { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || ""), input: structuredClone(input) }; throw paused(); }');
+    }
+    if (["admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-tree-copy-record.js")) {
+      const anchor = "} catch { invalid(); }";
+      if (code.split(anchor).length !== 4) throw Error("Tree record diagnostic anchors changed");
+      code = code.replaceAll(anchor, '} catch (error) { globalThis.__treeRecordFailure ||= { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || "") }; invalid(); }');
+    }
+    if (["admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-copy-record.js")) {
+      const anchor = "function assertEditor(";
+      if (code.split(anchor).length !== 2) throw Error("Copy editor diagnostic anchor changed");
+      code = code.replace(anchor, "function assertEditorDiagnosticOriginal(")
+        + '\nfunction assertEditor(input) { try { return assertEditorDiagnosticOriginal(input); } catch (error) { globalThis.__treeEditorFailure = { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || ""), input: structuredClone(input) }; throw error; } }\n';
+    }
+    if (["admin-photo-copy", "admin-photo-copy-off", "admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode) && source.endsWith("/src/app/app-tail-controllers.js")) {
       const anchor = 'onError: error => showToast(error.message, "error"),';
       if (!code.includes(anchor)) throw Error("Copy form diagnostic anchor changed");
       code = code.replace(anchor, 'onError: error => { globalThis.__adminUiLastError = { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || "") }; showToast(error.message, "error"); },');
@@ -13,7 +29,7 @@ export default defineConfig(({ mode }) => ({
     if (["admin-photo-edit", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-edit-protocol.js")) {
       return code.replace("ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED = true");
     }
-    if ((["admin-photo-append", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off", "admin-photo-copy", "admin-photo-copy-off"].includes(mode) || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
+    if ((["admin-photo-append", "admin-photo-replace", "admin-photo-replace-off", "admin-photo-create", "admin-photo-create-off", "admin-photo-copy", "admin-photo-copy-off", "admin-photo-tree-copy"].includes(mode) || mode === "personal-import" && process.env.BIKE_ADMIN_PHOTO_REGRESSION === "1")
       && source.endsWith("/src/sync/admin-template-photo-append-protocol.js")) {
       code = code.replace("ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = true");
       return mode === "admin-photo-replace" ? code.replace("ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = true") : code;
@@ -38,8 +54,9 @@ export default defineConfig(({ mode }) => ({
   } catch (error) { globalThis.__adminPhotoCandidateDiagnosticError = String(error.message); }
 `);
     }
-    if (["admin-photo-create", "admin-photo-copy", "admin-photo-copy-off"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-create-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = true");
-    if (mode === "admin-photo-copy" && source.endsWith("/src/sync/admin-template-photo-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = true");
+    if (["admin-photo-create", "admin-photo-copy", "admin-photo-copy-off", "admin-photo-tree-copy"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-create-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = true");
+    if (["admin-photo-copy", "admin-photo-tree-copy"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = true");
+    if (mode === "admin-photo-tree-copy" && source.endsWith("/src/sync/admin-template-photo-tree-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED = true");
     if (mode === "personal-import" && source.endsWith("/app.js")) {
       code = code.replace('return outbox.capture({ snapshot, body, operationId });', 'globalThis.__adminUiCaptureCalls ||= []; globalThis.__adminUiCaptureCalls.push({ stack: new Error().stack, scope: currentViewScope(), activeLayoutId: state.activeLayoutId }); return outbox.capture({ snapshot, body, operationId });');
       code = code.replace('function reportAdminTemplateSaveError(error) {', 'function reportAdminTemplateSaveError(error) { globalThis.__adminUiLastError = String(error.adminCopyGuard || "") + String(error.message) + String(error.stack || error);')
@@ -49,10 +66,14 @@ export default defineConfig(({ mode }) => ({
       code = code.replace(/(PERSONAL_ADMIN_TEMPLATE_IMPORT|PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT|PERSONAL_PUBLIC_IMPORT|PERSONAL_PUBLIC_ENTITY_COPY|PERSONAL_SAVE_OUTBOX|LIST_OPERATION_QUEUE|PERSONAL_PHOTO_ACTIONS|PERSONAL_PHOTO_BATCH_STORAGE|PERSONAL_PHOTO_OUTBOX|PERSONAL_PHOTO_BATCH_OUTBOX|PERSONAL_PHOTO_PUBLICATION_QUEUE|PERSONAL_PHOTO_STAGING|PERSONAL_PHOTO_BATCH_STAGING|PERSONAL_PHOTO_FORM|PERSONAL_PHOTO_FORM_UI)_ENABLED = false/g, "$1_ENABLED = true");
     }
     if (source.endsWith("/src/sync/admin-template-protocol.js")) return code.replace("ADMIN_TEMPLATE_OPERATIONS_ENABLED = false", "ADMIN_TEMPLATE_OPERATIONS_ENABLED = true");
-    if (source.endsWith("/app.js")) return code + "\nwindow.__adminUiTest={setOrderCatalog:({demo,shared})=>{serverConfirmedDemoTemplates=demo;serverConfirmedSharedLayouts=shared;renderFilters();},openDemo:openAdminDemoLayout,openShared:openSharedLayoutForAdmin,snapshot:adminTemplateEditorSnapshot,openPrepared:openCausalAdminTemplate,refreshDrafts:refreshAdminTemplateDrafts,openItem:openItemDialog,openContainer:openRootContainerDialog,save:savePublishedLayoutRecord,privatePayload:()=>serializeState({forSync:true}),privateMeta:()=>syncMeta,openPrivate:id=>switchActiveLayout(id,{remember:false}),state:()=>state,user:()=>currentUser,scope:()=>currentViewScope()};\n";
+    if (source.endsWith("/app.js")) return code + "\nwindow.__adminUiTest={setOrderCatalog:({demo,shared})=>{serverConfirmedDemoTemplates=demo;serverConfirmedSharedLayouts=shared;renderFilters();},openDemo:openAdminDemoLayout,openShared:openSharedLayoutForAdmin,snapshot:adminTemplateEditorSnapshot,openPrepared:openCausalAdminTemplate,refreshDrafts:refreshAdminTemplateDrafts,openItem:openItemDialog,openContainer:openRootContainerDialog,save:savePublishedLayoutRecord,privatePayload:()=>serializeState({forSync:true}),privateMeta:()=>syncMeta,openPrivate:id=>switchActiveLayout(id,{remember:false}),state:()=>state,user:()=>currentUser,scope:()=>currentViewScope()};\n"
+      + (["admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode)
+        ? "Object.assign(window.__adminUiTest,{operationContext:adminTemplateOperationContext,mirrorContext:()=>({key:scopedLocalStorageKey(STORAGE_KEY),scopeKey:localStorageScopeKey}),privateLoadContext:()=>({listId:currentPackingListId,initialRemoteLoadPending})});\n" : "");
     return code;
   } }],
   build: { outDir: mode === "personal-import" ? "test-results/admin-personal-import-ui-build"
+    : mode === "admin-photo-tree-copy" ? "test-results/admin-template-photo-tree-copy-browser-on-build"
+    : mode === "admin-photo-tree-copy-off" ? "test-results/admin-template-photo-tree-copy-browser-off-build"
     : mode === "admin-photo-copy" ? "test-results/admin-template-photo-copy-ui-build"
     : mode === "admin-photo-copy-off" ? "test-results/admin-template-photo-copy-off-ui-build"
     : mode === "admin-photo-create" ? "test-results/admin-template-photo-create-ui-build"

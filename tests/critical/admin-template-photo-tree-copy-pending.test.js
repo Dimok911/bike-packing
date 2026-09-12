@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { treeCopyProjectionFixture } from "../fixtures/admin-template-photo-tree-copy-projection-fixture.js";
 import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
 import { persistAdminTemplatePhotoTreeCopyPending as persist } from "../../src/public/admin-template-photo-tree-copy-pending.js";
+import { installRuntimeActiveLayoutId } from "../../src/state/active-layout-runtime.js";
 
 const copy = value => structuredClone(value);
 function mark(state, record) {
@@ -35,6 +36,18 @@ async function duringHash(change, task) {
   try { const result = await task(); assert.ok(called); return result; }
   finally { crypto.subtle.digest = original; }
 }
+
+test("pending captures the application's non-enumerable runtime selection and still fences a selection change", async () => {
+  const f = await fixture(); installRuntimeActiveLayoutId(f.state, f.targetId);
+  assert.equal(Object.keys(f.state).includes("activeLayoutId"), false);
+  assert.equal((await f.run()).state, "pending");
+  assert.equal(f.state.activeLayoutId, f.targetId);
+  assert.equal(Object.getOwnPropertyDescriptor(f.state, "activeLayoutId").enumerable, false);
+  const changed = await fixture(); installRuntimeActiveLayoutId(changed.state, changed.targetId);
+  await duringHash(() => { changed.state.activeLayoutId = changed.sourceId; }, () =>
+    assert.rejects(changed.run(), { code: "admin-template-photo-tree-copy-pending-context" }));
+  assert.equal(changed.writes.length, 0); noEffects(changed);
+});
 
 test("pending persists only four target fields before live mutation and preserves latest unrelated data", async () => {
   const f = await fixture(), before = copy(f.state), expected = copy(before), mirror = f.mirror(); mark(expected, f.record);

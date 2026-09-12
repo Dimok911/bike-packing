@@ -4,9 +4,14 @@ import { treeFormFixture } from "../fixtures/admin-template-photo-tree-copy-form
 import { adminTemplatePhotoNamespace } from "../../src/public/admin-template-photo-state.js";
 import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
 import { createAdminTemplatePhotoCopyPickerController } from "../../src/app/app-tail-controllers.js";
+import { normalizeLayoutArrangement } from "../../src/state/layout-normalize.js";
+import { installRuntimeActiveLayoutId } from "../../src/state/active-layout-runtime.js";
 
 test("actual tree form allocates once, captures all durable pointers, sends under admission and applies the complete target", async () => {
   const f = await treeFormFixture(), source = structuredClone(adminTemplatePhotoNamespace(f.state, f.input.sourceLayoutId)), privateItem = structuredClone(f.state.items.privateItem);
+  installRuntimeActiveLayoutId(f.state, f.state.activeLayoutId);
+  for (const id of [f.input.sourceLayoutId, f.input.targetLayoutId]) normalizeLayoutArrangement(f.state.layouts[id], f.state);
+  assert.deepEqual(adminTemplatePhotoNamespace(f.state, f.input.sourceLayoutId), source);
   assert.equal(f.form().adminTemplatePhotoTreeCopyEligible(f.input), true);
   const result = await f.submit();
   assert.equal(result.state, "committed"); assert.equal(result.applied, true); assert.equal(f.notifications.length, 1); assert.equal(f.allocations.length, 1);

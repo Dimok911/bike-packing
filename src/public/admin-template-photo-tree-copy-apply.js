@@ -53,8 +53,11 @@ export async function applyAdminTemplatePhotoTreeCopyResult(input, externalGuard
     || [externalGuard, input.getState, input.getContext, input.getMirrorContext].some(fn => typeof fn !== "function")) pause("dependencies");
   const { store, getState, getContext, getMirrorContext } = input;
   const { plan, receipt, stageReceipts } = copy({ plan: input.plan, receipt: input.receipt, stageReceipts: input.stageReceipts });
-  const binding = adminTemplatePhotoActionBinding(plan.binding), live = sync(getState), initial = copy(live);
+  const binding = adminTemplatePhotoActionBinding(plan.binding), live = sync(getState);
   if (!plain(live) || !collections.every(type => plain(live[type]))) pause("state");
+  // Runtime selection is non-enumerable and must survive this detached guard
+  // snapshot without changing how the shared mirror stores that selection.
+  const initial = copy({ ...live, activeLayoutId: live.activeLayoutId });
   const initialContext = copy(sync(getContext)), mirrorContext = sync(getMirrorContext);
   if (!exact(mirrorContext, ["storage", "key", "scopeKey"]) || typeof mirrorContext.key !== "string" || !mirrorContext.key
     || mirrorContext.scopeKey !== `id:${binding.actorId}` || typeof mirrorContext.storage?.getItem !== "function"

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { treeCopyProjectionFixture } from "../fixtures/admin-template-photo-tree-copy-projection-fixture.js";
 import { applyAdminTemplatePhotoTreeCopyResult as apply } from "../../src/public/admin-template-photo-tree-copy-apply.js";
 import { seedTreeCopyAcceptanceFacts } from "../fixtures/admin-template-photo-tree-copy-acceptance-fixture.js";
+import { installRuntimeActiveLayoutId } from "../../src/state/active-layout-runtime.js";
 
 const copy = value => structuredClone(value);
 async function fixture() {
@@ -26,6 +27,19 @@ async function fixture() {
     mirror: () => JSON.parse(values.get(key)), run: (guard = () => {}) => apply(input, guard) });
 }
 const noServerEffects = f => { assert.deepEqual(f.server.calls, []); assert.equal(f.idb.rows("stage-dispatches").size, 0); };
+
+test("confirmed apply handles a non-enumerable active layout and still rejects a changed runtime selection", async () => {
+  const f = await fixture(); installRuntimeActiveLayoutId(f.state, f.targetId);
+  const result = await f.run();
+  assert.equal(result.state, "applied");
+  assert.deepEqual(f.state.packedItems, result.targetSnapshot.beforeState.packedItems);
+  assert.equal(f.state.activeLayoutId, f.targetId);
+  assert.equal(Object.getOwnPropertyDescriptor(f.state, "activeLayoutId").enumerable, false);
+  const changed = await fixture(); installRuntimeActiveLayoutId(changed.state, changed.targetId);
+  changed.idb.controls.onGet = () => { changed.state.activeLayoutId = changed.record.snapshot.source.layoutId; };
+  await assert.rejects(changed.run(), { code: "admin-template-photo-tree-copy-apply-context" });
+  assert.equal(changed.writes.length, 0); noServerEffects(changed);
+});
 
 test("full receipt applies only target after durable write, preserving latest unrelated live and mirror values", async () => {
   const f = await fixture(), before = copy(f.state), mirror = f.mirror(); f.pending();

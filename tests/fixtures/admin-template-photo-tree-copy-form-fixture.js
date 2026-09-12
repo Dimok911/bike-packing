@@ -23,6 +23,10 @@ import { createAdminTemplateOrderBatch } from "../../src/public/admin-template-o
 import { assertAdminTemplatePhotoView } from "../../src/sync/admin-template-photo-view.js";
 import { captureAdminTemplatePhotoOwnerMap, adminTemplatePhotoPreservedEntityIds } from "../../src/sync/admin-template-photo-owner-map.js";
 import { createExperimentTransport, EXPERIMENT_FRONTEND_ORIGIN } from "../../src/sync/experiment-transport.js";
+import { applyLayoutArrangementToState, createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
+import { normalizeLayoutArrangement } from "../../src/state/layout-normalize.js";
+import { migrateContainerOrder } from "../../src/state/normalize.js";
+import { repairContainerMembershipFromItemLinks } from "../../src/state/repair.js";
 
 export async function treeFormFixture() {
   const original = await adminPhotoTreeCopyRecordInput(), copy = original.action.body.photoCopy, uuidValues = [];
@@ -69,7 +73,8 @@ export async function treeFormFixture() {
 // Actual app functions, durable stores and validators are shared with the form
 // fixture. This server boundary can retain several independent immutable UUIDs;
 // it does not manufacture an acceptance proof or bypass app admission.
-export async function treeAcceptanceAppFixture() {
+export async function treeAcceptanceAppFixture({ routing = false, arrangement = false } = {}) {
+  assert.ok(!arrangement || routing, "Actual arrangement requires the routing entrypoints");
   const f = await treeFormFixture(), clone = structuredClone;
   const http = { calls: [], treePosts: [], ordinaryPosts: [], stagePosts: [], trees: new Map(), receipts: new Map(), stages: new Map(), heads: new Map() };
   for (const side of [f.prepared.snapshot.source, f.prepared.snapshot.target]) {
@@ -136,6 +141,54 @@ export async function treeAcceptanceAppFixture() {
     return { status: 200, json: async () => clone(value) };
   };
   let api, transport, allocationCount = 0;
+  const routes = { capture: 0, flush: 0, recover: 0, discovery: 0, dialogs: [], fallback: [], errors: [], afterDiscovery: null };
+  const routingNames = ["openCausalAdminTemplate", "runSyncNow", "activateAdminPublishedLayout", "getPublishedEditLayoutId",
+    "resumeCausalAdminTemplateCopy", "resumeAdminTemplatePhotoForm", "resumeAdminTemplatePhotoCopyForm",
+    ...(arrangement ? ["restoreAdminPublishedLayoutContext", "captureActiveLayoutArrangement", "applyLayoutArrangement",
+      "applyAdminTemplatePhotoCreateArrangement", "ensureLayoutDictionaries", "resumeAdminTemplatePhotoAppendForm",
+      "resumeAdminTemplatePhotoEditForm", "resumeAdminTemplatePhotoCreateForm", "adminTemplatePhotoCreateFormEnabled",
+      "adminTemplatePhotoFormEnabled"] : [])];
+  const routingDependencies = () => {
+    const fail = name => () => assert.fail("Unexpected cold routing branch: " + name);
+    const deps = Object.fromEntries(["activeReadOnlyLayoutId", "checkAdminApiCompatibility", "checkAuthAndLoad", "checkRemoteStateFreshness",
+      "clearStaleDirtyFlagIfNoLocalChanges", "currentPublicTemplateStatusMessage", "flushActivePublishedEditSave", "handleAuthButton",
+      "isAdminUser", "isDemoPublicTemplateMissing", "isForcedOffline", "isOfflineRememberedSession", "isReadOnlyStateScope",
+      "loadRemoteState", "offerLoadServerForTruncatedLocalState", "openAdminDemoLayout", "openSharedLayoutForAdmin",
+      "preferredCurrentLayoutRef", "refreshActiveReadOnlyPublicTemplate", "savePublishedLayoutRecord", "saveRemoteState",
+      "saveSyncMeta", "uploadPendingPhotos", "rememberActiveLayoutChoice", "demoTemplateChoiceForLayout",
+      "adminTemplateDraftChoice", "reconcileLegacyAdminTemplate"].map(name => [name, fail(name)]));
+    return { ...deps, modeState: f.modeState, ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED: false,
+      ...(arrangement ? {
+        applyingLayoutArrangement: false, VIEW_SCOPE_ADMIN_PUBLIC_EDIT: "admin-public-edit",
+        applyLayoutArrangementToState, createLayoutArrangementFromCurrentState, normalizeLayoutArrangement,
+        migrateContainerOrder, repairContainerMembershipFromItemLinks,
+        setViewScope: (scope, { adminLayoutId }) => {
+          assert.equal(scope, "admin-public-edit"); assert.ok(f.state.layouts[adminLayoutId]?.adminCausalSource);
+          f.current.scope = "admin-template"; f.modeState.adminPublishedEditLayoutId = adminLayoutId; return true;
+        },
+        // An owned namespace must never enter legacy dictionary repair; the
+        // real app function, rather than this dependency, decides the branch.
+        isGuestDemoCopyLayoutRecord: fail("legacy dictionary repair")
+      } : {}),
+      activeDemoTemplateListId: "", appUnlocked: true, publishedLayoutSaveLayoutId: "", publishedLayoutSaveTimer: null,
+      syncMeta: {}, syncTimer: null, DEMO_SHARED_LAYOUT_ID: "unused-readonly-demo",
+      personalSavePilotEnabled: () => false, isReadOnlyBikePackingContext: () => false,
+      isAdminPublicEditScope: () => f.current.scope === "admin-template",
+      isAdminEditablePublishedLayout: id => Boolean(f.state.layouts[id]?.adminCausalSource),
+      saveState: options => { assert.deepEqual(options, { sync: false }); f.storage.setItem("mirror", JSON.stringify(f.state)); },
+      switchView: view => assert.equal(view, "packing"),
+      reportAdminTemplateSaveError: error => { routes.errors.push(error); }, showToast() {},
+      // Only the presentation seam is replaced. Actual prepare/inspect/resume
+      // below retain the real plan, IDB, receipt, acceptance and context proof.
+      showAdminTemplateRecovery: async id => {
+        const work = await api.prepareAdminTemplateRecovery(id), info = await work.inspect(false);
+        const shown = { id, work, info }; routes.dialogs.push(shown); return shown;
+      },
+      runSyncNowFlow: async (args, options) => {
+        assert.equal(args.runtime.state, f.state); routes.fallback.push({ force: Boolean(options.force) });
+        return "ordinary-sync-fallback";
+      } };
+  };
   const notifications = [], forbidden = () => assert.fail("Unsupported legacy branch must not replace a typed proof");
   const reset = () => {
     // A cold document has fresh transport/context/app closures; all durable
@@ -148,10 +201,18 @@ export async function treeAcceptanceAppFixture() {
         const result = await real.beginWrite(...args); f.controls.afterBegin?.(...args); return result;
       } };
     const names = ["assertAdminTemplateCopyCaptureAllowed", "adminTemplateBinding", "adminTemplateCanonicalEditorSnapshot", "adminTemplateEditorSnapshot",
-      "persistAdminTemplateCoordinatorState", "adminTemplateSaveCoordinator", "adminTemplateRecoveryFor", "adminTemplateStopChoiceFor", "openCausalAdminTemplateOrder"];
-    api = f.form({}, {
+      "persistAdminTemplateCoordinatorState", "adminTemplateSaveCoordinator", "adminTemplateRecoveryFor", "adminTemplateStopChoiceFor", "openCausalAdminTemplateOrder",
+      ...(routing ? routingNames : [])];
+    const deps = {
       experimentTransport: transport, administrativeSaveCoordinator: null, administrativePhotoTreeCopyAttempts: new WeakMap(),
-      createAdminTemplateSaveFlow,
+      createAdminTemplateSaveFlow: options => {
+        const flow = createAdminTemplateSaveFlow(options);
+        if (!routing) return flow;
+        return { ...flow,
+          capture(...args) { routes.capture++; return flow.capture(...args); },
+          flush(...args) { routes.flush++; return flow.flush(...args); },
+          recover(...args) { routes.recover++; return flow.recover(...args); } };
+      },
       createAdminTemplateRecovery: options => createAdminTemplateRecovery({ ...options, storage: f.storage, locks: f.locks }),
       createAdminTemplateStopChoice: options => createAdminTemplateStopChoice({ ...options, storage: f.storage, locks: f.locks }),
       projectAdminTemplateServerVariant, stripAdminTemplateEditorMetadata,
@@ -170,7 +231,19 @@ export async function treeAcceptanceAppFixture() {
       applyAdminTemplateConfirmedPhotoResult: forbidden, applyAdminTemplateConfirmedPhotoCopyResult: forbidden,
       withLayoutArrangementApplied: forbidden, adminTemplatePhotoEditorSnapshot: forbidden,
       adminTemplatePhotoMechanismEnabled: () => true, publishedLayoutTarget: forbidden,
-    }, names);
+      ...(routing ? routingDependencies() : {}) };
+    const build = replace => f.form(replace, deps, names);
+    api = build({});
+    if (routing) {
+      const actualFind = api.findAdminTemplatePhotoTreeCopyFormRecord;
+      api = build({ findAdminTemplatePhotoTreeCopyFormRecord: async (...args) => {
+        const record = await actualFind(...args); routes.discovery++;
+        // Optional fault seam runs after the actual discovery/proof completes,
+        // before its caller's await continuation, without manufacturing a result.
+        const after = routes.afterDiscovery; routes.afterDiscovery = null; after?.(record);
+        return record;
+      } });
+    }
     return api;
   };
   reset();
@@ -188,6 +261,32 @@ export async function treeAcceptanceAppFixture() {
     const captured = await coordinator.capture(layoutId), result = await coordinator.flush(layoutId);
     return { owner, expected, captured, result };
   };
-  return { ...f, http, fetchImpl, notifications, submit, cold, reset, editAndSave, api: () => api,
+  return { ...f, http, fetchImpl, notifications, submit, cold, reset, editAndSave, routes, api: () => api,
     get transport() { return transport; }, get allocationCount() { return allocationCount; } };
+}
+
+// An independent, photo-free legacy template, projected by the actual server
+// adapter with owner-map capture OFF. It shares no owner IDs or raw source with
+// either tree-copy namespace; catalog aliases come from the real projector.
+export function addTreeRoutingLegacyLayout(targetState, actorBinding, { causal = true, storedArrangement = true } = {}) {
+  const sharedId = randomUUID(), layoutId = `layout-admin-${randomUUID()}`;
+  const binding = { ...actorBinding, listId: `public-shared-layout-${sharedId}`, itemKey: `shared:${sharedId}` };
+  const rootId = "legacy-root", itemId = "legacy-item", serverLayoutId = "legacy-layout";
+  const placement = { parentId: "", childIds: [], itemIds: [itemId], order: [{ type: "item", id: itemId }] };
+  const payload = { activeLayoutId: serverLayoutId, locations: ["Legacy place"], categories: ["Legacy category"],
+    containers: { [rootId]: { id: rootId, name: "Legacy bag", ...structuredClone(placement) } },
+    items: { [itemId]: { id: itemId, name: "Legacy quantity", quantity: 7, containerId: rootId } },
+    layouts: { [serverLayoutId]: { id: serverLayoutId, rootContainerIds: [rootId], updatedAt: "2024-01-01T00:00:00Z",
+      arrangement: { rootContainerIds: [rootId], containers: { [rootId]: placement }, items: { [itemId]: rootId },
+        itemQuantities: { [itemId]: 1 }, packedItems: { [itemId]: true } } } } };
+  const projected = projectAdminTemplateServerVariant({ id: layoutId, adminSharedSourceId: sharedId },
+    { exists: true, visibility: "private", stateRevision: 1, payload,
+      metadata: { title: "Independent legacy template", description: "", language: "en" } }, randomUUID());
+  if (causal) projected.layout.adminCausalSource = { version: 1, binding, exists: true, deleted: false,
+    visibility: "private", base: { stateRevision: 1 }, planId: null };
+  if (!storedArrangement) delete projected.layout.arrangement;
+  assert.equal(projected.layout.adminCausalSource?.photoOwnerMap, undefined);
+  targetState.layouts[layoutId] = projected.layout;
+  Object.assign(targetState.items, projected.items); Object.assign(targetState.containers, projected.containers);
+  return { layoutId, layout: projected.layout, itemId: Object.keys(projected.items)[0], rootId: Object.keys(projected.containers)[0] };
 }

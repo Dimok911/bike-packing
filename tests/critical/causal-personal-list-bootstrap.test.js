@@ -3,6 +3,90 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ensureCausalPersonalListId, initialPersonalListId } from "../../src/sync/causal-personal-list-bootstrap.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId } from "../../src/sync/personal-save-outbox.js";
+import { createRemoteListRecordSelector } from "../../src/sync/list-records.js";
+import { isReadOnlyBikePackingRecord } from "../../src/public/scope.js";
+import { isPublicTemplateListId } from "../../src/storage/active-choice.js";
+
+function actualPersonalSelectors(currentPackingListId = "") {
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const extract = (name, dependencies = {}) => {
+    const body = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))?.[0];
+    assert.ok(body);
+    return new Function(...Object.keys(dependencies), `return (${body});`)(...Object.values(dependencies));
+  };
+  const remoteRecordId = extract("remoteRecordId");
+  const dependencies = { createRemoteListRecordSelector, isPublicTemplateListId, remoteRecordId,
+    isReadOnlyBikePackingRecord, normalizeRemoteListRecord: value => value, normalizeRemoteState: value => value,
+    statePrivateLayoutCount: value => Object.keys(value?.layouts || {}).length,
+    isMeaningfulPackingState: value => Boolean(Object.keys(value?.items || {}).length),
+    remoteUpdatedAt: value => value?.updatedAt, timeValue: value => Date.parse(value) || 0 };
+  const declaration = source.match(/const remoteListRecords = createRemoteListRecordSelector\(\{[^]*?\n\}\);/)?.[0];
+  assert.ok(declaration);
+  const selector = new Function(...Object.keys(dependencies), `${declaration}\nreturn remoteListRecords;`)(...Object.values(dependencies));
+  return { selector, extract, remoteRecordId,
+    chooseDefaultPackingList: extract("chooseDefaultPackingList", { ...dependencies, currentPackingListId, DATA_ITEM_KEY: "state" }) };
+}
+
+test("actual personal selectors exclude private administrative IDs even without itemKey or public visibility", () => {
+  const personal = { id: "my-list", role: "owner", visibility: "private", updatedAt: "2024-01-01", payload: { layouts: { mine: {} }, items: {} } };
+  const admin = ["public-demo-state", "public-demo-state-a", "public-shared-layout-a"].map((id, index) => ({
+    [index === 1 ? "list_id" : "id"]: id, role: "owner", visibility: "private", isDefault: true,
+    updatedAt: "2030-01-01", payload: { layouts: { a: {}, b: {}, c: {} }, items: { rich: {} } }
+  }));
+  for (const saved of ["", personal.id, admin[0].id]) {
+    const { selector, chooseDefaultPackingList } = actualPersonalSelectors(saved);
+    assert.equal(selector.bestCatalogListRecord([...admin, personal]), personal);
+    assert.equal(chooseDefaultPackingList([...admin, personal]), personal);
+    assert.equal(selector.bestCatalogListRecord(admin), null);
+    assert.equal(chooseDefaultPackingList(admin), null);
+  }
+  const readonly = { ...personal, id: "shared-readonly", visibility: "public", isDefault: true };
+  const saved = { ...personal, id: "saved-personal" };
+  const normal = actualPersonalSelectors(saved.id);
+  assert.equal(normal.chooseDefaultPackingList([readonly, personal, saved]), saved);
+});
+
+test("actual cold personal inventory never loads an administrative template as personal data", async () => {
+  const admin = { id: "public-demo-state-private", visibility: "private", role: "owner", updatedAt: "2030-01-01",
+    payload: { layouts: { a: {}, b: {} }, items: { photo: {} } } };
+  const personal = { id: "personal-list", visibility: "private", role: "owner", updatedAt: "2024-01-01",
+    payload: { layouts: { own: {} }, items: {} } };
+  for (const hasPersonal of [false, true]) {
+    const { selector, extract, remoteRecordId, chooseDefaultPackingList } = actualPersonalSelectors();
+    const readIds = []; let prepared = 0;
+    const load = extract("fetchRemoteListStateRecord", { personalSavePilotEnabled: () => false,
+      personalListApiUnavailable: false, isPublicTemplateListId, currentPackingListId: "",
+      remoteRecordPrivateLayoutCount: selector.remoteRecordPrivateLayoutCount, setLayoutLoadStatus: () => {},
+      localText: (en, ru) => ru, LIST_API_TIMEOUT_MS: 100, apiFetch: async () => ({ lists: hasPersonal ? [admin, personal] : [admin] }),
+      normalizePackingListsResponse: value => value.lists, bestCatalogListRecord: selector.bestCatalogListRecord,
+      remoteRecordId, chooseDefaultPackingList, prepareInitialPersonalSave: async () => { prepared++; },
+      setLayoutLoadProgress: () => {}, normalizeRemoteListRecord: value => value,
+      fetchRemoteListStateSnapshot: async id => { readIds.push(id); assert.equal(id, personal.id); return personal; },
+      pickRicherRemoteListRecord: selector.pickRicherRemoteListRecord, rememberCurrentPackingListRecord: () => {},
+      setLoadedRemoteListProgress: () => {} });
+    assert.equal(await load(), hasPersonal ? personal : null);
+    assert.deepEqual(readIds, hasPersonal ? [personal.id] : []);
+    assert.equal(prepared, hasPersonal ? 0 : 1);
+  }
+});
+
+test("actual state response retains its outer list identity when the equally rich detail loses the tie", () => {
+  const { selector, extract, remoteRecordId } = actualPersonalSelectors();
+  const normalize = extract("normalizeRemoteListRecord", { remoteRecordId,
+    stateIntegrityMetaFromResponse: data => ({ stateRevision: data.stateRevision }),
+    remoteUpdatedAt: value => value?.updatedAt });
+  const payload = { layouts: { own: {} }, items: { pump: { name: "Pump", opaque: { preserved: true } } } };
+  const updatedAt = "2026-09-12T12:00:00Z";
+  const response = { ok: true, listId: "personal-list", stateRevision: 7, updatedAt,
+    record: { payload, updatedAt }, payload };
+  const before = structuredClone(response), stateRecord = normalize(response);
+  const detail = { id: "personal-list", payload, updatedAt, visibility: "private" };
+  assert.equal(remoteRecordId(selector.pickRicherRemoteListRecord(stateRecord, detail)), "personal-list");
+  assert.deepEqual(stateRecord.payload, payload); assert.equal(stateRecord.stateRevision, 7);
+  assert.deepEqual(response, before);
+  assert.equal(remoteRecordId(normalize({ ...response, record: { ...response.record, id: "inner-list" } })), "inner-list");
+  assert.equal(remoteRecordId(normalize({ ok: true, id: "envelope-operation-id", record: { payload } })), "");
+});
 
 function fixture() {
   const values = new Map(), calls = [];

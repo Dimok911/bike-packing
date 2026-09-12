@@ -42,7 +42,11 @@ export async function persistAdminTemplatePhotoTreeCopyPending(input, externalGu
   const bindings = [binding, sourceBinding], { captureLease, getState, getContext, getMirrorContext } = input;
   assertAdminTemplateCaptureLease(captureLease, bindings);
   if (sync(externalGuard) === false) pause("guard");
-  const live = sync(getState), initial = copy(live), initialContext = copy(sync(getContext)), mirrorContext = sync(getMirrorContext);
+  const live = sync(getState);
+  if (!plain(live) || !collections.every(type => plain(live[type]))) pause("state");
+  // The application's runtime selection is intentionally non-enumerable.
+  // Capture it explicitly so the guard compares the actual selected layout.
+  const initial = copy({ ...live, activeLayoutId: live.activeLayoutId }), initialContext = copy(sync(getContext)), mirrorContext = sync(getMirrorContext);
   if (!exact(mirrorContext, ["storage", "key", "scopeKey"]) || typeof mirrorContext.key !== "string" || !mirrorContext.key
     || mirrorContext.scopeKey !== `id:${binding.actorId}` || typeof mirrorContext.storage?.getItem !== "function"
     || typeof mirrorContext.storage.setItem !== "function") pause("mirror-context");
