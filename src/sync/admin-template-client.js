@@ -4,6 +4,9 @@ import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY, 
   validateAdminTemplatePhotoAppendResult, validateAdminTemplatePhotoStages } from "./admin-template-photo-append-protocol.js";
 import { ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, TEMPLATE_PHOTO_EDIT_CAPABILITY, validateAdminTemplatePhotoEditResultStructure,
   validateAdminTemplatePhotoEditResult } from "./admin-template-photo-edit-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, TEMPLATE_PHOTO_CREATE_CAPABILITY, adminTemplatePhotoCreateIntent,
+  validateAdminTemplatePhotoCreateResultStructure, validateAdminTemplatePhotoCreateResult, validateAdminTemplatePhotoCreateStages } from "./admin-template-photo-create-protocol.js";
+import { readAdminTemplatePhotoCreateRecord } from "./admin-template-photo-create-save-plan.js";
 const environment = "bike-packing-experiment";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -11,6 +14,8 @@ const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const blocked = () => Object.assign(Error("Изменение шаблона сохранено и требует сверки. Продолжите исходное действие."),
   { code: "admin-template-paused", isAdminTemplateBlocked: true });
+const creation = body => Boolean(body && Object.hasOwn(body, "photoCreate"));
+const parseIntent = input => (creation(input.body) ? adminTemplatePhotoCreateIntent : adminTemplateIntent)(input);
 const digest = async intent => {
   const { id, ...binding } = intent;
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalTemplateJson(binding)))))
@@ -42,7 +47,8 @@ export function validateAdminTemplateReceipt(receipt, expected) {
     const deleted = intent.kind === "template.delete";
     const photoAppend = Boolean(intent.body.photoAppend);
     const photoEdit = Boolean(intent.body.photoEdit);
-    if (operation.state !== "committed" || result.status !== 200 || !exact(payload, ["ok", "listId", "itemKey", "stateRevision", deleted ? "deleted" : "visibility", "indexes", ...(photoAppend ? ["photoAppend"] : []), ...(photoEdit ? ["photoEdit"] : [])])
+    const photoCreate = creation(intent.body);
+    if (operation.state !== "committed" || result.status !== 200 || !exact(payload, ["ok", "listId", "itemKey", "stateRevision", deleted ? "deleted" : "visibility", "indexes", ...(photoAppend ? ["photoAppend"] : []), ...(photoEdit ? ["photoEdit"] : []), ...(photoCreate ? ["photoCreate"] : [])])
       || payload.ok !== true || payload.listId !== intent.listId || payload.itemKey !== intent.itemKey
       || !Number.isSafeInteger(payload.stateRevision) || payload.stateRevision < 1
       || ["template.create", "template.copy"].includes(intent.kind) && payload.stateRevision !== 1
@@ -50,6 +56,7 @@ export function validateAdminTemplateReceipt(receipt, expected) {
       || (deleted ? payload.deleted !== true : !["private", "public"].includes(payload.visibility))) return false;
     if (photoAppend && (payload.visibility !== "private" || !validateAdminTemplatePhotoAppendResultStructure(payload.photoAppend, intent))) return false;
     if (photoEdit && (payload.visibility !== "private" || !validateAdminTemplatePhotoEditResultStructure(payload.photoEdit, intent))) return false;
+    if (photoCreate && (payload.visibility !== "private" || !validateAdminTemplatePhotoCreateResultStructure(payload.photoCreate, intent))) return false;
     if (!deleted && (["template.create", "template.copy", "template.archive"].includes(intent.kind) && payload.visibility !== "private"
       || intent.kind === "template.publication" && payload.visibility !== (intent.body.published ? "public" : "private"))) return false;
     const indexes = intent.body.indexes || [];
@@ -68,7 +75,8 @@ export function validateAdminTemplateReceipt(receipt, expected) {
 export function createAdminTemplateClient({ binding, getContext, transport, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window,
   enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED, photoAppendEnabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED,
-  photoEditEnabled = ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, photoReplaceEnabled = ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED, photoStore = null, photoStaging = null } = {}) {
+  photoEditEnabled = ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED, photoReplaceEnabled = ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED,
+  photoCreateEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore = null, photoStaging = null } = {}) {
   if (!exact(binding, ["actorId", "environment", "listId", "itemKey"]) || binding.environment !== environment) throw blocked();
   binding = clone(binding);
   const prefix = "bike-packing-admin-template-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -102,11 +110,20 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     if (raw == null) return null;
     const saved = JSON.parse(raw);
     const photoAppend = Boolean(saved.intent?.body?.photoAppend);
-    if (!exact(saved, ["version", "intent", "payloadDigest", "dispatched", "cancelRequested", "receipt", ...(photoAppend ? ["photoStages"] : [])])
+    const photoCreate = creation(saved.intent?.body), initial = photoCreate ? context() : null;
+    if (!exact(saved, ["version", "intent", "payloadDigest", "dispatched", "cancelRequested", "receipt", ...(photoAppend || photoCreate ? ["photoStages"] : []), ...(photoCreate ? ["recordIntentHash"] : [])])
       || saved.version !== 1 || typeof saved.dispatched !== "boolean" || typeof saved.cancelRequested !== "boolean"
-      || !same(saved.intent, adminTemplateIntent({ ...binding, operationId: id, kind: saved.intent?.kind, body: saved.intent?.body }))
+      || !same(saved.intent, parseIntent({ ...binding, operationId: id, kind: saved.intent?.kind, body: saved.intent?.body }))
       || saved.payloadDigest !== await digest(saved.intent)
       || saved.receipt !== null && !validateAdminTemplateReceipt(saved.receipt, saved)) throw blocked();
+    if (photoCreate) {
+      guard(initial);
+      if (!/^[a-f0-9]{64}$/.test(saved.recordIntentHash)) throw blocked();
+      await readAdminTemplatePhotoCreateRecord(photoStore, saved.intent, saved.recordIntentHash, () => guard(initial)); guard(initial);
+      if (saved.photoStages !== null && !await validateAdminTemplatePhotoCreateStages(saved.intent, saved.photoStages)) throw blocked(); guard(initial);
+      if (saved.receipt?.operation.state === "committed" && !await validateAdminTemplatePhotoCreateResult(saved.receipt.result.payload.photoCreate,
+        { intent: saved.intent, stageReceipts: saved.photoStages })) throw blocked(); guard(initial);
+    }
     if (photoAppend && (saved.photoStages !== null && !await validateAdminTemplatePhotoStages(saved.intent, saved.photoStages)
       || saved.receipt?.operation?.state === "committed" && !await validateAdminTemplatePhotoAppendResult(saved.receipt.result.payload.photoAppend,
         { intent: saved.intent, stageReceipts: saved.photoStages }))) throw blocked();
@@ -158,6 +175,8 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       && !await validateAdminTemplatePhotoAppendResult(receipt.result.payload.photoAppend, { intent: saved.intent, stageReceipts: saved.photoStages })) throw blocked();
     if (saved.intent.body.photoEdit && receipt.operation.state === "committed"
       && !await validateAdminTemplatePhotoEditResult(receipt.result.payload.photoEdit, { intent: saved.intent })) throw blocked();
+    if (creation(saved.intent.body) && receipt.operation.state === "committed"
+      && !await validateAdminTemplatePhotoCreateResult(receipt.result.payload.photoCreate, { intent: saved.intent, stageReceipts: saved.photoStages })) throw blocked();
     guard(initial);
     if (saved.receipt && saved.receipt.operation.state !== "waiting" && !same(saved.receipt, receipt)) throw blocked();
     persist({ ...saved, receipt }, initial);
@@ -197,17 +216,19 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         && !capabilities.capabilities.includes(TEMPLATE_PENDING_PERSONAL_SOURCE_CAPABILITY)) throw blocked();
       if (saved.intent.body.photoEdit && !saved.cancelRequested
         && (photoEditEnabled !== true || !capabilities.capabilities.includes(TEMPLATE_PHOTO_EDIT_CAPABILITY))) throw blocked();
-      if (saved.intent.body.photoAppend && !saved.cancelRequested) {
-        const replacement = saved.intent.body.photoAppend.version === 2;
+      if ((saved.intent.body.photoAppend || creation(saved.intent.body)) && !saved.cancelRequested) {
+        const photoCreate = creation(saved.intent.body), files = photoCreate ? saved.intent.body.photoCreate : saved.intent.body.photoAppend;
+        const replacement = saved.intent.body.photoAppend?.version === 2;
         if (photoAppendEnabled !== true || replacement && photoReplaceEnabled !== true || !photoStaging
           || !capabilities.capabilities.includes(TEMPLATE_PHOTO_APPEND_CAPABILITY)
-          || replacement && !capabilities.capabilities.includes(TEMPLATE_PHOTO_REPLACE_CAPABILITY)) throw blocked();
+          || replacement && !capabilities.capabilities.includes(TEMPLATE_PHOTO_REPLACE_CAPABILITY)
+          || photoCreate && (photoCreateEnabled !== true || !capabilities.capabilities.includes(TEMPLATE_PHOTO_CREATE_CAPABILITY))) throw blocked();
         const stages = [];
-        for (const asset of saved.intent.body.photoAppend.assets) {
+        for (const asset of files.assets) {
           const receipt = await photoStaging.stage(id, asset.assetId); guard(initial);
           if (receipt?.assetState !== "ready") throw blocked(); stages.push(receipt);
         }
-        if (!await validateAdminTemplatePhotoStages(saved.intent, stages)) throw blocked(); guard(initial);
+        if (!await (photoCreate ? validateAdminTemplatePhotoCreateStages : validateAdminTemplatePhotoStages)(saved.intent, stages)) throw blocked(); guard(initial);
         if (saved.photoStages && !same(saved.photoStages.map(value => value.receipt), stages.map(value => value.receipt))) throw blocked();
         saved = persist({ ...saved, photoStages: stages }, initial);
       }
@@ -218,8 +239,10 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       // Only the cancellation endpoint may pass this action's unknown stages.
       // Keep this permission outside durable recovery identity: an earlier save
       // registration must still match, and no stage is acknowledged by cancel.
-      const cancellation = saved.cancelRequested && saved.intent.body.photoAppend ? { operationId: id, payloadDigest: saved.payloadDigest,
-        assets: saved.intent.body.photoAppend.assets.map(({ assetId, assetDigest }) => ({ assetId, assetDigest })) } : null;
+      const photoFiles = creation(saved.intent.body) ? saved.intent.body.photoCreate : saved.intent.body.photoAppend;
+      const cancellation = saved.cancelRequested && photoFiles ? { operationId: id, payloadDigest: saved.payloadDigest,
+        assets: photoFiles.assets.map(({ assetId, assetDigest }) => ({ assetId, assetDigest })),
+        ...(creation(saved.intent.body) ? { stageProtocol: "admin-template-photo-create-stage-v2", recordIntentHash: saved.recordIntentHash } : {}) } : null;
       transport.assertWritable(path, "POST", recovery, cancellation);
       saved = persist({ ...saved, dispatched: true }, initial);
       if (!checkTransport(saved)) await transport.beginWrite(path, "POST", null, recovery, cancellation);
@@ -268,7 +291,10 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     async capture({ operationId, kind, body }) {
       writable(); const initial = context();
       // Freeze before the first asynchronous operation or cross-tab lock.
-      const intent = adminTemplateIntent({ ...binding, operationId, kind, body });
+      const intent = parseIntent({ ...binding, operationId, kind, body });
+      const photoCreate = creation(intent.body);
+      const createRecord = photoCreate ? await readAdminTemplatePhotoCreateRecord(photoStore, intent, undefined, () => guard(initial)) : null;
+      guard(initial);
       const replacement = intent.body.photoAppend?.version === 2;
       if (intent.body.photoAppend && (!replacement || photoReplaceEnabled === true && photoAppendEnabled === true)) {
         if (photoAppendEnabled !== true || !photoStore || !same(photoStore.binding, binding)) throw blocked();
@@ -277,7 +303,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
           || !same(record.action.body, intent.body)) throw blocked();
       }
       const saved = { version: 1, intent, payloadDigest: await digest(intent), dispatched: false, cancelRequested: false, receipt: null,
-        ...(intent.body.photoAppend ? { photoStages: null } : {}) };
+        ...(intent.body.photoAppend || photoCreate ? { photoStages: null } : {}), ...(photoCreate ? { recordIntentHash: createRecord.intentHash } : {}) };
       guard(initial);
       return withLock(operationId, async () => {
         guard(initial); const existing = await read(operationId); guard(initial);
@@ -286,6 +312,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         // cancellation, but cannot create a new business intent or storage row.
         if (intent.body.photoEdit && photoEditEnabled !== true) throw blocked();
         if (replacement && (photoReplaceEnabled !== true || photoAppendEnabled !== true)) throw blocked();
+        if (photoCreate && (photoCreateEnabled !== true || photoAppendEnabled !== true)) throw blocked();
         return clone(persist(saved, initial));
       });
     },

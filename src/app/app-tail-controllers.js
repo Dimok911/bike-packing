@@ -16,6 +16,7 @@ import {
 } from "../state/item-photos.js";
 import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "../sync/photo-upload-queue.js";
 import { createPersonalPhotoFormController } from "../ui/personal-photo-form-controller.js";
+import { createAdminTemplatePhotoCreateFormController } from "../ui/admin-template-photo-create-form-controller.js";
 import { createAdminTemplatePhotoFormController } from "../ui/admin-template-photo-form-controller.js";
 import {
   isLayoutNotesCollapsed,
@@ -143,6 +144,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
+    adminTemplatePhotoCreateFormEnabled = () => false, adminTemplatePhotoCreateFormContext, submitAdminTemplatePhotoCreateForm,
     adminTemplatePhotoFormEnabled = () => false, adminTemplatePhotoEditFormEnabled = () => false, adminTemplatePhotoReplaceFormEnabled = () => false,
     adminTemplatePhotoFormContext, submitAdminTemplatePhotoForm, submitAdminTemplatePhotoEditForm,
     prepareCausalAdminCatalogCopy,
@@ -2035,6 +2037,11 @@ function getContainerPickerLayoutOptions() {
   const currentLayout = getPublishedWorkLayout();
   const copyMode = isContainerPickerCopyMode();
   const newItemPlacementMode = isNewItemPlacementPickerMode(runtime.containerPickerMode);
+  if (!copyMode && newItemPlacementMode && !runtime.editingItemId && adminTemplatePhotoCreateFormEnabled()) {
+    const layout = state.layouts[getPublishedEditLayoutId()], source = layout?.adminCausalSource;
+    return source?.exists && source.visibility === "private" && !source.deleted && !source.planId && !layout.templateDraftSyncPending
+      && !layout.adminCausalCopyPlan ? [layout] : [];
+  }
   if (!copyMode && !newItemPlacementMode) {
     return currentLayout ? [currentLayout] : [];
   }
@@ -4356,6 +4363,9 @@ function togglePacked(itemId) {
   state.packedItems = state.packedItems || {};
   if (state.packedItems[itemId]) delete state.packedItems[itemId];
   else state.packedItems[itemId] = true;
+  if (adminTemplatePhotoCreateFormEnabled() && state.layouts[state.activeLayoutId]?.adminCausalSource?.photoOwnerMap) {
+    state.layouts[state.activeLayoutId].arrangement.packedItems = clone(state.packedItems);
+  }
   touchItem(itemId, changedAt);
   saveState();
   render();
@@ -4376,6 +4386,9 @@ function unpackAllItems() {
       const changedAt = nowIso();
       Object.keys(state.packedItems || {}).forEach((itemId) => touchItem(itemId, changedAt));
       state.packedItems = {};
+      if (adminTemplatePhotoCreateFormEnabled() && state.layouts[state.activeLayoutId]?.adminCausalSource?.photoOwnerMap) {
+        state.layouts[state.activeLayoutId].arrangement.packedItems = {};
+      }
       state.showOnlyUnpacked = false;
       saveState();
       render();
@@ -6082,6 +6095,7 @@ function newEntityFormDraftStorageKey(kind) {
 }
 
 function loadNewEntityFormDraft(kind) {
+  if (adminTemplatePhotoCreateFormEnabled()) return null;
   const key = newEntityFormDraftStorageKey(kind);
   try {
     const raw = localStorage.getItem(key);
@@ -6102,6 +6116,7 @@ function clearNewEntityFormDraftTimer(kind) {
 }
 
 function clearStoredNewEntityFormDraft(kind) {
+  if (adminTemplatePhotoCreateFormEnabled() || adminTemplatePhotoCreateForms.owns(kind)) return;
   clearNewEntityFormDraftTimer(kind);
   try {
     localStorage.removeItem(newEntityFormDraftStorageKey(kind));
@@ -6194,6 +6209,7 @@ function newRootContainerFormDraftFields() {
 }
 
 function persistNewItemFormDraft() {
+  if (adminTemplatePhotoCreateFormEnabled() || adminTemplatePhotoCreateForms.owns("item")) return { meaningful: false, saved: false };
   clearNewEntityFormDraftTimer("item");
   if (!refs.dialog?.open || runtime.editingItemId || refs.saveItemBtn?.hidden) {
     return { meaningful: false, saved: false };
@@ -6225,6 +6241,7 @@ function persistNewItemFormDraft() {
 }
 
 function persistNewRootContainerFormDraft() {
+  if (adminTemplatePhotoCreateFormEnabled() || adminTemplatePhotoCreateForms.owns("container")) return { meaningful: false, saved: false };
   clearNewEntityFormDraftTimer("container");
   if (!refs.rootContainerDialog?.open || runtime.editingRootContainerId || refs.saveRootContainerBtn?.hidden) {
     return { meaningful: false, saved: false };
@@ -8504,6 +8521,66 @@ function openedFormPhotoStatus(photos) {
   return photoDialogStatusText(list);
 }
 
+const adminTemplatePhotoFormCallbacks = {
+  createPhoto: createItemPhotoFromFile,
+  cachePhoto: (record, scopeKey) => putCachedPhoto(record, scopeKey, { binary: true }),
+  onDurable(record, { type, view }) {
+    if (type === "item") itemFormDraftSaving = true; else rootContainerFormDraftSaving = true;
+    const settled = closeDialogWithoutRestoringFocus(view.dialog);
+    Promise.resolve(settled).finally(() => {
+      if (type === "item") itemFormDraftSaving = false; else rootContainerFormDraftSaving = false;
+    });
+    render();
+  },
+  onError(error, { type }) {
+    const message = error.message || localText("Could not save the template photos. The form has been retained.", "Не удалось сохранить фото шаблона. Форма сохранена.");
+    if (type === "item") setItemDialogPhotoStatus(message); else setRootContainerDialogPhotoStatus(message);
+    showToast(message, "error");
+  },
+  onBusy(type, active) {
+    const button = type === "item" ? refs.saveItemBtn : refs.saveRootContainerBtn;
+    if (active && button) { button.disabled = true; button.textContent = localText("Saving…", "Сохраняю…"); }
+    else if (type === "item") updateItemDialogSaveState(); else updateRootContainerDialogSaveState();
+  }
+};
+const adminTemplatePhotoCreateForms = createAdminTemplatePhotoCreateFormController({
+  isEnabled: adminTemplatePhotoCreateFormEnabled,
+  getContext: adminTemplatePhotoCreateFormContext,
+  getView(type) {
+    const item = type === "item";
+    return { entityId: item ? runtime.editingItemId : runtime.editingRootContainerId, layoutId: getPublishedEditLayoutId(),
+      token: item ? runtime.itemDialogInitialSnapshot : runtime.rootContainerDialogInitialSnapshot,
+      dialog: item ? refs.dialog : refs.rootContainerDialog, saveButton: item ? refs.saveItemBtn : refs.saveRootContainerBtn,
+      signature: JSON.stringify({ fields: item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot(),
+        targetLayoutId: item ? runtime.itemDialogTargetLayoutId : rootContainerPlacementTargetLayoutId,
+        placeNewRootInCurrentLayout, pendingCopyTargetContainerSetup: Boolean(pendingCopyTargetContainerSetup),
+        pendingParentId: runtime.rootContainerDialogPendingParentId, pendingParentIndex: runtime.rootContainerDialogPendingParentIndex,
+        pendingRootIds: runtime.rootContainerDialogPendingRootIds,
+        catalogSource: item ? runtime.sharedDialogCopyItemId : [rootContainerCatalogSelection, rootContainerManufacturerPhotoSource] }),
+      draft: item ? runtime.itemDialogPhotoDraft : runtime.rootContainerDialogPhotoDraft };
+  },
+  readForm(type) {
+    const item = type === "item", snapshot = item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot();
+    const categories = item ? getDialogSelectedCategories() : getRootContainerDialogSelectedCategories();
+    const dimensions = item ? readItemDialogDimensions() : readRootContainerDialogDimensions();
+    const layoutId = getPublishedEditLayoutId();
+    const placement = item ? snapshot.containerId ? { layoutId: runtime.itemDialogTargetLayoutId || layoutId,
+      containerId: snapshot.containerId, quantity: snapshot.quantity } : null
+      : placeNewRootInCurrentLayout ? { layoutId: rootContainerPlacementTargetLayoutId || layoutId } : null;
+    return { created: !(item ? runtime.editingItemId : runtime.editingRootContainerId),
+      fields: { name: snapshot.name, weight: snapshot.weight, color: snapshot.color, location: snapshot.location,
+        category: categories[0] || "", categories, note: snapshot.note, dimensions: hasContainerDimensions(dimensions) ? dimensions : null,
+        ...(item ? { ...currentEditMeta(), quantity: 1 } : { ...currentCreateMeta(), volume: snapshot.volume, nestable: snapshot.nestable }) },
+      localFormContext: { version: 1, ...(item ? { availabilityStatus: snapshot.availabilityStatus } : {}), placement },
+      catalogSource: item ? Boolean(runtime.sharedDialogCopyItemId) : Boolean(rootContainerCatalogSelection || rootContainerManufacturerPhotoSource),
+      unsupportedPlacement: Boolean(pendingCopyTargetContainerSetup || placement && placement.layoutId !== layoutId
+        || !item && (runtime.rootContainerDialogPendingParentId != null || runtime.rootContainerDialogPendingParentIndex != null
+          || runtime.rootContainerDialogPendingRootIds != null)) };
+  },
+  submit: submitAdminTemplatePhotoCreateForm,
+  ...adminTemplatePhotoFormCallbacks
+});
+
 const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
   isEnabled: adminTemplatePhotoFormEnabled,
   isEditEnabled: adminTemplatePhotoEditFormEnabled,
@@ -8536,38 +8613,21 @@ const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
   },
   submit: submitAdminTemplatePhotoForm,
   submitEdit: submitAdminTemplatePhotoEditForm,
-  createPhoto: createItemPhotoFromFile,
-  cachePhoto: (record, scopeKey) => putCachedPhoto(record, scopeKey, { binary: true }),
-  onDurable(record, { type, view }) {
-    if (type === "item") itemFormDraftSaving = true; else rootContainerFormDraftSaving = true;
-    const settled = closeDialogWithoutRestoringFocus(view.dialog);
-    Promise.resolve(settled).finally(() => {
-      if (type === "item") itemFormDraftSaving = false; else rootContainerFormDraftSaving = false;
-    });
-    render();
-  },
-  onError(error, { type }) {
-    const message = error.message || localText("Could not save the template photos. The form has been retained.", "Не удалось сохранить фото шаблона. Форма сохранена.");
-    if (type === "item") setItemDialogPhotoStatus(message); else setRootContainerDialogPhotoStatus(message);
-    showToast(message, "error");
-  },
-  onBusy(type, active) {
-    const button = type === "item" ? refs.saveItemBtn : refs.saveRootContainerBtn;
-    if (active && button) { button.disabled = true; button.textContent = localText("Saving…", "Сохраняю…"); }
-    else if (type === "item") updateItemDialogSaveState(); else updateRootContainerDialogSaveState();
-  }
+  ...adminTemplatePhotoFormCallbacks
 });
 
 async function prepareOpenedFormPhotos(type, files) {
+  const created = await adminTemplatePhotoCreateForms.preparePhotos(type, files);
+  if (created !== null) return created;
   const administrative = await adminTemplatePhotoForms.preparePhotos(type, files);
   return administrative === null ? personalPhotoForms.preparePhotos(type, files) : administrative;
 }
 function adminTemplateAnyPhotoFormEnabled() {
-  return adminTemplatePhotoFormEnabled() || adminTemplatePhotoEditFormEnabled();
+  return adminTemplatePhotoFormEnabled() || adminTemplatePhotoEditFormEnabled() || adminTemplatePhotoCreateFormEnabled();
 }
 
 function openedPhotoFormInputGuard(type) {
-  return adminTemplatePhotoForms.inputGuard(type) || personalPhotoForms.inputGuard(type);
+  return adminTemplatePhotoCreateForms.inputGuard(type) || adminTemplatePhotoForms.inputGuard(type) || personalPhotoForms.inputGuard(type);
 }
 
 const personalPhotoForms = createPersonalPhotoFormController({
@@ -8718,7 +8778,7 @@ async function removeItemDialogPhoto() {
   const source = runtime.editingItemId ? state.items[runtime.editingItemId] : { photos: [] };
   const draft = runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
   if (!draft.photos.length) return;
-  const isCurrent = adminTemplatePhotoForms.mutationGuard("item"), selectedIndex = runtime.itemDialogPhotoActiveIndex;
+  const isCurrent = (adminTemplatePhotoCreateForms.mutationGuard("item") || adminTemplatePhotoForms.mutationGuard("item")), selectedIndex = runtime.itemDialogPhotoActiveIndex;
   const confirmed = await confirmDialogPhotoDelete("item");
   if (!confirmed || isCurrent && (!isCurrent() || runtime.itemDialogPhotoActiveIndex !== selectedIndex)) return;
   const result = removePhotoFromDraft(draft, selectedIndex, source);
@@ -8908,7 +8968,7 @@ function openPhotoOrderDialog(kind = "item") {
     if (id && src) previewSources.set(id, src);
   });
   photoOrderContext = { kind, photos: [...draft.photos], activeId: photoOrderIdentity(draft.photos[activeIndex]), previewSources,
-    isCurrent: adminTemplatePhotoForms.mutationGuard(kind) };
+    isCurrent: adminTemplatePhotoCreateForms.mutationGuard(kind) || adminTemplatePhotoForms.mutationGuard(kind) };
   photoOrderInitialSignature = photoOrderSignature(photoOrderContext.photos);
   refs.photoOrderTitle.textContent = isEnglishUi() ? "Photo order" : "Порядок фото";
   refs.photoOrderHint.textContent = isEnglishUi()
@@ -9162,7 +9222,7 @@ async function removeRootContainerDialogPhoto() {
   const source = runtime.editingRootContainerId ? state.containers[runtime.editingRootContainerId] : { photos: [] };
   const draft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
   if (!draft.photos.length) return;
-  const isCurrent = adminTemplatePhotoForms.mutationGuard("container"), selectedIndex = runtime.rootContainerDialogPhotoActiveIndex;
+  const isCurrent = (adminTemplatePhotoCreateForms.mutationGuard("container") || adminTemplatePhotoForms.mutationGuard("container")), selectedIndex = runtime.rootContainerDialogPhotoActiveIndex;
   const confirmed = await confirmDialogPhotoDelete("container");
   if (!confirmed || isCurrent && (!isCurrent() || runtime.rootContainerDialogPhotoActiveIndex !== selectedIndex)) return;
   const result = removePhotoFromDraft(draft, selectedIndex, source);
@@ -9198,7 +9258,7 @@ function confirmDialogPhotoDelete(kind = "item") {
 }
 
 async function uploadItemDialogDraftPhotos(photos = []) {
-  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item")) return false;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item") || adminTemplatePhotoCreateForms.owns("item")) return false;
   const draft = runtime.itemDialogPhotoDraft;
   const existingItem = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
   const item = existingItem || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
@@ -9230,7 +9290,7 @@ async function uploadItemDialogDraftPhotos(photos = []) {
 }
 
 async function uploadRootContainerDialogDraftPhotos(photos = []) {
-  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container")) return false;
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container") || adminTemplatePhotoCreateForms.owns("container")) return false;
   const draft = runtime.rootContainerDialogPhotoDraft;
   const existingContainer = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
   const container = existingContainer || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
@@ -9560,7 +9620,7 @@ function updateItemDialogSaveState() {
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.itemDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.itemDialogInitialSnapshot);
   updateModalSaveButton(refs.saveItemBtn, { hasName, changed });
-  if (adminTemplatePhotoForms.busy("item") || personalPhotoForms.busy("item")) refs.saveItemBtn.disabled = true;
+  if (adminTemplatePhotoCreateForms.busy("item") || adminTemplatePhotoForms.busy("item") || personalPhotoForms.busy("item")) refs.saveItemBtn.disabled = true;
   scheduleNewItemFormDraftSave();
 }
 
@@ -9576,7 +9636,7 @@ function updateRootContainerDialogSaveState() {
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.rootContainerDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.rootContainerDialogInitialSnapshot);
   updateModalSaveButton(refs.saveRootContainerBtn, { hasName, changed });
-  if (adminTemplatePhotoForms.busy("container") || personalPhotoForms.busy("container")) refs.saveRootContainerBtn.disabled = true;
+  if (adminTemplatePhotoCreateForms.busy("container") || adminTemplatePhotoForms.busy("container") || personalPhotoForms.busy("container")) refs.saveRootContainerBtn.disabled = true;
   scheduleNewRootContainerFormDraftSave();
 }
 
@@ -9747,6 +9807,7 @@ function shareEditingContainerByLink() {
 
 function saveRootContainerDialog(event) {
   event?.preventDefault();
+  if (adminTemplatePhotoCreateForms.save("container")) return;
   if (adminTemplatePhotoForms.save("container")) return;
   if (personalPhotoForms.save("container")) return;
   if (warnLockedRootContainerDialogPlacementChange()) return;
@@ -9830,6 +9891,7 @@ function saveRootContainerDialog(event) {
 
 function saveDialogItem(event) {
   event?.preventDefault();
+  if (adminTemplatePhotoCreateForms.save("item")) return;
   if (adminTemplatePhotoForms.save("item")) return;
   if (personalPhotoForms.save("item")) return;
   if (warnLockedItemDialogPlacementChange()) return;
@@ -9899,7 +9961,7 @@ function saveDialogItem(event) {
 
 function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {
   if (!runtime.itemDialogPhotoDraft || !photoDraftChanged(runtime.itemDialogPhotoDraft, item)) return;
-  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item")) throw Error("Сохраните фотографии через исходную административную форму.");
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("item") || adminTemplatePhotoCreateForms.owns("item")) throw Error("Сохраните фотографии через исходную административную форму.");
   item.photos = [...runtime.itemDialogPhotoDraft.photos];
   runtime.itemDialogPhotoDraft.deletedPhotos.forEach((photo) => {
     if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
@@ -9910,7 +9972,7 @@ function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {
 
 function applyRootContainerDialogPhotoDraft(container, changedAt = nowIso()) {
   if (!runtime.rootContainerDialogPhotoDraft || !photoDraftChanged(runtime.rootContainerDialogPhotoDraft, container)) return;
-  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container")) throw Error("Сохраните фотографии через исходную административную форму.");
+  if (adminTemplateAnyPhotoFormEnabled() || adminTemplatePhotoForms.owns("container") || adminTemplatePhotoCreateForms.owns("container")) throw Error("Сохраните фотографии через исходную административную форму.");
   container.photos = [...runtime.rootContainerDialogPhotoDraft.photos];
   runtime.rootContainerDialogPhotoDraft.deletedPhotos.forEach((photo) => {
     if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);

@@ -6,6 +6,7 @@ import { adminTemplateSavePlan } from "../../src/sync/admin-template-save-plan.j
 import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 import { adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED } from "../../src/sync/admin-template-photo-create-protocol.js";
 import { stripAdminTemplateEditorMetadata, createAdminTemplateSaveFlow } from "../../src/public/admin-template-causal-save-flow.js";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { personalPendingPublicUpdateSource, personalPublicPhotoResultReference } from "../../src/sync/personal-pending-public-update.js";
@@ -56,11 +57,11 @@ async function harness() {
     admin: view.scope === "admin", generation: canonicalTemplateJson([view.generation, state.activeLayoutId]) });
   const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   const actualApply = new Function("state", "applyLayoutArrangementToState", "normalizeLayoutArrangement",
-    "migrateContainerOrder", "repairContainerMembershipFromItemLinks",
+    "migrateContainerOrder", "repairContainerMembershipFromItemLinks", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED",
     `let applyingLayoutArrangement = false;\n${app.match(/function applyLayoutArrangement\([^]*?\n\}/)[0]}\nreturn applyLayoutArrangement;`)(
-    state, applyLayoutArrangementToState, normalizeLayoutArrangement, migrateContainerOrder, repairContainerMembershipFromItemLinks);
+    state, applyLayoutArrangementToState, normalizeLayoutArrangement, migrateContainerOrder, repairContainerMembershipFromItemLinks, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED);
   let returningFrom;
-  const deps = { PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED: true, canOpenAdminPublishedEdit: () => controls.enabled,
+  const deps = { PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED: true, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, canOpenAdminPublishedEdit: () => controls.enabled,
     state, clone: structuredClone, canonicalTemplateJson, personalSaveContext, personalBusinessPayload,
     serializeState: () => structuredClone(controls.privatePayload), personalPhotoRecoverySource: source,
     currentUser, localStorageScopeKey: f.binding.scopeKey, currentPackingListId: f.binding.listId,
@@ -90,7 +91,7 @@ async function harness() {
     createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true,
     adminTemplateRecoveryFor: () => ({ resumeStop: async () => null }),
     adminTemplateStopChoiceFor: () => ({ resume: async () => null }), administrativeSaveCoordinator: null };
-  const helpers = ["restoreAdminPublishedLayoutContext", "applyAdminTemplateConfirmedPhotoResult", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
+  const helpers = ["restoreAdminPublishedLayoutContext", "applyAdminTemplateConfirmedPhotoResult", "persistAdminTemplateCoordinatorState", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
     .map(name => app.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0]).join("\n");
   const actual = new Function(...Object.keys(deps), `${helpers}\nreturn { run: resumePersonalCopyAdminSource, coordinator: adminTemplateSaveCoordinator };`)(...Object.values(deps));
   return { run: () => actual.run(source), coordinator: actual.coordinator, source, state, currentUser, view, controls, calls, f, plan,

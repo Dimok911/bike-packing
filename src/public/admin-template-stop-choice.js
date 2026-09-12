@@ -47,6 +47,7 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
   };
   const localUnavailableReason = async opened => {
     const saved = await plans.read(priorPlanId); unchanged(opened);
+    if (saved?.plan.version === 7) return "Новая запись и её файлы остаются сохранёнными для сверки. Откройте серверный вариант перед новым выбором; остановленный пакет автоматически не переносится.";
     return saved?.plan.version === 6
       ? "После остановки удаления или перестановки фото местный вариант остаётся сохранённым для сверки. Сейчас можно открыть серверный вариант и повторно выбрать изменения в его форме."
       : null;

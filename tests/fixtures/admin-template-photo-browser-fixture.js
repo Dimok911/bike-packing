@@ -5,6 +5,9 @@ import path from "node:path";
 import { adminTemplateIntent, canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
 import { adminTemplatePhotoStageManifest, adminTemplatePhotoStageDigest,
   validateAdminTemplatePhotoAppendResult, validateAdminTemplatePhotoStageReceipt } from "../../src/sync/admin-template-photo-append-protocol.js";
+import { adminTemplatePhotoCreateIntent, adminTemplatePhotoCreateStageManifest, adminTemplatePhotoCreateStageDigest,
+  validateAdminTemplatePhotoCreateStageReceipt, validateAdminTemplatePhotoCreateResult } from "../../src/sync/admin-template-photo-create-protocol.js";
+import { createPhotoBrowserOwner, placePhotoBrowserOwner } from "./admin-template-photo-create-browser-fixture.js";
 import { validateAdminTemplatePhotoEditResult } from "../../src/sync/admin-template-photo-edit-protocol.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
@@ -23,8 +26,9 @@ const personal = () => ({ locations: ["Велосипед"], categories: ["Ре�
   activeLayoutId: "personal", packedItems: {} });
 
 export async function adminPhotoBrowserFixture(page, context, { shared = false, oldPhotos = true, exactSourceArrangement = false,
-  photoEdit = false, photoReplace = false, replaceOff = false, release = false } = {}) {
-  const bundle = release ? path.resolve("www/vniipo-help.ru/bike-packing")
+  photoEdit = false, photoReplace = false, replaceOff = false, photoCreate = false, createOff = false, empty = false, release = false } = {}) {
+  const bundle = photoCreate ? path.resolve(`test-results/admin-template-photo-create${createOff ? "-off" : ""}-ui-build`)
+    : release ? path.resolve("www/vniipo-help.ru/bike-packing")
     : photoReplace ? path.resolve(`test-results/admin-template-photo-replace${replaceOff ? "-off" : ""}-ui-build`)
     : photoEdit ? path.resolve("test-results/admin-template-photo-edit-ui-build") : adminPhotoBundle;
   const webkit = context.browser()?.browserType().name() === "webkit";
@@ -64,6 +68,11 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
     const id = "layout-7734f0ea-03d8-4e6b-a8e1-41f45dbf9e55";
     payload.layouts = { [id]: { ...payload.layouts.original, id } }; payload.activeLayoutId = id;
   }
+  if (empty) {
+    payload.items = {}; payload.containers = {}; payload.layouts.original.rootContainerIds = [];
+    payload.layouts.original.arrangement = { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {} };
+    payload.packedItems = {};
+  }
   const server = { binding, payload, initialPayload: clone(payload), metadata: { title: "Фото шаблона", description: "", language: "ru" },
     revision: 7, visibility: "private", ownerId: "different-database-owner", privatePayload: personal(),
     posts: [], stagePosts: [], preparePosts: [], operationGets: [], stageGets: [], receipts: new Map(), stages: new Map(), errors: [],
@@ -71,6 +80,7 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
     capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1", "adminTemplatePhotoEditV1"] };
   server.release = release; server.photoReads = [];
   if (photoReplace) server.capabilities.push("adminTemplatePhotoReplaceV1");
+  if (photoCreate) server.capabilities.push("adminTemplatePhotoCreateV1");
   if (release) server.capabilities.push("personalListCausalOperationsV1", "personalListOperationCancellationV1", "personalListInitialMigrationV1",
     "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalCausalPhotoPublicationV1", "personalCausalPhotoOwnerStateV1",
     "personalCausalPhotoFormV1", "personalCausalPhotoItemFormContextV1", "personalCausalPhotoContainerFormContextV1");
@@ -127,7 +137,10 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
             visibility: server.visibility, metadata: server.metadata, payload: server.payload, indexes: [] };
         } else if (suffix === "/bike-packing/admin/template-photo-assets" && request.method() === "POST") {
           const multipart = await new Response(request.postDataBuffer(), { headers: { "content-type": request.headers()["content-type"] } }).formData();
-          const rawManifest = multipart.get("manifest"), manifest = adminTemplatePhotoStageManifest(JSON.parse(rawManifest)), assetDigest = await adminTemplatePhotoStageDigest(manifest);
+          const rawManifest = multipart.get("manifest"), parsedManifest = JSON.parse(rawManifest), creating = parsedManifest.version === 2;
+          if (creating) expect(photoCreate).toBe(true);
+          const manifest = creating ? adminTemplatePhotoCreateStageManifest(parsedManifest) : adminTemplatePhotoStageManifest(parsedManifest);
+          const assetDigest = await (creating ? adminTemplatePhotoCreateStageDigest(manifest) : adminTemplatePhotoStageDigest(manifest));
           const file = multipart.get("file"), thumb = multipart.get("thumb");
           let bytes = Buffer.from(await file.arrayBuffer()), thumbBytes = thumb ? Buffer.from(await thumb.arrayBuffer()) : null;
           let byteEvidence = "intercepted-multipart";
@@ -155,13 +168,15 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
           expect(Object.fromEntries(Object.keys(binding).map(key => [key, manifest[key]]))).toEqual(binding);
           expect(manifest.baseStateRevision).toBe(server.revision); expect(manifest.file).toEqual({ hash: hash(bytes), size: bytes.length, type: file.type, fileName: file.name });
           expect(manifest.thumb).toEqual(thumb ? { hash: hash(thumbBytes), size: thumbBytes.length, type: thumb.type } : null);
-          expect(server.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId]?.id).toBe(manifest.entityId);
+          if (creating) for (const kind of ["layouts", "items", "containers"]) expect(server.payload[kind][manifest.entityId]).toBeUndefined();
+          else expect(server.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId]?.id).toBe(manifest.entityId);
           // Stage stores bytes only; its response does not advance the template or attach any photo.
-          const receipt = { ok: true, assetState: "ready", receipt: { version: 1, manifest, assetDigest,
-            ownerId: server.ownerId, baseEntityRevision: 3,
+          const receipt = { ok: true, assetState: "ready", receipt: { version: creating ? 2 : 1, manifest, assetDigest,
+            ownerId: server.ownerId, baseEntityRevision: creating ? 0 : 3,
             stored: { file: { ...manifest.file, width: 1, height: 1 }, thumb: manifest.thumb || {
               hash: manifest.file.hash, size: manifest.file.size, type: manifest.file.type } } } };
-          expect(await validateAdminTemplatePhotoStageReceipt(receipt, { manifest, assetDigest })).toBe(true);
+          expect(await (creating ? validateAdminTemplatePhotoCreateStageReceipt(receipt, { manifest, assetDigest })
+            : validateAdminTemplatePhotoStageReceipt(receipt, { manifest, assetDigest }))).toBe(true);
           server.stagePosts.push({ manifest: clone(manifest), assetDigest, bytes, thumbBytes, contentType: file.type, fileName: file.name, byteEvidence });
           expect(server.stages.has(manifest.operationId)).toBe(false);
           server.stages.set(manifest.operationId, clone(receipt));
@@ -173,7 +188,7 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
           if (server.stageHidden) return route.abort("failed");
           data = server.stages.get(id) || { ok: true, operation: { id, environment: binding.environment, actorId: binding.actorId, state: "unknown" } };
         } else if (suffix === "/bike-packing/admin/template-operations" && request.method() === "POST") {
-          const input = request.postDataJSON(), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input }), { id, ...identityWithBody } = intent;
+          const input = request.postDataJSON(), intent = (input.body.photoCreate ? adminTemplatePhotoCreateIntent : adminTemplateIntent)({ actorId: input.expectedActorId, ...input }), { id, ...identityWithBody } = intent;
           expect(input.kind).toBe("template.save");
           const previous = server.posts.find(row => row.operationId === input.operationId);
           if (previous) expect(input).toEqual(previous);
@@ -187,9 +202,14 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
               return route.fulfill({ headers, json: receipt });
             }
             expect(photoReferences(input.body.payload)).toEqual(photoReferences(server.payload));
-            const assets = input.body.photoAppend?.assets || [], stages = assets.map(asset => server.stages.get(asset.assetId));
+            const assets = input.body.photoCreate?.assets || input.body.photoAppend?.assets || [], stages = assets.map(asset => server.stages.get(asset.assetId));
             expect(stages.every(Boolean)).toBe(true);
-            const confirmedPayload = clone(input.body.payload), added = assets.map((asset, index) => {
+            const confirmedPayload = clone(input.body.payload);
+            if (input.body.photoCreate) {
+              expect(photoCreate).toBe(true); expect(input.body.payload).toEqual(server.payload);
+              createPhotoBrowserOwner(confirmedPayload, input.body.photoCreate);
+            }
+            const added = assets.map((asset, index) => {
               const manifest = stages[index].receipt.manifest, file = stages[index].receipt.stored.file;
               expect(manifest.templateOperationId).toBe(input.operationId);
               const photo = { id: asset.photoId, photoId: asset.photoId, assetId: asset.assetId, listId: binding.listId, status: "synced",
@@ -212,9 +232,16 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
               owner.photos = finalIds.map(id => clone(byId.get(id)));
               replacement = { photoIds: clone(finalIds), removedPhotoIds: original.map(photo => photo.id ?? photo.photoId).filter(id => !finalIds.includes(id)) };
             }
-            const photoAppend = assets.length ? { version: replacement ? 2 : 1, ownerId: server.ownerId, added,
+            const photoAppend = input.body.photoAppend && assets.length ? { version: replacement ? 2 : 1, ownerId: server.ownerId, added,
               ...(replacement || {}), confirmedPayload, confirmedPayloadDigest: digest(confirmedPayload) } : null;
             if (photoAppend) expect(await validateAdminTemplatePhotoAppendResult(photoAppend, { intent, stageReceipts: stages })).toBe(true);
+            let createdPhoto;
+            if (input.body.photoCreate) {
+              placePhotoBrowserOwner(confirmedPayload, input.body.photoCreate);
+              createdPhoto = { version: 1, ownerId: server.ownerId, entityType: input.body.photoCreate.entityType, entityId: input.body.photoCreate.entityId,
+                added, confirmedPayload, confirmedPayloadDigest: digest(confirmedPayload) };
+              expect(await validateAdminTemplatePhotoCreateResult(createdPhoto, { intent, stageReceipts: stages })).toBe(true);
+            }
             let editedPhotos;
             if (input.body.photoEdit) {
               expect(assets).toEqual([]);
@@ -232,7 +259,7 @@ export async function adminPhotoBrowserFixture(page, context, { shared = false, 
             const { body, ...identity } = identityWithBody;
             server.receipts.set(id, { ok: true, operation: { id, ...identity, payloadDigest: digest(identityWithBody), state: "committed" },
               result: { status: 200, payload: { ok: true, listId: binding.listId, itemKey: binding.itemKey, stateRevision: server.revision,
-                visibility: "private", indexes: [], ...(photoAppend ? { photoAppend } : {}), ...(editedPhotos ? { photoEdit: editedPhotos } : {}) } } });
+                visibility: "private", indexes: [], ...(photoAppend ? { photoAppend } : {}), ...(editedPhotos ? { photoEdit: editedPhotos } : {}), ...(createdPhoto ? { photoCreate: createdPhoto } : {}) } } });
           }
           if (input.body.photoEdit && server.editAckHold) await server.editAckHold;
           if (server.lostSaveAck) { if (server.hideSaveAfterCommit) server.saveHidden = true; return route.abort("failed"); }

@@ -303,9 +303,11 @@ export function createExperimentTransport({
       && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
     const uuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
     const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+    const createPhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
+      && cancellation.stageProtocol === "admin-template-photo-create-stage-v2" && hash(cancellation.recordIntentHash);
     const adminPhotoCancellation = admin && recovery.kind === "template.save"
       && path === `/bike-packing/admin/template-operations/${recovery.operationId}/cancel`
-      && exact(cancellation, ["operationId", "payloadDigest", "assets"])
+      && (exact(cancellation, ["operationId", "payloadDigest", "assets"]) || createPhotoCancellation)
       && cancellation.operationId === recovery.operationId && cancellation.payloadDigest === recovery.payloadDigest
       && Array.isArray(cancellation.assets) && cancellation.assets.length > 0 && cancellation.assets.length <= 50
       && Object.keys(cancellation.assets).length === cancellation.assets.length
@@ -315,7 +317,9 @@ export function createExperimentTransport({
     const ownCancelledAdminStage = entry => adminPhotoCancellation && entry.mode === mode && entry.method === "POST"
       && entry.path === "/bike-packing/admin/template-photo-assets"
       && exact(entry.recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "actionOperationId", "assetDigest", "intentHash"])
-      && entry.recovery.type === "admin-template-photo-stage" && entry.recovery.protocol === "admin-template-photo-stage-v1"
+      && entry.recovery.type === "admin-template-photo-stage"
+      && entry.recovery.protocol === (createPhotoCancellation ? cancellation.stageProtocol : "admin-template-photo-stage-v1")
+      && (!createPhotoCancellation || entry.recovery.intentHash === cancellation.recordIntentHash)
       && ["environment", "actorId", "listId", "itemKey"].every(key => entry.recovery[key] === recovery[key])
       && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id && hash(entry.recovery.intentHash)
       && cancellation.assets.some(asset => asset.assetId === entry.id && asset.assetDigest === entry.recovery.assetDigest);

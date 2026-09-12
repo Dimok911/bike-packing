@@ -3,6 +3,9 @@ import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admi
 import { adminTemplatePhotoSavePlan } from "./admin-template-photo-save-plan.js";
 import { adminTemplatePhotoEditSavePlan } from "./admin-template-photo-edit-save-plan.js";
 export { adminTemplatePhotoEditSavePlan } from "./admin-template-photo-edit-save-plan.js";
+import { adminTemplatePhotoCreateSavePlan, assertAdminTemplatePhotoCreatePlanRecord } from "./admin-template-photo-create-save-plan.js";
+import { ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED } from "./admin-template-photo-create-protocol.js";
+export { adminTemplatePhotoCreateSavePlan } from "./admin-template-photo-create-save-plan.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -65,6 +68,12 @@ export function adminTemplateSourceSavePlan({ binding, operationId, body, source
 }
 
 function validatePlan(plan) {
+  if (plan?.version === 7) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot", "recordIntentHash"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoCreateSavePlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0].body, editorSnapshot: plan.editorSnapshot, recordIntentHash: plan.recordIntentHash }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 6) {
     if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot", "photoSnapshot"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoEditSavePlan({ binding: plan.binding, operationId: plan.id,
@@ -167,7 +176,8 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
 }
 
 export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, getExcludedPlans = null, storage = globalThis.localStorage,
-  locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
+  locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
+  photoCreateEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore = null }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
   const key = id => { if (!validTemplateOperationId(id)) throw paused(); return prefix + id; };
@@ -184,11 +194,16 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     if (storage.getItem(key(saved.plan.id)) !== encoded) throw paused(); guard(initial); return saved;
   };
   const read = async id => {
+    const initial = context();
     const raw = storage.getItem(key(id)); if (raw === null) return null;
     const saved = JSON.parse(raw);
     if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || typeof saved.cancelRequested !== "boolean"
       || saved.plan.id !== id || !same(saved.plan.binding, binding) || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
     if ([3, 4].includes(saved.plan.version) && await adminTemplateCopyPayloadDigest(saved.plan.sourceSnapshot) !== saved.plan.operations[0].body.source.payloadDigest) throw paused();
+    if (saved.plan.version === 7) {
+      guard(initial);
+      await assertAdminTemplatePhotoCreatePlanRecord(saved.plan, photoStore, () => guard(initial)); guard(initial);
+    }
     return saved;
   };
   const execute = async (id, cancel) => {
@@ -206,8 +221,14 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           ordered = [...saved.plan.operations].reverse(); receipts.length = 0; index = 0;
         }
         const intent = ordered[index];
+        if (saved.plan.version === 7 && photoCreateEnabled !== true && !saved.cancelRequested) {
+          const known = await client.read(intent.id); guard(initial);
+          if (!known || !same(known.intent, intent) || !["committed", "rejected"].includes(known.receipt?.operation.state)) throw paused();
+        }
         guard(initial); await client.capture({ operationId: intent.id, kind: intent.kind, body: intent.body }); guard(initial);
+        if (saved.plan.version === 7) { await assertAdminTemplatePhotoCreatePlanRecord(saved.plan, photoStore, () => guard(initial)); guard(initial); }
         const receipt = await client[saved.cancelRequested ? "cancel" : "run"](intent.id); guard(initial); receipts.push(receipt);
+        if (saved.plan.version === 7) { await assertAdminTemplatePhotoCreatePlanRecord(saved.plan, photoStore, () => guard(initial)); guard(initial); }
         if (!saved.cancelRequested && receipt.operation.state !== "committed") return { state: receipt.operation.state, receipts };
         if (receipt.operation.state === "waiting") return { state: "waiting", receipts };
       }
@@ -219,11 +240,15 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   const capturePlan = async (input, makePlan) => {
       if (enabled !== true) throw paused(); const initial = context();
       const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
+      if (plan.version === 7) {
+        await assertAdminTemplatePhotoCreatePlanRecord(plan, photoStore, () => guard(initial)); guard(initial);
+      }
       if ([3, 4].includes(plan.version) && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; guard(initial);
       const capture = () => lock(plan.id, async () => {
         const existing = await read(plan.id); guard(initial);
         if (existing) { if (!same(existing.plan, plan)) throw paused(); return clone(existing); }
+        if (plan.version === 7 && photoCreateEnabled !== true) throw paused();
         // Only the caller's validated adopted-stop resolution may exclude a
         // retained action. A cancellation marker alone proves no adoption.
         const excluded = getExcludedPlans ? await getExcludedPlans() : []; guard(initial);
@@ -241,9 +266,10 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           const other = await read(id); guard(initial);
           if (!other) continue;
           if (!excluded.includes(id) && plan.version === 6 && same(other.plan.operations[0].body.base, base)) throw paused();
+          if (!excluded.includes(id) && (plan.version === 7 || other.plan.version === 7) && same(other.plan.operations[0].body.base, base)) throw paused();
           // A generic successor cannot bypass an unsettled photo selection by
           // pointing at its UUID. A reconciled editor uses its numeric receipt.
-          if (other.plan.version === 6 && base?.operationId === other.plan.operations.at(-1).id) throw paused();
+          if ([6, 7].includes(other.plan.version) && base?.operationId === other.plan.operations.at(-1).id) throw paused();
         }
         return clone(persist(saved, initial));
       });
@@ -261,6 +287,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     captureSourceSave: input => capturePlan(input, adminTemplateSourceSavePlan),
     capturePhoto: input => capturePlan(input, adminTemplatePhotoSavePlan),
     capturePhotoEdit: input => capturePlan(input, adminTemplatePhotoEditSavePlan),
+    capturePhotoCreate: input => capturePlan(input, adminTemplatePhotoCreateSavePlan),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];
