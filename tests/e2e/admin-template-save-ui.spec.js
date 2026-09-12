@@ -2730,14 +2730,17 @@ async function beginAdminCatalogDrag(page, sourceId, targetId = "", editorTarget
   const portal = { x: tab.x + tab.width / 2, y: tab.y + tab.height / 2 };
   if (mobile) await touch("touchmove", portal); else await page.mouse.move(portal.x, portal.y);
   await expect(page.locator("#packingView")).toBeVisible();
-  const targetSelector = targetId ? `#packingView [data-subcontainer-id="${targetId}"], #packingView [data-root-container-id="${targetId}"]`
+  const targetSelector = targetId ? `#packingView .dropzone[data-container-id="${targetId}"]`
     : "#packingView [data-root-container-id]";
   const destination = page.locator(targetSelector).first(); await destination.scrollIntoViewIfNeeded();
   const point = await destination.evaluate(element => {
     const box = element.getBoundingClientRect();
+    // A nested container's header belongs to its parent's dropzone. Aim at
+    // the requested zone itself, regardless of sticky headers or scroll.
+    const hitSelector = element.matches(".dropzone") ? ".dropzone" : "[data-root-container-id],[data-subcontainer-id]";
     for (let y = Math.max(0, box.top + 3); y < Math.min(innerHeight, box.bottom); y += 8)
       for (let x = Math.max(0, box.left + 3); x < Math.min(innerWidth, box.right); x += 8)
-        if (document.elementFromPoint(x, y)?.closest("[data-root-container-id],[data-subcontainer-id]") === element) return { x, y };
+        if (document.elementFromPoint(x, y)?.closest(hitSelector) === element) return { x, y };
     throw Error("No visible placement target");
   });
   if (mobile) await touch("touchmove", point); else await page.mouse.move(point.x, point.y);
