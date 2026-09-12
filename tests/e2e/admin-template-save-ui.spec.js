@@ -344,6 +344,57 @@ async function fixture(page, context, { published = false, shared = false, hydra
   } else await openEditor(page);
   return state;
 }
+test("offline catalog storage is inspected only while settings are visible", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const open = CacheStorage.prototype.open;
+    window.catalogUsageOpens = 0;
+    window.openCatalogForFixture = () => open.call(caches, "bike-packing-manufacturer-catalog-offline-v1");
+    CacheStorage.prototype.open = function (name) {
+      if (name === "bike-packing-manufacturer-catalog-offline-v1") window.catalogUsageOpens += 1;
+      return open.call(this, name);
+    };
+  });
+  const server = await fixture(page, context);
+  await expect(page.locator("#settingsView")).toBeHidden();
+  expect(await page.evaluate(() => window.catalogUsageOpens)).toBe(0);
+  await page.evaluate(async () => {
+    const cache = await window.openCatalogForFixture();
+    await cache.put("/offline-catalog-storage-fixture", new Response("test", { headers: { "content-length": "4" } }));
+  });
+  // Ephemeral WebKit drops cache bodies when the last document releases its
+  // handle (also reproducible on a blank page). Keep a real native handle in
+  // this context while the application document reloads; no Cache API is mocked.
+  const cacheKeeper = await context.newPage();
+  await cacheKeeper.route(`${origin}/__offline-storage-keeper`, route => route.fulfill({
+    contentType: "text/html", body: "<!doctype html><title>Native cache lifetime</title>" }));
+  await cacheKeeper.goto(`${origin}/__offline-storage-keeper`);
+  await cacheKeeper.evaluate(async () => {
+    window.catalogCache = await caches.open("bike-packing-manufacturer-catalog-offline-v1");
+  });
+  await page.locator('[data-view="settings"]').click();
+  await expect(page.locator(".offline-catalog-status")).toContainText("Офлайн-каталог: 1 превью");
+  expect(await page.evaluate(() => window.catalogUsageOpens)).toBeGreaterThan(0);
+  await page.locator("#profileDisplayName").fill("Несохранённое имя");
+  await page.locator('[data-view="items"]').click();
+  await page.locator('[data-view="settings"]').click();
+  await expect(page.locator("#profileDisplayName")).toHaveValue("Несохранённое имя");
+  await expect(page.locator(".offline-catalog-status")).toContainText("Офлайн-каталог: 1 превью");
+  await page.locator('[data-view="items"]').click();
+  const opens = await page.evaluate(() => window.catalogUsageOpens);
+  await expect(page.locator("#itemsView .item-title")).toHaveCount(1);
+  await page.locator("#searchInput").fill("no matching item");
+  await expect(page.locator("#itemsView .item-title")).toHaveCount(0);
+  expect(await page.evaluate(() => window.catalogUsageOpens)).toBe(opens);
+  await page.reload();
+  await expect(page.locator("body")).toHaveClass(/app-ready/);
+  await expect(page.locator("#settingsView")).toBeHidden();
+  expect(await page.evaluate(() => window.catalogUsageOpens)).toBe(0);
+  await page.locator('[data-view="settings"]').click();
+  await expect(page.locator(".offline-catalog-status")).toContainText("Офлайн-каталог: 1 превью");
+  expect(server.posts).toEqual([]);
+  expect(server.errors).toEqual([]);
+});
+
 async function openEditor(page) {
   await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
   await page.waitForFunction(() => window.__adminUiTest?.user()?.id === "admin-a");

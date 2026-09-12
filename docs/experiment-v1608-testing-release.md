@@ -23,6 +23,27 @@ includes the new normal-artifact suites in both browser projects.
 Frankfurt's isolated Nginx candidate passed 12 real anonymous-upstream checks
 and 25 synthetic cookie/Origin/redirect checks; public activation is separate.
 
+The full `aca7d211` check (run 34662295840) failed twice in one WebKit partition.
+In the second attempt all business assertions passed, but the final browser-error
+assertion saw native `Cache API operation failed: Context is stopped` during
+reload. The application had been scanning offline storage on every render,
+including when settings were hidden. The revised candidate measures storage
+only for the connected, visible settings panel and refreshes the existing panel's
+estimate on entry. It does not rebuild controls or reset an unsaved profile name.
+No browser-error assertions or operation tests are relaxed. Publication still
+requires the revised exact commit's successful full check and matching artifact.
+
+The focused regression delegates to the real Cache API and checks zero hidden
+catalog opens, accurate visible counts, retained catalog entries across an app
+reload and an unsaved profile name across tab switches. A script-free sibling
+page retains a native Cache handle: isolated blank-page experiments showed that
+ephemeral WebKit otherwise drops cache bodies when the final handle disappears.
+This tests application-document reload, not persistent-browser restart behavior.
+The final revision passed source checks, 912 critical and 1535 transport checks,
+plus 26 focused browser cases (13 per engine, no retries or skips): the new
+regression, all three previously final-failing catalog cases, and the related
+dictionary editing/recovery cases. These are partial checks, not full CI success.
+
 ## First cohort
 
 The ordinary build uses `scripts/experiment-release-profile.mjs` to activate
