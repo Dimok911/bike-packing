@@ -12,7 +12,7 @@ export const copy = value => structuredClone(value);
 export const hash = value => createHash("sha256").update(canonicalTemplateJson(value)).digest("hex");
 export const commandPrefix = "bike-packing-admin-photo-copy-commands-v1:";
 export async function adminPhotoCopyClientFixture(options = {}) {
-  const input = await adminPhotoCopyRecordInput(options), { binding } = input, id = input.action.operationId;
+  const input = options.recordInput ? copy(options.recordInput) : await adminPhotoCopyRecordInput(options), { binding } = input, id = input.action.operationId;
   const current = { ...binding, scope: "admin-template", admin: true, generation: "copy-client-one" }, idb = adminPhotoCopyIndexedDBFixture();
   const tails = new Map(), locks = { async request(name, fn) {
     const previous = tails.get(name) || Promise.resolve(); let release;

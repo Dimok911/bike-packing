@@ -1,5 +1,8 @@
 import { API_BASE, EXPERIMENT_API_BASE } from "../config/constants.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../config/api-contract.js";
+import { canonicalTemplateJson } from "./admin-template-protocol.js";
+import { COPY_PARENT_FENCE_PREFIX, adminTemplatePhotoCopyParentKeys, prepareAdminTemplatePhotoCopyParentFence,
+  readAdminTemplatePhotoCopyParentFence, matchesAdminTemplatePhotoCopyParentFenceStage } from "./admin-template-photo-copy-parent-fence.js";
 
 export const EXPERIMENT_FRONTEND_ORIGIN = "https://experiment.vniipo-help.ru";
 export const EU_EXPERIMENT_API_BASE = "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api";
@@ -179,10 +182,41 @@ export function createExperimentTransport({
   let readiness = null;
   let ready = mode === "direct" && !automatic;
   let journal = [];
+  let verifiedParentFences = new Map(), fenceRevision = 0;
+  const fenceBytesCurrent = value => {
+    try { return storage.getItem(value.certificateKey) === value.certificateText && storage.getItem(value.commandKey) === value.commandText
+      && storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${value.stageId}`) === value.stageText; } catch { return false; }
+  };
+  const parentFenced = id => { const proof = verifiedParentFences.get(id); return Boolean(proof && fenceBytesCurrent(proof)); };
+  const refreshParentFences = async () => {
+    if (!experiment || !storage) return;
+    const revision = ++fenceRevision, verified = new Map(), keys = [];
+    try { for (let index = 0; index < storage.length; index++) { const key = storage.key(index); if (key?.startsWith(COPY_PARENT_FENCE_PREFIX)) keys.push(key); } }
+    catch { verifiedParentFences.clear(); return; }
+    for (const certificateKey of keys) try {
+      const certificateText = storage.getItem(certificateKey), certificate = JSON.parse(certificateText);
+      const expectedKeys = adminTemplatePhotoCopyParentKeys(certificate.binding, certificate.operationId);
+      if (expectedKeys.certificate !== certificateKey || canonicalTemplateJson(certificate) !== certificateText) continue;
+      const commandKey = expectedKeys.command, commandText = storage.getItem(commandKey), parentJournal = JSON.parse(commandText);
+      if (canonicalTemplateJson(parentJournal) !== commandText) continue;
+      const proof = await readAdminTemplatePhotoCopyParentFence({ certificate, parentJournal });
+      if (storage.getItem(certificateKey) !== certificateText || storage.getItem(commandKey) !== commandText) continue;
+      for (const { assetId: stageId } of proof.assets) {
+        const stageText = storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${stageId}`); if (!stageText) continue;
+        const entry = JSON.parse(stageText);
+        if (entry.id !== stageId || !matchesAdminTemplatePhotoCopyParentFenceStage(proof, entry)) continue;
+        const cached = { certificateKey, certificateText, commandKey, commandText, stageId, stageText };
+        if (fenceBytesCurrent(cached)) verified.set(stageId, cached);
+      }
+    } catch { /* Missing/corrupt proof retains the original pending barrier. */ }
+    if (revision === fenceRevision) verifiedParentFences = verified;
+  };
   const ownActiveWrites = new Set();
+  const durableEntry = ({ parentFenced: _parentFenced, blocksWrites: _blocksWrites, ...entry }) => entry;
   const refreshJournal = () => {
     journal = experiment ? pendingExperimentWrites(storage).map((entry) => ({
       ...entry, uncertain: !entry.confirmed && (entry.uncertain || !ownActiveWrites.has(entry.id)),
+      parentFenced: !entry.confirmed && parentFenced(entry.id), blocksWrites: !entry.confirmed && !parentFenced(entry.id),
     })) : [];
   };
   refreshJournal();
@@ -194,7 +228,7 @@ export function createExperimentTransport({
   };
   const pendingRoute = () => {
     refreshJournal();
-    const pending = journal.filter(entry => !entry.confirmed);
+    const pending = journal.filter(entry => entry.blocksWrites);
     if (!pending.length) return null;
     const modes = new Set(pending.map(entry => entry.mode));
     if (modes.size !== 1 || !["direct", "eu"].includes([...modes][0])) {
@@ -221,7 +255,10 @@ export function createExperimentTransport({
     if (appeared && appeared !== chosen) throw Object.assign(transportError("Pending writes require a different route; automatic switching was stopped"), { isAmbiguousMutation: true });
     mode = chosen;
   };
-  const prepare = () => {
+  const prepare = async () => {
+    // A cold certificate is never a trusted boolean. Verify its complete
+    // parent/intent before both the direct ready shortcut and route selection.
+    await refreshParentFences();
     if (ready) return Promise.resolve();
     if (!readiness) readiness = (automatic ? chooseAutomatically() : verifyEu()).then(() => {
       ready = true;
@@ -327,7 +364,7 @@ export function createExperimentTransport({
       && ["environment", "actorId", "listId", "itemKey"].every(key => entry.recovery[key] === recovery[key])
       && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id && hash(entry.recovery.intentHash)
       && cancellation.assets.some(asset => asset.assetId === entry.id && asset.assetDigest === entry.recovery.assetDigest);
-    if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
+    if (journal.some((entry) => entry.uncertain && entry.blocksWrites && !(causal && entry.recovery?.type === "list"
       && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)
       && !ownCancelledStage(entry) && !ownCancelledAdminStage(entry)
       && !ownAccess(entry) && !accessPeer(entry) && !ownAdmin(entry) && !adminPeer(entry)) && !isReadOnlyRequest(path, method)) {
@@ -365,6 +402,30 @@ export function createExperimentTransport({
       return id;
     });
   };
+  const fenceCopyParent = async ({ intent, recordIntentHash, receipt, assertCurrent } = {}) => {
+    if (!experiment || !storage || !locks?.request || typeof assertCurrent !== "function") throw transportError("Cannot retain parent cancellation proof");
+    assertCurrent();
+    const certificate = await prepareAdminTemplatePhotoCopyParentFence({ intent, recordIntentHash, receipt, mode }); assertCurrent();
+    const keys = adminTemplatePhotoCopyParentKeys(certificate.binding, certificate.operationId), commandText = storage.getItem(keys.command);
+    const encoded = canonicalTemplateJson(certificate), prior = storage.getItem(keys.certificate), parentJournal = JSON.parse(commandText);
+    if (canonicalTemplateJson(parentJournal) !== commandText || prior !== null && prior !== encoded) throw transportError("Parent cancellation proof changed");
+    await readAdminTemplatePhotoCopyParentFence({ certificate, parentJournal }); assertCurrent();
+    const stages = certificate.assets.map(({ assetId }) => {
+      const key = `${AMBIGUOUS_WRITE_KEY}:${assetId}`, text = storage.getItem(key), entry = text === null ? null : JSON.parse(text);
+      if (entry && !entry.confirmed && (entry.id !== assetId || !matchesAdminTemplatePhotoCopyParentFenceStage(certificate, entry))) throw transportError("Stage cancellation binding changed");
+      return { key, text };
+    });
+    await locks.request(EXPERIMENT_WRITE_LOCK, () => {
+      assertCurrent();
+      if (storage.getItem(keys.command) !== commandText || storage.getItem(keys.certificate) !== prior
+        || stages.some(({ key, text }) => storage.getItem(key) !== text)) throw transportError("Parent cancellation proof changed");
+      if (prior === null) storage.setItem(keys.certificate, encoded);
+      if (storage.getItem(keys.certificate) !== encoded) throw transportError("Cannot read back parent cancellation proof");
+      assertCurrent();
+    });
+    await refreshParentFences(); assertCurrent();
+    return certificate;
+  };
   const confirmWrite = (id, { committed = true, receipt = null } = {}) => {
     if (!id) return;
     refreshJournal();
@@ -375,7 +436,7 @@ export function createExperimentTransport({
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
       if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template", "admin-template-photo-stage"].includes(entry?.recovery?.type))) {
-        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
+        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...durableEntry(entry), confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
@@ -391,7 +452,7 @@ export function createExperimentTransport({
       const entry = journal.find((entry) => entry.id === id);
       ownActiveWrites.delete(id);
       if (entry) entry.uncertain = true;
-      try { if (entry) storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry)); } catch { /* Intent already persisted. */ }
+      try { if (entry) storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(durableEntry(entry))); } catch { /* Intent already persisted. */ }
       error.isAmbiguousMutation = true;
       error.uncertainWriteId = id;
     } else confirmWrite(id, { committed: false });
@@ -434,8 +495,8 @@ export function createExperimentTransport({
   return Object.freeze({
     get mode() { return mode; },
     get ready() { return ready; },
-    selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
-    get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain) || null; },
+    selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl, fenceCopyParent,
+    get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain && entry.blocksWrites) || null; },
     get writes() { refreshJournal(); return journal.map((entry) => ({ ...entry })); },
     async fetchPhoto(source, options = {}) {
       const target = await photoUrl(source);

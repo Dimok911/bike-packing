@@ -28,7 +28,10 @@ test("explicit OFF copy cancellation fences the immutable parent while its unkno
   assert.equal(f.make().transport.writes.find(row => row.id === stageId).confirmed, undefined);
   assert.equal(f.make().transport.writes.find(row => row.id === stageId).uncertain, true);
   assert.equal(f.idb.rows("stage-dispatches").size, 1); assert.equal((await f.store.read(f.id)).intentHash, f.record.intentHash);
-  assert.throws(() => f.make().transport.assertWritable("/bike-packing/admin/template-photo-assets/copy", "POST"));
+  const coldTransport = f.make().transport; await coldTransport.prepare();
+  assert.equal(coldTransport.writes.find(row => row.id === stageId).parentFenced, true);
+  assert.equal(coldTransport.writes.find(row => row.id === stageId).blocksWrites, false);
+  coldTransport.assertWritable("/bike-packing/admin/template-photo-assets/copy", "POST");
   assert.equal(f.server.cancelPosts.length, 1);
 });
 

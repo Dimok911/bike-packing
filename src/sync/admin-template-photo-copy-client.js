@@ -203,6 +203,10 @@ export function createAdminTemplatePhotoCopyClient({ binding, getContext, store,
             if (transportEntry?.confirmed && !same(transportEntry.receipt, receipt)) throw blocked("receipt-changed");
             saved = persist({ ...saved, receipt }, saved, guard);
             if (transportEntry && transport.confirmWrite(id, { receipt }) !== true) throw blocked("confirm-storage");
+            if (receipt.result.payload.code === "operation_cancelled") {
+              if (typeof transport.fenceCopyParent !== "function") throw blocked("parent-fence");
+              await transport.fenceCopyParent({ intent: saved.intent, recordIntentHash: saved.recordIntentHash, receipt, assertCurrent: guard });
+            }
             guard(); return clone(receipt);
           };
           const inspect = async () => {
