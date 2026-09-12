@@ -146,6 +146,13 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
               })(), new Promise((resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(blocked("timeout")); }, timeoutMs); })]);
             } finally { clearTimeout(timer); }
           };
+          // Persist the user's stop under the command lock before any network
+          // wait, including auth and the first receipt GET. Offline/auth failure
+          // must never turn an explicit stop back into a runnable copy on reload.
+          if (work === "cancel") {
+            if (adminEnabled !== true) throw blocked("disabled");
+            if (!saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, saved, guard);
+          }
           await transport.prepare(); guard();
           const me = await request("/auth/me"); if (me.user?.id !== binding.actorId) throw blocked("actor");
           const rights = await request("/bike-packing/authorization");
@@ -242,11 +249,8 @@ export function createAdminTemplatePhotoTreeCopyClient({ binding, getContext, st
           if (work === "cancel") {
             if (adminEnabled !== true) throw blocked("disabled");
             await refresh();
-            // Preserve the explicit stop before awaiting the separate admission.
-            // Missing authority or a later error cannot silently resume the save.
-            // Legacy journals retain their original eight keys until this write.
-            if (!saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, saved, guard);
-            await refresh();
+            // The stop was already durable before the first network request.
+            // Missing cancellation authority can never silently resume the save.
             return admitted(async () => {
               await refresh();
               const caps = await request("/bike-packing/capabilities");

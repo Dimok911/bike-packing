@@ -218,6 +218,7 @@ import { allocateAdminTemplatePhotoTreeCopySelection } from "./src/public/admin-
 import { prepareAdminTemplatePhotoTreeCopyForm } from "./src/public/admin-template-photo-tree-copy-flow.js";
 import { persistAdminTemplatePhotoTreeCopyPending } from "./src/public/admin-template-photo-tree-copy-pending.js";
 import { applyAdminTemplatePhotoTreeCopyResult } from "./src/public/admin-template-photo-tree-copy-apply.js";
+import { createAdminTemplatePhotoTreeCopyRecoveryRunner } from "./src/public/admin-template-photo-tree-copy-recovery-runner.js";
 import { assertAdminTemplatePhotoTreeCopyExternalReferences } from "./src/public/admin-template-photo-tree-copy-projection.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./src/sync/admin-template-photo-copy-protocol.js";
 import { createAdminTemplatePhotoCopyClient } from "./src/sync/admin-template-photo-copy-client.js";
@@ -10987,15 +10988,19 @@ async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
 async function withAdminTemplatePhotoTreeCopyCaptureInventory(proof, task) {
   return withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, "capture");
 }
+async function withAdminTemplatePhotoTreeCopyRecoveryApplyInventory(proof, task) {
+  return withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, "apply");
+}
 async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) {
   // Capture may observe an absent own plan/record, before their first durable
-  // write. Dispatch still requires both. The named scopes cannot substitute
-  // for one another; neither authorizes cancellation or takes common locks.
+  // write. Dispatch and recovery apply require both; the latter also requires
+  // an immutable committed journal. These named scopes cannot substitute for
+  // one another. None authorizes cancellation or takes common locks.
   const clone = value => JSON.parse(canonicalTemplateJson(value));
   const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
   const pause = () => { throw Object.assign(Error("Сохранённое дерево и действия обоих шаблонов требуют сверки."),
     { code: "admin-template-photo-tree-copy-inventory-paused", isAdminTemplateBlocked: true }); };
-  if (!["capture", "dispatch"].includes(phase) || typeof task !== "function" || typeof proof?.assertCurrent !== "function") pause();
+  if (!["capture", "dispatch", "apply"].includes(phase) || typeof task !== "function" || typeof proof?.assertCurrent !== "function") pause();
   const record = clone(proof.record), bindings = clone(proof.bindings), captureLease = proof.captureLease;
   const upstream = proof.assertCurrent.bind(proof), operationId = record.action.operationId;
   const expectedPlan = adminTemplatePhotoTreeCopySavePlan({ binding: record.binding, operationId, body: record.action.body,
@@ -11020,6 +11025,10 @@ async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) 
     .map(prefix => bindingPrefix(prefix, binding)));
   prefixes.push("bike-packing-admin-order-v1:" + encodeURIComponent(record.binding.actorId) + ":");
   const storage = globalThis.localStorage;
+  // A late committed result may follow an explicit stop. Only the apply scope
+  // accepts that marker, and its complete typed journal must remain immutable.
+  // This scope never admits another business POST or excludes another command.
+  const applyJournal = phase === "apply" ? storage?.getItem(ownJournalKey) : null;
   const rawInventory = () => {
     if (!storage || !Number.isSafeInteger(storage.length) || storage.length < 0) pause();
     const rows = [], names = new Set();
@@ -11046,12 +11055,14 @@ async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) 
     // immutable envelope bound synchronously, and fully decode mutable proofs
     // with the typed reader on every admission, including immediately pre-POST.
     const raw = storage?.getItem(ownJournalKey);
+    if (phase === "apply" && (typeof applyJournal !== "string" || raw !== applyJournal)) pause();
     if (raw === null) { if (sawOwnJournal) pause(); return; }
     sawOwnJournal = true;
     if (typeof raw !== "string" || new TextEncoder().encode(raw).byteLength > 12 * 1024 * 1024) pause();
     const row = JSON.parse(raw), keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
     if (!row || Object.keys(row).length !== keys.length + (Object.hasOwn(row, "cancelRequested") ? 1 : 0) || keys.some(key => !Object.hasOwn(row, key))
-      || Object.hasOwn(row, "cancelRequested") && (typeof row.cancelRequested !== "boolean" || row.cancelRequested)
+      || Object.hasOwn(row, "cancelRequested") && (typeof row.cancelRequested !== "boolean" || row.cancelRequested && phase !== "apply")
+      || phase === "apply" && row.receipt?.operation?.state !== "committed"
       || row.version !== 1 || row.kind !== "admin-template-photo-tree-copy" || canonicalTemplateJson(row) !== raw
       || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash
       || payloadDigest !== null && row.payloadDigest !== payloadDigest || typeof row.dispatched !== "boolean"
@@ -11060,7 +11071,7 @@ async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) 
   };
   try {
     guard(); snapshot = rawInventory();
-    if (phase === "dispatch" && typeof storage.getItem(ownPlanKey) !== "string") pause();
+    if (phase !== "capture" && typeof storage.getItem(ownPlanKey) !== "string") pause();
     if (phase === "capture") {
       const expected = await prepareAdminTemplatePhotoTreeCopyRecord({ binding: record.binding, action: record.action, snapshot: record.snapshot }); guard();
       if (!same(expected, record)) pause();
@@ -11123,9 +11134,10 @@ async function withAdminTemplatePhotoTreeCopyInventoryScope(proof, task, phase) 
       const orders = await readAdminTemplateOrderInventory({ binding, guard }); guard();
       for (const row of orders) other(row.intent);
     }
-    if (phase === "dispatch" && (!ownPlan || !ownRecord)) pause(); guard();
+    if (phase !== "capture" && (!ownPlan || !ownRecord)) pause(); guard();
     const frozenBindings = Object.freeze(bindings.map(binding => Object.freeze(binding)));
-    const scope = Object.freeze({ kind: phase === "dispatch" ? "admin-template-photo-tree-copy-inventory-v1" : "admin-template-photo-tree-copy-capture-inventory-v1", bindings: frozenBindings,
+    const scope = Object.freeze({ kind: phase === "dispatch" ? "admin-template-photo-tree-copy-inventory-v1"
+      : phase === "apply" ? "admin-template-photo-tree-copy-recovery-apply-inventory-v1" : "admin-template-photo-tree-copy-capture-inventory-v1", bindings: frozenBindings,
       recordIntentHash: record.intentHash, assertCurrent: guard });
     const result = await task(scope); guard(); return result;
   } finally { active = false; }
@@ -11310,7 +11322,7 @@ async function captureAdminTemplatePhotoTreeCopyForm(record, isCurrent) {
         getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
   });
 }
-async function applyAdminTemplatePhotoTreeCopyFormResult(result) {
+async function applyAdminTemplatePhotoTreeCopyFormResult(result, { recovery = false } = {}) {
   const { plan, record, receipt, stageReceipts } = result, binding = plan.binding, layoutId = record.snapshot.target.layoutId;
   const bindings = [record.snapshot.source.ownerMap.binding, binding];
   const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
@@ -11321,7 +11333,8 @@ async function applyAdminTemplatePhotoTreeCopyFormResult(result) {
   return withAdminTemplateCapture({ bindings, locks: navigator.locks }, async captureLease => {
     guard();
     const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
-    return withAdminTemplatePhotoTreeCopyDispatchInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
+    const withInventory = recovery ? withAdminTemplatePhotoTreeCopyRecoveryApplyInventory : withAdminTemplatePhotoTreeCopyDispatchInventory;
+    return withInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
       applyAdminTemplatePhotoTreeCopyResult({ plan, store, receipt, stageReceipts, getState: () => state, getContext,
         getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
   });
@@ -11372,7 +11385,7 @@ async function submitAdminTemplatePhotoTreeCopyForm(input, { isCurrent, onDurabl
   const applied = await applyAdminTemplatePhotoTreeCopyFormResult(result);
   render(); return { state: "committed", applied: true, operationId: selection.operationId, result: applied };
 }
-async function resumeAdminTemplatePhotoTreeCopyForm(layoutId) {
+async function findAdminTemplatePhotoTreeCopyFormRecord(layoutId) {
   const layout = state.layouts[layoutId], source = layout?.adminCausalSource, binding = source?.binding;
   if (!binding || !canOpenAdminPublishedEdit() || !adminTemplateOperationContext(binding, layoutId).admin) return null;
   const getContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(getContext());
@@ -11397,11 +11410,41 @@ async function resumeAdminTemplatePhotoTreeCopyForm(layoutId) {
   }
   if (!candidates.length) return null;
   if (candidates.length !== 1) throw Error("Сохранено несколько копий одной версии. Нужна сверка.");
-  const record = candidates[0], operationId = record.action.operationId;
+  return candidates[0];
+}
+function adminTemplatePhotoTreeCopyRecoveryRunner(binding, layoutId) {
+  const getContext = () => adminTemplateOperationContext(binding, layoutId);
+  const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
+  return createAdminTemplatePhotoTreeCopyRecoveryRunner({ binding, layoutId, getContext, store,
+    plans: adminTemplatePlansFor(binding, layoutId, true), storage: localStorage, locks: navigator.locks,
+    createClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, transport: experimentTransport,
+      enabled: false, adminEnabled: adminTemplateUiEnabled(), appendEnabled: false, createEnabled: false, copyEnabled: false }) });
+}
+async function resumeAdminTemplatePhotoTreeCopyForm(layoutId) {
+  const layout = state.layouts[layoutId], binding = layout?.adminCausalSource?.binding;
+  if (!binding || !canOpenAdminPublishedEdit() || !adminTemplateOperationContext(binding, layoutId).admin) return null;
+  const getContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(getContext());
+  const contextGuard = () => {
+    const context = getContext();
+    if (context.admin !== true || canonicalTemplateJson(context) !== initial) throw Error("Контекст восстановления дерева изменился.");
+  };
+  const guard = () => { contextGuard(); if (state.layouts[layoutId] !== layout) throw Error("Контекст восстановления дерева изменился."); };
+  const record = await findAdminTemplatePhotoTreeCopyFormRecord(layoutId); guard(); if (!record) return null;
+  const operationId = record.action.operationId;
+  const store = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
   const plans = adminTemplatePlansFor(binding, layoutId, true), saved = await plans.read(operationId); guard();
   const client = createAdminTemplatePhotoTreeCopyClient({ binding, store, getContext, transport: experimentTransport, enabled: false });
   const journal = await client.read(operationId); guard();
-  if (journal?.cancelRequested === true) throw Error("Для этого дерева выбрана отмена. Продолжение отправки остановлено; данные сохранены для сверки.");
+  if (journal?.cancelRequested === true) {
+    // Background/cold continuation only reconciles this UUID. Only an explicit
+    // recovery-dialog action may send another idempotent cancellation request.
+    const result = await adminTemplatePhotoTreeCopyRecoveryRunner(binding, layoutId).inspect(operationId); contextGuard();
+    if (!result.receipt) return { state: "stopping", operationId };
+    if (result.receipt.operation.state !== "committed") return {
+      state: result.receipt.result.payload.code === "operation_cancelled" ? "stopped" : "rejected", operationId };
+    const applied = await applyAdminTemplatePhotoTreeCopyFormResult(result, { recovery: true }); contextGuard();
+    render(); return { state: "committed", applied: true, operationId, result: applied };
+  }
   if (!saved || !journal) {
     if (!adminTemplatePhotoTreeCopyFormEnabled()) throw Error("Исходная копия сохранена, но её создание выключено. Повторная копия не создавалась.");
     await captureAdminTemplatePhotoTreeCopyForm(record, () => canonicalTemplateJson(getContext()) === initial); contextGuard();
@@ -11415,6 +11458,44 @@ async function resumeAdminTemplatePhotoTreeCopyForm(layoutId) {
   if (result.receipt.operation.state !== "committed") throw Error("Копирование остановлено сервером. Исходная запись сохранена для сверки.");
   const applied = await applyAdminTemplatePhotoTreeCopyFormResult(result);
   render(); return { state: "committed", applied: true, operationId, result: applied };
+}
+async function prepareAdminTemplatePhotoTreeCopyRecovery(layoutId) {
+  const binding = state.layouts[layoutId]?.adminCausalSource?.binding;
+  if (!binding) return null;
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
+  const guard = () => {
+    const context = adminTemplateOperationContext(binding, layoutId);
+    if (!context.admin || canonicalTemplateJson(context) !== initial) throw Error("Контекст сверки дерева изменился. Откройте сохранение шаблона заново.");
+  };
+  guard(); const record = await findAdminTemplatePhotoTreeCopyFormRecord(layoutId); guard(); if (!record) return null;
+  const operationId = record.action.operationId, runner = adminTemplatePhotoTreeCopyRecoveryRunner(binding, layoutId);
+  let latest = null, applied = false;
+  const describe = facts => {
+    const receipt = facts.receipt, terminal = Boolean(receipt), committed = receipt?.operation.state === "committed";
+    const cancelled = receipt?.operation.state === "rejected" && receipt.result.payload.code === "operation_cancelled";
+    const stopping = facts.journal.cancelRequested === true;
+    return { recoveryKind: "photo-tree-copy", id: operationId,
+      operations: [{ id: operationId, kind: "template.save", state: receipt?.operation.state || (facts.journal.dispatched ? "unknown" : "queued"), cancelled }],
+      stopRequested: stopping, stopCoversHead: stopping, stopped: cancelled, committedCount: committed ? 1 : 0, applied,
+      canResume: committed ? !applied : !terminal && (stopping ? adminTemplateUiEnabled() : adminTemplatePhotoTreeCopyFormEnabled()),
+      canStop: !terminal && !stopping && adminTemplateUiEnabled(), canCompare: false };
+  };
+  const remember = facts => { guard(); latest = facts; return describe(facts); };
+  const inspect = async refresh => { guard(); return remember(await runner[refresh ? "inspect" : "read"](operationId)); };
+  return { inspect, stop: async () => {
+    guard(); if (!latest) throw Error("Сначала проверьте сохранённую копию.");
+    return remember(await runner.cancel(operationId));
+  }, resume: async () => {
+    guard(); if (!latest) throw Error("Сначала проверьте сохранённую копию.");
+    const facts = await runner.read(operationId); guard(); latest = facts;
+    if (facts.receipt?.operation.state === "committed") {
+      await applyAdminTemplatePhotoTreeCopyFormResult(facts, { recovery: true }); guard(); applied = true; render(); return describe(facts);
+    }
+    if (facts.receipt) return describe(facts);
+    if (facts.journal.cancelRequested) return remember(await runner.cancel(operationId));
+    const result = await resumeAdminTemplatePhotoTreeCopyForm(layoutId); guard();
+    applied = result?.applied === true; return inspect(false);
+  } };
 }
 function adminTemplatePhotoCopyEligible({ entityType, sourceId, sourceLayoutId, targetLayoutId, includeContents = false }) {
   if (!adminTemplatePhotoCopyFormEnabled() || !["item", "container"].includes(entityType)
@@ -12818,7 +12899,9 @@ async function prepareAdminTemplateRecovery(layoutId) {
     if (state.layouts?.[layoutId] !== layout || !adminTemplateOperationContext(binding, layoutId).admin
       || canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId)) !== initial) throw Error("Контекст редактирования изменился. Откройте сохранение шаблона заново.");
   };
-  assertEditor(); await resumeCausalAdminTemplateCopy(layout); assertEditor();
+  assertEditor(); const treeRecovery = await prepareAdminTemplatePhotoTreeCopyRecovery(layoutId); assertEditor();
+  if (treeRecovery) return treeRecovery;
+  await resumeCausalAdminTemplateCopy(layout); assertEditor();
   await resumeAdminTemplatePhotoForm(layout); assertEditor();
   const coordinator = adminTemplateSaveCoordinator(); await coordinator.prepareRecovery(layoutId); assertEditor();
   const recovery = adminTemplateRecoveryFor(binding, layoutId);

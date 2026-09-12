@@ -6,6 +6,7 @@ import { prepareAdminTemplatePhotoTreeCopyForm } from "../../src/public/admin-te
 import { prepareAdminTemplatePhotoTreeCopyRecord } from "../../src/sync/admin-template-photo-tree-copy-record.js";
 import { persistAdminTemplatePhotoTreeCopyPending } from "../../src/public/admin-template-photo-tree-copy-pending.js";
 import { applyAdminTemplatePhotoTreeCopyResult } from "../../src/public/admin-template-photo-tree-copy-apply.js";
+import { createAdminTemplatePhotoTreeCopyRecoveryRunner } from "../../src/public/admin-template-photo-tree-copy-recovery-runner.js";
 import { assertAdminTemplatePhotoTreeCopyExternalReferences } from "../../src/public/admin-template-photo-tree-copy-projection.js";
 import { adminTemplatePhotoNamespace } from "../../src/public/admin-template-photo-state.js";
 import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
@@ -27,8 +28,10 @@ export async function treeFormFixture() {
   const input = { entityType: "container", includeContents: true, sourceId: sourceRootLocalId,
     sourceLayoutId: selection.snapshot.source.layoutId, targetLayoutId: selection.snapshot.target.layoutId, placementIndex: 1, formSnapshot: { saved: true } };
   const controls = { current: true, afterBaseline: null };
-  const build = (replace = {}) => f.build({ replace, names: ["withAdminTemplatePhotoTreeCopyCaptureInventory", "adminTemplatePhotoTreeCopyFormEnabled", "adminTemplatePhotoTreeCopyEligible",
-    "captureAdminTemplatePhotoTreeCopyForm", "applyAdminTemplatePhotoTreeCopyFormResult", "submitAdminTemplatePhotoTreeCopyForm", "resumeAdminTemplatePhotoTreeCopyForm"], deps: {
+  const build = (replace = {}, overrides = {}) => f.build({ replace, names: ["withAdminTemplatePhotoTreeCopyCaptureInventory", "withAdminTemplatePhotoTreeCopyRecoveryApplyInventory",
+    "adminTemplatePhotoTreeCopyFormEnabled", "adminTemplatePhotoTreeCopyEligible", "findAdminTemplatePhotoTreeCopyFormRecord", "adminTemplatePhotoTreeCopyRecoveryRunner",
+    "captureAdminTemplatePhotoTreeCopyForm", "applyAdminTemplatePhotoTreeCopyFormResult", "submitAdminTemplatePhotoTreeCopyForm", "resumeAdminTemplatePhotoTreeCopyForm",
+    "prepareAdminTemplatePhotoTreeCopyRecovery", "prepareAdminTemplateRecovery"], deps: {
       adminTemplatePhotoCopyFormEnabled: () => Object.values(f.flags).every(value => value === true),
       currentUser: { id: f.binding.actorId }, canOpenAdminPublishedEdit: () => f.current.admin, administrativePhotoForms: new Map(), adminTemplateSaveCoordinator: () => ({ hasPendingCapture: () => false }),
       administrativePhotoTreeCopyAttempts: attempts, clone: structuredClone, adminTemplatePhotoNamespace,
@@ -37,14 +40,15 @@ export async function treeFormFixture() {
         allocations.push(actual); return actual;
       },
       prepareAdminTemplatePhotoTreeCopyRecord, prepareAdminTemplatePhotoTreeCopyForm,
-      persistAdminTemplatePhotoTreeCopyPending, applyAdminTemplatePhotoTreeCopyResult, assertAdminTemplatePhotoTreeCopyExternalReferences, withAdminTemplateCapture,
+      persistAdminTemplatePhotoTreeCopyPending, applyAdminTemplatePhotoTreeCopyResult, createAdminTemplatePhotoTreeCopyRecoveryRunner,
+      assertAdminTemplatePhotoTreeCopyExternalReferences, withAdminTemplateCapture,
       navigator: { locks: f.locks }, localStorage: f.storage, scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
       normalizeUiLanguage: value => value, uiLanguage: "en", nowIso: () => fields.createdAt, currentEditMeta: () => fields,
       restoreAdminPublishedLayoutContext: id => { f.modeState.adminPublishedEditLayoutId = id; return true; },
       adminTemplateSourceBaseline: binding => ({ async read() {
         controls.afterBaseline?.(); return binding.listId === f.binding.listId ? { stateRevision: copy.source.base.stateRevision + 4, payload: original.action.body.payload }
           : { stateRevision: copy.source.base.stateRevision, payload: copy.source.payload };
-      } }), render() {} } });
+      } }), render() {}, ...overrides } });
   const submit = () => build().submitAdminTemplatePhotoTreeCopyForm(input, { isCurrent: () => controls.current, onDurable: record => notifications.push(record) });
   return { ...f, selection, prepared, input, submit, form: build, formControls: controls, attempts, notifications, allocations };
 }

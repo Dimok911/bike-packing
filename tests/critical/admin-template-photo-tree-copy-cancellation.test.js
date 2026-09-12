@@ -97,10 +97,20 @@ test("a late committed save wins before or during cancellation only after every 
     const f = await fixture(); await capture(f); serveStages(f);
     if (late) f.cancellation.lateCommit = true; else f.server.saved = copy(f.receipt);
     assert.deepEqual(await f.cancel(), f.receipt); assert.deepEqual(saved(f).stageReceipts, f.stages);
-    assert.deepEqual(saved(f).receipt, f.receipt); assert.equal(saved(f).cancelRequested, late ? true : undefined);
+    assert.deepEqual(saved(f).receipt, f.receipt); assert.equal(saved(f).cancelRequested, true);
     assert.equal(f.cancelPosts.length, late ? 1 : 0); noBusinessPosts(f);
     assert.equal(f.server.calls.filter(row => row.path.includes("template-photo-assets/tree-copy/")).length, f.stages.length);
   }
+});
+
+test("an offline stop is durable before the first network request and cold continuation cannot resume the copy", async () => {
+  const f = await fixture(); await capture(f); let requests = 0;
+  await assert.rejects(f.cancel({ fetchImpl: async () => { requests++; assert.equal(saved(f).cancelRequested, true); throw TypeError("Offline auth request"); } }), /Offline/);
+  assert.equal(requests, 1); assert.equal(saved(f).cancelRequested, true); noPosts(f);
+  const count = f.server.calls.length;
+  await assert.rejects(f.make().client.run(f.id), /Копирование сохранено/);
+  assert.ok(f.server.calls.slice(count).every(call => call.method === "GET")); noPosts(f);
+  assert.deepEqual(await f.store.read(f.id), f.record); assert.equal(f.values.get(f.planKey), f.planText);
 });
 
 test("late-commit corruption cannot confirm a parent using individually plausible but aliased stage paths", async () => {
