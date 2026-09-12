@@ -209,6 +209,7 @@ import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./src
 import { createAdminTemplatePhotoCopyActionStore } from "./src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "./src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "./src/sync/admin-template-photo-tree-copy-client.js";
+import { adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot } from "./src/sync/admin-template-photo-tree-copy-save-plan.js";
 import { ADMIN_TEMPLATE_PHOTO_COPY_ENABLED } from "./src/sync/admin-template-photo-copy-protocol.js";
 import { createAdminTemplatePhotoCopyClient } from "./src/sync/admin-template-photo-copy-client.js";
 import { adminTemplatePhotoCopyEditorSnapshot, assertAdminTemplatePhotoCopyPlanRecord } from "./src/sync/admin-template-photo-copy-save-plan.js";
@@ -10970,6 +10971,144 @@ async function adminTemplatePhotoTreeCopyInventory(binding, layoutId, preparing 
   // This does not interpret terminal facts as adoption or cleanup authority.
   return { records, journals };
 }
+async function withAdminTemplatePhotoTreeCopyDispatchInventory(proof, task) {
+  // Dispatch only: an IDB orphan is retained, but is not an executable V9 plan.
+  // The outer runner owns both common leases BEFORE taking command locks. This
+  // reader never takes the actor-order lock or grants capture/cancel authority.
+  const clone = value => JSON.parse(canonicalTemplateJson(value));
+  const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
+  const pause = () => { throw Object.assign(Error("Сохранённое дерево и действия обоих шаблонов требуют сверки."),
+    { code: "admin-template-photo-tree-copy-inventory-paused", isAdminTemplateBlocked: true }); };
+  if (typeof task !== "function" || typeof proof?.assertCurrent !== "function") pause();
+  const record = clone(proof.record), bindings = clone(proof.bindings), captureLease = proof.captureLease;
+  const upstream = proof.assertCurrent.bind(proof), operationId = record.action.operationId;
+  const expectedPlan = adminTemplatePhotoTreeCopySavePlan({ binding: record.binding, operationId, body: record.action.body,
+    editorSnapshot: adminTemplatePhotoTreeCopyEditorSnapshot(record), recordIntentHash: record.intentHash });
+  const intent = expectedPlan.operations[0], sides = [record.snapshot.source, record.snapshot.target].map(side => {
+    const source = side.beforeState.layouts[side.layoutId].adminCausalSource;
+    return { layoutId: side.layoutId, binding: source.binding, base: source.base };
+  });
+  const sorted = values => [...values].sort((a, b) => canonicalTemplateJson(a) < canonicalTemplateJson(b) ? -1 : 1);
+  if (!same(sorted(bindings), sorted(sides.map(side => side.binding))) || !same(sides[1].binding, record.binding)
+    || new Set(bindings.map(canonicalTemplateJson)).size !== 2) pause();
+  const contexts = sides.map(side => clone(adminTemplateOperationContext(side.binding, side.layoutId, true)));
+  const markers = () => sides.map(side => state.layouts?.[side.layoutId]?.adminCausalSource?.adoptedStop ?? null);
+  const originalMarkers = canonicalTemplateJson(markers());
+  let active = true, snapshot = null, payloadDigest = null, sawOwnJournal = false;
+  const bindingPrefix = (prefix, binding) => prefix + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
+  const planPrefix = "bike-packing-admin-save-plans-v1:", treePrefix = "bike-packing-admin-photo-tree-copy-commands-v1:";
+  const ownPlanKey = bindingPrefix(planPrefix, record.binding) + operationId;
+  const ownJournalKey = bindingPrefix(treePrefix, record.binding) + operationId;
+  const prefixes = bindings.flatMap(binding => [planPrefix, "bike-packing-admin-template-v1:",
+    "bike-packing-admin-photo-copy-commands-v1:", treePrefix, "bike-packing-admin-stop-choice-v1:", "bike-packing-admin-stop-v1:"]
+    .map(prefix => bindingPrefix(prefix, binding)));
+  prefixes.push("bike-packing-admin-order-v1:" + encodeURIComponent(record.binding.actorId) + ":");
+  const storage = globalThis.localStorage;
+  const rawInventory = () => {
+    if (!storage || !Number.isSafeInteger(storage.length) || storage.length < 0) pause();
+    const rows = [], names = new Set();
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index); if (typeof key !== "string" || names.has(key)) pause(); names.add(key);
+      if (key === ownJournalKey || !prefixes.some(prefix => key.startsWith(prefix))) continue;
+      const raw = storage.getItem(key); if (typeof raw !== "string") pause(); rows.push([key, raw]);
+    }
+    return canonicalTemplateJson(rows.sort(([a], [b]) => a < b ? -1 : 1));
+  };
+  const guard = () => {
+    if (!active) pause();
+    const checked = upstream();
+    if (checked && typeof checked.then === "function") { Promise.resolve(checked).catch(() => {}); pause(); }
+    assertAdminTemplateCaptureLease(captureLease, bindings);
+    for (const [index, side] of sides.entries()) {
+      const current = adminTemplateOperationContext(side.binding, side.layoutId, true);
+      if (current?.admin !== true || current.scope !== "admin-template" || !current.generation
+        || ["actorId", "environment", "listId", "itemKey"].some(key => current[key] !== side.binding[key])
+        || !same(current, contexts[index])) pause();
+    }
+    if (canonicalTemplateJson(markers()) !== originalMarkers || snapshot !== null && rawInventory() !== snapshot) pause();
+    // The command legitimately gains stages, dispatched and receipt. Keep its
+    // immutable envelope bound synchronously, and fully decode mutable proofs
+    // with the typed reader on every admission, including immediately pre-POST.
+    const raw = storage?.getItem(ownJournalKey);
+    if (raw === null) { if (sawOwnJournal) pause(); return; }
+    sawOwnJournal = true;
+    if (typeof raw !== "string" || new TextEncoder().encode(raw).byteLength > 12 * 1024 * 1024) pause();
+    const row = JSON.parse(raw), keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
+    if (!row || Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))
+      || row.version !== 1 || row.kind !== "admin-template-photo-tree-copy" || canonicalTemplateJson(row) !== raw
+      || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash
+      || payloadDigest !== null && row.payloadDigest !== payloadDigest || typeof row.dispatched !== "boolean"
+      || !Array.isArray(row.stageReceipts) || row.stageReceipts.length !== record.stages.length
+      || row.dispatched && row.stageReceipts.some(stage => stage === null)) pause();
+  };
+  try {
+    guard(); snapshot = rawInventory();
+    if (typeof storage.getItem(ownPlanKey) !== "string") pause();
+    const { id: ignoredId, ...encodedIntent } = intent;
+    payloadDigest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalTemplateJson(encodedIntent)))),
+      byte => byte.toString(16).padStart(2, "0")).join(""); guard();
+    let ownPlan = false, ownRecord = false;
+    for (const side of sides) {
+      const { binding, layoutId, base } = side, target = same(binding, record.binding);
+      const excluded = await adminTemplatePhotoExcludedPlans(binding, layoutId, true); guard();
+      if (!Array.isArray(excluded) || excluded.some(id => !validTemplateOperationId(id)) || new Set(excluded).size !== excluded.length) pause();
+      // Confirmed older numeric bases are history. Same/newer bases and any
+      // unresolved operation dependency remain barriers until an existing,
+      // fully validated V1–8 server-adoption choice excludes that exact action.
+      const conflicts = (id, body, tree = false) => tree || id === operationId || body.base?.operationId
+        || !Number.isSafeInteger(body.base?.stateRevision) || body.base.stateRevision >= base.stateRevision;
+      const plans = await adminTemplatePlansFor(binding, layoutId, true).list(); guard();
+      // A stop choice names plans, not individual commands. Expand only the
+      // fully proved V1–8 rows (a V1 save may have a separate publication UUID),
+      // and require each observed journal/record to match that exact intent.
+      const excludedIntents = new Map();
+      for (const id of excluded) {
+        const saved = plans.find(row => row.plan.id === id);
+        if (!saved || saved.plan.version < 1 || saved.plan.version > 8 || id === operationId) pause();
+        for (const operation of saved.plan.operations) {
+          if (operation.id === operationId || excludedIntents.has(operation.id)) pause();
+          excludedIntents.set(operation.id, operation);
+        }
+      }
+      const other = (operation, tree = false) => {
+        if (operation.id === operationId) pause();
+        if (!tree && excludedIntents.has(operation.id)) {
+          if (!same(operation, excludedIntents.get(operation.id))) pause();
+        } else if (conflicts(operation.id, operation.body, tree)) pause();
+      };
+      for (const saved of plans) {
+        if (target && saved.plan.id === operationId) {
+          if (!same(saved.plan, expectedPlan) || saved.cancelRequested !== false) pause(); ownPlan = true;
+        } else for (const operation of saved.plan.operations) other(operation, saved.plan.version === 9);
+      }
+      const ordinary = await adminTemplateClient(binding, layoutId, true).list(); guard();
+      for (const row of ordinary) other(row.intent);
+      for (const store of [adminTemplatePhotoStore(binding, layoutId, true), adminTemplatePhotoCopyStore(binding, layoutId, true)]) {
+        const ids = await store.ids(); guard();
+        for (const id of ids) {
+          const value = await store.read(id); guard();
+          if (!value || value.action.operationId !== id || !same(value.binding, binding)) pause();
+          other({ id, ...value.binding, kind: value.action.kind, body: value.action.body });
+        }
+      }
+      const copies = await adminTemplatePhotoCopyClient(binding, layoutId, true).list(); guard();
+      for (const row of copies) other(row.intent);
+      const tree = await adminTemplatePhotoTreeCopyInventory(binding, layoutId, true); guard();
+      for (const value of tree.records) {
+        if (!target || value.action.operationId !== operationId || !same(value, record)) pause(); ownRecord = true;
+      }
+      for (const row of tree.journals) if (!target || !same(row.intent, intent) || row.payloadDigest !== payloadDigest
+        || row.recordIntentHash !== record.intentHash) pause();
+      const orders = await readAdminTemplateOrderInventory({ binding, guard }); guard();
+      for (const row of orders) other(row.intent);
+    }
+    if (!ownPlan || !ownRecord) pause(); guard();
+    const frozenBindings = Object.freeze(bindings.map(binding => Object.freeze(binding)));
+    const scope = Object.freeze({ kind: "admin-template-photo-tree-copy-inventory-v1", bindings: frozenBindings,
+      recordIntentHash: record.intentHash, assertCurrent: guard });
+    const result = await task(scope); guard(); return result;
+  } finally { active = false; }
+}
 function adminTemplatePhotoCopyFormEnabled() {
   return ADMIN_TEMPLATE_PHOTO_COPY_ENABLED && adminTemplatePhotoCreateFormEnabled();
 }
@@ -12321,34 +12460,41 @@ function adminTemplateEditorSnapshot(layoutId, options = {}) {
   });
 }
 function adminTemplatePlansFor(binding, layoutId, preparing = false) {
+  // Historical V9 reads always require the real typed record, even with every
+  // write gate OFF. This factory does not wire the future tree dispatch runner.
+  const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
+  const photoTreeCopyStore = createAdminTemplatePhotoTreeCopyActionStore({ binding, getContext, enabled: false });
+  const photoTreeCopyClient = createAdminTemplatePhotoTreeCopyClient({ binding, getContext, store: photoTreeCopyStore,
+    transport: experimentTransport, enabled: false });
   return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client: adminTemplateClient(binding, layoutId, preparing),
     photoCreateEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore: adminTemplatePhotoStore(binding, layoutId, preparing),
     photoCopyStore: adminTemplatePhotoCopyStore(binding, layoutId, preparing),
     photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId, preparing), photoCopyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED,
+    photoTreeCopyStore, photoTreeCopyClient, photoTreeCopyEnabled: false,
     assertCaptureAllowed: ({ plan, captureLease, guard }) => assertAdminTemplateCopyCaptureAllowed(binding, layoutId,
-      { operationId: plan.id, body: plan.operations[0].body, recordIntentHash: plan.version === 8 ? plan.recordIntentHash : null,
+      { operationId: plan.id, body: plan.operations[0].body, recordIntentHash: [8, 9].includes(plan.version) ? plan.recordIntentHash : null,
         captureLease, guard }, preparing),
     getContext: () => adminTemplateOperationContext(binding, layoutId, preparing),
     getExcludedPlans: () => adminTemplatePhotoExcludedPlans(binding, layoutId),
     shouldCancel: id => adminTemplateRecoveryFor(binding, layoutId, preparing).requiresCancellation(id) });
 }
-async function adminTemplatePhotoExcludedPlans(binding, layoutId) {
+async function adminTemplatePhotoExcludedPlans(binding, layoutId, preparing = false) {
   const accepted = state.layouts?.[layoutId]?.adminCausalSource?.adoptedStop;
-  return accepted ? adminTemplateStopChoiceFor(binding, layoutId, accepted.priorPlanId).excludedPlans(accepted) : [];
+  return accepted ? adminTemplateStopChoiceFor(binding, layoutId, accepted.priorPlanId, preparing).excludedPlans(accepted) : [];
 }
 function adminTemplateRecoveryFor(binding, layoutId, preparing = false) {
   return createAdminTemplateRecovery({ binding, enabled: adminTemplateUiEnabled(), plans: adminTemplatePlansFor(binding, layoutId, preparing),
     photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId, preparing),
     client: adminTemplateClient(binding, layoutId, preparing), getContext: () => adminTemplateOperationContext(binding, layoutId, preparing) });
 }
-function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId) {
+function adminTemplateStopChoiceFor(binding, layoutId, priorPlanId, preparing = false) {
   return createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, enabled: adminTemplateUiEnabled(),
-    photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId),
+    photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId, preparing),
     projectServer: (server, id) => projectAdminTemplateServerVariant(state.layouts[layoutId], server, id, {
       photoBinding: binding, photoOwnerMapEnabled: adminTemplatePhotoMechanismEnabled() && server.visibility === "private" }),
-    getContext: () => adminTemplateOperationContext(binding, layoutId), getSource: () => state.layouts?.[layoutId]?.adminCausalSource,
-    snapshot: () => adminTemplateEditorSnapshot(layoutId), client: adminTemplateClient(binding, layoutId),
-    plans: adminTemplatePlansFor(binding, layoutId), recovery: adminTemplateRecoveryFor(binding, layoutId) });
+    getContext: () => adminTemplateOperationContext(binding, layoutId, preparing), getSource: () => state.layouts?.[layoutId]?.adminCausalSource,
+    snapshot: () => adminTemplateEditorSnapshot(layoutId), client: adminTemplateClient(binding, layoutId, preparing),
+    plans: adminTemplatePlansFor(binding, layoutId, preparing), recovery: adminTemplateRecoveryFor(binding, layoutId, preparing) });
 }
 let administrativeRecoveryDialog = null;
 function showAdminTemplateRecovery(layoutId) {
