@@ -5,6 +5,7 @@ ftp-upload/
 www/
 node_modules/
 playwright-report/
+browser-diagnostics/
 test-results/
 /debug.log
 
