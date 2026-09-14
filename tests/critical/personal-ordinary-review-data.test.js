@@ -37,6 +37,7 @@ test("review retains the confirmed anchor for ancestry and distinguishes the nex
   const cold = f.make(), bytes = [...f.values];
   f.rejectWrites(true);
   const review = cold.ordinaryRecoveryReview();
+  assert.equal(review.headOperationId, pending.action.operationId);
   assert.deepEqual(review.records.map(row => row.action.operationId),
     [confirmed.action.operationId, pending.action.operationId]);
   assert.deepEqual(review.confirmedOperationIds, [confirmed.action.operationId]);

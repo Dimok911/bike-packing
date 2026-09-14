@@ -157,6 +157,8 @@ test("large groups are bounded with explicit omitted details; names remain plain
 });
 
 test("only explicit reasons explain a blocker; a missing head base and arbitrary error text prove nothing", () => {
+  assert.match(explain({ reason: "legacy-base-unconfirmed" }), /объединение не запускалось/);
+  assert.match(explain({ reason: "legacy-base-unconfirmed" }, { language: "en" }), /merging has not started/);
   assert.match(explain({ reason: "missing-base" }), /исходной версии/);
   assert.match(explain({ reason: "photo-inventory" }), /не означает, что вы меняли/);
   assert.match(explain({ reason: "ordinary-rebase-loss" }), /перенос удаления/);

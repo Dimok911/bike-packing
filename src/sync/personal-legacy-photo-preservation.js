@@ -72,7 +72,18 @@ export async function preparePersonalLegacyPhotoPreservation({ records, operatio
       initialBase = freeze({ operationId: action.operationId, listId, stateRevision: remote.stateRevision, payload: structuredClone(remote.payload) });
     } else {
       if (remote.stateRevision < action.body.baseStateRevision || typeof inspectExact !== "function") throw blocked();
-      const proof = await inspectExact(action);
+      let proof;
+      try { proof = await inspectExact(action); }
+      catch (error) {
+        assertCurrent();
+        // This is a missing historical boundary, not a failed three-way merge.
+        // Keep transport/context/waiting errors intact; annotate only the generic
+        // receipt pause after the newer revision and baseless root were checked.
+        if (error?.isOperationReceiptError && !error.code && error.reason === "receipt-unconfirmed") {
+          throw Object.assign(new Error(error.message, { cause: error }), error, { reason: "legacy-base-unconfirmed" });
+        }
+        throw error;
+      }
       assertCurrent();
       const expectedDigest = await digest({ environment, actorId: initialContext.actorId, kind: action.kind, listId, body: action.body });
       assertCurrent();

@@ -869,7 +869,12 @@ test("unknown, waiting and mismatched historical receipts never resume or releas
     } else if (defect === "status") receipt.result.status = 409;
     else if (defect !== "unknown") receipt.operation[defect] = "wrong";
     const before = JSON.stringify(f.transport.writes);
-    await assert.rejects(f.make().queue.inspect(input), { isAmbiguousMutation: true });
+    await assert.rejects(f.make().queue.inspect(input), error => {
+      assert.equal(error.isAmbiguousMutation, true);
+      if (defect !== "waiting") assert.equal(error.reason, "receipt-unconfirmed");
+      else assert.notEqual(error.reason, "receipt-unconfirmed");
+      return true;
+    });
     assert.equal(JSON.stringify(f.transport.writes), before, defect);
     assert.equal(f.posts().length, 1, defect);
   }

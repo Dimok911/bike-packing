@@ -103,6 +103,36 @@ test("release legacy photos first cold placement has merge base and add/remove r
   expect(f.posts).toHaveLength(2); expect(f.errors).toEqual([]);
 });
 
+test("release manual Sync with an empty confirmed queue creates no phantom root before the first placement", async ({ page, context }) => {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context);
+  await expect(page.locator("#layoutLoadStatus")).toContainText("Личные укладки загружены", { timeout: 30000 });
+  const before = await nativeLegacyPhotoOutbox(page);
+  expect(before.record).toBeNull(); expect(before.entries).toEqual([]);
+  expect(f.posts).toEqual([]);
+
+  const noChanges = page.getByText("Изменений для отправки нет. Данные совпадают с последней подтверждённой сервером версией.", { exact: true });
+  await page.locator("#syncBtn").click();
+  // Wait for an observable result of this click: either the expected no-op
+  // feedback or an erroneous dispatch. Merely seeing an already-green icon
+  // would let this assertion run before the asynchronous save starts.
+  await expect.poll(async () => f.posts.length > 0 || await noChanges.isVisible(), { timeout: 30000 }).toBe(true);
+  expect(f.posts).toEqual([]);
+  await expect(noChanges).toBeVisible();
+  await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced");
+  expect(f.revision).toBe(1582);
+  const after = await nativeLegacyPhotoOutbox(page);
+  expect(after.record).toBeNull(); expect(after.entries).toEqual(before.entries);
+
+  await addExistingBag(page); await green(page, f, 1583);
+  expect(f.posts).toHaveLength(1);
+  const first = f.captured[0].record;
+  expect(first.action.generation).toBe(1);
+  expect(first.mergeBase).toEqual({ stateRevision: 1582, payload: personalBusinessPayload(f.initial) });
+  expect(first.action.body.userPlacement).toMatchObject({ action: "link-root", ids: [legacyBagId] });
+  exactOriginalPost(f.posts[0], first);
+  expect(f.payload.layouts[legacyLayoutId].arrangement.rootContainerIds).toEqual(["placed-bag", legacyBagId]);
+});
+
 test("release legacy pending action without merge base uses fresh same revision and unchanged UUID once", async ({ page, context }) => {
   const f = await setupPersonalLegacyPhotoBrowser(page, context);
   expect(f.posts).toEqual([]);

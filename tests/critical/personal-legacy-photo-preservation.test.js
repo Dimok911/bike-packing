@@ -271,3 +271,38 @@ test("cyclic, missing, duplicate and foreign predecessor chains remain blocked",
     await assert.rejects(preparePersonalLegacyPhotoPreservation(f.options), paused);
   }
 });
+
+test("a baseless old save with a newer server and unconfirmed receipt explains preflight without modifying the queue", async () => {
+  const f = fixture({ baseless: true }), before = structuredClone(f.records);
+  const original = Object.assign(Error("Unconfirmed save"), { isOperationReceiptError: true, reason: "receipt-unconfirmed" });
+  f.options.readRemote = async () => ({ payload: structuredClone(f.base), stateRevision: 5 });
+  f.options.inspectExact = async () => { throw original; };
+  await assert.rejects(preparePersonalLegacyPhotoPreservation(f.options), error => {
+    assert.equal(error.reason, "legacy-base-unconfirmed");
+    assert.equal(error.isOperationReceiptError, true);
+    assert.equal(error.cause, original);
+    assert.equal(original.reason, "receipt-unconfirmed");
+    return true;
+  });
+  assert.deepEqual(f.records, before);
+});
+
+test("legacy baseline annotation preserves network, waiting and context failures instead of calling them a failed merge", async () => {
+  for (const original of [new TypeError("Network failed"),
+    Object.assign(Error("Аккаунт изменился. Сверка остановлена."), { isOperationReceiptError: true }),
+    Object.assign(Error("Web Locks unavailable"), { isOperationReceiptError: true }),
+    Object.assign(Error("Waiting"), { isOperationReceiptError: true, code: "waiting" }),
+    Object.assign(Error("Context changed"), { isOperationReceiptError: true, reason: "context" })]) {
+    const f = fixture({ baseless: true });
+    f.options.readRemote = async () => ({ payload: structuredClone(f.base), stateRevision: 5 });
+    f.options.inspectExact = async () => { throw original; };
+    await assert.rejects(preparePersonalLegacyPhotoPreservation(f.options), error => error === original);
+  }
+  const f = fixture({ baseless: true });
+  f.options.readRemote = async () => ({ payload: structuredClone(f.base), stateRevision: 5 });
+  f.options.inspectExact = async () => {
+    f.context.actorId = "different-account";
+    throw Object.assign(Error("Unconfirmed"), { isOperationReceiptError: true });
+  };
+  await assert.rejects(preparePersonalLegacyPhotoPreservation(f.options), error => error.code === "legacy-photo-preservation" && error.reason === undefined);
+});
