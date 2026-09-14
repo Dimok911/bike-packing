@@ -20,13 +20,16 @@ import { personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate, personalArchivePhotoResultReference } from "./personal-pending-archive-update.js";
 import { personalArchivePayloadWithPhotos } from "./personal-archive-photo-plan.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, personalArchiveImportManifest, assertPersonalArchiveImportBody, personalArchiveBusinessPayload } from "./personal-archive-import-protocol.js";
-import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
+import { preservesConfirmedPersonalPhotos, isOrdinaryLegacyPersonalUpdate } from "./personal-confirmed-photos.js";
+import { PERSONAL_ORDINARY_RECOVERY_ENABLED, createPersonalOrdinaryRecoveryStore,
+  validPersonalOrdinaryRecoveryDecision, ordinaryRecoveryBlocked } from "./personal-ordinary-recovery.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./personal-photo-history-protocol.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
-import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
+import { planPersonalOrdinaryRebase } from "./personal-ordinary-rebase.js";
+import { retainedPersonalDeletionIntent, preservesUndeletedEntities } from "./personal-deletion-intent.js";
 import { personalHistoryRestoreManifest, assertPersonalPhotoHistoryRestore } from "./personal-history-restore.js";
 import { personalListMigrationBody } from "./personal-list-migration.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
@@ -157,7 +160,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
-  photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
+  photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED,
+  ordinaryRecoveryEnabled = PERSONAL_ORDINARY_RECOVERY_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
   }
@@ -172,6 +176,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     && (reference?.importKind === "guest" ? guestImportEnabled
     : reference?.importKind === "archive" && archiveImportEnabled && archivePhotoImportEnabled);
   const keyPrefix = `${prefix}${encodeURIComponent(JSON.stringify(binding))}:`;
+  const ordinaryRecovery = createPersonalOrdinaryRecoveryStore({ storage, binding });
+  const assertNoOrdinaryRecovery = () => { if (ordinaryRecovery.read().pending) throw ordinaryRecoveryBlocked(); };
   let initialMergeBase = null;
   const read = () => {
     try {
@@ -280,6 +286,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               || settled.some((proof, index) => !validHistoricalProof(proof, ancestors[index].action))
               || settled.at(-1).operation.id !== parentId
               || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) && !validPersonalPhotoCancellation(record) && !validPersonalShareCancellation(record, records)
+                && !validPersonalOrdinaryRecoveryDecision(record, records, ordinaryRecovery.archive(record.reconciliation.decision.recoveryId))
                 : !revisionConflictChain(parent, records, settled))) throw Error("Invalid reconciled successor");
             parents.add(parentId);
             continue;
@@ -393,11 +400,136 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     return { historicalOnly: true, headOperationId: head?.action.operationId || null, outcomes };
   };
   const inspect = options => settle(options); // Public inspection is always GET-only.
+  const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
+  const ordinaryPayload = payload => {
+    // Photo values are allowed only in the established owner arrays. Unknown
+    // nested slots cannot conceal a file action in an ordinary recovery.
+    const visit = (value, path = []) => {
+      if (!value || typeof value !== "object") return true;
+      return Object.entries(value).every(([key, child]) => key === "photos"
+        ? path.length === 2 && ["items", "containers"].includes(path[0]) && Array.isArray(child)
+        : visit(child, [...path, key]));
+    };
+    return visit(payload) && preservesConfirmedPersonalPhotos(payload, payload, listId, { allowLegacy: true });
+  };
+  const ordinaryRecords = records => records.size > 0 && [...records.values()].every(record => record?.action.kind === "list.update"
+    && !record.photoState && isOrdinaryLegacyPersonalUpdate(record.action.body)
+    && (!Object.hasOwn(record.action.body, "fullReplace") || record.action.body.fullReplace === false)
+    && ordinaryPayload(record.action.body.payload));
+  const entryCopy = entries => [...entries].map(([key, value]) => ({ key, value })).sort((a, b) => a.key.localeCompare(b.key));
+  const assertArchiveRecords = (archive, current, successorRaw = null) => {
+    const entries = new Map(current.entries);
+    if (successorRaw !== null) {
+      if (entries.get(keyPrefix + archive.successorOperationId) !== successorRaw) throw ordinaryRecoveryBlocked();
+      entries.delete(keyPrefix + archive.successorOperationId);
+    }
+    if (!same(entryCopy(entries), archive.entries) || !same(ordinaryRecovery.archive(archive.recoveryId), archive)) throw ordinaryRecoveryBlocked();
+  };
   return {
     binding: clone(binding),
     supportsCommittedBaseline: true,
     supportsConflictChoices: true,
+    ordinaryRecoveryArchives() {
+      return clone(ordinaryRecovery.read().archives.filter(entry => entry.completed).map(entry => entry.archive));
+    },
     canReconcileStaleCapture: () => Boolean(staleCapture?.base),
+    ordinaryRecoveryState() {
+      const pending = ordinaryRecovery.read().pending, current = read();
+      return { eligible: ordinaryRecoveryEnabled && Boolean(pending || current.head && !current.applied.has(current.head.action.operationId)
+        && ordinaryRecords(current.records)), pending: Boolean(pending),
+        actionCount: pending?.archive.operationIds.length || current.records.size,
+        ...(pending ? { recoveryId: pending.archive.recoveryId } : {}) };
+    },
+    ordinaryRecoveryCopy() {
+      const pending = ordinaryRecovery.read().pending;
+      if (pending) return clone(pending.archive);
+      const current = assertObserved();
+      if (!ordinaryRecoveryEnabled || !current.head || !ordinaryRecords(current.records)) throw ordinaryRecoveryBlocked();
+      return clone({ version: 1, binding, entries: entryCopy(current.entries), snapshot: current.head.snapshot });
+    },
+    prepareOrdinaryRecoveryArchive({ getContext }) {
+      if (!ordinaryRecoveryEnabled) throw ordinaryRecoveryBlocked();
+      const current = assertObserved(), assertCurrent = guardEditor(getContext, current.head);
+      const pending = ordinaryRecovery.read().pending;
+      if (pending) { assertCurrent(); return clone(pending.archive); }
+      if (!current.head || current.applied.has(current.head.action.operationId) || !ordinaryRecords(current.records)) throw ordinaryRecoveryBlocked();
+      assertCurrent();
+      const archive = ordinaryRecovery.prepare({ entries: entryCopy(current.entries), snapshot: clone(current.head.snapshot),
+        operationIds: [...current.records.values()].sort((a, b) => a.action.generation - b.action.generation).map(record => record.action.operationId),
+        headOperationId: current.head.action.operationId, headGeneration: current.head.action.generation });
+      assertCurrent(); assertArchiveRecords(archive, assertObserved());
+      return archive;
+    },
+    async recoverOrdinaryWithServer({ queue, getContext, readRemote, makeSnapshot = payload => payload }) {
+      if (!ordinaryRecoveryEnabled) throw ordinaryRecoveryBlocked();
+      const pending = ordinaryRecovery.read().pending;
+      if (!pending) throw ordinaryRecoveryBlocked();
+      const archive = clone(pending.archive), current = assertObserved(), head = current.head;
+      const initialContext = clone(getContext());
+      const assertBinding = () => {
+        const live = getContext();
+        if (live?.scope !== "personal" || initialContext.scope !== "personal" || live.generation !== initialContext.generation
+          || Object.keys(binding).some(key => live[key] !== binding[key] || initialContext[key] !== binding[key])) throw ordinaryRecoveryBlocked();
+      };
+      const assertEditor = guardEditor(getContext, head);
+      const successorRaw = current.entries.get(keyPrefix + archive.successorOperationId) ?? null;
+      const assertCurrent = () => { assertEditor(); assertArchiveRecords(archive, assertObserved(), successorRaw); };
+      assertCurrent();
+      const originals = new Map(archive.operationIds.map(id => [id, current.records.get(id)]));
+      if (!ordinaryRecords(originals)) throw ordinaryRecoveryBlocked();
+      // A crash/quota failure after the atomic successor write only needs the
+      // completion marker. Never allocate another action or cancel that one.
+      if (successorRaw !== null) {
+        if (head?.action.operationId !== archive.successorOperationId || !validPersonalOrdinaryRecoveryDecision(head, originals, archive)) throw ordinaryRecoveryBlocked();
+        ordinaryRecovery.complete(archive, successorRaw); return clone(head);
+      }
+      if (head?.action.operationId !== archive.headOperationId || typeof queue?.cancelExact !== "function"
+        || typeof readRemote !== "function") throw ordinaryRecoveryBlocked();
+      const outcomes = [];
+      for (const record of originals.values()) {
+        const action = record.action;
+        assertCurrent();
+        const proof = clone(await queue.cancelExact(operationRequest(action))); assertCurrent();
+        const bytes = new TextEncoder().encode(canonicalListOperationJson({ environment, actorId, kind: action.kind, listId, body: action.body }));
+        const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte => byte.toString(16).padStart(2, "0")).join("");
+        assertCurrent();
+        if (!validHistoricalProof(proof, action) || proof.operation.payloadDigest !== digest
+          || proof.rejectionCode === "operation_cancelled" && (proof.resultStatus !== 409 || proof.cancellation?.version !== 1
+            || proof.cancellation.operationId !== action.operationId || proof.cancellation.noBusinessEffects !== true
+            || proof.cancellation.operationCannotApply !== true)) throw ordinaryRecoveryBlocked();
+        outcomes.push(proof);
+      }
+      const remote = clone(await readRemote()); assertCurrent();
+      if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
+        || !Number.isSafeInteger(remote.stateRevision) || remote.stateRevision < 1 || !ordinaryPayload(remote.payload)
+        || outcomes.some(proof => proof.operation.state === "committed" && (!Number.isSafeInteger(proof.stateRevision)
+          || proof.stateRevision < 1 || proof.stateRevision > remote.stateRevision))) throw ordinaryRecoveryBlocked();
+      const snapshotValue = makeSnapshot(clone(remote.payload), clone(archive.snapshot));
+      if (!snapshotValue || typeof snapshotValue !== "object" || typeof snapshotValue.then === "function") throw ordinaryRecoveryBlocked();
+      const snapshot = clone(snapshotValue); assertCurrent();
+      const mergeBase = { stateRevision: remote.stateRevision, payload: clone(remote.payload) };
+      const action = { ...binding, operationId: archive.successorOperationId, generation: archive.headGeneration + 1,
+        previousLocalOperationId: archive.headOperationId, kind: "list.update", body: { payload: clone(remote.payload),
+          baseStateRevision: remote.stateRevision, stateRevision: remote.stateRevision, baseServerUpdatedAt: remote.updatedAt || null,
+          force: false, forceOverwrite: false, fullReplace: false, causal: { dependsOn: [], reads: [] } } };
+      const reconciliation = { version: 1, settled: outcomes, decision: { version: 1, type: "keep-server-after-stopped-ordinary",
+        recoveryId: archive.recoveryId, stateRevision: remote.stateRevision } };
+      const record = { version: 1, action, snapshot, mergeBase, reconciliation };
+      if (!validPersonalOrdinaryRecoveryDecision(record, originals, archive)) throw ordinaryRecoveryBlocked();
+      preflight(action, snapshot); assertCurrent();
+      const raw = JSON.stringify({ version: 2, action, mergeBase, reconciliation, snapshotPatch: encodePersonalSnapshot(action.body.payload, snapshot) });
+      try {
+        if (storage.getItem(keyPrefix + action.operationId) !== null) throw ordinaryRecoveryBlocked();
+        storage.setItem(keyPrefix + action.operationId, raw);
+        if (storage.getItem(keyPrefix + action.operationId) !== raw) throw ordinaryRecoveryBlocked();
+      } catch { throw ordinaryRecoveryBlocked(); }
+      observe({ head: record, anchor: current.anchor });
+      const written = assertObserved(); assertArchiveRecords(archive, written, raw);
+      assertBinding();
+      ordinaryRecovery.complete(archive, raw);
+      assertBinding();
+      return clone(record);
+    },
     recover() { return clone(read().head); },
     recoverSnapshot() {
       const { head, anchor } = read();
@@ -428,6 +560,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         : clone({ payload: personalRecordPayload(head), stateRevision: confirmed.stateRevision });
     },
     adoptRemoteBaseline({ snapshot, payload, stateRevision, meta = {} }) {
+      assertNoOrdinaryRecovery();
       const input = clone({ snapshot, payload, stateRevision, meta });
       const { records, applied, anchor, checkpoints, head } = assertObserved();
       if (!head) {
@@ -469,6 +602,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     // Called ONLY after latest-receipt freshness and durable UI/base writes.
     // This checkpoint is not a substitute for a server operation receipt.
     markApplied({ operationId, stateRevision }) {
+      assertNoOrdinaryRecovery();
       const { head, applied, records } = assertObserved();
       const archiveSource = personalPendingGuestUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId })
         || personalPendingServerUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId })
@@ -494,6 +628,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       assertObserved();
     },
     compact() {
+      assertNoOrdinaryRecovery();
       const { records, applied, anchor, checkpoints, entries, head } = assertObserved();
       if (!head || !applied.has(head.action.operationId)) return { removed: 0, pending: true };
       const operationId = head.action.operationId;
@@ -543,6 +678,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           && (record.photoState.fileIntentHash !== null || ["form", "copy-batch"].includes(record.action.body.action) || record.action.kind === "list.import")) });
     },
     preparePhoto({ snapshot, payload, body, operationId = crypto.randomUUID() }) {
+      assertNoOrdinaryRecovery();
       if (["form", "copy-batch"].includes(body?.action) || body?.archiveImport?.version === 2 || Object.hasOwn(body || {}, "guestImport") || Object.hasOwn(body || {}, "publicImport") || Object.hasOwn(body || {}, "serverImport")) {
         for (const value of [snapshot, payload, body]) assertListOperationPayload({ ...binding, kind: "photos.mutate", body: value });
       }
@@ -627,6 +763,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone({ action, snapshot: input.snapshot, payload: input.payload, mergeBase: base });
     },
     async capturePhoto({ plan, store, getContext }) {
+      assertNoOrdinaryRecovery();
       if (["form", "copy-batch"].includes(plan?.action?.body?.action) || plan?.action?.body?.archiveImport?.version === 2 || Object.hasOwn(plan?.action?.body || {}, "guestImport") || Object.hasOwn(plan?.action?.body || {}, "publicImport") || Object.hasOwn(plan?.action?.body || {}, "serverImport")) {
         assertListOperationPayload(plan.action);
         for (const value of [plan.snapshot, plan.payload]) assertListOperationPayload({ ...binding, kind: "photos.mutate", body: value });
@@ -663,6 +800,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       } catch (error) { error.unconfirmedMemoryDraft = input.snapshot; throw error; }
     },
     capture({ snapshot, body, create = false, restore = false, migration = false, archiveImport = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
+      assertNoOrdinaryRecovery();
       const input = clone({ snapshot, body });
       const sharing = Object.hasOwn(input.body || {}, "shareLink");
       if (sharing) {
@@ -838,6 +976,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(record);
     },
     async reconcileStaleCapture({ getContext, makeSnapshot = payload => payload, resolveConflicts } = {}) {
+      assertNoOrdinaryRecovery();
       if (!staleCapture?.base) throw blocked("recovery-base", "Не сохранилась исходная версия черновика. Автоматическое восстановление недоступно.");
       const draft = clone(staleCapture), current = read(), initial = clone(getContext());
       const currentObservation = observation(current), target = current.head;
@@ -898,10 +1037,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     inspect,
     async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore, resolveRejectedPhoto, resolveRejectedShare,
       operationId = crypto.randomUUID(), adoptCommittedOnly = false }) {
+      assertNoOrdinaryRecovery();
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
       if ([...records.values()].some(record => record.action.body.shareLink && !applied.has(record.action.operationId)) && !shareLinkEnabled) throw blocked("share-link-disabled", "Решение по сохранённой ссылке ещё не включено. Очередь сохранена.");
-      const assertCurrent = guardEditor(getContext, head);
+      const assertEditor = guardEditor(getContext, head);
+      const assertCurrent = () => { assertNoOrdinaryRecovery(); assertEditor(); };
       const settled = await settle({ queue, getContext }, !adoptCommittedOnly);
       assertCurrent();
       // Unknown/waiting never reach this point. Other business rejections and
@@ -979,6 +1120,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         return { adoptedBaseline: true, snapshot, baseline: clone(baseline), historicalConfirmation: clone(headProof),
           serverRecord: remote, action: clone(head.action) };
       }
+      // Only ordinary, photo-preserving edits enter this planner. Exact old
+      // receipts and this chain's saved/committed merge base were checked
+      // above; this never substitutes a current snapshot for a missing base.
+      const ordinaryRebase = ordinaryRecoveryEnabled && ordinaryRecords(records);
+      const planRebase = ordinaryRebase
+        ? options => planPersonalOrdinaryRebase({ ...options, listId }) : planPersonalPayloadReconciliation;
       let plan, decision = null;
       if (rejectedShare) {
         if (!preservesConfirmedPersonalPhotos(remote.payload, remote.payload, listId)) throw blocked("share-link-files", "Файлы актуальной версии ещё не подтверждены. Выбор ссылки и очередь сохранены.");
@@ -1018,19 +1165,26 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (choice !== "keep-server") throw blocked("reconciliation-cancelled", "Выбор отложен. Восстановление и последующие локальные изменения сохранены, сервер не перезаписан.");
         decision = { version: 1, type: restoreRecord.action.kind === "list.import" ? "keep-server-after-rejected-import" : "keep-server-after-rejected-restore", restoreOperationId: rejectedRestore.operation.id, stateRevision: remote.stateRevision };
         plan = { payload: remote.payload, conflicts: [] };
-      } else plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
+      } else plan = planRebase({ base, local: head.action.body.payload, remote });
       if (!plan.blocked && plan.conflicts?.length && typeof resolveConflicts === "function") {
         // The dialog gets copies, never mutable authority over the frozen
         // comparison or journal. A changed editor/account invalidates a choice.
         const choices = await resolveConflicts(clone(plan.conflicts), { stateRevision: remote.stateRevision });
         assertCurrent();
         if (choices === "cancel" || choices == null) throw blocked("reconciliation-cancelled", "Выбор отложен. Обе версии сохранены; сервер не перезаписан.");
-        plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote, choices });
+        plan = planRebase({ base, local: head.action.body.payload, remote, choices });
       }
       if (plan.blocked || plan.conflicts?.length) {
         throw Object.assign(blocked("reconciliation-conflict", plan.conflicts?.length
           ? "Одни и те же данные изменены по-разному. Локальная версия сохранена, серверная не перезаписана."
           : "Эти изменения требуют отдельной проверки. Автоматическое объединение остановлено."), { conflicts: plan.conflicts || [], reason: plan.blocked });
+      }
+      // Rebase does not silently carry a stale deletion/placement descriptor
+      // onto a new server version. Removing entities or placements needs a
+      // separate validated intent; compatible fields/additions/moves remain.
+      if (ordinaryRebase && !preservesUndeletedEntities(plan.payload, remote.payload)) {
+        throw Object.assign(blocked("reconciliation-conflict", "Перенос удаления требует отдельной проверки. Местные изменения и очередь сохранены."),
+          { reason: "ordinary-rebase-loss" });
       }
       const payload = clone(plan.payload), snapshot = clone(makeSnapshot(clone(payload), clone(head.snapshot)));
       assertCurrent();
@@ -1226,6 +1380,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return { historicalOnly: true, ownerReceipt, stageReceipt, fileRetained: true };
     },
     async drain({ queue, getContext, photoStore, photoStaging, onConfirmed = () => {} }) {
+      assertNoOrdinaryRecovery();
       const { records, head } = assertObserved();
       if (!head) return null;
       if (([6, 7].includes(head.action.body.ownerResult?.version) || [13, 14].includes(head.action.body.photoResults?.version))
@@ -1239,6 +1394,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         && (!importPhotoFormEnabled || !formOwnerResultEnabled)) throw blocked("import-photo-form-disabled", "Фото до подтверждения переноса или архива ещё не включены.");
       const initial = clone(getContext());
       const assertContext = () => {
+        assertNoOrdinaryRecovery();
         const current = getContext();
         if (!initial || Object.keys(binding).some(field => current?.[field] !== binding[field])
           || current?.generation !== initial.generation || current?.scope !== "personal") {

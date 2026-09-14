@@ -5,6 +5,7 @@ import { reducePersonalPlacementReference } from "./personal-placement-mutation.
 import { validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { validPersonalShareCancellation } from "./personal-share-cancellation.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
+import { validPersonalOrdinaryRecoveryDecision } from "./personal-ordinary-recovery.js";
 
 export function personalDeletionIntent(value) {
   if (value?.type === "batch") {
@@ -66,11 +67,21 @@ export function preparePersonalDeletionBatch(state, value, { changedAt = "", mar
 
 // Reduce only the comparison baseline, never live state. This is not a general
 // force save: unrelated losses must still pass the ordinary regression guard.
-export function personalDeletionReference(base, records, { confirmedBoundary = null } = {}) {
-  if (!base) return null;
-  let reference = JSON.parse(JSON.stringify(base));
+export function personalDeletionReference(base, records, { confirmedBoundary = null, ordinaryRecoveryArchives = [] } = {}) {
   let declared = false;
   const byId = new Map(records.map(record => [record.action?.operationId, record]));
+  // Only completed, scoped archive certificates supplied by the outbox can
+  // establish this new root. A decision label or local snapshot is not proof.
+  const recoveryRoot = [...records].sort((a, b) => b.action.generation - a.action.generation).find(record => {
+    if (record.reconciliation?.decision?.type !== "keep-server-after-stopped-ordinary") return false;
+    const archive = Array.isArray(ordinaryRecoveryArchives) && ordinaryRecoveryArchives.find(archive => archive.recoveryId === record.reconciliation.decision.recoveryId);
+    const ancestors = [...records].filter(entry => entry.action.generation < record.action.generation)
+      .sort((a, b) => a.action.generation - b.action.generation).map(entry => entry.action.operationId);
+    return validPersonalOrdinaryRecoveryDecision(record, byId, archive)
+      && canonicalListOperationJson(ancestors) === canonicalListOperationJson(archive.operationIds);
+  });
+  if (!base && !recoveryRoot) return null;
+  let reference = JSON.parse(JSON.stringify(base || recoveryRoot.mergeBase.payload));
   let boundaryGeneration = 0;
   if (confirmedBoundary) {
     const record = byId.get(confirmedBoundary.operationId);
@@ -79,6 +90,11 @@ export function personalDeletionReference(base, records, { confirmedBoundary = n
       throw Error("Не подтверждена текущая исходная версия списка.");
     }
     boundaryGeneration = record.action.generation;
+  }
+  if (recoveryRoot && recoveryRoot.action.generation > boundaryGeneration) {
+    reference = JSON.parse(JSON.stringify(recoveryRoot.mergeBase.payload));
+    boundaryGeneration = recoveryRoot.action.generation;
+    declared = true;
   }
   for (const record of [...records].filter(record => !boundaryGeneration || record.action.generation > boundaryGeneration)
     .sort((a, b) => (a.action?.generation || 0) - (b.action?.generation || 0))) {
