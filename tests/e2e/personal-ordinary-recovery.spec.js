@@ -69,15 +69,20 @@ async function green(page, f) {
 }
 
 test.afterEach(async ({ page }, info) => {
-  if (info.status === info.expectedStatus || !page.legacyPhotoFixture) return;
+  if (!page.legacyPhotoFixture) return;
   const f = page.legacyPhotoFixture;
+  await f.flushErrors();
+  if (info.status === info.expectedStatus && !f.errors.length && !f.pageErrors.length) {
+    expect(f.errors).toEqual([]); return;
+  }
   await info.attach("ordinary-recovery-evidence", { contentType: "application/json", body: JSON.stringify({
     calls: f.calls, cancellations: f.cancellations, cancellationSnapshots: f.cancellationSnapshots, posts: f.posts,
-    receipts: [...f.receipts], payload: f.payload, revision: f.revision, errors: f.errors,
+    receipts: [...f.receipts], payload: f.payload, revision: f.revision, errors: f.errors, browserErrors: f.browserErrors, pageErrors: f.pageErrors,
     archives: await recoveryStorage(page).catch(error => ({ error: error.message })),
     transport: await nativeLegacyPhotoTransport(page).catch(error => ({ error: error.message })),
     outbox: await nativeLegacyPhotoOutbox(page).catch(error => ({ error: error.message }))
   }, null, 2) });
+  if (info.status === info.expectedStatus) expect(f.errors).toEqual([]);
 });
 
 test("manual ordinary recovery obtains server identity around the actual identity-free state DTO before offering a choice", async ({ page, context }, info) => {
