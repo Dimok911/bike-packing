@@ -25,7 +25,7 @@ export async function drainPersonalSaveWithOrdinaryRecovery({ enabled = false, o
   if (outbox.ordinaryRecoveryState?.().pending) return resume();
   try { return await drain(); }
   catch (error) {
-    if (!enabled || !error.isOperationReceiptError || ["reconciliation-cancelled", "context"].includes(error.code)
+    if (!enabled || !error.isOperationReceiptError || ["reconciliation-cancelled", "context", "recovery-state"].includes(error.code)
       || !outbox.ordinaryRecoveryState?.().eligible) throw error;
     const initial = canonical(getContext()), initialRecords = canonical(outbox.list());
     const assertCurrent = () => {
