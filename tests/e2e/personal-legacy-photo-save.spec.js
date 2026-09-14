@@ -233,6 +233,9 @@ test("release startup baseless placement accepts only equivalent mixed legacy ph
   await expect(page.locator(`#packingView [data-root-container-id="${legacyBagId}"]`)).toHaveCount(1);
   expect(f.payload.containers[legacyBagId].photos).toEqual(f.initial.containers[legacyBagId].photos);
   const beforeColdRead = f.calls.length;
+  // Exercise the documented full-read fallback for an older API process.
+  // Normal /freshness cache reuse is valid and covered by the other cold tests.
+  f.freshnessAvailable = false;
   await reload(page); await startupGreen(page, f, 1583);
   expect(f.calls.slice(beforeColdRead).some(call=>call.method==="GET" && call.path===`/bike-packing/lists/${legacyPhotoBinding.listId}/state`)).toBe(true);
   expect((await nativeLegacyPhotoOutbox(page)).confirmed.payload).toEqual(personalBusinessPayload(f.payload));

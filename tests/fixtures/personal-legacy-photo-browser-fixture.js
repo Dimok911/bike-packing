@@ -158,7 +158,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck =
     initial.containers.second.photos = structuredClone(initial.containers[legacyBagId].photos.slice(0, 2));
   }
   const f = { initial, payload: structuredClone(initial), revision: 1582, calls: [], posts: [], receiptReads: [],
-    receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false };
+    receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
   f.registeredPhotoRows = new Map(initial.containers[legacyBagId].photos.map(photo => [photo.id,
     { listId:legacyPhotoBinding.listId, entityType:"container", entityId:legacyBagId, reference:structuredClone(photo) }]));
   f.preserveRows = (before, after) => assertLegacyPhotoRowsPreserved(before, after, { routeAliases: mixedLegacyRoutes });
@@ -189,8 +189,11 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck =
       else if (endpoint === "/bike-packing/lists") data = { ok: true, lists: [list()] };
       else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}` || endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/state`)
         data = { ok: true, list: list(), state: structuredClone(f.payload), stateRevision: f.revision };
-      else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/freshness`) data = { ok: true, listId: legacyPhotoBinding.listId,
-        stateRevision: f.revision, serverUpdatedAt: timestamp, itemCount: 0, containerCount: Object.keys(f.payload.containers).length, layoutCount: 1 };
+      else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/freshness`) {
+        if (!f.freshnessAvailable) return route.fulfill({ status: 404, headers, json: { ok: false, code: "isolated_freshness_not_available" } });
+        data = { ok: true, listId: legacyPhotoBinding.listId, stateRevision: f.revision, serverUpdatedAt: timestamp,
+          itemCount: 0, containerCount: Object.keys(f.payload.containers).length, layoutCount: 1 };
+      }
       else if (new RegExp(`^/bike-packing/lists/${legacyPhotoBinding.listId}/photos/legacy-photo-[1-4]/(file|thumb)$`).test(endpoint))
         return route.fulfill({ headers, contentType: "image/png", body: png });
       else if (endpoint === "/bike-packing/list-operations" && method === "POST") {
