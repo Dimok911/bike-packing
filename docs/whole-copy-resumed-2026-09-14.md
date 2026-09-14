@@ -51,7 +51,13 @@ was not rerun; its unchanged focused whole-copy execution is the 8/8 proof above
 
 ## Still required for card 3.3
 
-V10 plan/registry integration; complete source and absent-target admission,
+The pure V10 plan helper is now implemented and registered: 15 focused tests
+passed, with an unchanged 45-file import graph. It separates the source editor
+snapshot from the absent target declaration, rederives typed records after
+awaits, and projects a new target only from full stage/parent receipt proofs.
+It does not yet connect to the generic plan registry or application.
+
+Still required: V10 registry integration; complete source and absent-target admission,
 namespace inventory and capture leases; connection to the existing copy form;
 target-only apply/mirror/acceptance and cold recovery in the application; real
 browser acceptance of that complete user flow. The protocol/server/client
@@ -68,5 +74,7 @@ An isolated v1612 hotfix is being prepared from published FE `b9969d9b` and
 published BE `fbc03422`. It selects only legacy-photo preservation from FE
 `ac5abf0f` and BE `f194ae77`, retaining v1611 deployment validation tools. The live
 BE baseline was independently confirmed by read-only SSH. Whole-copy changes
-are excluded. Candidate checks and any subsequent publication require their own
-exact-source evidence. At this checkpoint, no v1612 publication has occurred.
+are excluded. The paired v1612 hotfix has now been published and passed live
+RU/EU and two clean public browser checks. Exact evidence is in the original
+workspace `ftp-upload/release-v1612-status.md`. Phone queue/VPN acceptance remains
+pending, separately tracked at https://trello.com/c/7AUTLFmp.
