@@ -832,6 +832,7 @@ import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, assertPersonalPhotoCopyBatchRecord }
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
+import { hasLegacyPersonalPhotos, preparePersonalLegacyPhotoPreservation, PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED } from "./src/sync/personal-legacy-photo-preservation.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { recoverPersonalAdminDrafts, personalPayloadWithoutAdminDrafts } from "./src/sync/personal-admin-draft-recovery.js";
 import { pendingPersonalTemplateSource } from "./src/sync/admin-template-pending-personal-source.js";
@@ -6513,6 +6514,31 @@ async function offerLoadServerForTruncatedLocalState({ notify = false, preferred
   return true;
 }
 
+function adoptConfirmedPersonalRemoteBaseline({ state: remoteState, payload, integrityMeta, listId }) {
+  if (!personalSavePilotEnabled() || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return;
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox || listId !== outbox.binding.listId || listId !== currentPackingListId
+    || outbox.binding.actorId !== String(currentUser?.id || "") || outbox.binding.scopeKey !== localStorageScopeKey) {
+    throw Error("Не подтверждён аккаунт исходной серверной версии.");
+  }
+  // An already captured action owns its original bytes. A new server read
+  // cannot replace its missing base or any pending predecessor.
+  if (outbox.hasPending()) return;
+  outbox.adoptRemoteBaseline({ snapshot: remoteState, payload: personalBusinessPayload(payload),
+    stateRevision: integrityMeta?.stateRevision, meta: integrityMeta || {} });
+}
+
+function canReuseConfirmedPersonalRemoteBaseline({ listId, freshness }) {
+  if (!personalSavePilotEnabled() || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return true;
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox || listId !== currentPackingListId || listId !== outbox.binding.listId
+    || outbox.binding.actorId !== String(currentUser?.id || "") || outbox.binding.scopeKey !== localStorageScopeKey
+    || outbox.hasPending()) return false;
+  const base = outbox.confirmedBase();
+  return Boolean(base?.payload && Number.isSafeInteger(base.stateRevision) && base.stateRevision > 0
+    && base.stateRevision === freshness?.stateRevision);
+}
+
 function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, {
   allowDestructive = false,
   deferRender = false,
@@ -9503,8 +9529,13 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     // behind a final snapshot which happens to restore the old references.
     const containsPhotos = value => value && typeof value === "object" && Object.entries(value)
       .some(([key, child]) => key === "photos" && Array.isArray(child) && child.length > 0 || containsPhotos(child));
+    let legacyPhotoProof = null;
     const beforeDrain = () => {
       const records = outbox.list();
+      if (legacyPhotoProof) {
+        if (!legacyPhotoProof.check()) throw Error("Версия списка изменилась во время проверки старых фотографий. Очередь сохранена.");
+        return;
+      }
       if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(record.action.body.payload)))
         && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
           confirmedBoundary: outbox.confirmedBoundary(),
@@ -9518,9 +9549,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       return personalSaveContext();
     };
     const queue = createListOperationQueue({ transport: experimentTransport, getContext });
-    updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
-    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext, beforeDrain,
-      async readRemote() {
+    const readRemote = async () => {
         const initial = personalSaveContext();
         const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(outbox.binding.listId)}/state`, {
           timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
@@ -9534,7 +9563,25 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         // Compare the business representation, not the assembled API's display
         // mirrors. Receipt bytes/IDs remain untouched in the durable journal.
         return { ...record, payload: personalBusinessPayload(record.payload) };
-      },
+    };
+    const prepareBeforeDrain = async () => {
+      legacyPhotoProof = null;
+      const records = outbox.list(), confirmedBoundary = outbox.confirmedBoundary();
+      if (!records.some(record => hasLegacyPersonalPhotos(record.action.body.payload))
+        && !hasLegacyPersonalPhotos(confirmedBoundary?.payload)) return;
+      const initial = personalSaveContext();
+      const capabilities = await apiFetch("/bike-packing/capabilities", { silentErrors: true });
+      if (!sameJson(initial, personalSaveContext())) throw Error("Редактор изменился. Проверка сохранения остановлена.");
+      legacyPhotoProof = await preparePersonalLegacyPhotoPreservation({
+        records, operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
+        getRecords: () => outbox.list(), getContext, readRemote, confirmedBoundary,
+        enabled: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED, capabilities: capabilities?.capabilities,
+        inspectExact: action => queue.inspect({ operationId: action.operationId,
+          path: `/bike-packing/lists/${encodeURIComponent(action.listId)}`, method: "PUT", body: JSON.stringify(action.body) })
+      });
+    };
+    updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
+    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext, prepareBeforeDrain, beforeDrain, readRemote,
       makeSnapshot: personalReconciledSnapshot,
       makeBaselineMeta(record) {
         return { ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
@@ -10242,6 +10289,13 @@ async function handleInitialListMigrationRequired(error) {
 async function loadRemoteState(options = {}) {
   await checkPersonalPhotoRecoveryBeforeLoad();
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
+  const baselineLoadOwner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
+  const assertBaselineLoadOwner = () => {
+    if (baselineLoadOwner.actorId !== String(currentUser?.id || "") || baselineLoadOwner.scopeKey !== localStorageScopeKey
+      || baselineLoadOwner.listId && baselineLoadOwner.listId !== currentPackingListId) {
+      throw Error("Аккаунт или список изменились во время загрузки исходной версии.");
+    }
+  };
   remoteStateLoadPromise = loadRemoteStateFlow({
     runtime: {
       get appUnlocked() { return appUnlocked; },
@@ -10265,6 +10319,8 @@ async function loadRemoteState(options = {}) {
       cloneStateForSync,
       createEmptyUserState,
       canUseCachedStartupState,
+      adoptConfirmedRemoteBaseline: input => { assertBaselineLoadOwner(); return adoptConfirmedPersonalRemoteBaseline(input); },
+      canReuseConfirmedRemoteBaseline: input => { assertBaselineLoadOwner(); return canReuseConfirmedPersonalRemoteBaseline(input); },
       currentPackingListId: () => currentPackingListId || remoteRecordId(currentPackingListMeta),
       fetchRemoteListFreshnessRecord,
       fetchRemoteStateRecord,

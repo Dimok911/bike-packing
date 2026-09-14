@@ -1,5 +1,58 @@
 # Future Production batches — tracking only, not deployment permission
 
+## Current production readiness — 2026-09-14
+
+Production promotion is **not ready**. Experiment v1611 is a testing release;
+its publication is not evidence that the protocol migration is complete. The
+dated entries below are development history, not current deployment status.
+No Production deployment or data migration is part of the current work.
+
+Before selecting a Production release:
+
+- Freeze one coherent candidate against the then-current Production baseline.
+  Record the exact frontend/backend commits, artifact hashes, schema changes,
+  capabilities, environment/auth configuration and included migration cards.
+  Do not promote the accumulating Experiment branch wholesale. Adapt and test
+  the Production build separately: Experiment origin gates are not a Production
+  rollout mechanism. Once validated, promote that exact artifact unchanged.
+- Rehearse an upgrade against an isolated copy of representative existing data,
+  including legacy photos, mixed photo generations and existing pending browser
+  queues. Preserve privacy; no database dump or browser recovery export in Git.
+  Record old-client/new-server and new-client/new-server compatibility. A
+  synthetic fresh-account test does not prove old-account upgrade compatibility.
+- Run the frozen candidate through actual desktop and mobile browser workflows:
+  add/remove an existing bag, edit fields, upload/reorder/delete/copy photos,
+  refresh, restart, offline recovery, lost acknowledgements and duplicate delivery,
+  account isolation and both API routes. Verify server data and file invariants,
+  not only a green UI indicator. Record unsupported combinations explicitly.
+- Rehearse rollback with pending and unknown operations. Preserve compatible
+  journal/receipt readers and data/file schemas. Returning old frontend files
+  must never restart blind writes or erase unconfirmed operations. Verify backup
+  restoration separately from the decision whether restoring a database would
+  lose newer confirmed changes. Stop new writes if safe rollback is unavailable.
+- Prepare and test a Production-specific limited activation mechanism before
+  enabling the new protocol for any cohort. Deploy compatible server/schema
+  preparation first; expand activation only after the agreed scenarios pass and
+  operation status, queue settlement and data/file consistency are observed.
+- Use local source, database and browser validation while GitHub Actions quota
+  is exhausted; retain logs and artifact hashes. Lack of Actions is not a reason
+  to omit release checks. Record checks not run as outstanding, never as passed.
+
+Current regression to add to every candidate: an ordinary placement of a bag
+with unchanged legacy photos must retain the original photo references, owner
+bindings, order, SQL rows and file bytes. An existing immutable pending action
+without a stored baseline must keep its UUID/body: recover only from an exact
+server revision or exact historical receipt; otherwise preserve and pause it.
+The new local implementation and tests do not establish that a specific live
+account's SQL inventory is consistent or that its pending action has completed.
+
+The copy-data upgrade rehearsal, Production compatibility/activation work and
+rollback rehearsal above remain **outstanding**. Keep these release gates
+separate from "development complete", "published to Experiment" and "tested
+in Experiment" in the migration tracking board.
+
+## Historical batch notes
+
 User instruction (2026-09-06): continue development, **do not transfer or publish
 anything yet**. Keep an explicit record of the portions that may be transferred
 later. A green test run, commit or this document is not permission to deploy.

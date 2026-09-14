@@ -24,6 +24,8 @@ import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDAT
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, PERSONAL_ARCHIVE_IMPORT_CAPABILITY, assertPersonalArchiveImportHashes, validatePersonalArchiveImportResult } from "./personal-archive-import-protocol.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
+import { hasLegacyPersonalPhotos, isOrdinaryLegacyPersonalUpdate } from "./personal-confirmed-photos.js";
+import { PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED, PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY } from "./personal-legacy-photo-preservation.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILITY } from "./personal-photo-staging.js";
@@ -182,6 +184,7 @@ function relatedCausalOperationIds(writes, { actorId, listId, operationId, body 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
+  legacyPhotoPreservationEnabled = PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
@@ -759,6 +762,12 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry) data = await recover({ ...entry, recovery: { ...entry.recovery, body } }, { resumeWaiting: true,
           assertBeforeDispatch: async () => {
             if (!contextMatches(initial)) throw paused(entry.id);
+            if (route.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(body) && hasLegacyPersonalPhotos(body.payload)) {
+              const capabilities = await read("/bike-packing/capabilities");
+              if (!contextMatches(initial) || !legacyPhotoPreservationEnabled
+                || ![LIST_OPERATION_CAPABILITY, PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY]
+                  .every(capability => capabilities.capabilities?.includes(capability))) throw paused(entry.id);
+            }
             if (body.publicImport?.source?.kind === "admin-template") {
               const capabilities = await read("/bike-packing/capabilities");
               if (!contextMatches(initial) || !canWriteAdminImport(body)
@@ -794,6 +803,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
           transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
+          if (route.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(body) && hasLegacyPersonalPhotos(body.payload)
+            && (!legacyPhotoPreservationEnabled || !capabilities.capabilities?.includes(PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY))) {
+            throw paused(requestedId, "Сохранение списка со старыми фотографиями ещё не поддерживается этим сервером. Действие оставлено на устройстве.");
+          }
           if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
           if (route.kind === "list.migrate" && !capabilities.capabilities?.includes(PERSONAL_LIST_MIGRATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подготовку старого списка. Запрос не отправлен.");
           if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {

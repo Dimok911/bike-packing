@@ -2,8 +2,12 @@
 // the outbox only after exact old receipts and a fresh three-way comparison.
 export async function drainPersonalSaveWithReconciliation({ outbox, queue, getContext,
   readRemote, makeSnapshot, makeBaselineMeta, resolveConflicts, resolveRejectedRestore, resolveRejectedShare, onReconciled, onAdopted, onConfirmed,
-  beforeDrain = () => {}, maxReconciliations = 2 }) {
+  prepareBeforeDrain = null, beforeDrain = () => {}, maxReconciliations = 2 }) {
   for (let attempt = 0; ; attempt++) {
+    // Read-only preparation may obtain a missing server baseline. The final
+    // synchronous guard still binds that evidence to the current editor and
+    // immutable queue, including after a newly reconciled successor.
+    if (prepareBeforeDrain) await prepareBeforeDrain();
     // Revalidate the current durable chain after reconciliation as well. A
     // freshly merged successor must not inherit permission from its old body.
     const checked = beforeDrain();
