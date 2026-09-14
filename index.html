@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1616" />
+    <link rel="stylesheet" href="./styles.css?v=1617" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -56,6 +56,11 @@
         </div>
         <p id="mobileAdminApiWarning" class="mobile-admin-api-warning" hidden></p>
       </header>
+
+      <section id="personalRecoveryNotice" class="personal-recovery-notice" role="status" hidden>
+        <p id="personalRecoveryNoticeText">Не удалось объединить изменения — нужно ваше решение.</p>
+        <button id="personalRecoveryReviewBtn" type="button">Разобрать изменения</button>
+      </section>
 
       <section class="app-startup" lang="en" aria-live="polite" aria-busy="true">
         <span class="app-startup-spinner" aria-hidden="true"></span>
@@ -999,6 +1004,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1616" type="module"></script>
+    <script src="./app.js?v=1617" type="module"></script>
   </body>
 </html>
