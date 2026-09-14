@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, nativeLegacyPhotoOutbox, seedLegacyPhotoPendingAction,
-  assertLegacyPhotoRowsPreserved, legacyLayoutId, legacyBagId, legacyPendingBagIds, legacyPhotoBinding } from "../fixtures/personal-legacy-photo-browser-fixture.js";
+  assertLegacyPhotoRowsPreserved, nativeLegacyPhotoTransport, legacyLayoutId, legacyBagId, legacyPendingBagIds, legacyPhotoBinding } from "../fixtures/personal-legacy-photo-browser-fixture.js";
 
 // These cases consume the normal release build, with no source transforms or
 // lexical app hooks. Every API response belongs to an isolated synthetic user.
@@ -13,6 +13,8 @@ test.afterEach(async ({ page }, info) => {
   const f = page.legacyPhotoFixture;
   await info.attach("isolated-legacy-photo-evidence", { contentType: "application/json", body: JSON.stringify({
     calls: f.calls, posts: f.posts, receipts: [...f.receipts], captured: f.captured, initial: f.initial, payload: f.payload,
+    preparations: f.preparations, waiting: [...f.waiting], preparationSnapshots: f.preparationSnapshots,
+    transport: await nativeLegacyPhotoTransport(page).catch(error => ({ error: error.message })),
     native: await nativeLegacyPhotoOutbox(page).catch(error => ({ error: error.message })), errors: f.errors
   }, null, 2) });
 });
@@ -243,5 +245,95 @@ test("release startup baseless placement accepts only equivalent mixed legacy ph
   expect(f.posts).toHaveLength(1); exactOriginalPost(f.posts[0], original.record);
   expect([...f.registeredPhotoRows]).toEqual(registeredBefore);
   expect(f.payload.containers.second.photos).toEqual(f.initial.containers.second.photos);
+  expect(f.errors).toEqual([]);
+});
+
+async function oldSharedOwnerFailure(page, context) {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context, { mixedLegacyRoutes: true, sharedOwnerUpgrade: true });
+  const original = await seedLegacyPhotoPendingAction(page, legacyPendingBagIds);
+  await reload(page);
+  await expect.poll(() => f.posts.length, { timeout: 30000 }).toBe(1);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
+  expect(f.calls.find(call => call.method === "POST")).toMatchObject({ status: 403, code: "personal_owner_only" });
+  exactOriginalPost(f.posts[0], original.records[0]);
+  // Reopen the old release once more: the actual 403 transport entry survives,
+  // but its stored fields no longer explain the denial. GET remains unknown.
+  const beforeCold = f.calls.length;
+  await reload(page);
+  await expect.poll(() => f.calls.slice(beforeCold).some(call => call.method === "GET"
+    && call.path === `/bike-packing/list-operations/${original.records[0].action.operationId}` && call.receiptState === "unknown"),
+  { timeout: 30000 }).toBe(true);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
+  expect(f.posts).toHaveLength(1); expect(f.preparations).toEqual([]);
+  expect(f.revision).toBe(1582); expect(f.payload).toEqual(f.initial); expect(f.receipts.size).toBe(0);
+  const pending = await nativeLegacyPhotoOutbox(page);
+  expect(pending.records).toEqual(original.records); expect(pending.pending).toBe(true);
+  for (const entry of original.entries) expect(pending.entries).toContainEqual(entry);
+  const transport = await nativeLegacyPhotoTransport(page);
+  expect(transport).toHaveLength(1);
+  expect(transport[0].value).toMatchObject({ id: original.records[0].action.operationId,
+    path: `/bike-packing/lists/${legacyPhotoBinding.listId}`, method: "PUT", recovery: { type: "list", protocol: "causal-v1",
+      actorId: legacyPhotoBinding.actorId, operationId: original.records[0].action.operationId, body: original.records[0].action.body } });
+  expect(transport[0].value.confirmed).not.toBe(true);
+  expect(transport[0].value.receipt).toBeUndefined();
+  expect(transport[0].raw).not.toContain("personal_owner_only");
+  await localChainVisible(page);
+  return { f, original, transport };
+}
+
+test("release shared owner upgrade prepares the unknown v1613 UUID and confirms the same three placements", async ({ page, context }) => {
+  const { f, original, transport } = await oldSharedOwnerFailure(page, context);
+  const beforeUpgrade = f.calls.length, registered = structuredClone([...f.registeredPhotoRows]);
+  f.preparationEnabled = true; f.upgradeBundle();
+  await reload(page); await startupGreen(page, f, 1585); await localChainVisible(page);
+  expect(f.preparations).toEqual([f.posts[0]]);
+  expect(f.posts).toHaveLength(4); // One old denied attempt, then precisely three new successful POSTs.
+  original.records.forEach((record, index) => exactOriginalPost(f.posts[index + 1], record));
+  expect(f.receipts.size).toBe(3);
+  expect(f.payload.layouts[legacyLayoutId].arrangement.rootContainerIds).toEqual(["placed-bag", ...legacyPendingBagIds]);
+  const preparation = f.preparationSnapshots[0];
+  expect(preparation.after).toEqual(preparation.before); expect(preparation.before.revision).toBe(1582);
+  expect(preparation.native.records).toEqual(original.records);
+  for (const entry of original.entries) expect(preparation.native.entries).toContainEqual(entry);
+  const calls = f.calls.slice(beforeUpgrade), prepareIndex = calls.findIndex(call => call.path.endsWith("/prepare"));
+  const waitingIndex = calls.findIndex(call => call.method === "GET" && call.receiptState === "waiting");
+  const executeIndex = calls.findIndex(call => call.method === "POST" && call.path === "/bike-packing/list-operations");
+  expect(prepareIndex).toBeGreaterThan(-1); expect(waitingIndex).toBeGreaterThan(prepareIndex); expect(executeIndex).toBeGreaterThan(waitingIndex);
+  const confirmed = await nativeLegacyPhotoTransport(page);
+  expect(confirmed.find(row => row.key === transport[0].key)?.value).toMatchObject({ confirmed: true,
+    receipt: { operation: { id: original.records[0].action.operationId, state: "committed" } } });
+  // The real SQL contract preserves raw legacy rows. A full reload and an
+  // explicit Sync must not invent a fourth action for normalized URL aliases.
+  f.freshnessAvailable = false;
+  await reload(page); await startupGreen(page, f, 1585); await green(page, f, 1585);
+  expect((await nativeLegacyPhotoOutbox(page)).confirmed.payload).toEqual(personalBusinessPayload(f.payload));
+  expect(f.posts).toHaveLength(4); expect(f.preparations).toHaveLength(1);
+  expect([...f.registeredPhotoRows]).toEqual(registered); expect(f.errors).toEqual([]);
+});
+
+for (const refusal of ["capability off", "different owner"]) test(`release shared owner upgrade ${refusal} retains the original queue without business effects`, async ({ page, context }) => {
+  const { f, original, transport } = await oldSharedOwnerFailure(page, context);
+  const beforeUpgrade = f.calls.length;
+  f.preparationEnabled = refusal !== "capability off";
+  f.ownerAllowed = refusal !== "different owner";
+  f.upgradeBundle();
+  await reload(page);
+  await expect.poll(() => f.calls.slice(beforeUpgrade).some(call => call.method === "GET"
+    && call.path === `/bike-packing/list-operations/${original.records[0].action.operationId}` && call.receiptState === "unknown"),
+  { timeout: 30000 }).toBe(true);
+  if (refusal === "different owner") await expect.poll(() => f.calls.slice(beforeUpgrade)
+    .some(call => call.path.endsWith("/prepare") && call.status === 403 && call.code === "personal_owner_only"),
+  { timeout: 30000 }).toBe(true);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
+  if (refusal === "capability off") expect(f.preparations).toEqual([]);
+  else expect(f.preparations).toEqual([f.posts[0]]);
+  expect(f.posts).toHaveLength(1); expect(f.waiting.size).toBe(0); expect(f.receipts.size).toBe(0);
+  expect(f.revision).toBe(1582); expect(f.payload).toEqual(f.initial);
+  const pending = await nativeLegacyPhotoOutbox(page);
+  expect(pending.records).toEqual(original.records); expect(pending.pending).toBe(true);
+  for (const entry of original.entries) expect(pending.entries).toContainEqual(entry);
+  expect(await nativeLegacyPhotoTransport(page)).toEqual(transport);
+  await localChainVisible(page);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "synced");
   expect(f.errors).toEqual([]);
 });

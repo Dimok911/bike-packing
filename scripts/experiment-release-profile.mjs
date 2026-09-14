@@ -8,13 +8,14 @@ export const EXPERIMENT_RELEASE_CAPABILITIES = Object.freeze([
   "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalCausalPhotoPublicationV1",
   "personalCausalPhotoOwnerStateV1", "personalCausalPhotoFormV1", "personalCausalPhotoItemFormContextV1",
   "personalCausalPhotoContainerFormContextV1", "adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1",
-  "personalLegacyPhotoPreservationV1",
+  "personalLegacyPhotoPreservationV1", "personalListOperationPreparationV1",
   "adminTemplatePhotoEditV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1",
   "adminTemplatePendingSourceV1", "adminTemplatePendingPersonalSourceV1",
 ]);
 export const EXPERIMENT_RELEASE_GATES = Object.freeze({
   "src/sync/experiment-transport.js": ["EU_TRANSPORT_RELEASE_ENABLED"],
   "src/sync/personal-legacy-photo-preservation.js": ["PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED"],
+  "src/sync/personal-list-operation-preparation.js": ["PERSONAL_LIST_OPERATION_PREPARATION_ENABLED"],
   "src/sync/personal-save-outbox.js": ["PERSONAL_SAVE_OUTBOX_ENABLED"],
   "src/sync/list-operation-queue.js": ["LIST_OPERATION_QUEUE_ENABLED", "LIST_OPERATION_CANCELLATION_ENABLED"],
   "src/sync/personal-list-migration.js": ["PERSONAL_LIST_MIGRATION_ENABLED"],

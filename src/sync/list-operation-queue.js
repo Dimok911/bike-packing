@@ -26,6 +26,8 @@ import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { hasLegacyPersonalPhotos, isOrdinaryLegacyPersonalUpdate } from "./personal-confirmed-photos.js";
 import { PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED, PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY } from "./personal-legacy-photo-preservation.js";
+import { PERSONAL_LIST_OPERATION_PREPARATION_ENABLED, isPersonalListOperationPreparation, isUnknownPersonalListOperation,
+  validatePreparedPersonalListOperation, preparePersonalListOperationRetry, personalListOperationAccessMessage } from "./personal-list-operation-preparation.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILITY } from "./personal-photo-staging.js";
@@ -185,6 +187,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   legacyPhotoPreservationEnabled = PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED,
+  operationPreparationEnabled = PERSONAL_LIST_OPERATION_PREPARATION_ENABLED,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
@@ -266,12 +269,22 @@ export function createListOperationQueue({ transport, getContext = () => null,
     return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
       kind: saved.kind, listId: saved.listId, body: saved.body });
   };
-  const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {} } = {}) => {
-    const data = await read(`${gateway}/${encodeURIComponent(entry.id)}`);
+  const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {}, assertCurrentContext = () => {} } = {}) => {
+    let data = await read(`${gateway}/${encodeURIComponent(entry.id)}`), preparation = null;
+    if (resumeWaiting && operationPreparationEnabled && !readOnly && !entry.confirmed && !entry.recovery.cancellationOnly
+      && isPersonalListOperationPreparation(entry.recovery)
+      && (isUnknownPersonalListOperation(data, entry.recovery) || validatePreparedPersonalListOperation(data, entry.recovery))) {
+      await assertBeforeDispatch();
+      preparation = await preparePersonalListOperationRetry({ entry, known: data, enabled: operationPreparationEnabled,
+        getContext, getEntry: id => transport.writes.find(value => value.id === id), read, request, assertContext: assertCurrentContext });
+      preparation.assertCurrent(); data = preparation.data;
+    }
     // ONLY an exact server-bound waiting intent permits another POST of the
     // frozen manifest. Unknown/timeout/404 never means permission to resend.
-    if (resumeWaiting && !entry.recovery.cancellationOnly && validateWaitingOperation(data, entry.recovery)) {
+    if (resumeWaiting && !entry.recovery.cancellationOnly && (validateWaitingOperation(data, entry.recovery)
+      || preparation && validatePreparedPersonalListOperation(data, entry.recovery))) {
       await assertBeforeDispatch();
+      if (preparation) { await preparation.beforeDispatch(); preparation.assertCurrent(); }
       try {
         const response = await dispatch(entry);
         if (response.status !== 200) throw paused(entry.id);
@@ -760,6 +773,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         // Terminal transport records omit their large body. Restore only the
         // caller's exact hash-bound immutable manifest for result validation.
         if (entry) data = await recover({ ...entry, recovery: { ...entry.recovery, body } }, { resumeWaiting: true,
+          assertCurrentContext: () => { if (!contextMatches(initial)) throw paused(entry.id); },
           assertBeforeDispatch: async () => {
             if (!contextMatches(initial)) throw paused(entry.id);
             if (route.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(body) && hasLegacyPersonalPhotos(body.payload)) {
@@ -885,12 +899,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           try {
             const response = await dispatch(entry);
-            if (response.status !== 200) throw paused(operationId);
+            if (response.status !== 200) throw Object.assign(paused(operationId, personalListOperationAccessMessage(response) || undefined),
+              personalListOperationAccessMessage(response) ? { isPersonalOwnerAccessRefusal: true, isPersonalSaveBlocked: true, code: "owner-access" } : {});
             data = recordReceipt(entry, response.data);
           } catch (error) {
             if (error.isOperationWaiting) throw error;
             transport.noteFailure(paused(operationId), path, method, operationId);
-            data = await recover(entry); // Never POST retry, even after 404/5xx/timeout.
+            try { data = await recover(entry); } // Never POST retry, even after 404/5xx/timeout.
+            catch (recoveryError) { if (error.isPersonalOwnerAccessRefusal) throw error; throw recoveryError; }
           }
         }
         if (!contextMatches(initial)) throw paused(entry.id, "Подтверждено прежнее сохранение. Более новые локальные изменения не затронуты.");

@@ -24,7 +24,7 @@ test("release cohort activates only on exact Experiment origin and keeps source 
     if (path.endsWith("experiment-transport.js")) assert.ok(output.includes("AUTO_TRANSPORT_RELEASE_ENABLED = false"));
   }
   plugin.buildEnd();
-  assert.equal(Object.values(EXPERIMENT_RELEASE_GATES).flat().length, 23);
+  assert.equal(Object.values(EXPERIMENT_RELEASE_GATES).flat().length, 24);
 });
 test("release refuses changed or absent gate declarations and ignores unrelated source paths", () => {
   const plugin = experimentReleasePlugin(root);
