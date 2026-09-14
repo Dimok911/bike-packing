@@ -3191,7 +3191,10 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
   const latest = outbox.recover?.();
   if (!personalMutation && ["list.restore", "list.import", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
-  if (!personalMutation && latest?.action.kind === "list.update" && !outbox.hasPending()
+  // A freshly loaded confirmed baseline need not have an operation in this
+  // device's queue. Manual Sync must not manufacture its first save when the
+  // business payload has not changed. Explicit mutations still capture intent.
+  if (!personalMutation && (!latest || latest.action.kind === "list.update") && !outbox.hasPending()
     && personalBusinessPayloadMatchesConfirmed({ confirmedPayload: outbox.confirmedBase()?.payload, candidatePayload: body.payload,
       listId: outbox.binding.listId, allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) return latest;
   return outbox.capture({ snapshot, body, operationId });

@@ -92,7 +92,14 @@ test("manual ordinary recovery obtains server identity around the actual identit
   await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Добавить существующую сумку в укладку");
   await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Сумка с четырьмя фотографиями");
   await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Укладка:");
-  await expect(dialog(page).locator("[data-recovery-reason]")).not.toBeEmpty();
+  await expect(dialog(page).locator("[data-recovery-reason]")).toContainText("Автоматическое объединение не запускалось");
+  const comparison = dialog(page).locator("[data-recovery-comparison]");
+  await expect(comparison).toContainText("версией сервера 1585");
+  await expect(comparison).toContainText("не история ваших действий");
+  const savedRoots = original.record.action.body.payload.layouts[legacyLayoutId].arrangement.rootContainerIds;
+  const extraRoots = server.layouts[legacyLayoutId].arrangement.rootContainerIds.filter(id => !savedRoots.includes(id));
+  expect(extraRoots.length).toBeGreaterThan(0);
+  for (const id of extraRoots) await expect(comparison).toContainText(server.containers[id].name);
   await page.screenshot({ path: info.outputPath("recovery-dialog.png") });
   const reads = f.calls.slice(start).filter(call => call.response).map(call => call.response);
   expect(reads.some(read => read.type === "state")).toBe(true);

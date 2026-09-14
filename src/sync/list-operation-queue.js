@@ -491,7 +491,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || entry.recovery.payloadDigest !== expected.payloadDigest)) throw paused(operationId, "Номер действия связан с другими данными.");
         const data = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertContext();
         if (validateWaitingOperation(data, expected)) throw waitingError(operationId);
-        if (!validateListReceipt(data, expected)) throw paused(operationId);
+        if (!validateListReceipt(data, expected)) throw Object.assign(paused(operationId), { reason: "receipt-unconfirmed" });
         if (entry) recordReceipt({ ...entry, recovery: expected }, data);
         assertContext();
         return historicalProof(data);

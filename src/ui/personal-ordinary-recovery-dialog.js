@@ -1,9 +1,10 @@
 // A decision about this device's retained changes. Opening, postponing and
 // exporting do not send or cancel operations; the caller owns the exact queue.
 import { describePersonalRecoveryActions, explainPersonalRecoveryReason } from "./personal-recovery-action-details.js";
+import { describePersonalRecoveryVersionComparison } from "./personal-recovery-version-comparison.js";
 
 export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef = window,
-  language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, getRecoveryCopy } = {}) {
+  language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, comparison = null, getRecoveryCopy } = {}) {
   const text = (ru, en) => language === "en" ? en : ru;
   if (!Number.isSafeInteger(actionCount) || actionCount < 1 || typeof getRecoveryCopy !== "function"
     || documentRef.getElementById("personalOrdinaryRecoveryDialog")) return Promise.resolve("later");
@@ -20,8 +21,8 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
     const description = documentRef.createElement("p");
     description.id = "personalOrdinaryRecoveryDescription";
     description.textContent = text(
-      "На сервере уже более свежая версия. На этом устройстве остались изменения без подтверждения сервера. Автоматически объединить их сейчас не удалось.",
-      "The server has a newer version. This device retains changes without server confirmation. They could not be merged automatically.");
+      "На сервере уже более свежая версия. На этом устройстве осталась запись сохранения без подтверждения сервера. Чтобы продолжить, нужно разобраться с этой записью.",
+      "The server has a newer version. This device retains an unconfirmed save record. This record needs review before continuing.");
     const details = documentRef.createElement("section");
     details.className = "personal-recovery-action-details";
     const detailsHeading = documentRef.createElement("h3");
@@ -92,7 +93,25 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
     useServer.addEventListener("click", () => finish("server"));
     dialog.addEventListener("cancel", event => { event.preventDefault(); finish("later"); });
     buttons.append(download, useServer, later);
-    dialog.append(heading, description, details, reasonHeading, reason, consequence, status, buttons);
+    dialog.append(heading, description, details, reasonHeading, reason);
+    const compared = describePersonalRecoveryVersionComparison(comparison || {}, { language });
+    if (compared.available) {
+      const section = documentRef.createElement("section"), title = documentRef.createElement("h3"), note = documentRef.createElement("p"), list = documentRef.createElement("ul");
+      section.setAttribute("data-recovery-comparison", "");
+      title.textContent = text("Отличия от серверной версии", "Differences from the server version");
+      note.textContent = text(`Сравнение с версией сервера ${comparison.serverRevision} на момент проверки. Это сравнение двух снимков, а не история ваших действий.`,
+        `Compared with server version ${comparison.serverRevision} at the time of checking. This compares two snapshots, not the history of your actions.`);
+      for (const line of compared.lines) {
+        const item = documentRef.createElement("li"); item.textContent = line; list.append(item);
+      }
+      if (compared.omittedCount) {
+        const item = documentRef.createElement("li");
+        item.textContent = text(`Ещё различий не показано: ${compared.omittedCount}.`, `More differences not shown: ${compared.omittedCount}.`);
+        list.append(item);
+      }
+      section.append(title, note, list); dialog.append(section);
+    }
+    dialog.append(consequence, status, buttons);
     documentRef.body.append(dialog);
     dialog.showModal(); heading.focus({ preventScroll: true }); dialog.scrollTop = 0;
   });

@@ -21,6 +21,27 @@ function fixture() {
   return f;
 }
 
+test("version comparison uses the validated head rather than record order and cannot alter the stored versions", async () => {
+  const f = fixture();
+  f.choice = "later";
+  const saved = { action: { operationId: "saved-head", kind: "list.update", body: { baseStateRevision: 1582,
+    payload: { items: {}, containers: { bag: { id: "bag", name: "Saved bag" } }, layouts: {} } } } };
+  const ancestor = { action: { operationId: "older", kind: "list.update", body: { baseStateRevision: 1582, payload: { items: {} } } } };
+  f.records = [saved, ancestor];
+  f.remote.payload = { items: {}, containers: { bag: { id: "bag", name: "Server bag" } }, layouts: {} };
+  f.options.outbox.ordinaryRecoveryReview = () => ({ records: f.records, confirmedOperationIds: ["older"], headOperationId: "saved-head" });
+  const original = structuredClone({ records: f.records, remote: f.remote });
+  f.onChoice = details => {
+    assert.deepEqual(details.comparison, { local: saved.action.body.payload, remote: f.remote.payload, serverRevision: 1585 });
+    details.comparison.local.containers.bag.name = "UI mutation";
+    details.comparison.remote.containers.bag.name = "UI mutation";
+  };
+  await assert.rejects(run(f.options), /Выбор отложен/);
+  assert.deepEqual({ records: f.records, remote: f.remote }, original);
+  assert.equal(f.calls.includes("archive"), false);
+  assert.equal(f.calls.includes("recover"), false);
+});
+
 test("explicit server choice archives before recovery and applies only its durable successor", async () => {
   const f = fixture();
   assert.equal(await run(f.options), "confirmed");

@@ -49,8 +49,15 @@ export async function drainPersonalSaveWithOrdinaryRecovery({ enabled = false, o
     }
     const review = JSON.parse(canonical(outbox.ordinaryRecoveryReview()));
     assertCurrent();
+    // The validated outbox head, not array order or a guessed original action,
+    // supplies the saved side. This comparison is display-only and cannot
+    // authorize a merge, cancellation or replacement of either version.
+    const saved = review.records.find(record => record.action?.operationId === review.headOperationId);
+    const comparison = saved?.action.kind === "list.update" && saved.action.body?.payload && remote.payload
+      ? JSON.parse(canonical({ local: saved.action.body.payload, remote: remote.payload, serverRevision: remote.stateRevision })) : null;
     const choice = await chooseServer({ actionCount: outbox.ordinaryRecoveryState().actionCount,
       records: review.records, confirmedOperationIds: review.confirmedOperationIds,
+      comparison,
       failure: { code: error.code, reason: error.reason, hasConflicts: Boolean(error.conflicts?.length) },
       getRecoveryCopy: () => { assertCurrent(); return outbox.ordinaryRecoveryCopy(); } });
     assertCurrent();

@@ -100,6 +100,8 @@ export function describePersonalRecoveryActions(records, { language = "ru", conf
 
 export function explainPersonalRecoveryReason(failure, { language = "ru" } = {}) {
   const t = translate(language), reason = failure?.reason || failure?.code;
+  if (reason === "legacy-base-unconfirmed") return t("This older save has no saved original version for comparison, and its completion has not been confirmed by the server. Automatic merging has not started. The saved copy remains on this device.",
+    "У этой старой записи нет сохранённой исходной версии для сравнения, а сервер ещё не подтвердил её выполнение. Автоматическое объединение не запускалось. Сохранённая копия осталась на устройстве.");
   if (reason === "missing-base") return t("The saved original version needed to compare these changes is unavailable. The changes remain on this device.",
     "Нет сохранённой исходной версии, необходимой для сравнения этих изменений. Изменения остались на устройстве.");
   if (reason === "photo-inventory") return t("The photo references could not be safely reconciled. This does not establish that you edited the photos.",
