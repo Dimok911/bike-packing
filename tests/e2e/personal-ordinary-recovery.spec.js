@@ -77,6 +77,56 @@ test.afterEach(async ({ page }, info) => {
   }, null, 2) });
 });
 
+test("manual ordinary recovery obtains server identity around the actual identity-free state DTO before offering a choice", async ({ page, context }) => {
+  const { f, original, server } = await oldPhone(page, context), start = f.calls.length;
+  await openChoice(page);
+  const reads = f.calls.slice(start).filter(call => call.response).map(call => call.response);
+  expect(reads.some(read => read.type === "state")).toBe(true);
+  for (const [index, read] of reads.entries()) if (read.type === "state") {
+    expect(read.keys).toEqual(["ok", "listId", "updatedAt", "serverUpdatedAt", "stateRevision", "state", "payload",
+      "record", "payloadHash", "entityHash", "itemCount", "containerCount", "layoutCount"]);
+    expect(read.recordKeys).toEqual(["payload", "payloadHash", "entityHash", "stateRevision", "itemCount", "containerCount",
+      "layoutCount", "payloadSize", "updatedAt"]);
+    expect(read.listId).toBe(legacyPhotoBinding.listId); expect(read.stateRevision).toBe(1585);
+    for (const detail of [reads[index - 1], reads[index + 1]]) expect(detail).toEqual({ type: "detail",
+      id: legacyPhotoBinding.listId, ownerId: legacyPhotoBinding.actorId, stateRevision: read.stateRevision });
+  }
+  // Showing a decision is read-only: original UUID/body bytes and server data
+  // remain untouched until the user actually chooses a recovery action.
+  expect(f.posts).toEqual([]); expect(f.cancellations).toEqual([]); expect(f.preparations).toEqual([]);
+  expect(await recoveryStorage(page)).toEqual([]); expect(f.payload).toEqual(server);
+  const native = await nativeLegacyPhotoOutbox(page);
+  expect(native.records).toEqual(original.records);
+  for (const entry of original.entries) expect(native.entries).toContainEqual(entry);
+  await dialog(page).getByRole("button", { name: "Решить позже", exact: true }).click();
+  expect(f.errors).toEqual([]);
+});
+
+for (const changed of ["owner", "revision"]) test(`ordinary recovery does not offer a choice when ${changed} changes between state and final detail`, async ({ page, context }) => {
+  const { f, original, server } = await oldPhone(page, context), start = f.calls.length;
+  let changedOnce = false;
+  f.afterStateRead = () => {
+    f.afterStateRead = null; changedOnce = true;
+    if (changed === "owner") f.detailOwnerId = "different-owner";
+    else f.revision++;
+  };
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => changedOnce, { timeout: 30000 }).toBe(true);
+  await expect.poll(() => f.calls.slice(start).some(call => call.response?.type === "detail"
+    && (changed === "owner" ? call.response.ownerId === "different-owner" : call.response.stateRevision === 1586)),
+  { timeout: 30000 }).toBe(true);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "synced");
+  await expect(dialog(page)).not.toBeVisible(); await expect(page.locator("#conflictDialog")).not.toBeVisible();
+  await expect(roots(page)).toHaveCount(2);
+  expect(f.posts).toEqual([]); expect(f.cancellations).toEqual([]); expect(f.preparations).toEqual([]);
+  expect(await recoveryStorage(page)).toEqual([]); expect(f.payload).toEqual(server);
+  const native = await nativeLegacyPhotoOutbox(page);
+  expect(native.pending).toBe(true); expect(native.records).toEqual(original.records);
+  for (const entry of original.entries) expect(native.entries).toContainEqual(entry);
+  expect(f.errors).toEqual([]);
+});
+
 test("ordinary stale phone recovery fences the old UUID, adopts one fresh server CAS and keeps the archive after another edit", async ({ page, context }) => {
   const { f, original, server, registered } = await oldPhone(page, context);
   await openChoice(page);

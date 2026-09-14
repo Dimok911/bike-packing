@@ -233,6 +233,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
   Object.assign(f, { bundleDirectory: sharedOwnerUpgrade ? previousLegacyPhotoBundle : root,
     legacyOwnerDenied: sharedOwnerUpgrade, preparationEnabled: !sharedOwnerUpgrade, ownerAllowed: true,
+    detailOwnerId: legacyPhotoBinding.actorId,
     preparations: [], waiting: new Map(), preparationSnapshots: [] });
   Object.assign(f, { ordinaryRecovery, ordinaryRebase, cancellations: [], cancellationSnapshots: [], ordinaryOriginals: new Map(),
     noopPosts: [], loseCancellationAck: false, cancellationAckDropped: false, hideCancellationReceipts: false });
@@ -283,10 +284,36 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     return structuredClone(remote);
   };
   page.legacyPhotoFixture = f;
+  // GET metadata and permission at the later mutation lock are independent:
+  // an owner read does not promise that /prepare will still authorize writing.
   const list = () => ({ id: legacyPhotoBinding.listId, title: "Личные укладки",
-    ownerId: f.ownerAllowed ? legacyPhotoBinding.actorId : "different-owner", role: f.ownerAllowed ? "owner" : "editor",
-    ...(sharedOwnerUpgrade || ordinaryRecovery ? { visibility: "shared", sourceType: "user" } : {}),
+    ownerId: f.detailOwnerId, role: f.detailOwnerId === legacyPhotoBinding.actorId ? "owner" : "editor",
+    visibility: sharedOwnerUpgrade || ordinaryRecovery ? "shared" : "private", sourceType: "user",
     canEdit: true, stateRevision: f.revision, updatedAt: timestamp, payload: structuredClone(f.payload) });
+  const stateResponse = () => {
+    // Match handleBikePackingListStateGet/mapAssembledStateRecord: /state has
+    // a top-level listId, but neither its envelope nor record owns id/ownerId.
+    // Only the separate detail response can authenticate the list owner.
+    const payload = structuredClone(f.payload);
+    // The API hashes/counts normalizePayload(state), including default fields
+    // omitted from an ordinary business CAS. Keep that calculation separate
+    // from the stored fixture payload and the immutable client's body.
+    const normalized = { locations: [], categories: [], containers: [], items: [], layouts: [], activeLayoutId: "", packedItems: {}, ...payload };
+    for (const key of ["locations", "categories", "containers", "items", "layouts"]) {
+      if (!normalized[key] || typeof normalized[key] !== "object") normalized[key] = [];
+    }
+    if (!normalized.packedItems || typeof normalized.packedItems !== "object" || Array.isArray(normalized.packedItems)) normalized.packedItems = {};
+    const hash = value => createHash("sha256").update(canonicalListOperationJson(value)).digest("hex");
+    const record = { payload, payloadHash: hash(normalized),
+      entityHash: hash({ items: payload.items, containers: payload.containers, layouts: payload.layouts }),
+      stateRevision: f.revision, itemCount: Object.keys(payload.items).length,
+      containerCount: Object.keys(payload.containers).length, layoutCount: Object.keys(payload.layouts).length,
+      payloadSize: Buffer.byteLength(JSON.stringify(normalized), "utf8"), updatedAt: timestamp };
+    return { ok: true, listId: legacyPhotoBinding.listId, updatedAt: timestamp, serverUpdatedAt: timestamp,
+      stateRevision: record.stateRevision, state: structuredClone(payload), payload, record,
+      payloadHash: record.payloadHash, entityHash: record.entityHash, itemCount: record.itemCount,
+      containerCount: record.containerCount, layoutCount: record.layoutCount };
+  };
   const headers = { "Access-Control-Allow-Origin": legacyPhotoOrigin, "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Expose-Headers": "X-Vniipo-Proxy-Target, X-Vniipo-Proxy-Write-Gate",
@@ -310,8 +337,18 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
       else if (endpoint === "/auth/me") data = { ok: true, user: { id: legacyPhotoBinding.actorId, email: "legacy-photo@example.test" } };
       else if (endpoint === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (endpoint === "/bike-packing/lists") data = { ok: true, lists: [list()] };
-      else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}` || endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/state`)
-        data = { ok: true, list: list(), state: structuredClone(f.payload), stateRevision: f.revision };
+      else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}`) {
+        data = { ok: true, list: list() };
+        call.response = { type: "detail", id: data.list.id, ownerId: data.list.ownerId, stateRevision: data.list.stateRevision };
+      }
+      else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/state`) {
+        data = stateResponse();
+        call.response = { type: "state", keys: Object.keys(data), recordKeys: Object.keys(data.record),
+          listId: data.listId, stateRevision: data.stateRevision };
+        // A synthetic concurrent server change occurs after S was assembled,
+        // before the following detail read. Never modify the received S bytes.
+        f.afterStateRead?.();
+      }
       else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/freshness`) {
         if (!f.freshnessAvailable) return route.fulfill({ status: 404, headers, json: { ok: false, code: "isolated_freshness_not_available" } });
         data = { ok: true, listId: legacyPhotoBinding.listId, stateRevision: f.revision, serverUpdatedAt: timestamp,
