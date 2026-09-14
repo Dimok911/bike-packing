@@ -9542,7 +9542,35 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     persistStateSnapshot(state);
     const outbox = personalSaveOutboxForScope();
     if (!outbox) throw new Error("Сначала нужно подтвердить создание личного списка.");
-    if (!outbox.hasPending()) return;
+    if (!outbox.hasPending()) {
+      // An empty queue alone is not a server confirmation. UI-only edits can
+      // leave dirty set after capture reused an already confirmed operation.
+      const confirmed = outbox.confirmedBase();
+      if (!confirmed?.payload || !Number.isSafeInteger(confirmed.stateRevision) || confirmed.stateRevision < 1
+        || !sameJson(serializeState({ forSync: true }), confirmed.payload)) {
+        const message = localText(
+          "Local data needs verification. There are no queued actions; a server comparison is required.",
+          "Локальные данные требуют проверки. Действий для отправки нет; нужна сверка с сервером."
+        );
+        updateSyncUi(message);
+        if (notify) showToast(message, "warning");
+        return;
+      }
+      const nextMeta = { ...syncMeta, dirty: false, lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt };
+      if (!safeSetLocalStorage(scopedLocalStorageKey(SYNC_META_KEY), JSON.stringify(nextMeta), { silent: true })) {
+        throw Object.assign(new Error(localText(
+          "Could not save the sync status on this device. Data and confirmations are unchanged.",
+          "Не удалось сохранить статус синхронизации на устройстве. Данные и подтверждения не изменены."
+        )), { code: "storage", isPersonalSaveBlocked: true });
+      }
+      Object.assign(syncMeta, nextMeta);
+      updateSyncUi();
+      if (notify) showToast(localText(
+        "No changes to send. Data matches the last confirmed server version.",
+        "Изменений для отправки нет. Данные совпадают с последней подтверждённой сервером версией."
+      ), "success");
+      return;
+    }
     const confirmedBoundary = outbox.confirmedBoundary();
     const deletionReference = personalDeletionReference(confirmedBoundary?.payload || loadBaseState(), outbox.list(), { confirmedBoundary });
     const knownDeletion = deletionReference && preservesUndeletedEntities(state, deletionReference)

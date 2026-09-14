@@ -9,6 +9,7 @@ import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recover
 import { saveRootContainerDialogAction, saveItemDialogAction } from "../../src/ui/item-dialog-save.js";
 import { resolveSyncVisualState } from "../../src/ui/sync-visual-state.js";
 import { isKnownEmptyPersonalSave } from "../../src/sync/personal-empty-save.js";
+import { snapshotsEqual } from "../../src/utils/json.js";
 
 const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 function appFunction(name, dependencies) {
@@ -28,6 +29,83 @@ function fixture() {
     body: { baseStateRevision: 5, payload: { items: { a: { weight: value } } } } });
   return { values, storage, context, make, input, outbox: make() };
 }
+
+function emptyQueueSaveFixture({ confirmed = true, changed = false, writable = true } = {}) {
+  const f = fixture(), input = f.input(1), messages = [], notifications = [], persistedMeta = [];
+  if (confirmed) {
+    const action = f.outbox.capture(input);
+    f.outbox.markApplied({ operationId: action.action.operationId, stateRevision: 6 });
+  }
+  const state = { ...structuredClone(input.snapshot), localUi: "catalog" };
+  if (changed) state.items.a.weight = 2;
+  const syncMeta = { dirty: true, localUpdatedAt: "local-ui-time", serverUpdatedAt: "server-time", stateRevision: 6 };
+  const beforeQueue = [...f.values];
+  const save = appFunction("savePersonalStateFromOutbox", {
+    currentUser: { id: f.context.actorId }, localStorageScopeKey: f.context.scopeKey,
+    currentPackingListId: f.context.listId, modeState: {}, state, syncMeta,
+    personalSaveRecovery: { assertRunning() {}, report() {} },
+    personalPhotoFormPreparing: false, personalPhotoFormLiveSource: null,
+    checkPersonalPhotoRecoveryBeforeLoad: async () => {}, isForcedOffline: () => false,
+    isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false,
+    persistStateSnapshot: () => {
+      if (confirmed && !changed) f.outbox.capture({ snapshot: state, body: input.body });
+    },
+    personalSaveOutboxForScope: () => f.outbox,
+    serializeState: () => ({ items: structuredClone(state.items) }), sameJson: snapshotsEqual,
+    localText: (en, ru) => ru, SYNC_META_KEY: "sync-meta", scopedLocalStorageKey: key => key,
+    safeSetLocalStorage: (key, value) => { if (writable) persistedMeta.push(JSON.parse(value)); return writable; },
+    saveSyncMeta() {}, updateSyncUi: message => messages.push(message),
+    showToast: (message, tone) => notifications.push({ message, tone })
+  });
+  return { ...f, save, state, syncMeta, messages, notifications, persistedMeta, beforeQueue };
+}
+
+test("manual sync clears a stale dirty indicator only for the exact confirmed payload and explains the no-op", async () => {
+  const f = emptyQueueSaveFixture();
+  await f.save({ notify: true });
+  assert.equal(f.syncMeta.dirty, false);
+  assert.equal(f.syncMeta.lastSyncedLocalUpdatedAt, "local-ui-time");
+  assert.equal(f.syncMeta.serverUpdatedAt, "server-time");
+  assert.equal(f.persistedMeta.length, 1);
+  assert.equal(f.persistedMeta[0].dirty, false);
+  assert.equal(f.notifications.length, 1);
+  assert.match(f.notifications[0].message, /последней подтверждённой/);
+  assert.equal(f.notifications[0].tone, "success");
+  assert.deepEqual([...f.values], f.beforeQueue, "no operation, confirmation or checkpoint was manufactured");
+});
+
+for (const options of [{ confirmed: false }, { changed: true }]) {
+  test(`empty queue does not confirm an unverified local payload: ${JSON.stringify(options)}`, async () => {
+    const f = emptyQueueSaveFixture(options);
+    await f.save({ notify: true });
+    assert.equal(f.syncMeta.dirty, true);
+    assert.equal(f.persistedMeta.length, 0);
+    assert.equal(f.notifications.length, 1);
+    assert.equal(f.notifications[0].tone, "warning");
+    assert.match(f.notifications[0].message, /сверка с сервером/);
+    assert.deepEqual([...f.values], f.beforeQueue);
+  });
+}
+
+test("unchanged autosave refreshes the indicator without a notification", async () => {
+  const f = emptyQueueSaveFixture();
+  await f.save();
+  assert.equal(f.syncMeta.dirty, false);
+  assert.equal(f.notifications.length, 0);
+  assert.equal(f.messages.length, 1);
+  assert.deepEqual([...f.values], f.beforeQueue);
+});
+
+test("failed no-op status persistence keeps dirty state and the original confirmation", async () => {
+  const f = emptyQueueSaveFixture({ writable: false });
+  await f.save({ notify: true });
+  assert.equal(f.syncMeta.dirty, true);
+  assert.equal(f.notifications.length, 1);
+  assert.equal(f.notifications[0].tone, "warning");
+  assert.match(f.notifications[0].message, /Не удалось сохранить статус/);
+  assert.equal(f.persistedMeta.length, 0);
+  assert.deepEqual([...f.values], f.beforeQueue);
+});
 
 test("confirmed base reader exposes the observed initial server version, never a mutable draft or UI preference", () => {
   const f = fixture(), base = { items: {}, containers: {} };

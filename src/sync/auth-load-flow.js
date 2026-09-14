@@ -141,14 +141,14 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   try {
     if (runtime.syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi(localText("Local changes found · checking timestamps...", "Найдены локальные изменения · проверяем версии..."));
-      await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout: remotePreferredLayout });
+      const loaded = await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout: remotePreferredLayout });
       if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
-      setPersonalLayoutsLoadedStatus();
+      if (loaded !== false) setPersonalLayoutsLoadedStatus();
       return;
     }
-    await loadRemoteState({ preferredLayout: remotePreferredLayout });
+    const loaded = await loadRemoteState({ preferredLayout: remotePreferredLayout });
     if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
-    setPersonalLayoutsLoadedStatus();
+    if (loaded !== false) setPersonalLayoutsLoadedStatus();
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();

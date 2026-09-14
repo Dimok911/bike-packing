@@ -13,6 +13,8 @@ export async function persistRecoveredLayoutQuantityMigration({ remoteState, run
   return true;
 }
 
+// A handled load failure/refusal returns false so auth preserves its status.
+// Existing completed paths (including delegated saves) may resolve undefined.
 export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDirtySave = false, preferredLayout = null } = {}) {
   const state = runtime.state;
   const syncMeta = runtime.syncMeta;
@@ -94,13 +96,13 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     }
     return applied;
   };
-  if (!runtime.currentUser) return;
-  if (isSharedListLinkRoute()) return;
+  if (!runtime.currentUser) return false;
+  if (isSharedListLinkRoute()) return false;
   if (isPublicLayoutContext()) {
     runtime.appUnlocked = true;
     renderInitialLocalFallbackIfNeeded();
     updateSyncUi();
-    return;
+    return false;
   }
   if (runtime.initialRemoteLoadPending || !runtime.remoteRefreshInFlight) {
     setLayoutLoadStatus(
@@ -202,7 +204,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     }
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
-    if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
+    if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return false;
     if (remoteState) syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
     const serverTimeText = remoteUpdatedAt(record);
     const serverTime = timeValue(serverTimeText);
@@ -272,20 +274,18 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     const remoteJson = JSON.stringify(cloneStateForSync(remoteState, { forSync: true }));
     if (localJson !== remoteJson) {
       if (isSuspiciousEmptyPackingState(state) && isMeaningfulPackingState(remoteState)) {
-        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
-        if (notifyDirtySave) showToast(localText(
+        const applied = await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
+        if (applied && notifyDirtySave) showToast(localText(
           "The recovered version was loaded from the server.",
           "Загружена восстановленная версия с сервера."
         ), "success");
-        return;
+        return applied;
       }
       if ((isInitialRemotePull || localStateIsNonAuthoritative) && !localStateCanOverrideRemote && isMeaningfulPackingState(remoteState)) {
-        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
-        return;
+        return await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
       }
       if (!syncMeta.dirty) {
-        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
-        return;
+        return await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
       }
       if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
         runtime.appUnlocked = true;
@@ -331,8 +331,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           cancelText: localText("Keep local", "Оставить локальную")
         });
         if (useServer) {
-          await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
-          return;
+          return await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
         }
         syncMeta.dirty = true;
         saveSyncMeta();
@@ -344,8 +343,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       updateSyncUi(localText("There are conflicting changes...", "Есть конфликты изменений..."));
       const resolution = await askConflictResolution(mergeResult.conflicts);
       if (resolution === "server") {
-        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
-        return;
+        return await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
       }
       if (resolution === "cancel") {
         syncMeta.dirty = true;
@@ -397,7 +395,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {
-    if (await dependencies.handleInitialListMigrationRequired?.(error)) return;
+    if (await dependencies.handleInitialListMigrationRequired?.(error)) return false;
     if (isTemporaryServerStorageError(error)) {
       runtime.appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();
@@ -409,7 +407,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         "Server sync is temporarily unavailable · the local layout is available",
         "Серверная синхронизация временно недоступна · локальная укладка доступна"
       ));
-      return;
+      return false;
     }
     if (isTimeoutError(error)) {
       runtime.appUnlocked = true;
@@ -422,14 +420,14 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         "The server is taking too long to respond · the local layout is available",
         "Сервер долго отвечает · локальная укладка доступна"
       ));
-      return;
+      return false;
     }
     if (isNetworkError(error)) {
       runtime.appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();
       setLayoutLoadStatus("warning", localText("Offline: the local layout is shown", "Офлайн: показана локальная укладка"));
       updateSyncUi(localText("Offline · the local layout is available", "Офлайн · локальная укладка доступна"));
-      return;
+      return false;
     }
     runtime.appUnlocked = true;
     renderInitialLocalFallbackIfNeeded();
@@ -438,6 +436,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       `Не удалось загрузить личные укладки: ${error.message}`
     ));
     updateSyncUi(localText(`Server unavailable: ${error.message}`, `Сервер недоступен: ${error.message}`));
+    return false;
   }
 }
 

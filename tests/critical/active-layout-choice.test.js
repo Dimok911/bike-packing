@@ -28,6 +28,8 @@ import {
   checkAuthAndLoadFlow,
   isAuthCheckUnavailableError
 } from "../../src/sync/auth-load-flow.js";
+import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
+import { canUseCachedStartupState, STARTUP_CACHE_INTEGRITY_VERSION } from "../../src/sync/list-freshness.js";
 import {
   OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE,
   offlineRememberedStatusMessages,
@@ -36,6 +38,7 @@ import {
 } from "../../src/ui/sync-ui.js";
 import {
   createLayoutLoadStatusController,
+  countPrivateLayouts,
   formatLayoutLoadProgress,
   formatPersonalLayoutsLoadedStatus
 } from "../../src/ui/layout-load-status.js";
@@ -472,6 +475,195 @@ test("CRITICAL offline-auth-scope: confirmed startup auth leaves the temporary p
   assert.equal(remoteLoads.length, 1);
   assert.equal(remoteLoads[0].preferredLayout.id, "layout-last");
 });
+
+async function runAuthenticatedLayoutLoad({ mode = "remote", dirty = false } = {}) {
+  const state = {
+    items: {}, containers: {},
+    layouts: Object.fromEntries(Array.from({ length: 5 }, (_, index) => {
+      const id = `local-layout-${index + 1}`;
+      return [id, { id, name: `Local ${index + 1}`, rootIds: [] }];
+    }))
+  };
+  const original = structuredClone(state);
+  const runtime = {
+    appUnlocked: false, currentUser: null, initialRemoteLoadPending: true,
+    remoteRefreshInFlight: false, uiLanguage: "ru", state,
+    syncMeta: {
+      dirty, listId: "personal-list", stateRevision: 7,
+      cacheIntegrityVersion: STARTUP_CACHE_INTEGRITY_VERSION,
+      serverUpdatedAt: "2026-09-13T10:00:00.000Z",
+      localUpdatedAt: dirty ? "2026-09-13T11:00:00.000Z" : "2026-09-13T10:00:00.000Z"
+    }
+  };
+  const statuses = [], syncMessages = [], loads = [], saves = [], restoredChoices = [];
+  const requests = [], savedBaselines = [];
+  let fallbackCount = 0;
+  const failure = Object.assign(new Error(`${mode} failure`), { name: mode === "timeout" ? "TimeoutError" : "Error" });
+  const fails = ["network", "timeout", "storage", "generic", "migration"].includes(mode);
+  const setLayoutLoadStatus = (tone, text) => statuses.push({ tone, text: typeof text === "function" ? text() : text });
+  const setPersonalLayoutsLoadedStatus = () => setLayoutLoadStatus("success", formatPersonalLayoutsLoadedStatus(countPrivateLayouts(runtime.state), "ru"));
+  const updateSyncUi = (text = "") => syncMessages.push(text);
+  const unexpected = () => assert.fail(`Unexpected branch in ${mode}`);
+  const shared = {
+    hasLocalSavedState: () => true,
+    isSharedListLinkRoute: () => false,
+    isNetworkError: (error) => error === failure && mode === "network",
+    renderInitialLocalFallbackIfNeeded: () => { fallbackCount += 1; runtime.initialRemoteLoadPending = false; },
+    setLayoutLoadStatus, setPersonalLayoutsLoadedStatus, updateSyncUi
+  };
+  const remote = structuredClone(state);
+  if (["dirty-save", "refused-apply"].includes(mode)) remote.layouts["local-layout-1"].name = "Server version";
+  const loadDependencies = {
+    ...shared,
+    applyRemoteState: () => {
+      assert.equal(mode, "refused-apply");
+      setLayoutLoadStatus("warning", "Серверная версия пока не заменяет локальные действия.");
+      return false;
+    },
+    blockRemoteIntegrityFailureIfNeeded: () => {
+      if (mode !== "integrity") return false;
+      setLayoutLoadStatus("error", "Проверка целостности не пройдена.");
+      return true;
+    },
+    canUseCachedStartupState,
+    canLocalStateOverrideRemote: () => true,
+    canSeedEmptyRemoteFromLocal: () => true,
+    clearStaleDirtyFlagIfNoLocalChanges: () => false,
+    cloneStateForSync: (value) => structuredClone(value),
+    currentPackingListId: () => mode === "cache" ? "personal-list" : "",
+    fetchRemoteListFreshnessRecord: async (id) => {
+      assert.equal(mode, "cache");
+      requests.push(`freshness:${id}`);
+      return { listId: id, stateRevision: 7, serverUpdatedAt: runtime.syncMeta.serverUpdatedAt, layoutCount: 5 };
+    },
+    fetchRemoteStateRecord: async () => {
+      requests.push("state");
+      assert.notEqual(mode, "cache", "validated startup cache must avoid full-state fetch");
+      if (fails) throw failure;
+      return { source: "catalog", record: { id: "personal-list", stateRevision: 7,
+        updatedAt: runtime.syncMeta.serverUpdatedAt, payload: mode === "empty-server" ? null : remote } };
+    },
+    handleInitialListMigrationRequired: async (error) => {
+      if (mode !== "migration") return false;
+      assert.equal(error, failure);
+      setLayoutLoadStatus("warning", "Подготовка списка отложена.");
+      return true;
+    },
+    isForeignLocalSyncState: () => false,
+    isMeaningfulPackingState: (value) => countPrivateLayouts(value) > 0,
+    isPublicLayoutContext: () => false,
+    isSuspiciousEmptyPackingState: () => false,
+    isTemporaryServerStorageError: (error) => error === failure && mode === "storage",
+    isTimeoutError: (error) => error === failure && mode === "timeout",
+    layoutItemQuantityMigrationRecovered: () => false,
+    loadBaseState: unexpected,
+    normalizeRemoteState: (value) => value,
+    nowIso: () => "2026-09-13T12:00:00.000Z",
+    remoteUpdatedAt: (record) => record.updatedAt,
+    rememberCurrentSyncAccount: () => {},
+    rememberRemoteIntegrityMeta: () => {},
+    renderPreservingPackingScroll: () => {},
+    repairPrivateMojibakeLayoutNames: () => {},
+    saveBaseState: (value) => savedBaselines.push(structuredClone(value)),
+    saveRemoteState: async (options) => {
+      assert.ok(["empty-server", "dirty-save"].includes(mode));
+      saves.push(options);
+      runtime.syncMeta.dirty = false;
+      updateSyncUi("Синхронизация завершена.");
+      // Successful existing save callbacks resolve undefined and do not own the layout status.
+    },
+    saveSyncMeta: () => {},
+    serializeState: () => structuredClone(runtime.state),
+    setLayoutLoadProgress: (options) => setLayoutLoadStatus("loading", formatLayoutLoadProgress(options)),
+    showToast: unexpected,
+    stateIntegrityMetaFromResponse: () => ({ stateRevision: 7 }),
+    statePrivateLayoutCount: countPrivateLayouts,
+    timeValue: (value) => Date.parse(value) || 0
+  };
+  const dependencies = {
+    ...shared,
+    activateLocalStorageScopeForCurrentUser: () => {},
+    apiFetch: async (path) => {
+      requests.push(path);
+      if (path === "/auth/me") return { user: { id: "user-1" } };
+      assert.equal(path, "/bike-packing/authorization");
+      return { authorization: { version: 1, role: "user", capabilities: [] } };
+    },
+    clearOfflineRememberedSession: () => {},
+    currentPrivateLayoutRef: () => ({ id: "local-layout-1", name: "Local 1" }),
+    isAdminUser: () => false,
+    isForcedOffline: () => false,
+    loadRemoteState: async (options) => {
+      const outcome = await loadRemoteStateFlow({ runtime, dependencies: loadDependencies }, options);
+      loads.push({ options, outcome, status: statuses.at(-1) });
+      return outcome;
+    },
+    rememberAuthenticatedUser: () => {},
+    renderCachedPrivateStateDuringRemoteLoad: async () => {},
+    restoreSavedLayoutChoice: async (options) => restoredChoices.push(options),
+    setExplicitlySignedOut: () => {},
+    setActivePrivateScope: () => {},
+    storedPrivateLayoutChoiceRef: () => null
+  };
+  await checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirtyNotify: true });
+  return { runtime, original, statuses, syncMessages, loads, saves, requests, savedBaselines, restoredChoices, fallbackCount };
+}
+
+for (const mode of ["network", "timeout"]) {
+  for (const dirty of [false, true]) {
+    test(`CRITICAL auth-load-status: swallowed ${mode} keeps warning with five local layouts and dirty=${dirty}`, async () => {
+      const result = await runAuthenticatedLayoutLoad({ mode, dirty });
+      assert.equal(result.loads.length, 1, "error is handled inside the real load flow");
+      assert.equal(result.loads[0].outcome, false);
+      assert.equal(result.loads[0].status.tone, "warning");
+      assert.equal(result.statuses.at(-1).tone, "warning");
+      assert.match(result.statuses.at(-1).text, mode === "timeout" ? /Сервер долго отвечает/ : /Офлайн/);
+      assert.equal(result.statuses.some(({ tone }) => tone === "success"), false);
+      assert.equal(result.fallbackCount, 1);
+      assert.equal(result.runtime.syncMeta.dirty, dirty);
+      assert.deepEqual(result.runtime.state, result.original);
+      assert.equal(countPrivateLayouts(result.runtime.state), 5);
+      assert.deepEqual(result.saves, []);
+      assert.deepEqual(result.restoredChoices, [{ privateOnly: true }]);
+      assert.deepEqual(result.requests, ["/auth/me", "/bike-packing/authorization", "state"]);
+      if (dirty) assert.equal(result.loads[0].options.notifyDirtySave, true);
+    });
+  }
+}
+
+for (const [mode, tone] of [["storage", "warning"], ["generic", "error"], ["migration", "warning"], ["integrity", "error"], ["refused-apply", "warning"]]) {
+  test(`CRITICAL auth-load-status: ${mode} refusal remains visible after auth completes`, async () => {
+    const result = await runAuthenticatedLayoutLoad({ mode });
+    assert.equal(result.loads[0].outcome, false);
+    assert.equal(result.loads[0].status.tone, tone);
+    assert.deepEqual(result.statuses.at(-1), result.loads[0].status);
+    assert.equal(result.statuses.some(({ tone }) => tone === "success"), false);
+    assert.deepEqual(result.runtime.state, result.original);
+    assert.deepEqual(result.saves, []);
+    assert.deepEqual(result.savedBaselines, []);
+    if (mode === "generic") assert.match(result.statuses.at(-1).text, /generic failure/);
+  });
+}
+
+for (const mode of ["remote", "cache", "empty-server", "dirty-save"]) {
+  test(`CRITICAL auth-load-status: successful ${mode} finishes loading`, async () => {
+    const result = await runAuthenticatedLayoutLoad({ mode, dirty: mode === "dirty-save" });
+    assert.deepEqual(result.statuses.at(-1), { tone: "success", text: "Личные укладки загружены: 5 из 5" });
+    assert.equal(result.runtime.syncMeta.dirty, false);
+    assert.equal(result.runtime.initialRemoteLoadPending, false);
+    assert.deepEqual(result.runtime.state, result.original);
+    assert.deepEqual(result.restoredChoices, [{ privateOnly: true }]);
+    if (["remote", "cache"].includes(mode)) {
+      assert.deepEqual(result.savedBaselines, [result.original]);
+      assert.deepEqual(result.saves, []);
+    } else {
+      assert.equal(result.saves.length, 1);
+      assert.equal(result.loads[0].outcome, undefined, "existing save completion has no boolean result");
+      assert.equal(result.syncMessages.at(-1), "Синхронизация завершена.");
+    }
+    assert.equal(result.requests.at(-1), mode === "cache" ? "freshness:personal-list" : "state");
+  });
+}
 
 test("CRITICAL offline-auth-scope: auth network failure prefers remembered private offline over readonly demo", async () => {
   const runtime = {
