@@ -7,6 +7,7 @@ param(
   [string]$ArtifactRoot = "",
   [string]$IdentityFile = "",
   [switch]$ApplicationOnly,
+  [string]$LocalValidationReport = "",
   [string]$PublicUrl = "https://experiment.vniipo-help.ru/",
   [string]$ApiCapabilitiesUrl = "https://api.vniipo-help.ru/experiment/letters-vniipo/api/bike-packing/capabilities"
 )
@@ -14,6 +15,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+if (-not [string]::IsNullOrWhiteSpace($LocalValidationReport) -and -not $ApplicationOnly) {
+  throw "Local validation is supported only for application-only publication."
+}
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path.TrimEnd("\")
 if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
@@ -44,6 +48,15 @@ function Invoke-SshChecked {
   param([string[]]$RemoteArguments)
   $remoteScript = "/var/www/.experiment-upload-$script:releaseId/deploy-remote.sh"
   Invoke-NativeChecked $sshPath ($sshOptions + @($server, "/bin/bash", $remoteScript) + $RemoteArguments) "Experiment SSH command failed."
+}
+
+function Assert-LocalReleaseValidation {
+  $nodePath = (Get-Command node -ErrorAction Stop).Source
+  Invoke-NativeChecked $nodePath @(
+    (Join-Path $PSScriptRoot "verify-local-release.mjs"), "verify",
+    "--root", $projectRoot, "--artifact", $ArtifactRoot, "--version", $ExpectedVersion,
+    "--commit", $ExpectedCommit, "--report", $LocalValidationReport
+  ) "Local release validation failed."
 }
 
 function Relative-Path([IO.FileInfo]$File) {
@@ -149,11 +162,15 @@ $activated = $false
 $rollbackVerified = $false
 
 try {
-  if ($ApplicationOnly) {
+  if ($ApplicationOnly -and [string]::IsNullOrWhiteSpace($LocalValidationReport)) {
     $workflowJson = & gh run list --repo Dimok911/bike-packing --workflow 'Frontend quality' --commit $ExpectedCommit --status success --limit 20 --json headSha,conclusion,status
     if ($LASTEXITCODE -ne 0) { throw 'Could not verify the exact GitHub workflow.' }
     $successful = @($workflowJson | ConvertFrom-Json | Where-Object { $_.headSha -eq $ExpectedCommit -and $_.conclusion -eq 'success' -and $_.status -eq 'completed' })
     if ($successful.Count -eq 0) { throw 'No successful Frontend quality run for the exact application commit.' }
+  }
+  if (-not [string]::IsNullOrWhiteSpace($LocalValidationReport)) {
+    $LocalValidationReport = (Resolve-Path -LiteralPath $LocalValidationReport).Path
+    Assert-LocalReleaseValidation
   }
   $apiContractVerification = Assert-ExperimentApiContract `
     (Join-Path $ArtifactRoot "release-contract.json") `
@@ -203,6 +220,7 @@ try {
   Write-Utf8Lines (Join-Path $temporaryRoot "frontend.changed") @($changedFrontend.Path)
   Write-Utf8Lines (Join-Path $temporaryRoot "assets.changed") @($changedShared | ForEach-Object { $_.Path.Substring($sharedPrefix.Length) })
 
+  if (-not [string]::IsNullOrWhiteSpace($LocalValidationReport)) { Assert-LocalReleaseValidation }
   Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "frontend.tar"), "-C", $ArtifactRoot, "-T", (Join-Path $temporaryRoot "frontend.changed")) "Could not create frontend delta."
   if (-not $ApplicationOnly) {
     Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "assets.tar"), "-C", (Join-Path $ArtifactRoot "assets"), "-T", (Join-Path $temporaryRoot "assets.changed")) "Could not create static asset delta."

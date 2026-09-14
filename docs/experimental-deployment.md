@@ -1,6 +1,6 @@
 # Публикация экспериментального фронтенда
 
-Для `experiment.vniipo-help.ru` и `exp-to-prod.vniipo-help.ru` действует
+Для `experiment.vniipo-help.ru` и `exp-to-prod.vniipo-help.ru` по умолчанию действует
 GitHub-first порядок. Сервер не должен получать сборку из незакоммиченного
 рабочего дерева.
 
@@ -19,8 +19,8 @@ chunks. Staging создаётся пустым, с новой ссылкой н
 каталога assets. Откат меняет только приложение, в том числе при потере ответа
 об активации. Публичные файлы после отката сверяются с исходными хэшами.
 
-Сам сценарий проверяет успешный `Frontend quality` для точного SHA и контракт
-живого API. Linux CI обязательно выполняет пять настоящих файловых сценариев
+По умолчанию сценарий проверяет успешный `Frontend quality` для точного SHA и контракт
+живого API. Проверка выпуска обязательно включает пять настоящих Linux файловых сценариев
 активации/отката, потерянного ответа, конкурентного изменения и отказов.
 Windows не засчитывается за проверку Linux inode/symlink. Материалы выпуска
 сохраняются локально в ignored `ftp-upload/<release-id>`.
@@ -28,6 +28,85 @@ Windows не засчитывается за проверку Linux inode/symlin
 ```powershell
 pwsh -File scripts/deploy-experiment-vps.ps1 -ApplicationOnly -ExpectedCommit <40-char-sha> -ExpectedVersion vNNN
 ```
+
+### Явная локальная проверка без GitHub Actions
+
+Если пользователь явно разрешил публикацию без Actions, например после исчерпания
+лимита, `-ApplicationOnly -LocalValidationReport <report.json>` заменяет только
+проверку workflow. Без этого параметра прежняя проверка exact-SHA workflow обязательна.
+Другие режимы не принимают локальный отчёт. Контракт живого API, неподвижные assets,
+staging, полные хэши, исходный live manifest, backup, rollback и HTTPS остаются обязательными.
+
+Подготовить чистый commit выпуска, собрать приложение и сохранить fingerprint **до**
+проверок. Все tracked-файлы, включая тесты и документацию, входят в source manifest;
+неигнорируемые новые файлы также останавливают проверку. Сборка проверяется отдельным
+полным manifest path/size/SHA-256. Логи и отчёт хранить в ignored каталоге.
+
+```powershell
+node scripts/verify-local-release.mjs fingerprint --root . --artifact www/vniipo-help.ru/bike-packing --version v1611
+```
+
+Запустить `npm run check`, `npm run test:critical`, `npm run test:transport`,
+`npm run build`, `npm run check:live-api-contract`, выбранный и явно записанный
+browser-набор выпуска и Linux-тест ниже. Новый валидатор отдельно проверяется командой
+`node --test tests/critical/local-release-validation.test.js tests/critical/experiment-vps-deployment.test.js`.
+Сохранить команды, результаты и UTF-8 логи. Пересборка после fingerprint допустима
+только при совпадении всех байтов. Изменение исходников требует нового commit,
+fingerprint и соответствующих проверок.
+
+В `checks.json` сохранить четыре поля вывода fingerprint и массив `checks` с ровно
+семью уникальными `id`: `source`, `critical`, `transport`, `browser`, `build`,
+`liveApi`, `linuxApplication`. Каждая запись содержит `log` (относительный путь внутри
+каталога отчёта) и `exitCode: 0`. Для `critical`, `transport`, `browser` и
+`linuxApplication` также обязательны целые `tests`, `passed`, `failed`, `skipped`:
+`tests > 0`, `passed === tests`, `failed === skipped === 0`. Последняя запись дополнительно
+требует `platform: "linux"`, ровно пять тестов и подтверждающие TAP totals в логе.
+Пример одной записи:
+
+```json
+{"id":"linuxApplication","log":"linux-application.txt","exitCode":0,"platform":"linux","tests":5,"passed":5,"failed":0,"skipped":0}
+```
+
+Это отчёт оператора о выполненных локальных проверках, а не криптографическая
+аттестация GitHub и не утверждение, что выбранный browser-набор равен всей CI-матрице.
+Валидатор сам вычисляет хэши логов; не переносить сведения об успехе из другого выпуска.
+`checks.json`, `report.json` и логи должны находиться в одном evidence-каталоге
+(логи могут быть в его подкаталогах).
+
+```powershell
+node scripts/verify-local-release.mjs create --root . --artifact www/vniipo-help.ru/bike-packing --version v1611 --checks node_modules/.cache/release-validation/checks.json --report node_modules/.cache/release-validation/report.json
+node scripts/verify-local-release.mjs verify --root . --artifact www/vniipo-help.ru/bike-packing --version v1611 --commit <40-char-sha> --report node_modules/.cache/release-validation/report.json
+pwsh -File scripts/deploy-experiment-vps.ps1 -ApplicationOnly -ExpectedCommit <40-char-sha> -ExpectedVersion v1611 -LocalValidationReport node_modules/.cache/release-validation/report.json
+```
+
+Скрипт проверяет отчёт до первого обращения к серверу и повторно проверяет исходники,
+сборку и логи непосредственно перед созданием архива. Существующий отчёт не перезаписывается.
+
+### Пять файловых сценариев на Linux без Actions
+
+Тест использует только встроенные модули Node.js и `bash`, GNU `tar`/coreutils,
+`find`, `which`, `flock`. Можно выполнить в локальном Linux/WSL либо через SSH
+обычным пользователем в отдельном `/tmp/bike-app-validation.XXXXXXXX`:
+
+```sh
+node --version
+node -p 'process.platform'
+node --test --test-reporter=tap tests/integration/experiment-application-deployment.test.js > linux-application.txt 2>&1
+```
+
+Для изолированного запуска достаточно трёх файлов из точного commit:
+`package.json`, `tests/integration/experiment-application-deployment.test.js`,
+`scripts/deploy-experiment-application-remote.sh`. Передать их через `git archive`
+или копированием с проверкой SHA-256, сохранив относительные пути; `.env`, ключи и
+остальные данные проекта не нужны. Проверить код возврата и `tests 5 / pass 5 /
+fail 0 / skipped 0`; Windows-пропуски не принимаются.
+
+Запускать именно Node-тест, не production shell entry point. Fixture создаёт свой
+`mkdtemp`, подставляет временный `parent` только в копию shell-скрипта и проверяет:
+активацию/откат с неизменными bytes/inodes фотографий; потерю ответа; чужое изменение
+live; неверный asset hash/изображение в архиве приложения; автоматический откат после
+порчи активированного приложения. Рабочий `/var/www` и сеть эти тесты не используют.
+После сохранения логов удалять только проверенные созданные временные каталоги.
 
 Ниже описан прежний общий режим обновления статических assets. Он не подходит
 для выпуска с требованием оставить фотографии и их каталоги на месте.
@@ -90,7 +169,9 @@ nginx обращается только к отдельному процессу
 менять compatibility version production API.
 
 Если workflow отсутствует, завершился ошибкой или относится к другому SHA,
-деплой не начинать и успешным не считать. При ошибке активации или внешней
+деплой по обычному пути не начинать и успешным не считать. Единственное описанное
+выше исключение — явно разрешённый application-only выпуск с проверенным локальным
+отчётом. При ошибке активации или внешней
 проверки вернуть сохранённый web-каталог. Аварийный откат к ранее опубликованной
 и уже проверенной резервной версии не требует нового workflow, но результат
 отката нужно проверить снаружи.
