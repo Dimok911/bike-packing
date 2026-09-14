@@ -107,7 +107,7 @@ for (const changed of ["owner", "revision"]) test(`ordinary recovery does not of
   let changedOnce = false;
   f.afterStateRead = () => {
     f.afterStateRead = null; changedOnce = true;
-    if (changed === "owner") f.ownerAllowed = false;
+    if (changed === "owner") f.detailOwnerId = "different-owner";
     else f.revision++;
   };
   await page.locator("#syncBtn").click();
