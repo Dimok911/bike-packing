@@ -233,8 +233,16 @@ test("quota while archiving the explicit choice blocks cancellation and preserve
     };
   }, storagePrefix);
   await dialog(page).getByRole("button", { name: "Загрузить серверную версию", exact: true }).click();
+  await expect(dialog(page)).toBeVisible();
+  await expect(dialog(page).getByRole("alert")).toContainText("Не хватает места");
+  await expect(dialog(page).getByRole("alert")).toContainText("Серверная версия не загружена");
+  const downloaded = page.waitForEvent("download");
+  await dialog(page).getByRole("button", { name: "Скачать данные для разбора", exact: true }).click();
+  const copy = JSON.parse(await readFile(await (await downloaded).path(), "utf8"));
+  expect(copy.recoveryPreparationFailure).toEqual({ code: "ordinary-recovery-storage", stage: "archive", reason: "quota" });
+  expect(copy.entries).toEqual(original.entries.map(([key, value]) => ({ key, value })));
+  await dialog(page).getByRole("button", { name: "Решить позже", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
   expect(f.cancellations).toEqual([]); expect(f.posts).toEqual([]); expect(await recoveryStorage(page)).toEqual([]);
   const native = await nativeLegacyPhotoOutbox(page);
   expect(native.pending).toBe(true); expect(native.records).toEqual(original.records);

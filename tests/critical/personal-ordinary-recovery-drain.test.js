@@ -47,6 +47,25 @@ test("explicit server choice archives before recovery and applies only its durab
   assert.equal(await run(f.options), "confirmed");
   assert.deepEqual(f.calls, ["drain", "remote", "choice", "archive", "recover", "apply", "drain"]);
 });
+
+test("dialog can report failed preparation and still export originals without cancelling", async () => {
+  const f = fixture(); f.quota = true; f.choice = "later";
+  f.onChoice = details => {
+    assert.throws(details.prepareServerChoice, /quota/);
+    assert.deepEqual(details.getRecoveryCopy(), f.records);
+  };
+  await assert.rejects(run(f.options), /Выбор отложен/);
+  assert.equal(f.pending, false);
+  assert.deepEqual(f.calls, ["drain", "remote", "choice", "archive", "export"]);
+});
+
+test("preparing a dialog choice rejects a changed editor before publishing an archive", async () => {
+  const f = fixture();
+  f.onChoice = details => { f.generation = "changed"; details.prepareServerChoice(); };
+  await assert.rejects(run(f.options), /Аккаунт или местные изменения изменились/);
+  assert.equal(f.calls.includes("archive"), false);
+  assert.equal(f.calls.includes("recover"), false);
+});
 test("autosave offers a decision without making it", async () => {
   const f = fixture(); delete f.options.chooseServer;
   await assert.rejects(run(f.options), error => {
