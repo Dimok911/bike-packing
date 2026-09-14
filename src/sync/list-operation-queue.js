@@ -26,7 +26,8 @@ import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { hasLegacyPersonalPhotos, isOrdinaryLegacyPersonalUpdate } from "./personal-confirmed-photos.js";
 import { PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED, PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY } from "./personal-legacy-photo-preservation.js";
-import { PERSONAL_LIST_OPERATION_PREPARATION_ENABLED, isPersonalListOperationPreparation, isUnknownPersonalListOperation,
+import { PERSONAL_ORDINARY_RECOVERY_ENABLED, assertOrdinaryRecoveryDispatchAllowed } from "./personal-ordinary-recovery.js";
+import { PERSONAL_LIST_OPERATION_PREPARATION_ENABLED, PERSONAL_LIST_OPERATION_PREPARATION_CAPABILITY, isPersonalListOperationPreparation, isUnknownPersonalListOperation,
   validatePreparedPersonalListOperation, preparePersonalListOperationRetry, personalListOperationAccessMessage } from "./personal-list-operation-preparation.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
@@ -148,7 +149,12 @@ const historicalProof = data => {
       listId: op.listId, payloadDigest: op.payloadDigest, state: op.state },
     resultStatus: data.result.status,
     stateRevision: Number.isSafeInteger(stateRevision) && stateRevision > 0 ? stateRevision : null,
-    rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null };
+    rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null,
+    ...(op.state === "rejected" && data.result.payload.code === "operation_cancelled" ? { cancellation: {
+      version: data.result.payload.cancellation.version, operationId: data.result.payload.cancellation.operationId,
+      noBusinessEffects: data.result.payload.cancellation.noBusinessEffects,
+      operationCannotApply: data.result.payload.cancellation.operationCannotApply
+    } } : {}) };
 };
 
 // A waiting grandchild must not block the ancestor it is waiting for. Walk
@@ -188,6 +194,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   legacyPhotoPreservationEnabled = PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED,
   operationPreparationEnabled = PERSONAL_LIST_OPERATION_PREPARATION_ENABLED,
+  ordinaryRecoveryEnabled = PERSONAL_ORDINARY_RECOVERY_ENABLED, recoveryStorage,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
@@ -229,7 +236,24 @@ export function createListOperationQueue({ transport, getContext = () => null,
   const canWriteImportForm = reference => importPhotoFormEnabled && formOwnerResultEnabled && photoFormEnabled && photoEnabled
     && (reference?.version !== 4 || importNewOwnerFormEnabled)
     && (reference?.importKind === "guest" ? guestImportEnabled : reference?.importKind === "archive" && archiveImportEnabled && archivePhotoImportEnabled);
+  const assertOrdinaryDispatchAllowed = expected => {
+    if (expected.kind !== "list.update") return;
+    let storage;
+    try { storage = recoveryStorage === undefined ? globalThis.localStorage : recoveryStorage; }
+    catch { throw Object.assign(paused(expected.operationId), { isPersonalSaveBlocked: true, code: "ordinary-recovery" }); }
+    // Older non-browser callers have no durable recovery store. In browsers,
+    // retained choices remain barriers even when creation is rolled back OFF.
+    if (storage === undefined && !ordinaryRecoveryEnabled) return;
+    const context = getContext();
+    if (context?.actorId !== expected.actorId || context?.listId !== expected.listId || context?.environment !== environment) {
+      throw paused(expected.operationId);
+    }
+    assertOrdinaryRecoveryDispatchAllowed({ storage, binding: context, operationId: expected.operationId });
+  };
   const request = async (path, body) => {
+    if (body !== undefined && (path === gateway || path.endsWith("/prepare"))) {
+      assertOrdinaryDispatchAllowed({ kind: body.kind, actorId: body.expectedActorId, listId: body.listId, operationId: body.operationId });
+    }
     const controller = new AbortController();
     let timer;
     try {
@@ -270,11 +294,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
       kind: saved.kind, listId: saved.listId, body: saved.body });
   };
   const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {}, assertCurrentContext = () => {} } = {}) => {
+    assertCurrentContext();
     let data = await read(`${gateway}/${encodeURIComponent(entry.id)}`), preparation = null;
+    assertCurrentContext();
     if (resumeWaiting && operationPreparationEnabled && !readOnly && !entry.confirmed && !entry.recovery.cancellationOnly
       && isPersonalListOperationPreparation(entry.recovery)
       && (isUnknownPersonalListOperation(data, entry.recovery) || validatePreparedPersonalListOperation(data, entry.recovery))) {
       await assertBeforeDispatch();
+      assertCurrentContext();
       preparation = await preparePersonalListOperationRetry({ entry, known: data, enabled: operationPreparationEnabled,
         getContext, getEntry: id => transport.writes.find(value => value.id === id), read, request, assertContext: assertCurrentContext });
       preparation.assertCurrent(); data = preparation.data;
@@ -285,6 +312,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
       || preparation && validatePreparedPersonalListOperation(data, entry.recovery))) {
       await assertBeforeDispatch();
       if (preparation) { await preparation.beforeDispatch(); preparation.assertCurrent(); }
+      assertCurrentContext();
       try {
         const response = await dispatch(entry);
         if (response.status !== 200) throw paused(entry.id);
@@ -345,8 +373,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
         };
         const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
         if (["committed", "rejected"].includes(known?.operation?.state)) return terminal(known);
+        const ownerPrepared = operationPreparationEnabled && validatePreparedPersonalListOperation(known, expected);
         const op = known?.operation;
-        if (entry?.confirmed || !(validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
+        if (entry?.confirmed || !(ownerPrepared || validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
           && op.id === operationId && (op.actorId === undefined || op.actorId === initial.actorId)
           && (op.environment === undefined || op.environment === environment) && (op.listId === undefined || op.listId === listId))) throw paused(operationId);
         if (Object.hasOwn(body, "serverImport")) {
@@ -367,6 +396,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           await assertPersonalGuestImportHashes(body); assertCurrent();
         }
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
+        if (ownerPrepared && !capabilities.capabilities?.includes(PERSONAL_LIST_OPERATION_PREPARATION_CAPABILITY)) throw paused(operationId);
         if (serverFormBody(body) && !personalServerPhotoFormCapabilities(body.ownerResult || body.photoResults).every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
         if (![LIST_OPERATION_CAPABILITY, LIST_OPERATION_CANCELLATION_CAPABILITY].every(value => capabilities.capabilities?.includes(value))) throw paused(operationId,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
@@ -671,6 +701,11 @@ export function createListOperationQueue({ transport, getContext = () => null,
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
+      const assertRunCurrent = () => {
+        if (!contextMatches(initial)) throw paused(requestedId, "Локальные данные изменились. Устаревший запрос не отправлен.");
+        assertOrdinaryDispatchAllowed({ kind: route.kind, actorId: initial.actorId, listId: route.listId || body.id, operationId: requestedId });
+      };
+      assertRunCurrent();
       if (Object.hasOwn(body, "shareLink")) {
         if (!shareLinkEnabled || route.kind !== "list.update") throw paused(requestedId, "Создание ссылки через очередь ещё не включено. Выбор сохранён.");
         assertPersonalShareLinkBody(body, requestedId, { causal: true });
@@ -737,27 +772,31 @@ export function createListOperationQueue({ transport, getContext = () => null,
       if ([9, 10].includes(body.photoResults?.version) && (!importPhotoFormEnabled || body.photoResults.version === 10 && !importNewOwnerFormEnabled)) throw paused(requestedId, "Фото до подтверждения переноса или архива ещё не включены.");
       if (serverFormBody(body) && !canWriteServerForm(body)) throw paused(requestedId, "Фото до подтверждения серверной копии ещё не включены.");
       const generation = await sha(initial.generation);
+      assertRunCurrent();
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
       const requestKey = await sha(canonicalListOperationJson({ path, method, body, ...(!requestedId ? { generation } : {}), actorId: initial.actorId,
         ...(requestedId ? { operationId: requestedId } : {}) }));
+      assertRunCurrent();
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId || body.id || requestKey}`, async () => {
-        if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
+        assertRunCurrent();
         await transport.prepare();
-        if (!contextMatches(initial)) throw paused(null);
+        assertRunCurrent();
         const me = await read("/auth/me");
-        if (!contextMatches(initial)) throw paused(null);
+        assertRunCurrent();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(null, "Аккаунт изменился. Сохранение приостановлено.");
         // Settle old same-account unknown list actions first, without applying
         // their historical result to a newer local generation or another action.
         for (const entry of transport.writes.filter(entry => entry.recovery?.type === "list" && !entry.confirmed && entry.recovery.protocol !== "causal-v1")) {
           if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
           await recover(entry);
+          assertRunCurrent();
         }
         let entry = requestedId ? transport.writes.find(entry => entry.id === requestedId)
           : transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
         if (entry && requestedId) {
           const listId = route.listId || body.id;
           const digest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
+          assertRunCurrent();
           if (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
             || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId
             || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
@@ -768,14 +807,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
           && value.recovery.requestKey !== requestKey && value.recovery.listId === (route.listId || body.id))) {
           if (other.recovery.actorId !== initial.actorId) throw paused(other.id);
           if (!related.has(other.id)) await recover(other);
+          assertRunCurrent();
         }
         let data;
         // Terminal transport records omit their large body. Restore only the
         // caller's exact hash-bound immutable manifest for result validation.
         if (entry) data = await recover({ ...entry, recovery: { ...entry.recovery, body } }, { resumeWaiting: true,
-          assertCurrentContext: () => { if (!contextMatches(initial)) throw paused(entry.id); },
+          assertCurrentContext: assertRunCurrent,
           assertBeforeDispatch: async () => {
-            if (!contextMatches(initial)) throw paused(entry.id);
+            assertRunCurrent();
             if (route.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(body) && hasLegacyPersonalPhotos(body.payload)) {
               const capabilities = await read("/bike-packing/capabilities");
               if (!contextMatches(initial) || !legacyPhotoPreservationEnabled
@@ -816,6 +856,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
           transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
+          assertRunCurrent();
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
           if (route.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(body) && hasLegacyPersonalPhotos(body.payload)
             && (!legacyPhotoPreservationEnabled || !capabilities.capabilities?.includes(PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY))) {
@@ -886,11 +927,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const operationId = requestedId || crypto.randomUUID();
           assertListOperationPayload({ environment, actorId: initial.actorId, kind: route.kind, listId, body });
           const payloadDigest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
+          assertRunCurrent();
           const children = route.kind.endsWith(".sync") ? (body[route.kind.split(".")[0]] || []).map(entry => entry.id || entry.payload?.id) : [];
           if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(null, "В пакете повторяются или отсутствуют номера элементов. Запрос не отправлен.");
           const expected = { ...protocol, operationId, actorId: initial.actorId, kind: route.kind, listId, body, children, payloadDigest, generation, requestKey };
           if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
           await transport.beginWrite(path, method, bodyText, expected);
+          assertOrdinaryDispatchAllowed(expected);
           entry = transport.writes.find(entry => entry.id === operationId);
           // No await between this final local check and dispatch.
           if (!contextMatches(initial)) {
@@ -909,6 +952,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
             catch (recoveryError) { if (error.isPersonalOwnerAccessRefusal) throw error; throw recoveryError; }
           }
         }
+        assertRunCurrent();
         if (!contextMatches(initial)) throw paused(entry.id, "Подтверждено прежнее сохранение. Более новые локальные изменения не затронуты.");
         if (data.operation.state === "rejected") {
           if (data.result.payload.serverPayload) {
@@ -927,6 +971,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         // A receipt is historical: never resurrect a deleted list or apply a
         // snapshot after its server revision has advanced on another device.
         const current = await request(`/bike-packing/lists/${encodeURIComponent(entry.recovery.listId)}/freshness`);
+        assertRunCurrent();
         if (entry.recovery.kind === "list.delete") {
           if (current.status !== 404) throw paused(entry.id, "Состояние списка изменилось после удаления. Нужна сверка.");
         } else {
