@@ -10,6 +10,7 @@ import { saveRootContainerDialogAction, saveItemDialogAction } from "../../src/u
 import { resolveSyncVisualState } from "../../src/ui/sync-visual-state.js";
 import { isKnownEmptyPersonalSave } from "../../src/sync/personal-empty-save.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
+import { personalBusinessPayloadMatchesConfirmed } from "../../src/sync/personal-confirmed-business-equality.js";
 
 const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 function appFunction(name, dependencies) {
@@ -52,6 +53,7 @@ function emptyQueueSaveFixture({ confirmed = true, changed = false, writable = t
     },
     personalSaveOutboxForScope: () => f.outbox,
     serializeState: () => ({ items: structuredClone(state.items) }), sameJson: snapshotsEqual,
+    personalBusinessPayloadMatchesConfirmed, PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED: false,
     localText: (en, ru) => ru, SYNC_META_KEY: "sync-meta", scopedLocalStorageKey: key => key,
     safeSetLocalStorage: (key, value) => { if (writable) persistedMeta.push(JSON.parse(value)); return writable; },
     saveSyncMeta() {}, updateSyncUi: message => messages.push(message),

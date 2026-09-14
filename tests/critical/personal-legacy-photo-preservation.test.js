@@ -133,6 +133,76 @@ test("missing first merge base can use only a fresh exact server revision withou
   assert.equal(Object.hasOwn(f.records[0], "mergeBase"), false);
 });
 
+test("legacy route aliases preserve the same files without rewriting baseless queued bodies", async () => {
+  const routes = ["https://api.vniipo-help.ru/letters-vniipo/api", "https://api.vniipo-help.ru/experiment/letters-vniipo/api",
+    "https://experiment.vniipo-help.ru/letters-vniipo/api", "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api"];
+  for (const source of routes) for (const target of routes) {
+    const f = fixture({ baseless: true, child: true });
+    for (const p of f.base.containers.bag.photos) for (const key of ["url", "thumbUrl"]) {
+      p[key] = p[key].replace(routes[0], source) + "?v=unchanged";
+    }
+    for (const r of f.records) for (const p of r.action.body.payload.containers.bag.photos) {
+      for (const key of ["url", "thumbUrl"]) p[key] = p[key].replace(routes[0], target) + "?v=unchanged";
+    }
+    const original = canonicalListOperationJson(f.records), base = canonicalListOperationJson(f.base);
+    assert.equal((await preparePersonalLegacyPhotoPreservation(f.options)).check(), true);
+    assert.equal(canonicalListOperationJson(f.records), original);
+    assert.equal(canonicalListOperationJson(f.base), base);
+  }
+});
+
+test("an allowed legacy prefix never masks a changed query, owner, metadata or file identity", async () => {
+  for (const change of [p => { p.url += "?different=1"; }, p => { p.thumbUrl += "?different=1"; },
+    p => { p.width++; }, p => { p.url = p.url.replace("/photo-a/", "/photo-b/"); },
+    p => { p.url = p.url.replace("api.vniipo-help.ru", "untrusted.example"); },
+    p => { p.url = p.url.replace("/list-a/", "/list-b/"); }]) {
+    const f = fixture({ baseless: true });
+    const p = f.records[0].action.body.payload.containers.bag.photos[0];
+    for (const key of ["url", "thumbUrl"]) p[key] = p[key].replace("/letters-vniipo/api/", "/experiment/letters-vniipo/api/");
+    change(p);
+    await assert.rejects(preparePersonalLegacyPhotoPreservation(f.options), paused);
+  }
+});
+
+test("preexisting identical legacy references in two old bag copies retain the exact confirmed owner inventory", async () => {
+  const f = fixture({ baseless: true, child: true });
+  f.base.containers.bag.photos[0].listId = "";
+  for (const record of f.records) record.action.body.payload.containers.bag.photos[0].listId = "";
+  f.base.containers.oldCopy = { id: "oldCopy", photos: [structuredClone(f.base.containers.bag.photos[0])] };
+  for (const record of f.records) record.action.body.payload.containers.oldCopy = structuredClone(f.base.containers.oldCopy);
+  const before = canonicalListOperationJson(f.records);
+  assert.equal((await preparePersonalLegacyPhotoPreservation(f.options)).check(), true);
+  assert.equal(canonicalListOperationJson(f.records), before);
+  for (const change of [p => { p.containers.newCopy = { ...structuredClone(p.containers.oldCopy), id: "newCopy" }; },
+    p => { delete p.containers.oldCopy; }, p => { p.containers.oldCopy.photos[0].width++; },
+    p => { p.containers.bag.photos.push(structuredClone(p.containers.bag.photos[0])); }]) {
+    const changed = structuredClone(f.records); change(changed.at(-1).action.body.payload);
+    await assert.rejects(preparePersonalLegacyPhotoPreservation({ ...f.options, records: changed, getRecords: () => changed }), paused);
+  }
+});
+
+test("empty old list metadata requires both routes to prove the current list and remains unchanged", async () => {
+  const f = fixture({ baseless: true });
+  f.base.containers.bag.photos[0].listId = "";
+  f.records[0].action.body.payload.containers.bag.photos[0].listId = "";
+  assert.equal((await preparePersonalLegacyPhotoPreservation(f.options)).check(), true);
+  for (const change of [p => { p.listId = listId; }, p => { p.url = p.url.replace("/list-a/", "/other-list/"); },
+    p => { p.thumbUrl = p.thumbUrl.replace("/list-a/", "/other-list/"); }, p => { delete p.listId; }]) {
+    const records = structuredClone(f.records); change(records[0].action.body.payload.containers.bag.photos[0]);
+    await assert.rejects(preparePersonalLegacyPhotoPreservation({ ...f.options, records, getRecords: () => records }), paused);
+  }
+});
+
+test("legacy sharing cannot downgrade a causal asset or hide inconsistent metadata in its baseline", () => {
+  for (const change of [p => { p.width++; }, p => { p.assetId = "05c59e77-bd27-42bf-879f-83bfa3b27ab5"; },
+    p => { p.url += "?changed=1"; }]) {
+    const f = fixture();
+    f.base.containers.oldCopy = { id: "oldCopy", photos: [structuredClone(f.base.containers.bag.photos[0])] };
+    change(f.base.containers.oldCopy.photos[0]);
+    assert.equal(preservesConfirmedPersonalPhotos(f.base, structuredClone(f.base), listId, { allowLegacy: true }), false);
+  }
+});
+
 test("fresh same-revision baseline cannot be replaced with the local candidate or a mismatching payload", async () => {
   const f = fixture({ baseless: true });
   f.options.readRemote = async () => { const payload = structuredClone(f.base); payload.containers.bag.photos.pop(); return { payload, stateRevision: 3 }; };

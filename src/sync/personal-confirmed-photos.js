@@ -13,7 +13,7 @@ const referenceId = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-
 // Their complete values and owner/order must still match a confirmed snapshot.
 export function isPreservedLegacyPersonalPhoto(photo, listId) {
   if (!photo || typeof photo !== "object" || Array.isArray(photo) || Object.keys(photo).some(key => !legacyKeys.has(key))
-    || !referenceId(photo.id) || !referenceId(listId) || photo.listId !== listId || photo.status !== "synced"
+    || !referenceId(photo.id) || !referenceId(listId) || (photo.listId !== listId && photo.listId !== "") || photo.status !== "synced"
     || Object.hasOwn(photo, "photoId") && photo.photoId !== photo.id
     || !["width", "height"].every(key => typeof photo[key] === "number" && Number.isFinite(photo[key]) && photo[key] >= 0)
     || typeof photo.updatedAt !== "string" || !Number.isFinite(Date.parse(photo.updatedAt))) return false;
@@ -49,16 +49,31 @@ export function isOrdinaryLegacyPersonalUpdate(body) {
 export function preservesConfirmedPersonalPhotos(base, candidate, listId, { userDeletion = null, allowLegacy = false } = {}) {
   if (!base || !candidate || typeof listId !== "string" || !listId) return false;
   const inventory = payload => {
-    const result = [], ids = new Set(), assets = new Set();
+    const result = [], ids = new Set(), assets = new Set(), legacyReferences = new Map();
     for (const collection of ["items", "containers"]) {
       if (!payload[collection] || typeof payload[collection] !== "object" || Array.isArray(payload[collection])) throw Error("owners");
       for (const [id, owner] of Object.entries(payload[collection]).sort(([a], [b]) => a.localeCompare(b))) {
         if (!owner || owner.id !== id || Object.hasOwn(owner, "photos") && !Array.isArray(owner.photos)) throw Error("owner");
         for (const [index, photo] of (owner.photos || []).entries()) {
           if (allowLegacy && isPreservedLegacyPersonalPhoto(photo, listId)) {
-            if (ids.has(photo.id)) throw Error("duplicate");
+            // The legacy reader and the editor expose the same Experiment
+            // file through different approved prefixes. Compare its checked
+            // list/photo/variant identity; keep query and all metadata exact.
+            // This projection never rewrites the persisted operation body.
+            const reference = { ...photo };
+            for (const key of ["url", "thumbUrl"]) {
+              reference[key] = `/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photo.id)}/${key === "url" ? "file" : "thumb"}${new URL(photo[key]).search}`;
+            }
+            const identity = canonicalListOperationJson(reference), previous = legacyReferences.get(photo.id);
+            const ownerKey = `${collection}:${id}`;
+            // Old bag copies could share a legacy file. Only an unchanged
+            // confirmed owner inventory may retain that sharing; no new copy
+            // or repeated slot in one owner can be hidden by this exception.
+            if (ids.has(photo.id) && (!previous || previous.identity !== identity || previous.owners.has(ownerKey))) throw Error("duplicate");
+            if (previous) previous.owners.add(ownerKey);
+            else legacyReferences.set(photo.id, { identity, owners: new Set([ownerKey]) });
             ids.add(photo.id);
-            result.push({ collection, ownerId: id, index, legacy: true, reference: photo });
+            result.push({ collection, ownerId: id, index, legacy: true, reference });
             continue;
           }
           const reference = causalPhotoReferenceForSync(photo);
