@@ -847,6 +847,9 @@ import { createAdminTemplatePhotoActionStore } from "./src/sync/admin-template-p
 import { createAdminTemplatePhotoStaging } from "./src/sync/admin-template-photo-staging.js";
 import { adminTemplatePhotoNamespace, adminTemplatePhotoEditorSnapshot, adminTemplatePhotoFormPayload, prepareAdminTemplatePhotoRecord } from "./src/public/admin-template-photo-state.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
+import { PERSONAL_ORDINARY_RECOVERY_ENABLED } from "./src/sync/personal-ordinary-recovery.js";
+import { drainPersonalSaveWithOrdinaryRecovery } from "./src/sync/personal-ordinary-recovery-drain.js";
+import { askPersonalOrdinaryRecovery } from "./src/ui/personal-ordinary-recovery-dialog.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
 import { personalCopyIntent, preparePersonalCopyBatch } from "./src/sync/personal-copy-intent.js";
@@ -9259,6 +9262,20 @@ function personalReconciledSnapshot(payload, previous) {
     { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() });
 }
 
+function personalOrdinaryRecoveredSnapshot(payload, previous) {
+  // Preserve the raw server business baseline. Only validated legacy URL
+  // aliases may differ in its normalized display; no fields are merged away.
+  const business = personalBusinessPayload(payload);
+  const snapshot = normalizeRemoteState({ ...business, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
+  if (!snapshot || !personalBusinessPayloadMatchesConfirmed({ confirmedPayload: business,
+    candidatePayload: cloneStateForSync(snapshot, { forSync: true }), listId: currentPackingListId,
+    allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) {
+    throw new Error("Серверная версия требует проверки структуры. Местная копия и очередь сохранены.");
+  }
+  return recoverPersonalAdminDrafts(personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous)), JSON.stringify(state),
+    { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() });
+}
+
 async function recoverStalePersonalDraft() {
   const record = await personalSaveRecovery.recoverDraft({
     getContext: personalSaveContext, makeSnapshot: personalReconciledSnapshot,
@@ -9485,9 +9502,11 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       }
       owner.listId = currentPackingListId;
     }
-    persistStateSnapshot(state);
     const outbox = personalSaveOutboxForScope();
     if (!outbox) throw new Error("Сначала нужно подтвердить создание личного списка.");
+    // A saved stop choice must resume before another capture. Its archive owns
+    // the old local snapshot until the new selected-server action is durable.
+    if (!outbox.ordinaryRecoveryState?.().pending) persistStateSnapshot(state);
     if (!outbox.hasPending()) {
       // An empty queue alone is not a server confirmation. UI-only edits can
       // leave dirty set after capture reused an already confirmed operation.
@@ -9519,7 +9538,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       return;
     }
     const confirmedBoundary = outbox.confirmedBoundary();
-    const deletionReference = personalDeletionReference(confirmedBoundary?.payload || loadBaseState(), outbox.list(), { confirmedBoundary });
+    const deletionReference = personalDeletionReference(confirmedBoundary?.payload || loadBaseState(), outbox.list(), {
+      confirmedBoundary, ordinaryRecoveryArchives: outbox.ordinaryRecoveryArchives?.() || [] });
     const knownDeletion = deletionReference && preservesUndeletedEntities(state, deletionReference)
       && !isDestructiveStateRegression(state, deletionReference)
       && (!isSuspiciousEmptyPackingState(state) || isSuspiciousEmptyPackingState(deletionReference));
@@ -9588,9 +9608,22 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
           path: `/bike-packing/lists/${encodeURIComponent(action.listId)}`, method: "PUT", body: JSON.stringify(action.body) })
       });
     };
+    const applyReconciled = record => {
+      personalSaveRecovery.assertRunning();
+      replaceState(record.snapshot, { personalOperationId: record.action.operationId });
+      syncMeta.dirty = true;
+      renderPreservingPackingScroll();
+      updateSyncUi("Выбранная версия сохранена на устройстве. Проверяю подтверждение сервера…");
+    };
     updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
-    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext, prepareBeforeDrain, beforeDrain, readRemote,
-      makeSnapshot: personalReconciledSnapshot,
+    await drainPersonalSaveWithOrdinaryRecovery({ enabled: PERSONAL_ORDINARY_RECOVERY_ENABLED,
+      outbox, queue, getContext, readRemote, makeSnapshot: personalOrdinaryRecoveredSnapshot,
+      makeBaselineMeta: record => ({ ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
+        serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false }),
+      chooseServer: notify ? details => askPersonalOrdinaryRecovery({ ...details, language: uiLanguage }) : undefined,
+      onReconciled: applyReconciled,
+      drain: () => drainPersonalSaveWithReconciliation({ outbox, queue, getContext, prepareBeforeDrain, beforeDrain, readRemote,
+      makeSnapshot: PERSONAL_ORDINARY_RECOVERY_ENABLED ? personalOrdinaryRecoveredSnapshot : personalReconciledSnapshot,
       makeBaselineMeta(record) {
         return { ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
           serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false };
@@ -9618,13 +9651,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         });
         return confirmed === true ? "keep-server" : "cancel";
       } : undefined,
-      onReconciled(record) {
-        personalSaveRecovery.assertRunning();
-        replaceState(record.snapshot, { personalOperationId: record.action.operationId });
-        syncMeta.dirty = true;
-        renderPreservingPackingScroll();
-        updateSyncUi("Изменения согласованы. Проверяю подтверждение нового действия…");
-      },
+      onReconciled: applyReconciled,
       onAdopted(record) {
         personalSaveRecovery.assertRunning();
         // The journal atomically owns BOTH the historical confirmation and this
@@ -9670,7 +9697,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       outbox.compact();
       updateSyncUi();
       if (notify) showToast("Синхронизация подтверждена.", "success");
-    } });
+    } }) });
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;

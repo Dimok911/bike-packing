@@ -16,6 +16,7 @@ export const EXPERIMENT_RELEASE_GATES = Object.freeze({
   "src/sync/experiment-transport.js": ["EU_TRANSPORT_RELEASE_ENABLED"],
   "src/sync/personal-legacy-photo-preservation.js": ["PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED"],
   "src/sync/personal-list-operation-preparation.js": ["PERSONAL_LIST_OPERATION_PREPARATION_ENABLED"],
+  "src/sync/personal-ordinary-recovery.js": ["PERSONAL_ORDINARY_RECOVERY_ENABLED"],
   "src/sync/personal-save-outbox.js": ["PERSONAL_SAVE_OUTBOX_ENABLED"],
   "src/sync/list-operation-queue.js": ["LIST_OPERATION_QUEUE_ENABLED", "LIST_OPERATION_CANCELLATION_ENABLED"],
   "src/sync/personal-list-migration.js": ["PERSONAL_LIST_MIGRATION_ENABLED"],
