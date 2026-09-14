@@ -233,6 +233,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
   Object.assign(f, { bundleDirectory: sharedOwnerUpgrade ? previousLegacyPhotoBundle : root,
     legacyOwnerDenied: sharedOwnerUpgrade, preparationEnabled: !sharedOwnerUpgrade, ownerAllowed: true,
+    detailOwnerId: legacyPhotoBinding.actorId,
     preparations: [], waiting: new Map(), preparationSnapshots: [] });
   Object.assign(f, { ordinaryRecovery, ordinaryRebase, cancellations: [], cancellationSnapshots: [], ordinaryOriginals: new Map(),
     noopPosts: [], loseCancellationAck: false, cancellationAckDropped: false, hideCancellationReceipts: false });
@@ -283,8 +284,10 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     return structuredClone(remote);
   };
   page.legacyPhotoFixture = f;
+  // GET metadata and permission at the later mutation lock are independent:
+  // an owner read does not promise that /prepare will still authorize writing.
   const list = () => ({ id: legacyPhotoBinding.listId, title: "Личные укладки",
-    ownerId: f.ownerAllowed ? legacyPhotoBinding.actorId : "different-owner", role: f.ownerAllowed ? "owner" : "editor",
+    ownerId: f.detailOwnerId, role: f.detailOwnerId === legacyPhotoBinding.actorId ? "owner" : "editor",
     visibility: sharedOwnerUpgrade || ordinaryRecovery ? "shared" : "private", sourceType: "user",
     canEdit: true, stateRevision: f.revision, updatedAt: timestamp, payload: structuredClone(f.payload) });
   const stateResponse = () => {
