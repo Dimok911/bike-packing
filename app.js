@@ -849,6 +849,7 @@ import { adminTemplatePhotoNamespace, adminTemplatePhotoEditorSnapshot, adminTem
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { PERSONAL_ORDINARY_RECOVERY_ENABLED } from "./src/sync/personal-ordinary-recovery.js";
 import { drainPersonalSaveWithOrdinaryRecovery } from "./src/sync/personal-ordinary-recovery-drain.js";
+import { readPersonalOwnedRecoveryState } from "./src/sync/personal-owned-recovery-state.js";
 import { askPersonalOrdinaryRecovery } from "./src/ui/personal-ordinary-recovery-dialog.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
@@ -8096,6 +8097,8 @@ function normalizeRemoteListRecord(data) {
     null;
   return {
     ...(list || {}),
+    // The assembled /state envelope owns listId; its nested record has no id.
+    ...(typeof data?.listId === "string" && data.listId && !list?.id ? { id: data.listId } : {}),
     ...integrityMeta,
     payload,
     updatedAt: remoteUpdatedAt(list) || integrityMeta.updatedAt || data?.updatedAt || data?.serverUpdatedAt || null
@@ -9579,8 +9582,11 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     const queue = createListOperationQueue({ transport: experimentTransport, getContext });
     const readRemote = async () => {
         const initial = personalSaveContext();
-        const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(outbox.binding.listId)}/state`, {
-          timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+        const data = await readPersonalOwnedRecoveryState({ listId: outbox.binding.listId, actorId: outbox.binding.actorId,
+          read: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
+          assertCurrent: () => {
+            if (!sameJson(initial, getContext())) throw Error("Редактор изменился. Сверка остановлена.");
+          }
         });
         const current = personalSaveContext();
         if (Object.keys(initial).some(key => initial[key] !== current[key])) throw new Error("Редактор изменился. Сверка остановлена.");
