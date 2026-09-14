@@ -59,6 +59,10 @@ export async function drainPersonalSaveWithOrdinaryRecovery({ enabled = false, o
       records: review.records, confirmedOperationIds: review.confirmedOperationIds,
       comparison,
       failure: { code: error.code, reason: error.reason, hasConflicts: Boolean(error.conflicts?.length) },
+      prepareServerChoice: () => {
+        assertCurrent();
+        outbox.prepareOrdinaryRecoveryArchive({ getContext });
+      },
       getRecoveryCopy: () => { assertCurrent(); return outbox.ordinaryRecoveryCopy(); } });
     assertCurrent();
     if (choice !== "server") throw Object.assign(paused("Выбор отложен. Местные изменения и очередь сохранены на этом устройстве."),

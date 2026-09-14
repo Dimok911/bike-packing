@@ -4,7 +4,7 @@ import { describePersonalRecoveryActions, explainPersonalRecoveryReason } from "
 import { describePersonalRecoveryVersionComparison } from "./personal-recovery-version-comparison.js";
 
 export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef = window,
-  language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, comparison = null, getRecoveryCopy } = {}) {
+  language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, comparison = null, getRecoveryCopy, prepareServerChoice } = {}) {
   const text = (ru, en) => language === "en" ? en : ru;
   if (!Number.isSafeInteger(actionCount) || actionCount < 1 || typeof getRecoveryCopy !== "function"
     || documentRef.getElementById("personalOrdinaryRecoveryDialog")) return Promise.resolve("later");
@@ -62,7 +62,7 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
     useServer.textContent = text("Загрузить серверную версию", "Load server version");
     later.textContent = text("Решить позже", "Decide later");
     useServer.className = "primary";
-    let done = false;
+    let done = false, preparationFailure = null;
     const finish = choice => {
       if (done) return;
       done = true;
@@ -75,7 +75,8 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
         const copy = await getRecoveryCopy();
         if (done) return;
         if (!copy || typeof copy !== "object") throw Error(text("Копия пока недоступна.", "The recovery copy is not available."));
-        const blob = new windowRef.Blob([JSON.stringify(copy, null, 2)], { type: "application/json" });
+        const diagnostic = preparationFailure ? { ...copy, recoveryPreparationFailure: preparationFailure } : copy;
+        const blob = new windowRef.Blob([JSON.stringify(diagnostic, null, 2)], { type: "application/json" });
         url = windowRef.URL.createObjectURL(blob);
         const link = documentRef.createElement("a");
         link.href = url; link.download = "bike-packing-local-recovery.json";
@@ -90,7 +91,25 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
       }
     });
     later.addEventListener("click", () => finish("later"));
-    useServer.addEventListener("click", () => finish("server"));
+    useServer.addEventListener("click", () => {
+      useServer.disabled = true;
+      try {
+        // Preserve the choice and recovery copy before closing the only UI
+        // that can explain a storage failure and export the original data.
+        prepareServerChoice?.();
+        finish("server");
+      } catch (error) {
+        preparationFailure = {
+          code: typeof error?.code === "string" ? error.code : "preparation-failed",
+          stage: typeof error?.stage === "string" ? error.stage : "archive",
+          reason: typeof error?.reason === "string" ? error.reason : "unknown"
+        };
+        status.textContent = error.message || text("Не удалось подготовить восстановление. Исходные данные сохранены.",
+          "Could not prepare recovery. Original data is retained.");
+        status.setAttribute("role", "alert");
+        useServer.disabled = false;
+      }
+    });
     dialog.addEventListener("cancel", event => { event.preventDefault(); finish("later"); });
     buttons.append(download, useServer, later);
     dialog.append(heading, description, details, reasonHeading, reason);

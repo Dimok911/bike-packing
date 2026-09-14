@@ -117,15 +117,56 @@ test("partial cancellation and lost ACK resume from the original archive after r
 
 test("quota failure before archive durability performs no cancellation or successor capture", async () => {
   const f = fixture(), original = [...f.values];
-  f.storage.setItem = () => { throw Error("quota"); };
-  assert.throws(f.prepare, paused); await assert.rejects(f.recover(), paused);
+  f.storage.setItem = () => { throw new DOMException("Storage quota exhausted", "QuotaExceededError"); };
+  assert.throws(f.prepare, error => {
+    assert.equal(error.code, "ordinary-recovery-storage"); assert.equal(error.stage, "archive"); assert.equal(error.reason, "quota");
+    assert.match(error.message, /Не хватает места/); assert.match(error.message, /Серверная версия не загружена/);
+    assert.doesNotMatch(error.message, /Выбрана серверная версия|выбор сохранён/i); return true;
+  });
+  await assert.rejects(f.recover(), paused);
   assert.deepEqual([...f.values], original); assert.equal(f.cancels.length, 0);
+  assert.equal(f.reads, 0); assert.equal(f.store().read().pending, null);
+});
+
+for (const failure of ["storage-read", "storage-write", "write-unverified"]) test(`archive ${failure} reports the failed stage without claiming a saved choice`, () => {
+  const f = fixture(), original = [...f.values], getItem = f.storage.getItem, setItem = f.storage.setItem;
+  if (failure === "storage-read") f.storage.getItem = key => {
+    if (key.includes(":archive:")) throw new DOMException("Unavailable storage", "SecurityError");
+    return getItem(key);
+  };
+  else f.storage.setItem = (key, value) => {
+    if (!key.includes(":archive:")) return setItem(key, value);
+    if (failure === "storage-write") throw Error("Unavailable storage");
+  };
+  assert.throws(f.prepare, error => {
+    assert.equal(error.code, "ordinary-recovery-storage"); assert.equal(error.stage, "archive"); assert.equal(error.reason, failure);
+    assert.equal(error.isPersonalSaveBlocked, true); assert.equal(error.isOperationReceiptError, true);
+    assert.match(error.message, /Не удалось подтвердить сохранение копии/);
+    assert.match(error.message, /Серверная версия не загружена/); return true;
+  });
+  f.storage.getItem = getItem; f.storage.setItem = setItem;
+  assert.deepEqual([...f.values], original); assert.equal(f.store().read().pending, null);
+  assert.equal(f.cancels.length, 0); assert.equal(f.reads, 0);
+});
+
+test("archive verification read failure retains an already written archive without making an unproven success claim", () => {
+  const f = fixture(), original = [...f.values], getItem = f.storage.getItem;
+  f.storage.getItem = key => {
+    if (key.includes(":archive:") && f.values.has(key)) throw new DOMException("Read unavailable", "SecurityError");
+    return getItem(key);
+  };
+  assert.throws(f.prepare, { code: "ordinary-recovery-storage", stage: "archive", reason: "storage-read" });
+  f.storage.getItem = getItem;
+  for (const [key, value] of original) assert.equal(f.values.get(key), value);
+  const archive = f.store().read().pending.archive;
+  assert.deepEqual(f.prepare(), archive, "a later read resumes the same saved choice instead of allocating another archive");
+  assert.equal(f.cancels.length, 0); assert.equal(f.reads, 0);
 });
 
 test("completion quota after successor write stays fenced and cold recovery completes the same UUID without network", async () => {
   const f = fixture(), archive = f.prepare(), setItem = f.storage.setItem;
-  f.storage.setItem = (key, value) => { if (key.includes(":complete:")) throw Error("completion quota"); setItem(key, value); };
-  await assert.rejects(f.recover(), paused);
+  f.storage.setItem = (key, value) => { if (key.includes(":complete:")) throw new DOMException("Completion quota", "QuotaExceededError"); setItem(key, value); };
+  await assert.rejects(f.recover(), { code: "ordinary-recovery-storage", stage: "completion", reason: "quota" });
   const captured = f.make().recover(); assert.equal(captured.action.operationId, archive.successorOperationId);
   assert.equal(f.store().read().pending.archive.recoveryId, archive.recoveryId);
   f.outbox = f.make(); f.storage.setItem = setItem;
@@ -259,7 +300,7 @@ test("an uncompleted recovery archive does not authorize the loss guard after a 
   const f = fixture({ changeInput: body => { delete body.userPlacement; } }); f.prepare();
   const setItem = f.storage.setItem;
   f.storage.setItem = (key, value) => { if (key.includes(":complete:")) throw Error("quota"); setItem(key, value); };
-  await assert.rejects(f.recover(), paused);
+  await assert.rejects(f.recover(), { code: "ordinary-recovery-storage", stage: "completion", reason: "storage-write" });
   const cold = f.make(); assert.deepEqual(cold.ordinaryRecoveryArchives(), []);
   assert.throws(() => personalDeletionReference(f.records[0].action.body.payload, cold.list(), { ordinaryRecoveryArchives: cold.ordinaryRecoveryArchives() }));
 });
