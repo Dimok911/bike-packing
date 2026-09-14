@@ -45,6 +45,8 @@ async function oldPhone(page, context) {
   await expect(roots(page)).toHaveCount(2);
   await expect(page.locator("#summary")).toContainText(/2[.,]7(?:0)?\s*кг/);
   await expect(dialog(page)).not.toBeVisible();
+  await expect(page.locator("#personalRecoveryNotice")).toBeVisible();
+  await expect(page.locator("#personalRecoveryNotice")).toContainText("нужно ваше решение");
   expect(f.posts).toEqual([]); expect(f.cancellations).toEqual([]);
   expect(f.revision).toBe(1585); expect(f.payload).toEqual(server);
   expect((await nativeLegacyPhotoOutbox(page)).records).toEqual(original.records);
@@ -52,7 +54,7 @@ async function oldPhone(page, context) {
 }
 
 async function openChoice(page) {
-  await page.locator("#syncBtn").click();
+  await page.getByRole("button", { name: "Разобрать изменения", exact: true }).click();
   await expect(dialog(page)).toBeVisible({ timeout: 30000 });
   await expect(dialog(page)).toContainText("На сервере уже более свежая версия");
 }
@@ -63,23 +65,35 @@ async function green(page, f) {
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   await expect(roots(page)).toHaveCount(4);
   await expect(dialog(page)).not.toBeVisible();
+  await expect(page.locator("#personalRecoveryNotice")).not.toBeVisible();
 }
 
 test.afterEach(async ({ page }, info) => {
-  if (info.status === info.expectedStatus || !page.legacyPhotoFixture) return;
+  if (!page.legacyPhotoFixture) return;
   const f = page.legacyPhotoFixture;
+  await f.flushErrors();
+  if (info.status === info.expectedStatus && !f.errors.length && !f.pageErrors.length) {
+    expect(f.errors).toEqual([]); return;
+  }
   await info.attach("ordinary-recovery-evidence", { contentType: "application/json", body: JSON.stringify({
     calls: f.calls, cancellations: f.cancellations, cancellationSnapshots: f.cancellationSnapshots, posts: f.posts,
-    receipts: [...f.receipts], payload: f.payload, revision: f.revision, errors: f.errors,
+    receipts: [...f.receipts], payload: f.payload, revision: f.revision, errors: f.errors, browserErrors: f.browserErrors, pageErrors: f.pageErrors,
     archives: await recoveryStorage(page).catch(error => ({ error: error.message })),
     transport: await nativeLegacyPhotoTransport(page).catch(error => ({ error: error.message })),
     outbox: await nativeLegacyPhotoOutbox(page).catch(error => ({ error: error.message }))
   }, null, 2) });
+  if (info.status === info.expectedStatus) expect(f.errors).toEqual([]);
 });
 
-test("manual ordinary recovery obtains server identity around the actual identity-free state DTO before offering a choice", async ({ page, context }) => {
+test("manual ordinary recovery obtains server identity around the actual identity-free state DTO before offering a choice", async ({ page, context }, info) => {
   const { f, original, server } = await oldPhone(page, context), start = f.calls.length;
+  await page.screenshot({ path: info.outputPath("recovery-notice.png") });
   await openChoice(page);
+  await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Добавить существующую сумку в укладку");
+  await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Сумка с четырьмя фотографиями");
+  await expect(dialog(page).locator("[data-recovery-actions]")).toContainText("Укладка:");
+  await expect(dialog(page).locator("[data-recovery-reason]")).not.toBeEmpty();
+  await page.screenshot({ path: info.outputPath("recovery-dialog.png") });
   const reads = f.calls.slice(start).filter(call => call.response).map(call => call.response);
   expect(reads.some(read => read.type === "state")).toBe(true);
   for (const [index, read] of reads.entries()) if (read.type === "state") {
@@ -99,6 +113,7 @@ test("manual ordinary recovery obtains server identity around the actual identit
   expect(native.records).toEqual(original.records);
   for (const entry of original.entries) expect(native.entries).toContainEqual(entry);
   await dialog(page).getByRole("button", { name: "Решить позже", exact: true }).click();
+  await expect(page.locator("#personalRecoveryNotice")).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -241,6 +256,7 @@ async function assertRebaseGreen(page, { f, original, registered }, weight) {
   await expect.poll(async () => (await nativeLegacyPhotoOutbox(page)).pending, { timeout: 30000 }).toBe(false);
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   await expect(dialog(page)).not.toBeVisible(); await expect(page.locator("#conflictDialog")).not.toBeVisible();
+  await expect(page.locator("#personalRecoveryNotice")).not.toBeVisible();
   await expect(roots(page)).toHaveCount(2);
   await expect(page.locator('#packingView [data-root-container-id="server-new-bag"]')).toContainText("Новая сумка с другого устройства");
   expect(f.posts).toHaveLength(1); expect(f.noopPosts).toEqual(f.posts); expect(f.cancellations).toEqual([]);
