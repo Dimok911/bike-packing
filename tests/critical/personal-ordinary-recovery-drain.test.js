@@ -8,6 +8,7 @@ function fixture() {
   const outbox = {
     ordinaryRecoveryState: () => ({ pending: f.pending, eligible: f.eligible, actionCount: 1 }),
     list: () => structuredClone(f.records),
+    ordinaryRecoveryReview: () => ({ records: f.records, confirmedOperationIds: f.confirmedOperationIds || [] }),
     ordinaryRecoveryCopy: () => { calls.push("export"); return structuredClone(f.records); },
     prepareOrdinaryRecoveryArchive: () => { calls.push("archive"); if (f.quota) throw Error("quota"); f.pending = true; },
     recoverOrdinaryWithServer: async () => { calls.push("recover"); if (f.recoveryFailure) throw f.recoveryFailure; f.pending = false; f.done = true; return { action: { operationId: "new" } }; }
@@ -27,7 +28,11 @@ test("explicit server choice archives before recovery and applies only its durab
 });
 test("autosave offers a decision without making it", async () => {
   const f = fixture(); delete f.options.chooseServer;
-  await assert.rejects(run(f.options), /Нажмите на индикатор/);
+  await assert.rejects(run(f.options), error => {
+    assert.match(error.message, /Разобрать изменения/);
+    assert.equal(error.recoveryReviewNeeded, true);
+    return true;
+  });
   assert.deepEqual(f.calls, ["drain", "remote"]);
 });
 test("download and decide later do not stop or send any original action", async () => {
@@ -137,3 +142,92 @@ test("unrelated failure and unsupported operations retain the original error", a
     await assert.rejects(run(f.options), f.failure); assert.deepEqual(f.calls, ["drain"]);
   }
 });
+
+test("review gets detached saved records and only the failure fields needed for an explanation", async () => {
+  const f = fixture();
+  f.records = [{ version: 1, action: { operationId: "saved-operation", generation: 1, kind: "list.update",
+    body: { baseStateRevision: 1582, payload: { containers: { bag: { id: "bag", name: "Saved bag" } } },
+      userPlacement: { type: "placement", version: 1, action: "link-root", layoutId: "layout", ids: ["bag"] } } },
+    mergeBase: { stateRevision: 1582, payload: { containers: {} } }, snapshot: { selectedLayoutId: "layout" } }];
+  // The coordinator must detach the review DTO even if a trusted outbox reader
+  // returns its record objects directly. Review edits cannot rewrite an intent.
+  f.options.outbox.list = () => f.records;
+  f.confirmedOperationIds = ["confirmed-parent"];
+  const original = structuredClone(f.records);
+  Object.assign(f.failure, { code: "reconciliation-conflict", reason: "photo-inventory",
+    conflicts: [{ localValue: { privateNote: "not a UI diagnostic" } }], body: { privateData: true } });
+  f.onChoice = details => {
+    assert.deepEqual(details.records, original);
+    assert.notStrictEqual(details.records, f.records);
+    assert.notStrictEqual(details.records[0].action.body, f.records[0].action.body);
+    assert.deepEqual(details.confirmedOperationIds, ["confirmed-parent"]);
+    details.confirmedOperationIds.push("saved-operation");
+    assert.deepEqual(f.confirmedOperationIds, ["confirmed-parent"]);
+    assert.deepEqual(details.failure, { code: "reconciliation-conflict", reason: "photo-inventory", hasConflicts: true });
+    assert.deepEqual(Object.keys(details.failure).sort(), ["code", "hasConflicts", "reason"]);
+    for (const key of ["message", "stack", "conflicts", "body"]) assert.equal(Object.hasOwn(details.failure, key), false);
+    details.records[0].action.body.payload.containers.bag.name = "Changed in UI";
+    details.records[0].action.body.userPlacement.ids.push("another-bag");
+    details.records[0].mergeBase.payload.containers.added = { id: "added" };
+    details.records[0].snapshot.selectedLayoutId = "another-layout";
+    details.records.length = 0;
+    details.failure.reason = "changed in UI";
+    assert.deepEqual(f.records, original);
+    assert.equal(f.failure.reason, "photo-inventory");
+  };
+  assert.equal(await run(f.options), "confirmed");
+  assert.deepEqual(f.records, original);
+  assert.deepEqual(f.calls, ["drain", "remote", "choice", "archive", "recover", "apply", "drain"]);
+});
+
+test("an unclassified failure is not given an invented diagnostic or raw error message", async () => {
+  const f = fixture(); f.choice = "later";
+  f.failure.message = "server response with private details";
+  f.failure.conflicts = [];
+  f.onChoice = details => {
+    assert.deepEqual(details.failure, { code: undefined, reason: undefined, hasConflicts: false });
+    assert.equal(Object.hasOwn(details.failure, "message"), false);
+    assert.equal(Object.hasOwn(details.failure, "conflicts"), false);
+  };
+  await assert.rejects(run(f.options), error => error.recoveryReviewNeeded === true);
+  assert.deepEqual(f.calls, ["drain", "remote", "choice"]);
+});
+
+test("deferring review keeps its visible affordance without archiving, recovering or redraining", async () => {
+  for (const choice of ["later", null, undefined]) {
+    const f = fixture(); f.choice = choice;
+    const original = structuredClone(f.records);
+    await assert.rejects(run(f.options), error => {
+      assert.equal(error.code, "ordinary-recovery-pending");
+      assert.equal(error.isOperationReceiptError, true);
+      assert.equal(error.recoveryReviewNeeded, true);
+      return true;
+    });
+    assert.deepEqual(f.calls, ["drain", "remote", "choice"]);
+    assert.deepEqual(f.records, original);
+    assert.equal(f.pending, false);
+    assert.equal(f.done, undefined);
+  }
+});
+
+for (const scenario of ["inaccessible state", "different owner", "rejected context", "context changed during state read", "context changed during review"]) {
+  test(`${scenario} never advertises an actionable recovery review`, async () => {
+    const f = fixture();
+    if (scenario === "inaccessible state") f.options.readRemote = async () => { f.calls.push("remote"); throw Error("unreachable"); };
+    if (scenario === "different owner") f.remote.ownerId = "another-actor";
+    if (scenario === "rejected context") f.failure.code = "context";
+    if (scenario === "context changed during state read") f.onRead = () => { f.generation = "different"; };
+    if (scenario === "context changed during review") f.onChoice = () => { f.generation = "different"; };
+    await assert.rejects(run(f.options), error => {
+      assert.equal(Object.hasOwn(error, "recoveryReviewNeeded"), false);
+      if (["inaccessible state", "different owner", "rejected context"].includes(scenario)) assert.strictEqual(error, f.failure);
+      else assert.equal(error.code, "ordinary-recovery-pending");
+      return true;
+    });
+    const expected = scenario === "rejected context" ? ["drain"] : scenario === "context changed during review"
+      ? ["drain", "remote", "choice"] : ["drain", "remote"];
+    assert.deepEqual(f.calls, expected);
+    assert.equal(f.pending, false);
+    assert.equal(f.done, undefined);
+  });
+}

@@ -1327,6 +1327,7 @@ applyPublicTemplateLanguage();
 let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 const personalSaveOutboxes = new Map();
 let personalInitialSaveOutbox = null;
+let personalOrdinaryReviewNotice = null;
 let personalPhotoRecoveryCheck = null, personalPhotoRecoverySource = null;
 let personalPhotoFormPreparing = 0, personalPhotoFormLiveSource = null;
 const personalSaveRecovery = createPersonalSaveRecovery({
@@ -4364,6 +4365,7 @@ async function init() {
     confirmAuthMagicLink();
   });
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
+  document.getElementById("personalRecoveryReviewBtn")?.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
   refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
   refs.topMenu.addEventListener("click", (event) => {
@@ -7220,6 +7222,27 @@ function renderSyncUi(effectiveMessage = "") {
     syncPackingVisualStyleControls,
     t
   });
+  const notice = document.getElementById("personalRecoveryNotice");
+  if (notice) {
+    const sameOwner = personalOrdinaryReviewNotice
+      && personalOrdinaryReviewNotice.actorId === String(currentUser?.id || "")
+      && personalOrdinaryReviewNotice.scopeKey === localStorageScopeKey
+      && personalOrdinaryReviewNotice.listId === currentPackingListId;
+    if (personalOrdinaryReviewNotice && !sameOwner) personalOrdinaryReviewNotice = null;
+    let pendingReview = false;
+    if (sameOwner && personalSavePilotEnabled() && !personalSaveRecovery.message()
+      && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)) {
+      try { pendingReview = hasPendingPersonalSave(); }
+      catch { /* The existing storage recovery UI owns an unreadable journal. */ }
+    }
+    notice.hidden = !pendingReview;
+    document.getElementById("personalRecoveryNoticeText").textContent = localText(
+      "Your changes could not be merged — your decision is needed.",
+      "Не удалось объединить изменения — нужно ваше решение.");
+    const review = document.getElementById("personalRecoveryReviewBtn");
+    review.textContent = localText("Review changes", "Разобрать изменения");
+    review.disabled = refs.syncBtn.disabled || refs.syncBtn.getAttribute("data-sync-state") === "syncing";
+  }
 }
 
 function updateSyncUi(message = "") {
@@ -9789,6 +9812,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       updateSyncUi();
       if (notify) showToast("Синхронизация подтверждена.", "success");
     } }) });
+    personalOrdinaryReviewNotice = null;
+    updateSyncUi();
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;
@@ -9796,6 +9821,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       scheduleRemoteSave();
       return;
     }
+    personalOrdinaryReviewNotice = error.recoveryReviewNeeded
+      ? { actorId: owner.actorId, scopeKey: owner.scopeKey, listId: owner.listId } : null;
     personalSaveRecovery.report(error, { scopeKey: owner.scopeKey });
     syncMeta.dirty = true;
     saveSyncMeta();

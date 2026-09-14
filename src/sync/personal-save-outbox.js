@@ -429,6 +429,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     binding: clone(binding),
     supportsCommittedBaseline: true,
     supportsConflictChoices: true,
+    ordinaryRecoveryReview() {
+      // Display-only status from the same checked local read as the records.
+      // These local checkpoints do not replace a server operation receipt.
+      const { records, applied } = read();
+      return clone({ records: [...records.values()], confirmedOperationIds: [...applied.keys()] });
+    },
     ordinaryRecoveryArchives() {
       return clone(ordinaryRecovery.read().archives.filter(entry => entry.completed).map(entry => entry.archive));
     },
@@ -1083,7 +1089,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         if (record.mergeBase) { base = record.mergeBase; break; }
       }
-      if (!base && !alreadyCommitted && !rejectedShare && !rejectedRestore && !rejectedPhoto) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
+      if (!base && !alreadyCommitted && !rejectedShare && !rejectedRestore && !rejectedPhoto) {
+        throw Object.assign(blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено."),
+          { reason: "missing-base" });
+      }
       const remote = clone(await readRemote());
       assertCurrent();
       if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
