@@ -432,8 +432,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     ordinaryRecoveryReview() {
       // Display-only status from the same checked local read as the records.
       // These local checkpoints do not replace a server operation receipt.
-      const { records, applied } = read();
-      return clone({ records: [...records.values()], confirmedOperationIds: [...applied.keys()] });
+      const { records, applied, head } = read();
+      return clone({ records: [...records.values()], confirmedOperationIds: [...applied.keys()], headOperationId: head?.action.operationId || null });
     },
     ordinaryRecoveryArchives() {
       return clone(ordinaryRecovery.read().archives.filter(entry => entry.completed).map(entry => entry.archive));
