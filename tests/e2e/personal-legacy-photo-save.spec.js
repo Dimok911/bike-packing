@@ -9,12 +9,17 @@ test.setTimeout(120000);
 test.use({ screenshot: "off" });
 
 test.afterEach(async ({ page }, info) => {
-  if (info.status === info.expectedStatus || !page.legacyPhotoFixture) return;
+  if (!page.legacyPhotoFixture) return;
   const f = page.legacyPhotoFixture;
+  await f.flushErrors();
+  if (info.status === info.expectedStatus && !f.errors.length && !f.pageErrors.length) {
+    expect(f.errors).toEqual([]); return;
+  }
   await info.attach("isolated-legacy-photo-evidence", { contentType: "application/json", body: JSON.stringify({
     calls: f.calls, posts: f.posts, receipts: [...f.receipts], captured: f.captured, initial: f.initial, payload: f.payload,
-    native: await nativeLegacyPhotoOutbox(page).catch(error => ({ error: error.message })), errors: f.errors
+    native: await nativeLegacyPhotoOutbox(page).catch(error => ({ error: error.message })), errors: f.errors, browserErrors: f.browserErrors, pageErrors: f.pageErrors
   }, null, 2) });
+  if (info.status === info.expectedStatus) expect(f.errors).toEqual([]);
 });
 
 async function addExistingBag(page) {

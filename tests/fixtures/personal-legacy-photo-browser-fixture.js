@@ -230,7 +230,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     initial.containers.second.photos = structuredClone(initial.containers[legacyBagId].photos.slice(0, 2));
   }
   const f = { initial, payload: structuredClone(initial), revision: 1582, calls: [], posts: [], receiptReads: [],
-    receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
+    receipts: new Map(), captured: [], errors: [], browserErrors: [], pageErrors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
   Object.assign(f, { bundleDirectory: sharedOwnerUpgrade ? previousLegacyPhotoBundle : root,
     legacyOwnerDenied: sharedOwnerUpgrade, preparationEnabled: !sharedOwnerUpgrade, ownerAllowed: true,
     detailOwnerId: legacyPhotoBinding.actorId,
@@ -318,7 +318,45 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Expose-Headers": "X-Vniipo-Proxy-Target, X-Vniipo-Proxy-Write-Gate",
     "X-Vniipo-Proxy-Target": "bike-packing-experiment", "X-Vniipo-Proxy-Write-Gate": "enabled" };
-  page.on("pageerror", error => f.errors.push(error.message));
+  // WebKit's protocol can report a native failed-load diagnostic as pageerror
+  // even when the fetch rejection is caught. Preserve that complete channel;
+  // uncaught application failures come from the browser's actual DOM events.
+  page.on("pageerror", error => f.pageErrors.push({ name: error.name, message: error.message, stack: error.stack }));
+  await page.exposeBinding("__legacyPhotoReportBrowserError", (_source, event) => {
+    assert.ok(["error", "unhandledrejection"].includes(event.type));
+    assert.equal(typeof event.message, "string");
+    f.browserErrors.push(event); f.errors.push(event.message);
+  });
+  await page.addInitScript(() => {
+    const deliveries = new Set();
+    let deliveryFailure = null;
+    const report = event => {
+      const delivery = window.__legacyPhotoReportBrowserError(event);
+      deliveries.add(delivery);
+      delivery.then(() => deliveries.delete(delivery), error => {
+        deliveries.delete(delivery); deliveryFailure = String(error);
+      });
+    };
+    window.addEventListener("error", event => {
+      // A resource-load Event has no JavaScript exception. Do not prevent any
+      // default handling; native diagnostics remain in the pageErrors channel.
+      if (!(event instanceof ErrorEvent)) return;
+      report({ type: "error", message: event.message, name: event.error?.name || "Error",
+        stack: event.error?.stack || "", filename: event.filename, line: event.lineno, column: event.colno });
+    });
+    window.addEventListener("unhandledrejection", event => {
+      const reason = event.reason;
+      report({ type: "unhandledrejection", message: String(reason?.message ?? reason),
+        name: reason?.name || "", stack: reason?.stack || "" });
+    });
+    // Read-only test observer bookkeeping, never an application/state hook.
+    // A failed delivery must fail an explicit flush, not silently drop errors.
+    window.__legacyPhotoFlushBrowserErrors = async () => {
+      while (deliveries.size) await Promise.allSettled([...deliveries]);
+      if (deliveryFailure !== null) throw Error(`Browser error observer delivery failed: ${deliveryFailure}`);
+    };
+  });
+  f.flushErrors = () => page.evaluate(() => window.__legacyPhotoFlushBrowserErrors());
   await context.addInitScript(() => {
     localStorage.setItem("bike-packing-language-v1", "ru");
     sessionStorage.setItem("bike-packing-experiment-transport-v1", "eu");
