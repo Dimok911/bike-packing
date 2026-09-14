@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, nativeLegacyPhotoOutbox, seedLegacyPhotoPendingAction,
-  assertLegacyPhotoRowsPreserved, legacyLayoutId, legacyBagId, legacyPhotoBinding } from "../fixtures/personal-legacy-photo-browser-fixture.js";
+  assertLegacyPhotoRowsPreserved, legacyLayoutId, legacyBagId, legacyPendingBagIds, legacyPhotoBinding } from "../fixtures/personal-legacy-photo-browser-fixture.js";
 
 // These cases consume the normal release build, with no source transforms or
 // lexical app hooks. Every API response belongs to an isolated synthetic user.
@@ -26,14 +26,29 @@ async function addExistingBag(page) {
 
 async function green(page, f, revision) {
   await page.locator("#syncBtn").click();
+  await startupGreen(page, f, revision);
+}
+
+// Deliberately no Sync click: manual sync previously hid missing startup work.
+async function startupGreen(page, f, revision) {
   await expect.poll(() => f.revision, { timeout: 30000 }).toBe(revision);
   await expect.poll(async () => (await nativeLegacyPhotoOutbox(page)).pending, { timeout: 30000 }).toBe(false);
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
   const native = await nativeLegacyPhotoOutbox(page);
   expect(native.confirmed.stateRevision).toBe(revision);
-  expect(native.confirmed.payload).toEqual(personalBusinessPayload(f.payload));
-  assertLegacyPhotoRowsPreserved(f.initial, f.payload);
+  const expected = personalBusinessPayload(f.payload), confirmed = structuredClone(native.confirmed.payload);
+  f.preserveRows(expected, confirmed);
+  // An immediate receipt checkpoint can still contain the original normalized
+  // action. Compare every other business field exactly; only already-proven
+  // legacy URL aliases may differ until the next full raw server adoption.
+  for (const collection of ["containers","items"]) for (const [id, owner] of Object.entries(expected[collection])) {
+    for (const [index, photo] of (owner.photos || []).entries()) for (const key of ["url","thumbUrl"]) {
+      confirmed[collection][id].photos[index][key] = photo[key];
+    }
+  }
+  expect(confirmed).toEqual(expected);
+  f.preserveRows(f.initial, f.payload);
 }
 
 async function reload(page) { await page.reload(); await readyLegacyPhotoBrowser(page); }
@@ -119,4 +134,111 @@ for (const legacyPending of [false, true]) test(`release legacy ${legacyPending 
   await reload(page); await green(page, f, 1583);
   expect(f.receiptReads.slice(reads)).toContain(original.operationId);
   expect(f.posts).toEqual([original]); expect(f.errors).toEqual([]);
+});
+
+function exactChainPosts(f, original) {
+  expect(f.posts).toHaveLength(original.records.length);
+  original.records.forEach((record, index) => exactOriginalPost(f.posts[index], record));
+  expect(new Set(f.posts.map(post => post.operationId)).size).toBe(original.records.length);
+  expect(f.payload.layouts[legacyLayoutId].arrangement.rootContainerIds).toEqual(["placed-bag", ...legacyPendingBagIds]);
+  expect(f.captured[0].records).toEqual(original.records);
+  for (const entry of original.entries) expect(f.captured[0].entries).toContainEqual(entry);
+}
+
+async function localChainVisible(page) {
+  for (const id of legacyPendingBagIds) await expect(page.locator(`#packingView [data-root-container-id="${id}"]`)).toHaveCount(1);
+}
+
+test("release startup drains three immutable baseless link-root actions without clicking Sync", async ({ page, context }) => {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context);
+  const original = await seedLegacyPhotoPendingAction(page, legacyPendingBagIds);
+  expect(original.records).toHaveLength(3);
+  const beforeReload = f.calls.length;
+  await reload(page); await startupGreen(page, f, 1585); await localChainVisible(page);
+  exactChainPosts(f, original);
+  const calls = f.calls.slice(beforeReload), firstPost = calls.findIndex(call => call.method === "POST");
+  expect(firstPost).toBeGreaterThan(0);
+  expect(calls.slice(0, firstPost).some(call => call.path === `/bike-packing/lists/${legacyPhotoBinding.listId}/state`
+    && call.method === "GET" && call.revision === 1582)).toBe(true);
+  await reload(page); await startupGreen(page, f, 1585); await localChainVisible(page);
+  exactChainPosts(f, original); expect(f.errors).toEqual([]);
+});
+
+test("release startup recovers a lost first ACK and sends only the remaining baseless chain without Sync", async ({ page, context }) => {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context, { loseAck: true });
+  const original = await seedLegacyPhotoPendingAction(page, legacyPendingBagIds);
+  await reload(page);
+  await expect.poll(() => f.dropped, { timeout: 30000 }).toBe(true);
+  expect(f.posts).toHaveLength(1); exactOriginalPost(f.posts[0], original.records[0]);
+  expect(f.revision).toBe(1583);
+  const pending = await nativeLegacyPhotoOutbox(page);
+  expect(pending.pending).toBe(true); expect(pending.records).toEqual(original.records);
+  for (const entry of original.entries) expect(pending.entries).toContainEqual(entry);
+  await localChainVisible(page);
+  const reads = f.receiptReads.length;
+  f.loseAck = false; f.hideReceipts = false;
+  await reload(page); await startupGreen(page, f, 1585); await localChainVisible(page);
+  expect(f.receiptReads.slice(reads)).toContain(original.records[0].action.operationId);
+  exactChainPosts(f, original); expect(f.errors).toEqual([]);
+});
+
+test("release startup API failure retains all immutable baseless actions and their local placements without Sync", async ({ page, context }) => {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context);
+  const original = await seedLegacyPhotoPendingAction(page, legacyPendingBagIds);
+  f.failWrites = true;
+  await reload(page);
+  await expect.poll(() => f.posts.length, { timeout: 30000 }).toBeGreaterThan(0);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "syncing", { timeout: 30000 });
+  expect(f.posts).toHaveLength(1); exactOriginalPost(f.posts[0], original.records[0]);
+  expect(f.receipts.size).toBe(0); expect(f.revision).toBe(1582); expect(f.payload).toEqual(f.initial);
+  const pending = await nativeLegacyPhotoOutbox(page);
+  expect(pending.pending).toBe(true); expect(pending.records).toEqual(original.records);
+  for (const entry of original.entries) expect(pending.entries).toContainEqual(entry);
+  await localChainVisible(page);
+  await expect(page.locator("#syncBtn")).not.toHaveAttribute("data-sync-state", "synced");
+  expect(f.errors).toEqual([]);
+});
+
+test("release startup baseless placement accepts only equivalent mixed legacy photo routes without Sync", async ({ page, context }) => {
+  const f = await setupPersonalLegacyPhotoBrowser(page, context, { mixedLegacyRoutes: true });
+  const original = await seedLegacyPhotoPendingAction(page);
+  const captured = original.record.action.body.payload;
+  expect(f.initial.containers.second.photos).toEqual(f.initial.containers[legacyBagId].photos.slice(0, 2));
+  expect(f.registeredPhotoRows.size).toBe(4);
+  expect(captured.containers[legacyBagId].photos.slice(0,2).map(photo=>photo.listId)).toEqual(["",""]);
+  expect(captured.containers.second.photos.map(photo=>photo.listId)).toEqual(["",""]);
+  const registeredBefore = structuredClone([...f.registeredPhotoRows]);
+  expect(captured.containers[legacyBagId].photos[0].url).not.toBe(f.initial.containers[legacyBagId].photos[0].url);
+  for (const photo of captured.containers[legacyBagId].photos) expect(photo.url).toContain("/experiment/letters-vniipo/api/");
+  f.preserveRows(f.initial, captured);
+  for (const mode of ["foreign-photo","wrong-variant","query","owner","order","metadata","new-copy","repeated-slot","delete-shared","shared-metadata","fill-empty-list","foreign-list"]) {
+    const changed = structuredClone(captured), photos = changed.containers[legacyBagId].photos;
+    if (mode === "foreign-photo") photos[0].url = photos[0].url.replace("legacy-photo-1/", "foreign-photo/");
+    if (mode === "wrong-variant") photos[0].url = photos[0].thumbUrl;
+    if (mode === "query") photos[0].url += "&changed=1";
+    if (mode === "owner") { changed.containers.second.photos = photos; changed.containers[legacyBagId].photos = []; }
+    if (mode === "order") photos.reverse();
+    if (mode === "metadata") photos[0].width++;
+    if (mode === "new-copy") changed.containers.third.photos = [structuredClone(photos[0])];
+    if (mode === "repeated-slot") photos.push(structuredClone(photos[0]));
+    if (mode === "delete-shared") changed.containers.second.photos.pop();
+    if (mode === "shared-metadata") changed.containers.second.photos[0].width++;
+    if (mode === "fill-empty-list") photos[0].listId = legacyPhotoBinding.listId;
+    if (mode === "foreign-list") photos[0].url = photos[0].url.replace("/lists/legacy-photo-list/", "/lists/foreign/");
+    expect(() => f.preserveRows(f.initial, changed), mode).toThrow();
+  }
+  await reload(page); await startupGreen(page, f, 1583);
+  expect(f.posts).toHaveLength(1); exactOriginalPost(f.posts[0], original.record);
+  for (const entry of original.entries) expect(f.captured[0].entries).toContainEqual(entry);
+  await expect(page.locator(`#packingView [data-root-container-id="${legacyBagId}"]`)).toHaveCount(1);
+  expect(f.payload.containers[legacyBagId].photos).toEqual(f.initial.containers[legacyBagId].photos);
+  const beforeColdRead = f.calls.length;
+  await reload(page); await startupGreen(page, f, 1583);
+  expect(f.calls.slice(beforeColdRead).some(call=>call.method==="GET" && call.path===`/bike-packing/lists/${legacyPhotoBinding.listId}/state`)).toBe(true);
+  expect((await nativeLegacyPhotoOutbox(page)).confirmed.payload).toEqual(personalBusinessPayload(f.payload));
+  await green(page, f, 1583);
+  expect(f.posts).toHaveLength(1); exactOriginalPost(f.posts[0], original.record);
+  expect([...f.registeredPhotoRows]).toEqual(registeredBefore);
+  expect(f.payload.containers.second.photos).toEqual(f.initial.containers.second.photos);
+  expect(f.errors).toEqual([]);
 });

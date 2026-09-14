@@ -757,6 +757,8 @@ import {
   shouldBlockLegacyPersonalSyncWriteFallback
 } from "./src/sync/legacy-personal-sync.js";
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
+import { recoverPendingPersonalSaveBeforeLoad } from "./src/sync/personal-pending-startup.js";
+import { personalBusinessPayloadMatchesConfirmed } from "./src/sync/personal-confirmed-business-equality.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
@@ -3156,6 +3158,9 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
   const latest = outbox.recover?.();
   if (!personalMutation && ["list.restore", "list.import", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
+  if (!personalMutation && latest?.action.kind === "list.update" && !outbox.hasPending()
+    && personalBusinessPayloadMatchesConfirmed({ confirmedPayload: outbox.confirmedBase()?.payload, candidatePayload: body.payload,
+      listId: outbox.binding.listId, allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) return latest;
   return outbox.capture({ snapshot, body, operationId });
 }
 
@@ -6562,7 +6567,9 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)) {
     personalSaveOutboxForScope()?.adoptRemoteBaseline({ snapshot: remoteState,
-      payload: catalogRepairBase || cloneStateForSync(remoteState, { forSync: true }),
+      // The load observer already owns this exact raw business baseline. Editor
+      // normalization (including legacy photo URL aliases) is only a view.
+      payload: rawPayload ? personalBusinessPayload(rawPayload) : catalogRepairBase || cloneStateForSync(remoteState, { forSync: true }),
       stateRevision: integrityMeta?.stateRevision,
       meta: { ...integrityMeta, serverUpdatedAt: updatedAt || null, localUpdatedAt: updatedAt || null,
         lastSyncedLocalUpdatedAt: updatedAt || null, dirty: false } });
@@ -9486,7 +9493,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       // leave dirty set after capture reused an already confirmed operation.
       const confirmed = outbox.confirmedBase();
       if (!confirmed?.payload || !Number.isSafeInteger(confirmed.stateRevision) || confirmed.stateRevision < 1
-        || !sameJson(serializeState({ forSync: true }), confirmed.payload)) {
+        || !personalBusinessPayloadMatchesConfirmed({ confirmedPayload: confirmed.payload, candidatePayload: serializeState({ forSync: true }),
+          listId: outbox.binding.listId, allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) {
         const message = localText(
           "Local data needs verification. There are no queued actions; a server comparison is required.",
           "Локальные данные требуют проверки. Действий для отправки нет; нужна сверка с сервером."
@@ -10296,7 +10304,25 @@ async function loadRemoteState(options = {}) {
       throw Error("Аккаунт или список изменились во время загрузки исходной версии.");
     }
   };
-  remoteStateLoadPromise = loadRemoteStateFlow({
+  remoteStateLoadPromise = (async () => {
+    const canLoad = await recoverPendingPersonalSaveBeforeLoad({
+      enabled: personalSavePilotEnabled() && Boolean(currentUser) && !isReadOnlyBikePackingContext()
+        && !isAdminPublicEditScope(modeState) && !isSharedListLinkRoute(),
+      getContext: personalSaveContext,
+      hasPending: hasPendingPersonalSave,
+      resume: () => saveRemoteState({ notify: false }),
+      onPending: () => {
+        appUnlocked = true;
+        renderInitialLocalFallbackIfNeeded();
+        const message = localText("Saved changes are awaiting confirmation; the local layout is shown",
+          "Сохранённые изменения ждут подтверждения; показана локальная укладка");
+        setLayoutLoadStatus("warning", message);
+        updateSyncUi(message);
+      }
+    });
+    if (!canLoad) return false;
+    assertBaselineLoadOwner();
+    return loadRemoteStateFlow({
     runtime: {
       get appUnlocked() { return appUnlocked; },
       set appUnlocked(value) { appUnlocked = value; },
@@ -10368,7 +10394,8 @@ async function loadRemoteState(options = {}) {
       tryApplyRemoteEntityChanges,
       updateSyncUi
     }
-  }, options);
+    }, options);
+  })();
   try {
     return await remoteStateLoadPromise;
   } finally {

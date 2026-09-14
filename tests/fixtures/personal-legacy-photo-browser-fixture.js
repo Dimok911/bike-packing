@@ -16,16 +16,17 @@ import { STORAGE_KEY, SYNC_META_KEY, ACTIVE_LIST_ID_KEY } from "../../src/config
 export const legacyPhotoOrigin = "https://experiment.vniipo-help.ru";
 const api = "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api";
 const canonicalApi = "https://api.vniipo-help.ru/experiment/letters-vniipo/api";
-const root = path.resolve("www/vniipo-help.ru/bike-packing");
+const root = path.resolve(process.env.BIKE_LEGACY_PHOTO_BUNDLE_DIRECTORY || "www/vniipo-help.ru/bike-packing");
 export const legacyPhotoBinding = Object.freeze({ actorId: "legacy-photo-user", listId: "legacy-photo-list", scopeKey: "id:legacy-photo-user" });
 export const legacyLayoutId = "personal-layout", legacyBagId = "sumka";
+export const legacyPendingBagIds = Object.freeze([legacyBagId, "second", "third"]);
 const timestamp = "2026-09-14T10:00:00.000Z", prefix = "bike-packing-personal-save-v1:";
 const scoped = key => scopedLocalStorageKey(key, legacyPhotoBinding.scopeKey);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
 
 export function legacyPhotoPayload() {
-  const bags = Object.fromEntries(["placed-bag", legacyBagId].map(id => [id, {
-    id, name: id === legacyBagId ? "Сумка с четырьмя фотографиями" : "Размещённая сумка",
+  const bags = Object.fromEntries(["placed-bag", ...legacyPendingBagIds].map(id => [id, {
+    id, name: id === legacyBagId ? "Сумка с четырьмя фотографиями" : id === "placed-bag" ? "Размещённая сумка" : `Неразмещённая сумка ${id}`,
     weight: 230, volume: 3, location: "Велосипед", note: "Сохранённая заметка", categories: [], category: "", color: "",
     parentId: null, itemIds: [], childIds: [], order: [], photos: id === legacyBagId ? [1, 2, 3, 4].map(index => {
       const photoId = `legacy-photo-${index}`;
@@ -69,22 +70,40 @@ function releaseSerializedPayload(snapshot) {
 export async function nativeLegacyPhotoOutbox(page) {
   const entries = await page.evaluate(prefix => Object.entries(localStorage).filter(([key]) => key.startsWith(prefix)), prefix);
   const outbox = createPersonalSaveOutbox({ storage: memoryStorage(entries), ...legacyPhotoBinding });
-  return { entries, record: outbox.recover(), pending: outbox.hasPending(), confirmed: outbox.confirmedBase() };
+  return { entries, records: outbox.list().sort((a,b)=>a.action.generation-b.action.generation),
+    record: outbox.recover(), pending: outbox.hasPending(), confirmed: outbox.confirmedBase() };
 }
 
 // Independent synthetic server rule: all registered photos stay on the same
 // owner, in the same order, with all old fields exact. No photo mutation route
 // is served. Actual SQL/file preservation has separate API acceptance tests.
-export function assertLegacyPhotoRowsPreserved(before, after) {
+export function assertLegacyPhotoRowsPreserved(before, after, { routeAliases = false } = {}) {
+  const reference = photo => {
+    const value = structuredClone(photo);
+    if (!routeAliases) return value;
+    // Independent synthetic SQL-row rule: only known deployment aliases for
+    // THIS list/photo/variant are equivalent. Query, fragment and every other
+    // reference field remain exact; this does not authorize changed photos.
+    for (const [key, variant] of [["url","file"],["thumbUrl","thumb"]]) {
+      const url = new URL(value[key]);
+      assert.ok(["https://api.vniipo-help.ru","https://api-eu.vniipo-help.ru",legacyPhotoOrigin].includes(url.origin));
+      assert.equal(url.username, ""); assert.equal(url.password, "");
+      assert.ok(["",legacyPhotoBinding.listId].includes(photo.listId), "foreign legacy list metadata");
+      const suffix = `/letters-vniipo/api/bike-packing/lists/${encodeURIComponent(legacyPhotoBinding.listId)}/photos/${encodeURIComponent(photo.id)}/${variant}`;
+      assert.ok([suffix, "/experiment" + suffix].includes(url.pathname), "foreign list/photo/variant route");
+      value[key] = suffix + url.search + url.hash;
+    }
+    return value;
+  };
   const inventory = payload => Object.fromEntries(["items", "containers"].flatMap(collection =>
     Object.entries(payload[collection] || {}).filter(([, owner]) => owner.photos?.length)
-      .map(([id, owner]) => [`${collection}/${id}`, owner.photos])));
+      .map(([id, owner]) => [`${collection}/${id}`, owner.photos.map(reference)])));
   assert.deepEqual(inventory(after), inventory(before), "ordinary save changed registered photo owner/order/metadata");
   assert.deepEqual(Object.keys(after.items).sort(), Object.keys(before.items).sort());
   assert.deepEqual(Object.keys(after.containers).sort(), Object.keys(before.containers).sort());
 }
 
-export async function seedLegacyPhotoPendingAction(page) {
+export async function seedLegacyPhotoPendingAction(page, ids = [legacyBagId]) {
   const local = await page.evaluate(({ stateKey, metaKey }) => ({ snapshot: JSON.parse(localStorage.getItem(stateKey)),
     meta: JSON.parse(localStorage.getItem(metaKey)), selectedLayoutId: document.querySelector("#layoutSelect").value }),
   { stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY) });
@@ -93,17 +112,25 @@ export async function seedLegacyPhotoPendingAction(page) {
   // Active layout is a display preference omitted by the persisted personal
   // business mirror; bind the simulated old capture to the actual UI choice.
   local.snapshot.activeLayoutId = local.selectedLayoutId;
-  const { snapshot, intent } = preparePersonalPlacementMutation(local.snapshot, {
-    layoutId: legacyLayoutId, action: "link-root", ids: [legacyBagId], targetIndex: 1, includeContents: true });
   const storage = memoryStorage(), outbox = createPersonalSaveOutbox({ storage, ...legacyPhotoBinding });
-  const payload = await releaseSerializedPayload(snapshot);
-  assertLegacyPhotoRowsPreserved(legacyPhotoPayload(), payload);
-  const body = buildListSaveBody({ serializeState: () => payload, nowIso: () => timestamp,
-    syncMeta: { ...local.meta, localUpdatedAt: timestamp }, syncDevice: { id: "legacy-browser-device", name: "Изолированный браузер" } });
-  body.userPlacement = personalPlacementIntent(intent);
-  const record = outbox.capture({ snapshot, body, operationId: randomUUID() });
-  assert.equal(record.mergeBase, undefined);
-  assert.deepEqual(createPersonalSaveOutbox({ storage, ...legacyPhotoBinding }).recover(), record);
+  let snapshot = local.snapshot;
+  const records = [];
+  for (const [index, id] of ids.entries()) {
+    const prepared = preparePersonalPlacementMutation(snapshot, {
+      layoutId: legacyLayoutId, action: "link-root", ids: [id], targetIndex: index + 1, includeContents: true });
+    snapshot = prepared.snapshot;
+    const payload = await releaseSerializedPayload(snapshot);
+    page.legacyPhotoFixture.preserveRows(page.legacyPhotoFixture.initial, payload);
+    const body = buildListSaveBody({ serializeState: () => payload, nowIso: () => timestamp,
+      syncMeta: { ...local.meta, localUpdatedAt: timestamp }, syncDevice: { id: "legacy-browser-device", name: "Изолированный браузер" } });
+    body.userPlacement = personalPlacementIntent(prepared.intent);
+    const record = outbox.capture({ snapshot, body, operationId: randomUUID() });
+    assert.equal(record.mergeBase, undefined); assert.equal(record.action.body.baseStateRevision, 1582);
+    assert.equal(record.action.body.causal.baseOperationId, records.at(-1)?.action.operationId);
+    records.push(record);
+  }
+  const record = records.at(-1);
+  assert.deepEqual(createPersonalSaveOutbox({ storage, ...legacyPhotoBinding }).list(), records);
   const entries = [...storage.values];
   await page.evaluate(({ entries, snapshot, meta, stateKey, metaKey, listKey, listId }) => {
     for (const [key, value] of entries) localStorage.setItem(key, value);
@@ -111,13 +138,30 @@ export async function seedLegacyPhotoPendingAction(page) {
     localStorage.setItem(listKey, listId);
   }, { entries, snapshot, meta: local.meta, stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY),
     listKey: scoped(ACTIVE_LIST_ID_KEY), listId: legacyPhotoBinding.listId });
-  return { record, entries };
+  return { record, records, entries, snapshot };
 }
 
-export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck = false } = {}) {
+export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck = false, mixedLegacyRoutes = false } = {}) {
   const initial = legacyPhotoPayload();
+  if (mixedLegacyRoutes) for (const [index, photo] of initial.containers[legacyBagId].photos.entries()) {
+    const origin = index % 2 ? legacyPhotoOrigin : "https://api.vniipo-help.ru";
+    for (const [key, variant] of [["url","file"],["thumbUrl","thumb"]]) {
+      photo[key] = `${origin}/letters-vniipo/api/bike-packing/lists/${legacyPhotoBinding.listId}/photos/${photo.id}/${variant}?source=legacy`;
+    }
+  }
+  // Two old catalog owners already reference the same registered photos. This
+  // is source data, not permission to copy a photo to another owner now. The
+  // synthetic physical inventory below has only one row per registered ID.
+  if (mixedLegacyRoutes) {
+    initial.containers[legacyBagId].photos[0].listId = "";
+    initial.containers[legacyBagId].photos[1].listId = "";
+    initial.containers.second.photos = structuredClone(initial.containers[legacyBagId].photos.slice(0, 2));
+  }
   const f = { initial, payload: structuredClone(initial), revision: 1582, calls: [], posts: [], receiptReads: [],
-    receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false };
+    receipts: new Map(), captured: [], errors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false };
+  f.registeredPhotoRows = new Map(initial.containers[legacyBagId].photos.map(photo => [photo.id,
+    { listId:legacyPhotoBinding.listId, entityType:"container", entityId:legacyBagId, reference:structuredClone(photo) }]));
+  f.preserveRows = (before, after) => assertLegacyPhotoRowsPreserved(before, after, { routeAliases: mixedLegacyRoutes });
   page.legacyPhotoFixture = f;
   const list = () => ({ id: legacyPhotoBinding.listId, title: "Личные укладки", ownerId: legacyPhotoBinding.actorId,
     role: "owner", canEdit: true, stateRevision: f.revision, updatedAt: timestamp, payload: structuredClone(f.payload) });
@@ -146,7 +190,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck =
       else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}` || endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/state`)
         data = { ok: true, list: list(), state: structuredClone(f.payload), stateRevision: f.revision };
       else if (endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/freshness`) data = { ok: true, listId: legacyPhotoBinding.listId,
-        stateRevision: f.revision, serverUpdatedAt: timestamp, itemCount: 0, containerCount: 2, layoutCount: 1 };
+        stateRevision: f.revision, serverUpdatedAt: timestamp, itemCount: 0, containerCount: Object.keys(f.payload.containers).length, layoutCount: 1 };
       else if (new RegExp(`^/bike-packing/lists/${legacyPhotoBinding.listId}/photos/legacy-photo-[1-4]/(file|thumb)$`).test(endpoint))
         return route.fulfill({ headers, contentType: "image/png", body: png });
       else if (endpoint === "/bike-packing/list-operations" && method === "POST") {
@@ -156,9 +200,24 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, { loseAck =
         assert.equal(action.listId, legacyPhotoBinding.listId); assert.equal(action.kind, "list.update");
         assert.ok(["link-root", "remove-container"].includes(action.body.userPlacement?.action), "unexpected business intent");
         assert.equal(f.receipts.has(action.operationId), false, "the same immutable action was POSTed twice");
-        assert.equal(action.body.baseStateRevision, f.revision);
-        assertLegacyPhotoRowsPreserved(f.payload, action.body.payload);
-        f.payload = structuredClone(action.body.payload); f.revision++;
+        const parentId = action.body.causal.baseOperationId;
+        if (parentId) {
+          const parent = f.receipts.get(parentId);
+          assert.equal(parent?.operation.state, "committed", "missing committed causal parent");
+          assert.equal(parent.result.payload.stateRevision, f.revision, "causal parent is not the current server head");
+          assert.ok([parent.operation.body.baseStateRevision, f.revision].includes(action.body.baseStateRevision),
+            "neither the immutable chain base nor the newly confirmed numeric base");
+          assert.deepEqual(action.body.causal.dependsOn, [{ operationId: parentId, listId: legacyPhotoBinding.listId }]);
+        } else assert.equal(action.body.baseStateRevision, f.revision);
+        f.preserveRows(f.payload, action.body.payload);
+        if (f.failWrites) return route.fulfill({ status: 503, headers, json: { ok: false, code: "isolated_unavailable" } });
+        f.payload = structuredClone(action.body.payload);
+        if (mixedLegacyRoutes) for (const collection of ["containers","items"]) {
+          for (const [id, owner] of Object.entries(f.initial[collection])) if (owner.photos?.length) {
+            f.payload[collection][id].photos = structuredClone(owner.photos);
+          }
+        }
+        f.revision++;
         const binding = { environment: action.environment, actorId: action.expectedActorId, listId: action.listId, kind: action.kind, body: action.body };
         data = { ok: true, operation: { id: action.operationId, ...binding, state: "committed",
           payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex") },
