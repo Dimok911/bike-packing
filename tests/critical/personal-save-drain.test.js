@@ -56,3 +56,35 @@ test("failed or asynchronous preflight cannot dispatch or reconcile", async () =
     }));
   }
 });
+
+test("read-only preparation is followed by a synchronous check for every successor", async () => {
+  const calls = []; let candidate = "first";
+  const result = await drainPersonalSaveWithReconciliation({
+    async prepareBeforeDrain() { calls.push(`read:${candidate}`); },
+    beforeDrain() { calls.push(`check:${candidate}`); },
+    outbox: {
+      async drain() {
+        calls.push(`drain:${candidate}`);
+        if (candidate === "first") throw { isOperationReceiptError: true };
+        return "confirmed";
+      },
+      async reconcile() { candidate = "next"; return {}; }
+    }, onReconciled() { calls.push("apply:next"); }
+  });
+  assert.equal(result, "confirmed");
+  assert.deepEqual(calls, ["read:first", "check:first", "drain:first", "apply:next", "read:next", "check:next", "drain:next"]);
+});
+
+test("failed preparation and a context changed during its read never dispatch", async () => {
+  for (const readFails of [true, false]) {
+    let current = "original";
+    await assert.rejects(drainPersonalSaveWithReconciliation({
+      async prepareBeforeDrain() {
+        if (readFails) throw Error("server baseline unavailable");
+        await Promise.resolve(); current = "changed";
+      },
+      beforeDrain() { if (current !== "original") throw Error("editor changed"); },
+      outbox: { drain() { assert.fail("must not dispatch"); }, reconcile() { assert.fail("must not reconcile"); } }
+    }), readFails ? /baseline unavailable/ : /editor changed/);
+  }
+});

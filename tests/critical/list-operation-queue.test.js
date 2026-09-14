@@ -57,7 +57,8 @@ function fixture() {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
     return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
       photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, containerContextEnabled: state.containerContextEnabled, manufacturerSourceEnabled: state.manufacturerSourceEnabled,
-      migrationEnabled: state.migrationEnabled, shareLinkEnabled: state.shareLinkEnabled, locks, fetchImpl }) };
+      migrationEnabled: state.migrationEnabled, shareLinkEnabled: state.shareLinkEnabled,
+      legacyPhotoPreservationEnabled: state.legacyPhotoPreservationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -84,6 +85,58 @@ test("share receipt survives lost response and reload; own gate and capability p
   await f.make().queue.run(input); assert.equal(f.posts().length, 1, "reload reads the same receipt instead of making another link");
   const actual = f.receipts.get(plan.operationId); actual.result.payload.sharedLink.descriptor.scope = "layout";
   await assert.rejects(f.make().queue.run(input), { isOperationReceiptError: true });
+});
+
+function legacyPhotoFixture() {
+  const f = fixture();
+  f.state.legacyPhotoPreservationEnabled = true;
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalLegacyPhotoPreservationV1"];
+  f.input.operationId = crypto.randomUUID();
+  f.input.body = JSON.stringify({ baseStateRevision: 1, payload: { items: {}, containers: { bag: { id: "bag", photos: [{
+    id: "photo-a", listId: "list-a", status: "synced", width: 800, height: 600, updatedAt: "2026-09-14T08:00:00.000Z",
+    url: "https://api.vniipo-help.ru/letters-vniipo/api/bike-packing/lists/list-a/photos/photo-a/file",
+    thumbUrl: "https://api.vniipo-help.ru/letters-vniipo/api/bike-packing/lists/list-a/photos/photo-a/thumb"
+  }] } } }, causal: { dependsOn: [], reads: [] } });
+  return f;
+}
+
+test("ordinary legacy photo update requires both gates before creating a transport intent", async () => {
+  for (const change of [f => { f.state.legacyPhotoPreservationEnabled = false; }, f => { f.state.capabilities.pop(); }]) {
+    const f = legacyPhotoFixture(); change(f);
+    await assert.rejects(f.make().queue.run(f.input));
+    assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0);
+  }
+});
+
+test("legacy photo lost ACK keeps exact body and ID and still reads terminal receipt with gate disabled", async () => {
+  const f = legacyPhotoFixture(); f.state.loseResponse = true;
+  await f.make().queue.run(f.input);
+  f.state.legacyPhotoPreservationEnabled = false; f.state.capabilities.pop();
+  await f.make().queue.run(f.input);
+  assert.equal(f.posts().length, 1);
+  const sent = JSON.parse(f.posts()[0].options.body);
+  assert.equal(sent.operationId, f.input.operationId); assert.deepEqual(sent.body, JSON.parse(f.input.body));
+});
+
+test("waiting legacy photo update rechecks gate, capability and context before another dispatch", async () => {
+  for (const mode of ["gate", "capability", "context"]) {
+    const f = legacyPhotoFixture(); f.state.waiting = true;
+    const body = JSON.parse(f.input.body);
+    body.causal.dependsOn = [{ operationId: crypto.randomUUID(), listId: "list-a" }];
+    f.input.body = JSON.stringify(body);
+    await assert.rejects(f.make().queue.run(f.input), { isOperationWaiting: true });
+    if (mode === "gate") f.state.legacyPhotoPreservationEnabled = false;
+    if (mode === "capability") f.state.capabilities.pop();
+    const fetchImpl = async (url, options) => {
+      const result = await f.fetchImpl(url, options);
+      if (mode === "context" && url.endsWith("/capabilities")) f.context.generation = "changed";
+      return result;
+    };
+    const queue = createListOperationQueue({ transport: f.make().transport, getContext: () => ({ ...f.context }), enabled: true,
+      legacyPhotoPreservationEnabled: f.state.legacyPhotoPreservationEnabled, locks: f.locks, fetchImpl });
+    await assert.rejects(queue.run(f.input));
+    assert.equal(f.posts().length, 1, mode);
+  }
 });
 
 test("list queue is release-gated; legacy API remains untouched when off", () => {

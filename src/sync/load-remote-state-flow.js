@@ -4,6 +4,18 @@ export function startupCacheAllowsEntityChanges(syncMeta) {
   return Number(syncMeta?.cacheIntegrityVersion) === STARTUP_CACHE_INTEGRITY_VERSION;
 }
 
+// The app supplies trusted synchronous readers/writers for its scoped outbox.
+// Freshness alone does not authenticate a cached payload as an initial base.
+function callSynchronousBaseline(callback, input) {
+  if (typeof callback !== "function") throw new Error("Personal baseline callback must be synchronous.");
+  const result = callback(input);
+  if (result && typeof result.then === "function") {
+    Promise.resolve(result).catch(() => {});
+    throw new Error("Personal baseline callback must be synchronous.");
+  }
+  return result;
+}
+
 export async function persistRecoveredLayoutQuantityMigration({ remoteState, runtime, dependencies }) {
   if (!dependencies.layoutItemQuantityMigrationRecovered?.(remoteState)) return false;
   runtime.syncMeta.dirty = true;
@@ -24,6 +36,8 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     askConfirmDialog,
     askConflictResolution,
     blockRemoteIntegrityFailureIfNeeded,
+    adoptConfirmedRemoteBaseline,
+    canReuseConfirmedRemoteBaseline,
     canUseCachedStartupState,
     canLocalStateOverrideRemote,
     canSeedEmptyRemoteFromLocal,
@@ -120,11 +134,18 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       fetchRemoteListFreshnessRecord &&
       startupListId
     ) {
+      let baselineCheckInProgress = false;
       try {
         const freshness = await fetchRemoteListFreshnessRecord(startupListId);
         const accountMatches = isForeignLocalSyncState ? !isForeignLocalSyncState() : true;
         const hasLocalStateForStartup = hasLocalSavedState();
-        if (canUseCachedStartupState?.({
+        let reusableBaseline = true;
+        if (canReuseConfirmedRemoteBaseline !== undefined) {
+          baselineCheckInProgress = true;
+          reusableBaseline = callSynchronousBaseline(canReuseConfirmedRemoteBaseline, { listId: startupListId, freshness }) === true;
+          baselineCheckInProgress = false;
+        }
+        if (reusableBaseline && canUseCachedStartupState?.({
           accountMatches,
           currentListId: startupListId,
           hasLocalState: hasLocalStateForStartup,
@@ -153,6 +174,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         if (
           accountMatches &&
           hasLocalStateForStartup &&
+          reusableBaseline &&
           !syncMeta.dirty &&
           startupCacheAllowsEntityChanges(syncMeta) &&
           tryApplyRemoteEntityChanges
@@ -175,7 +197,8 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
             });
           }
         }
-      } catch {
+      } catch (error) {
+        if (baselineCheckInProgress) throw error;
         // Older API processes do not have the lightweight endpoint; fall back
         // to the full state load so startup stays compatible during deploys.
       }
@@ -205,6 +228,14 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
     if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return false;
+    if (remoteState && adoptConfirmedRemoteBaseline !== undefined) {
+      // Observe the guarded server payload before an equal-state return or a
+      // delegated save of newer local edits. Never pass the live dirty state.
+      callSynchronousBaseline(adoptConfirmedRemoteBaseline, {
+        state: remoteState, payload: remoteRawPayload, integrityMeta: remoteIntegrityMeta,
+        listId: record?.id || record?.listId || ""
+      });
+    }
     if (remoteState) syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
     const serverTimeText = remoteUpdatedAt(record);
     const serverTime = timeValue(serverTimeText);
