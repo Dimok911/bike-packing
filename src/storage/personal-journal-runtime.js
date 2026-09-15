@@ -7,5 +7,5 @@ export async function initializePersonalJournal(enabled) {
 }
 export const personalJournalStorage = () => journal || globalThis.localStorage;
 export const preparePersonalJournal = () => journal?.prepare() || Promise.resolve();
-export const flushPersonalJournal = () => journal?.flush() || Promise.resolve();
+export const flushPersonalJournal = scope => journal?.flush(scope) || Promise.resolve();
 export const personalJournalDiagnostics = () => journal?.diagnostics() || { available: false };

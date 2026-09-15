@@ -203,10 +203,10 @@ test("actual app deduplication compares the adopted current baseline, not an old
     currentHistoryActionContext: () => null, nowIso: () => "", syncDevice: {}, syncMeta: {},
     cloneStateForSync: value => structuredClone(value), currentUser: { id: "actor" }, currentPackingListId: "list",
     userStorageScopeKey: () => f.context.scopeKey, sameJson: (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b) };
-  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function capturePersonalSaveIntent\([^]*?\n\}/)[0];
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/async function capturePersonalSaveIntentNow\([^]*?\n\}/)[0];
   const capture = new Function(...Object.keys(deps), `return (${source});`)(...Object.values(deps));
-  assert.equal(capture(current).action.operationId, saved.action.operationId, "unchanged current baseline is UI-only");
-  const newAction = capture(saved.snapshot);
+  assert.equal((await capture(current)).action.operationId, saved.action.operationId, "unchanged current baseline is UI-only");
+  const newAction = await capture(saved.snapshot);
   assert.notEqual(newAction.action.operationId, saved.action.operationId, "intentional change back to old values is a new action");
   assert.equal(newAction.action.kind, "list.update"); assert.equal(newAction.action.body.baseStateRevision, 7);
 });

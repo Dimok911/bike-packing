@@ -233,3 +233,24 @@ test("pruning waits for another writer's unpublished body and then retains its n
   assert.ok(rows.some(row => row.raw === "new pending body"));
   assert.equal(storage.getItem(newKey), "new pending body");
 });
+
+test("scoped flush never reports another account's failed capture or performs its pending cleanup", async () => {
+  const f = fixture(), storage = await f.open();
+  const otherBinding = { ...binding, actorId: "other-actor", scopeKey: "id:other-actor" };
+  const otherKey = keyFor("retired", otherBinding), retiredKey = keyFor("retired"), failedKey = keyFor("failed");
+  await storage.writeRequired(retiredKey, "first account's retired body");
+  await storage.writeRequired(otherKey, "other account's retired body");
+  storage.removeItem(retiredKey); storage.removeItem(otherKey);
+  const oldFailure = Object.assign(Error("old editor changed"), { code: "stale-tab", isPersonalSaveBlocked: true,
+    unconfirmedMemoryDraft: { note: "only first account may receive this draft" } });
+  const failedCapture = storage.writeRequired(failedKey, "old account intent", { assertCurrent: () => { throw oldFailure; } });
+  const otherFlush = storage.flush(otherBinding.scopeKey);
+  const results = await Promise.allSettled([failedCapture, otherFlush]);
+  assert.equal(results[0].status, "rejected"); assert.equal(results[0].reason, oldFailure);
+  assert.equal(results[1].status, "fulfilled");
+  assert.equal(f.states.get(JSON.stringify(otherBinding)).entries.length, 0, "current account cleanup proceeds");
+  assert.ok(f.states.get(JSON.stringify(binding)).entries.some(row => row.raw === "first account's retired body"),
+    "failed old account's cleanup remains untouched");
+  await assert.rejects(storage.flush(binding.scopeKey), error => error === oldFailure);
+  await assert.rejects(storage.flush(), error => error === oldFailure, "unscoped callers retain earlier failure behavior");
+});

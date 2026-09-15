@@ -90,6 +90,7 @@ function appFixture() {
   outbox.markApplied({ operationId: head.action.operationId, stateRevision: 1583 }); outbox.compact();
   const syncMeta = { stateRevision: 1583, dirty: true }, messages = [], notifications = [], views = [], persisted = [];
   const dependencies = { clone: copy, flushPersonalMirrors: async () => {}, personalSaveContext: () => binding, currentUser: { id: binding.actorId }, currentPackingListId: listId, localStorageScopeKey: binding.scopeKey,
+    personalCaptureTail: Promise.resolve(), flushPersonalJournal: async () => {},
     modeState: {}, state: editor, syncMeta, personalSavePilotEnabled: () => true, isReadOnlyBikePackingContext: () => false,
     isAdminPublicEditScope: () => false, personalSaveOutboxForScope: () => outbox, hasPendingPersonalSave: () => outbox.hasPending(),
     personalBusinessPayload, personalBusinessPayloadMatchesConfirmed: matches, PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED: true,
@@ -109,7 +110,7 @@ function appFixture() {
     checkPersonalPhotoRecoveryBeforeLoad: async () => {}, isForcedOffline: () => false, SYNC_META_KEY: "sync-meta", scopedLocalStorageKey: key => key,
     safeSetLocalStorage: (key, value) => { persisted.push(JSON.parse(value)); return true; },
     showToast: (message, tone) => notifications.push({ message, tone }) };
-  const capture = appFunction("capturePersonalSaveIntent", dependencies);
+  const capture = appFunction("capturePersonalSaveIntentNow", dependencies);
   dependencies.persistStateSnapshot = snapshot => capture(snapshot);
   const adopt = appFunction("adoptConfirmedPersonalRemoteBaseline", dependencies);
   return { outbox, values, head, raw, editor, syncMeta, messages, notifications, views, persisted, dependencies, capture,
@@ -131,12 +132,12 @@ test("actual load observer then apply use one raw authoritative baseline; normal
   assert.throws(() => f.outbox.adoptRemoteBaseline({ snapshot: changed, payload: changed, stateRevision: 1583 }), { code: "baseline" });
 });
 
-test("actual capture reuses a confirmed action for approved aliases and preserves the journal bytes", () => {
+test("actual capture reuses a confirmed action for approved aliases and preserves the journal bytes", async () => {
   const f = appFixture(); f.observe(); const stored = [...f.values];
-  assert.equal(f.capture(f.editor).action.operationId, f.head.action.operationId);
+  assert.equal((await f.capture(f.editor)).action.operationId, f.head.action.operationId);
   assert.equal(f.outbox.hasPending(), false); assert.deepEqual([...f.values], stored);
   const edited = copy(f.editor); edited.containers.bag.name = "Real edit";
-  const next = f.capture(edited);
+  const next = await f.capture(edited);
   assert.notEqual(next.action.operationId, f.head.action.operationId); assert.equal(f.outbox.hasPending(), true);
   assert.deepEqual(next.action.body.payload, edited);
   assert.deepEqual(next.mergeBase.payload, f.raw, "new write retains raw confirmed base");
@@ -145,7 +146,7 @@ test("actual capture reuses a confirmed action for approved aliases and preserve
 
 test("pending edits are never skipped even if the draft again matches the old confirmed view", async () => {
   const f = appFixture(); f.observe(); const edited = copy(f.editor); edited.items.item.weight++;
-  const pending = f.capture(edited), undo = f.capture(f.editor);
+  const pending = await f.capture(edited), undo = await f.capture(f.editor);
   assert.notEqual(undo.action.operationId, pending.action.operationId);
   assert.equal(undo.action.body.causal.baseOperationId, pending.action.operationId);
   assert.equal(f.outbox.hasPending(), true);
@@ -163,9 +164,9 @@ test("manual sync after raw baseline adoption clears dirty without creating or d
   assert.deepEqual(f.outbox.confirmedBase().payload, f.raw);
 });
 
-test("capture account guard precedes alias equality and cannot reuse another actor's confirmation", () => {
+test("capture account guard precedes alias equality and cannot reuse another actor's confirmation", async () => {
   const f = appFixture(); f.observe(); const before = [...f.values];
-  const capture = appFunction("capturePersonalSaveIntent", { ...f.dependencies, currentUser: { id: "other-actor" } });
-  assert.throws(() => capture(f.editor), /аккаунт/);
+  const capture = appFunction("capturePersonalSaveIntentNow", { ...f.dependencies, currentUser: { id: "other-actor" } });
+  await assert.rejects(capture(f.editor), /аккаунт/);
   assert.deepEqual([...f.values], before);
 });

@@ -113,7 +113,7 @@ test("actual app uses causal bootstrap, recovers a missing pointer and refuses t
   const load = extract("loadActivePackingListId", { loadStoredActivePackingListId: () => "", ACTIVE_LIST_ID_KEY: "active",
     personalSaveRecovery: { run: callback => callback() },
     scopedLocalStorageKey: key => key, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
-    localStorage: f.storage, recoverPersonalSaveListId });
+    personalJournalStorage: () => f.storage, recoverPersonalSaveListId });
   assert.equal(load(), f.recoverId());
   const clear = extract("saveActivePackingListId", { personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
     loadActivePackingListId: load, personalSaveOutboxForScope: f.outbox });
@@ -122,42 +122,82 @@ test("actual app uses causal bootstrap, recovers a missing pointer and refuses t
   const ensure = extract("ensureCurrentPackingListId", { personalSavePilotEnabled: () => true, currentUser: { id: "actor-a" },
     personalSaveRecovery: { run: callback => callback() }, clone: structuredClone, localStorageScopeKey: "id:actor-a",
     isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
-    isPublicTemplateListId: () => false, currentPackingListId: "", localStorage: f.storage,
+    isPublicTemplateListId: () => false, currentPackingListId: "", personalJournalStorage: () => f.storage,
     personalSaveContext: f.options.getContext, state: f.input.snapshot, buildListSaveBody: () => f.input.body,
     localText: (en, ru) => ru, chooseDefaultPackingList: () => null, remoteRecordId: record => record.id,
     ensureCausalPersonalListId: async options => { assert.equal(options.storage, f.storage); return "causal-id"; } });
   assert.equal(await ensure(), "causal-id");
 });
 
-test("actual first UI edit stores its create action synchronously, before the pointer or network", () => {
+test("actual first UI edit awaits durable capture before the pointer and a late list switch cannot authorize UI adoption", async () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   const captureSource = source.match(/function capturePersonalSaveIntent\([^]*?\n\}/)[0];
+  const captureNowSource = source.match(/async function capturePersonalSaveIntentNow\([^]*?\n\}/)[0];
   const f = fixture(), listId = "initial-list";
   const prepared = createPersonalSaveOutbox({ storage: f.storage, ...f.context, listId });
   const dependencies = { personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a", GUEST_STORAGE_SCOPE: "guest",
+    clone: structuredClone, sameJson: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    personalSaveContext: () => ({ ...f.context, listId: "" }), preparePersonalJournal: async () => {},
+    personalSaveRecovery: { assertRunning() {}, report() {} },
     isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
     personalSaveOutboxForScope: () => null, buildListSaveBodyForSync: options => ({ payload: options.serializeState() }),
     currentHistoryActionContext: () => ({}), nowIso: () => "", syncDevice: {}, syncMeta: {}, cloneStateForSync: value => value,
     currentPackingListId: "", personalInitialSaveOutbox: prepared, currentUser: { id: "actor-a" },
     userStorageScopeKey: () => "id:actor-a", localText: (en, ru) => ru, personalSaveOutboxes: new Map(),
     saveActivePackingListId: id => { assert.equal(f.recoverId(), id); throw Error("crash before pointer"); } };
-  const capture = new Function(...Object.keys(dependencies), `return (${captureSource});`)(...Object.values(dependencies));
-  assert.throws(() => capture(f.input.snapshot), /crash before pointer/);
+  const build = dependencies => new Function(...Object.keys(dependencies),
+    `let personalCaptureTail = Promise.resolve(); ${captureNowSource}; return (${captureSource});`)(...Object.values(dependencies));
+  let writeStarted, finishWrite;
+  const started = new Promise(resolve => { writeStarted = resolve; });
+  f.storage.writeRequired = async (key, raw, { assertCurrent }) => {
+    writeStarted();
+    await new Promise(resolve => { finishWrite = resolve; });
+    assertCurrent(); f.storage.setItem(key, raw);
+    assert.equal(f.storage.getItem(key), raw);
+  };
+  const capture = build(dependencies), capturing = capture(f.input.snapshot);
+  const failed = assert.rejects(capturing, /crash before pointer/);
+  await started;
+  assert.equal(f.values.size, 0, "no queue row is acknowledged while durable capture is pending");
+  f.input.snapshot.items.a.weight = 999;
+  finishWrite(); await failed;
   assert.equal(f.outbox().recover().action.kind, "list.create");
   assert.equal(f.outbox().recover().snapshot.items.a.weight, 100);
   assert.equal(f.values.size, 1);
-  const completed = fixture(), events = [], context = { listId: "" };
-  const initialOutbox = createPersonalSaveOutbox({ storage: completed.storage, ...completed.context, listId });
-  const successfulDependencies = { ...dependencies, personalInitialSaveOutbox: initialOutbox, personalSaveOutboxes: new Map(),
-    saveActivePackingListId: id => { assert.equal(initialOutbox.recover().action.kind, "list.create"); context.listId = id; events.push("pointer"); } };
-  const captureCompleted = new Function(...Object.keys(successfulDependencies), `return (${captureSource});`)(...Object.values(successfulDependencies));
-  const oldListId = context.listId;
-  const result = commitPreparedPersonalChange({ persist: () => captureCompleted(completed.input.snapshot),
-    isCurrent: () => context.listId === oldListId,
-    apply: () => { assert.equal(context.listId, listId); assert.equal(initialOutbox.recover().snapshot.items.a.weight, 100); events.push("apply"); return true; },
-    onError: error => { throw error; } });
-  assert.equal(result, true, "initial list ID established synchronously is not mistaken for an editor switch");
-  assert.deepEqual(events, ["pointer", "apply"]);
+  const prepareSource = source.match(/function preparePersonalLayoutCopyAction\([^]*?\n\}/)[0];
+  for (const mode of ["success", "other-list", "actor", "generation", "before-capture"]) {
+    const completed = fixture(), events = [], context = { ...completed.context, listId: "" };
+    const initialOutbox = createPersonalSaveOutbox({ storage: completed.storage, ...completed.context, listId });
+    const successfulDependencies = { ...dependencies, personalInitialSaveOutbox: initialOutbox, personalSaveOutboxes: new Map(),
+      personalSaveContext: () => ({ ...context }),
+      saveActivePackingListId: id => {
+        assert.equal(initialOutbox.recover().action.kind, "list.create"); context.listId = mode === "other-list" ? "foreign-list" : id;
+        if (mode === "actor") context.actorId = "actor-b";
+        if (mode === "generation") context.generation = "changed";
+        events.push("pointer");
+      } };
+    const captureCompleted = build(successfulDependencies);
+    const state = { ...structuredClone(completed.input.snapshot), containers: {}, layouts: {}, packedItems: {} };
+    const preparationDeps = { ...successfulDependencies, commitPreparedPersonalChange, state, locations: [], categories: [],
+      currentCreateMeta: () => ({}), uniqueLayoutName: name => name, personalPhotoFormUiEnabled: () => false,
+      preparePersonalLayoutCopy: (_state, { targetLayoutId }) => ({ layoutId: targetLayoutId, intent: {},
+        snapshot: { ...structuredClone(state), layouts: { [targetLayoutId]: { id: targetLayoutId, name: "New layout" } } } }),
+      persistStateSnapshot: snapshot => captureCompleted(snapshot), showToast: () => events.push("refused"),
+      setActivePrivateScope() {}, applyLayoutArrangement() {}, rememberActiveLayoutChoice() {}, render() {},
+      saveState: () => { assert.equal(initialOutbox.recover().snapshot.items.a.weight, 100); events.push("apply"); } };
+    const prepare = new Function(...Object.keys(preparationDeps), `return (${prepareSource});`)(...Object.values(preparationDeps));
+    const commit = prepare({ requestedName: "New layout" });
+    if (mode === "before-capture") context.listId = listId;
+    const result = await commit();
+    if (mode === "success") {
+      assert.match(result, /^layout-/); assert.deepEqual(events, ["pointer", "apply"]);
+      assert.equal(initialOutbox.recover().snapshot.layouts[result].id, result);
+    } else {
+      assert.equal(result, false); assert.deepEqual(state.layouts, {});
+      assert.deepEqual(events, mode === "before-capture" ? ["refused"] : ["pointer", "refused"]);
+    }
+    assert.equal(completed.values.size, mode === "before-capture" ? 0 : 1);
+  }
 });
 
 test("actual inventory load cannot authorize first creation after an account switch", async () => {

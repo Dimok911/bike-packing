@@ -94,8 +94,9 @@ test.describe("private phone export, local storage only", () => {
       const { createPersonalSaveOutbox } = await import("/sync/personal-save-outbox.js");
       const storage = await createPersonalJournalStorage(), outbox = createPersonalSaveOutbox({ storage, ...binding });
       const before = outbox.recover(), snapshot = structuredClone(outbox.recoverSnapshot());
-      const itemId = "item-1784226874957";
-      if (!draft.items[itemId] || !snapshot.items[itemId]) throw Error("Expected draft item missing");
+      const renamed = Object.keys(snapshot.items).filter(id => draft.items[id] && draft.items[id].name !== snapshot.items[id].name);
+      if (renamed.length !== 1) throw Error("Expected one isolated item rename in the private export");
+      const itemId = renamed[0];
       // Only this explicit rename is replayed in the isolated test. The rest of
       // the memory draft is not imported and no live API route exists here.
       snapshot.items[itemId].name = draft.items[itemId].name;

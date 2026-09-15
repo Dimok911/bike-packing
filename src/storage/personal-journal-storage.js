@@ -76,6 +76,10 @@ export async function createPersonalJournalStorage({ legacy = globalThis.localSt
     });
     return promise;
   };
+  const belongsToScope = (key, scopeKey) => {
+    if (scopeKey === undefined) return true;
+    try { return bindingOf(key).scopeKey === scopeKey; } catch { return false; }
+  };
   const writeValue = (key, raw, { assertCurrent = () => {} } = {}, retainOriginal = false) => {
     const task = (async () => {
       try {
@@ -127,12 +131,14 @@ export async function createPersonalJournalStorage({ legacy = globalThis.localSt
     if (legacy.length !== count) throw failure("scan-changed");
     return rows;
   };
-  const pruneRetired = async () => {
+  const pruneRetired = async scopeKey => {
     // No general orphan sweep: a body without a marker may belong to a failed
     // capture. Only a native removeItem call authorizes retirement. Losing this
     // small in-memory set in a crash can leak an orphan, never lose an intent.
-    if (writeFailures.size) return;
-    for (const [ownerKey, removed] of retired) await lock(JSON.parse(ownerKey), async () => {
+    if ([...writeFailures.keys()].some(key => belongsToScope(key, scopeKey))) return;
+    for (const [ownerKey, removed] of retired) {
+      if (scopeKey !== undefined && JSON.parse(ownerKey).scopeKey !== scopeKey) continue;
+      await lock(JSON.parse(ownerKey), async () => {
       const observedRemoved = new Set(removed);
       const ownedRows = () => scan().filter(([key]) => JSON.stringify(bindingOf(key)) === ownerKey);
       const source = ownedRows();
@@ -172,7 +178,8 @@ export async function createPersonalJournalStorage({ legacy = globalThis.localSt
       // An active re-published value is no longer authorized for retirement.
       for (const hash of observedRemoved) removed.delete(hash);
       if (!removed.size) retired.delete(ownerKey);
-    });
+      });
+    }
   };
   const api = {
     owns,
@@ -221,10 +228,12 @@ export async function createPersonalJournalStorage({ legacy = globalThis.localSt
       } catch (cause) { throw cause?.isPersonalSaveBlocked ? cause : failure("prepare", cause); }
       return api;
     },
-    async flush() {
-      while (pending.size) await Promise.all([...pending]);
-      if (writeFailures.size) throw writeFailures.values().next().value;
-      await pruneRetired();
+    async flush(scopeKey) {
+      // Settle existing writes without leaking an old account's rejected
+      // promise (and its memory draft) into the current account's save.
+      while (pending.size) await Promise.allSettled([...pending]);
+      for (const [key, error] of writeFailures) if (belongsToScope(key, scopeKey)) throw error;
+      await pruneRetired(scopeKey);
     },
     diagnostics() {
       let journalBytes = 0, referenceBytes = 0, inlineBytes = 0, recordCount = 0;

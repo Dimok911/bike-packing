@@ -2794,6 +2794,8 @@ function preparePersonalCatalogDeletion(value) {
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   const intent = personalDeletionIntent(value), initial = JSON.stringify(personalSaveContext());
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let used = false;
   // Bind the confirmation to the visible version, not just the selected IDs.
   return () => {
@@ -2835,7 +2837,7 @@ function preparePersonalCatalogDeletion(value) {
     } catch (error) { showToast(error.message, "error"); return false; }
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         // Keep the runtime active-layout accessor/UI state; one complete business
@@ -2888,6 +2890,8 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     };
   }
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let prepared, used = false;
   try {
     prepared = preparePersonalCopyBatch(state, { type: "copy", version: 1, keepPlacement,
@@ -2906,7 +2910,7 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
@@ -2923,6 +2927,8 @@ async function preparePersonalContainerTreeAction(request) {
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let prepared, photoSession, photoCopyError, used = false;
   try {
     const changedAt = nowIso(), photoTree = ["containers", "items"].some(collection =>
@@ -2966,7 +2972,7 @@ async function preparePersonalContainerTreeAction(request) {
     used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(selected.snapshot, { personalMutation: selected.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers"]) state[key] = selected.snapshot[key];
@@ -2984,6 +2990,8 @@ function preparePersonalItemCopyPlacementAction({ sourceId, targetContainerId, t
   personalSaveRecovery.assertRunning();
   if (!requireUsageCapacity("items")) return false;
   const initial = JSON.stringify(personalSaveContext()), changedAt = nowIso();
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let prepared, session, operationId, used = false;
   try {
     if (normalizeItemPhotos(state.items[sourceId]).length) {
@@ -3015,7 +3023,7 @@ function preparePersonalItemCopyPlacementAction({ sourceId, targetContainerId, t
       }
       return await commitPreparedPersonalChange({
         persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-        isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+        isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())),
         onError: error => { showToast(error.message, "error"); return false; },
         apply: () => {
           for (const key of ["items", "layouts", "packedItems"]) if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
@@ -3036,6 +3044,8 @@ function preparePersonalLayoutCopyAction({ sourceLayoutId = "", requestedName, a
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   const context = personalSaveContext(), initial = JSON.stringify(context), operationId = crypto.randomUUID();
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   const targetLayoutId = `layout-${crypto.randomUUID()}`;
   let prepared, used = false;
   try {
@@ -3052,7 +3062,7 @@ function preparePersonalLayoutCopyAction({ sourceLayoutId = "", requestedName, a
     personalSaveRecovery.assertRunning(); used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         // The full candidate is durable before active-layout preferences or view.
@@ -3075,6 +3085,8 @@ function preparePersonalLayoutDeletionAction(layoutId) {
   personalSaveRecovery.assertRunning();
   if (layoutId !== state.activeLayoutId || !canDeleteActiveLayout()) return false;
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext()), eligible = userEditableLayouts().map(layout => layout.id);
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   const nextLayoutId = eligible.find(id => id !== layoutId) || `layout-${crypto.randomUUID()}`;
   let prepared, used = false;
   try {
@@ -3095,7 +3107,7 @@ function preparePersonalLayoutDeletionAction(layoutId) {
     personalSaveRecovery.assertRunning(); used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()) && state.activeLayoutId === layoutId && canDeleteActiveLayout(),
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())) && state.activeLayoutId === layoutId && canDeleteActiveLayout(),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
@@ -3116,6 +3128,8 @@ function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner(
   if (owner !== state) return false;
   request = JSON.parse(JSON.stringify(request));
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext()), scope = dictionaryEditScope(owner);
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let prepared, used = false;
   try {
     prepared = preparePersonalDictionaryMutation(state, { ...request, values: dictionaryOptionsForOwner(request.type, owner),
@@ -3131,7 +3145,7 @@ function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner(
     used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext()) && owner === state && activeDictionaryOwner() === owner,
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext())) && owner === state && activeDictionaryOwner() === owner,
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
         for (const key of ["items", "containers", "locations", "categories", "customLocations", "customCategories", "locationDictionary", "categoryDictionary"]) {
@@ -3152,6 +3166,8 @@ function preparePersonalPlacementAction(request) {
   request = JSON.parse(JSON.stringify(request));
   if (request.layoutId !== state.activeLayoutId && request.action !== "link-item" || warnLockedLayoutMutation(request.layoutId)) return false;
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
+  const initialAfterCreate = JSON.parse(initial).listId === "" && personalInitialSaveOutbox?.binding.listId
+    ? JSON.stringify({ ...JSON.parse(initial), listId: personalInitialSaveOutbox.binding.listId }) : null;
   let prepared, used = false;
   try {
     prepared = preparePersonalPlacementMutation(state, request, { changedAt: nowIso(), markEdited,
@@ -3166,7 +3182,7 @@ function preparePersonalPlacementAction(request) {
     personalSaveRecovery.assertRunning(); used = true;
     return commitPreparedPersonalChange({
       persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
-      isCurrent: () => initial === JSON.stringify(personalSaveContext())
+      isCurrent: () => (initial === JSON.stringify(personalSaveContext()) || initialAfterCreate !== null && initialAfterCreate === JSON.stringify(personalSaveContext()))
         && (request.layoutId === state.activeLayoutId || request.action === "link-item") && !warnLockedLayoutMutation(request.layoutId),
       onError: error => { showToast(error.message, "error"); return false; },
       apply: () => {
@@ -3288,8 +3304,10 @@ function persistStateSnapshot(snapshot = state, { recordAction = true, personalM
     ? capturePersonalSaveIntent(frozen, personalMutation, operationId) : null;
   const finish = saved => {
     if (scope !== localStorageScopeKey) throw Object.assign(Error("Аккаунт изменился во время записи."), { code: "stale-tab", isPersonalSaveBlocked: true });
-    const preserve = saved || personalSavePilotEnabled() && hasPendingPersonalSave() || hasOwnedAdminTemplatePhotoEditor(frozen);
-    return writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(frozen), { clearBase: !preserve, clearRecovery: !preserve });
+    const durable = saved || personalSavePilotEnabled() && hasPendingPersonalSave();
+    const preserve = durable || hasOwnedAdminTemplatePhotoEditor(frozen);
+    const mirrored = writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(frozen), { clearBase: !preserve, clearRecovery: !preserve });
+    return durable ? mirrored?.then ? mirrored.then(() => true) : true : mirrored;
   };
   if (!intent?.then) return finish(intent);
   const task = intent.then(finish);
@@ -9643,7 +9661,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
     await personalCaptureTail;
-    await flushPersonalJournal();
+    await flushPersonalJournal(owner.scopeKey);
     personalSaveRecovery.assertRunning();
     // Do not mistake this form's file-commit -> queue-link interval for an
     // abandoned startup record. Its own session guards every awaited step.
@@ -9852,7 +9870,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         rememberCurrentSyncAccount();
         writeRequired(SYNC_META_KEY, syncMeta);
         await outbox.compact();
-        await flushPersonalJournal();
+        await flushPersonalJournal(owner.scopeKey);
         renderPreservingPackingScroll();
         updateSyncUi();
         if (notify) showToast("Сохранение подтверждено. Более свежие данные загружены.", "success");
@@ -9879,7 +9897,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       writeRequired(SYNC_META_KEY, syncMeta);
       outbox.markApplied({ operationId: record.action.operationId, stateRevision: data.list?.stateRevision ?? data.stateRevision });
       await outbox.compact();
-        await flushPersonalJournal();
+        await flushPersonalJournal(owner.scopeKey);
       updateSyncUi();
       if (notify) showToast("Синхронизация подтверждена.", "success");
     } }) });
