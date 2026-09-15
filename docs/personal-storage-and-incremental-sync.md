@@ -121,7 +121,15 @@ analysis cannot infer whether a missing bag was deleted or never received.
 - Legacy import preparation/readback with account and source-change guards;
   it neither activates the new store nor removes legacy data.
 - Async outbox facade for capture and ordinary recovery, with durable barriers
-  before cancellation and remote reads. No drain/compaction API yet.
+  before cancellation and remote reads. Ordinary update confirmation now commits
+  the current snapshot, confirmed base, sync metadata and applied marker together.
+  UI adoption occurs only after that transaction resolves. General reconciliation,
+  photo dispatch and compaction are still not exposed by the async facade.
+- The existing recovery dialog and drain adapter await archive completion and
+  preserve the dialog on storage failure. A source-module browser scenario uses
+  the user's local export, this dialog, native IndexedDB and a controlled server
+  response, then verifies the selected version and confirmation after reload.
+  It is not full application cutover or live phone/API acceptance.
 - Prepared mutation UI boundary accepts asynchronous persistence; consumers
   wait for completion before closing dialogs/rendering successful changes.
 - Pending startup can reveal an authenticated validated local view before a
@@ -147,3 +155,29 @@ deletion delivery, pagination under concurrent changes, offline uncached
 views, expired cursors and the user's actual baseless recovery export.
 Measure cold/warm startup and bytes transferred for one action as separate
 checks. Local tests alone are not phone acceptance or a production release.
+
+## Local confirmation checkpoint — 15 September 2026
+
+The current change does not enable IndexedDB in app.js. APP_VERSION remains
+v1620, and no deployment or GitHub Actions run was made.
+
+Targeted validation completed:
+- 68 unit cases across async outbox, migration and ordinary recovery drain.
+- Native IndexedDB + real recovery dialog + private phone export: Chromium and
+  mobile WebKit passed. Server response is a controlled fixture; all external
+  requests are blocked. After reload, the chosen version and its applied marker
+  remain present, with no legacy writes/deletes or cancelled original dispatch.
+- Four browser cases cover pending archive writes, repeated taps, Escape and
+  failed transactions in the dialog.
+- Four built-application cases preserve the legacy recovery/decide-later flows
+  in Chromium and mobile WebKit. Source validation and release build passed.
+
+Resume at integration gates 1–4 above. In particular, app.js still uses native
+localStorage outboxes and writes current/base/sync metadata directly on receipts.
+Do not connect the async facade to those synchronous call sites as a drop-in
+replacement. Its ordinary confirmation projection is pure and synchronous;
+apply the returned UI state only after settleOrdinary resolves and the caller
+rechecks its account/editor context. The native outbox's in-memory initial
+baseline must also survive recreation before general reconciliation is enabled.
+Transport/photo journal migration, first-list creation and certified retirement
+remain unresolved; source originals must stay intact.

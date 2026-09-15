@@ -61,15 +61,21 @@ export async function drainPersonalSaveWithOrdinaryRecovery({ enabled = false, o
       failure: { code: error.code, reason: error.reason, hasConflicts: Boolean(error.conflicts?.length) },
       prepareServerChoice: () => {
         assertCurrent();
-        outbox.prepareOrdinaryRecoveryArchive({ getContext });
+        const prepared = outbox.prepareOrdinaryRecoveryArchive({ getContext });
+        if (prepared && typeof prepared.then === "function") {
+          return Promise.resolve(prepared).then(result => { assertCurrent(); return result; });
+        }
+        assertCurrent();
+        return prepared;
       },
       getRecoveryCopy: () => { assertCurrent(); return outbox.ordinaryRecoveryCopy(); } });
     assertCurrent();
     if (choice !== "server") throw Object.assign(paused("Выбор отложен. Местные изменения и очередь сохранены на этом устройстве."),
       { recoveryReviewNeeded: true });
-    // This synchronous publication includes the recovery copy and is reread
-    // before any cancellation can be sent. A quota failure preserves the queue.
-    outbox.prepareOrdinaryRecoveryArchive({ getContext });
+    // The archive must commit before any cancellation can be sent, including
+    // when the storage adapter uses an asynchronous transaction.
+    await outbox.prepareOrdinaryRecoveryArchive({ getContext });
+    assertCurrent();
     return resume();
   }
 }

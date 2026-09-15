@@ -85,6 +85,36 @@ test("archive quota failure prevents recovery", async () => {
   await assert.rejects(run(f.options), /quota/);
   assert.equal(f.calls.includes("recover"), false);
 });
+
+test("an asynchronous archive must commit before cancellation or UI application", async () => {
+  const f = fixture(); let release;
+  f.options.outbox.prepareOrdinaryRecoveryArchive = () => new Promise(resolve => { release = resolve; });
+  const task = run(f.options);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.calls, ["drain", "remote", "choice"]);
+  release();
+  assert.equal(await task, "confirmed");
+  assert.deepEqual(f.calls, ["drain", "remote", "choice", "recover", "apply", "drain"]);
+});
+
+for (const changed of [false, true]) test(`async archive ${changed ? "context change" : "failure"} retains originals without dispatch`, async () => {
+  const f = fixture(); let release, reject;
+  f.options.outbox.prepareOrdinaryRecoveryArchive = () => new Promise((resolve, fail) => { release = resolve; reject = fail; });
+  const task = run(f.options);
+  const checked = assert.rejects(task, changed ? /изменились/ : /quota/);
+  await new Promise(resolve => setImmediate(resolve));
+  if (changed) { f.generation = "changed"; release(); } else reject(Error("quota"));
+  await checked;
+  assert.deepEqual(f.calls, ["drain", "remote", "choice"]);
+});
+
+test("the dialog receives the archive promise and rechecks context at its completion", async () => {
+  const f = fixture();
+  f.options.outbox.prepareOrdinaryRecoveryArchive = async () => { f.generation = "changed"; };
+  f.options.chooseServer = async details => { await details.prepareServerChoice(); return "server"; };
+  await assert.rejects(run(f.options), /изменились/);
+  assert.equal(f.calls.includes("recover"), false);
+});
 test("cold pending choice resumes before ordinary drain, without asking again", async () => {
   const f = fixture(); f.pending = true;
   assert.equal(await run(f.options), "confirmed");

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { collectLegacyPersonalData, preparePersonalDataMigration } from "../../src/storage/personal-data-migration.js";
-import { STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY } from "../../src/config/constants.js";
+import { STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY, SYNC_META_KEY } from "../../src/config/constants.js";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 
 function fixture() {
@@ -41,6 +41,20 @@ test("old tab changes during repository read block import before it starts", asy
   const f = fixture(); f.readHook = () => { f.values.set(`${STORAGE_KEY}::${f.binding.scopeKey}`, "newer local snapshot"); };
   await assert.rejects(f.prepare(), { code: "personal-data-migration-changed" }); assert.equal(f.imports, 0);
   assert.equal(f.values.get(`${STORAGE_KEY}::${f.binding.scopeKey}`), "newer local snapshot");
+});
+
+test("migration preserves owned sync metadata and detects an old tab confirming during import", async () => {
+  const f = fixture(), key = `${SYNC_META_KEY}::${f.binding.scopeKey}`;
+  const raw = ' {"dirty":true,"stateRevision":1582}\n';
+  f.values.set(key, raw);
+  f.values.set(`${SYNC_META_KEY}::id:other`, "other-account-private-metadata");
+  await f.prepare();
+  assert.equal(f.state.entries.find(row => row.key === key).raw, raw);
+  assert.equal(f.state.entries.some(row => row.raw.includes("other-account-private-metadata")), false);
+  const g = fixture(); g.values.set(key, raw);
+  g.readHook = () => g.values.set(key, '{"dirty":false,"stateRevision":1583}');
+  await assert.rejects(g.prepare(), { code: "personal-data-migration-changed" });
+  assert.equal(g.imports, 0);
 });
 
 test("old tab changes after commit retain the verified copy and newer source without authorizing cutover", async () => {

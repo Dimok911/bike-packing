@@ -136,14 +136,19 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
         if (!done) download.disabled = false;
       }
     });
-    later.addEventListener("click", () => finish("later"));
-    useServer.addEventListener("click", () => {
+    let preparing = false;
+    later.addEventListener("click", () => { if (!preparing) finish("later"); });
+    useServer.addEventListener("click", async () => {
+      if (done || preparing) return;
+      preparing = true;
       useServer.disabled = true;
+      later.disabled = true;
       beforeServerChoiceStorage = refreshStorage();
+      status.textContent = text("Сохраняем копию для восстановления…", "Saving the recovery copy…");
       try {
         // Preserve the choice and recovery copy before closing the only UI
         // that can explain a storage failure and export the original data.
-        prepareServerChoice?.();
+        await prepareServerChoice?.();
         finish("server");
       } catch (error) {
         refreshStorage();
@@ -155,10 +160,12 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
         status.textContent = error.message || text("Не удалось подготовить восстановление. Исходные данные сохранены.",
           "Could not prepare recovery. Original data is retained.");
         status.setAttribute("role", "alert");
-        useServer.disabled = false;
+      } finally {
+        preparing = false;
+        if (!done) { useServer.disabled = false; later.disabled = false; }
       }
     });
-    dialog.addEventListener("cancel", event => { event.preventDefault(); finish("later"); });
+    dialog.addEventListener("cancel", event => { event.preventDefault(); if (!preparing) finish("later"); });
     buttons.append(download, useServer, later);
     dialog.append(heading, description, details, reasonHeading, reason);
     const compared = describePersonalRecoveryVersionComparison(comparison || {}, { language });

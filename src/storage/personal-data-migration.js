@@ -1,4 +1,4 @@
-import { STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY } from "../config/constants.js";
+import { STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY, SYNC_META_KEY } from "../config/constants.js";
 import { scopedLocalStorageKey } from "./scope.js";
 import { createPersonalSaveOutbox } from "../sync/personal-save-outbox.js";
 
@@ -17,7 +17,7 @@ const bindingOf = input => {
 export function collectLegacyPersonalData({ storage, binding: input }) {
   const binding = bindingOf(input), suffix = encodeURIComponent(JSON.stringify(binding));
   const prefixes = [`bike-packing-personal-save-v1:${suffix}:`, `bike-packing-personal-ordinary-recovery-v1:${suffix}:`];
-  const snapshots = new Set([STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY].map(key => scopedLocalStorageKey(key, binding.scopeKey)));
+  const snapshots = new Set([STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY, SYNC_META_KEY].map(key => scopedLocalStorageKey(key, binding.scopeKey)));
   const scan = () => {
     const entries = [], keys = new Set(), count = storage.length;
     if (!Number.isSafeInteger(count) || count < 0) fail("unreadable");

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createPersonalAsyncOutbox } from "../../src/sync/personal-async-outbox.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
+import { STORAGE_KEY, BASE_STATE_KEY, SYNC_META_KEY } from "../../src/config/constants.js";
 
 const clone = value => structuredClone(value);
 const binding = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor" };
@@ -16,8 +17,12 @@ function fixture() {
       await f.beforeCommit?.(input);
       if (input.expectedRevision !== f.revision) throw Object.assign(Error("CAS conflict"), { code: "revision-conflict" });
       assert.deepEqual(input.deletes, []);
-      for (const put of input.puts) assert.equal(f.entries.some(entry => entry.namespace === put.namespace && entry.key === put.key), false);
-      f.entries.push(...clone(input.puts)); f.revision++;
+      for (const put of input.puts) {
+        const index = f.entries.findIndex(entry => entry.namespace === put.namespace && entry.key === put.key);
+        if (index < 0) f.entries.push(clone(put));
+        else { assert.equal(put.namespace, "snapshot"); f.entries[index] = clone(put); }
+      }
+      f.revision++;
       return { revision: f.revision };
     }
   };
@@ -34,6 +39,14 @@ function fixture() {
     cancellation: { version: 1, operationId: request.operationId, noBusinessEffects: true, operationCannotApply: true } });
   f.recoveryOptions = () => ({ queue: { cancelExact: async request => f.proof(request) },
     readRemote: async () => ({ id: binding.listId, ownerId: binding.actorId, stateRevision: 8, payload: f.input().body.payload }) });
+  f.confirmationOptions = () => ({ queue: { run: async request => {
+    f.requests ||= []; f.requests.push(request.operationId);
+    return { stateRevision: 9, record: { id: binding.listId, payload: JSON.parse(request.body).payload } };
+  }, inspect: async request => f.proof(request) }, prepareConfirmation: (result, record) => [
+    { key: `${STORAGE_KEY}::${binding.scopeKey}`, raw: JSON.stringify(record.snapshot) },
+    { key: `${BASE_STATE_KEY}::${binding.scopeKey}`, raw: JSON.stringify(record.action.body.payload) },
+    { key: `${SYNC_META_KEY}::${binding.scopeKey}`, raw: JSON.stringify({ dirty: false, stateRevision: result.stateRevision }) }
+  ] });
   return f;
 }
 
@@ -85,12 +98,13 @@ test("idle account, list and scope switches block cached reads and every mutatio
     context => { context.listId = "other-list"; },
     context => { context.scope = "guest"; }
   ];
-  for (const change of switches) for (const method of ["readView", "status", "capture", "prepareOrdinaryRecoveryArchive", "recoverOrdinaryWithServer"]) {
+  const readers = ["readView", "status", "list", "ordinaryRecoveryState", "ordinaryRecoveryReview", "ordinaryRecoveryCopy"];
+  for (const change of switches) for (const method of [...readers, "capture", "prepareOrdinaryRecoveryArchive", "recoverOrdinaryWithServer"]) {
     const f = fixture(), adapter = await f.open(); await adapter.capture(f.input());
     const before = clone(f.entries), originalContext = f.context;
     // The getter returns this exact same object before and after the mutation.
     change(f.context); assert.equal(f.context, originalContext);
-    if (method === "readView" || method === "status") assert.throws(() => adapter[method](), /context/);
+    if (readers.includes(method)) assert.throws(() => adapter[method](), /context/);
     else await assert.rejects(adapter[method](method === "capture" ? f.input() : f.recoveryOptions()), /context/);
     assert.deepEqual(f.entries, before);
     // Switching back cannot revive a lifetime that already became invalid.
@@ -188,4 +202,61 @@ test("failed final recovery transaction cannot expose draft successor or repeat 
   f.beforeCommit = null;
   const reopened = await f.open(), recovered = await reopened.recoverOrdinaryWithServer(f.recoveryOptions());
   assert.equal(recovered.action.operationId, archive.successorOperationId);
+});
+
+test("confirmation and mirrors become visible together only after durable commit and survive reopening", async () => {
+  const f = fixture(), adapter = await f.open(), action = await adapter.capture(f.input());
+  const entered = deferred(), release = deferred();
+  f.beforeCommit = async () => { entered.resolve(); await release.promise; };
+  let settled = false;
+  const pending = adapter.settleOrdinary(f.confirmationOptions()).then(value => { settled = true; return value; });
+  await entered.promise;
+  assert.equal(settled, false); assert.equal(adapter.status().pending, true);
+  assert.equal(adapter.readView().snapshots.length, 0);
+  release.resolve(); const result = await pending;
+  assert.equal(result.record.action.operationId, action.action.operationId);
+  assert.equal(adapter.status().pending, false);
+  assert.equal(adapter.readView().snapshots.length, 3);
+  const reopened = await f.open(); assert.equal(reopened.status().pending, false);
+  assert.deepEqual(reopened.readView(), adapter.readView());
+  assert.ok(f.commits.at(-1).puts.some(row => row.namespace === "journal" && row.key.includes(":applied:")));
+  assert.equal(f.commits.at(-1).puts.filter(row => row.namespace === "snapshot").length, 3);
+});
+
+test("failed confirmation transaction preserves old mirrors and rechecks the same operation after restart", async () => {
+  const f = fixture(), adapter = await f.open(), action = await adapter.capture(f.input());
+  await adapter.saveSnapshots([{ key: `${STORAGE_KEY}::${binding.scopeKey}`, raw: "old-owned-mirror" }]);
+  const before = clone(f.entries);
+  f.beforeCommit = () => { throw Error("IDB transaction aborted"); };
+  await assert.rejects(adapter.settleOrdinary(f.confirmationOptions()), /aborted/);
+  assert.deepEqual(f.entries, before);
+  f.beforeCommit = null;
+  const reopened = await f.open(); assert.equal(reopened.status().pending, true);
+  await reopened.settleOrdinary(f.confirmationOptions());
+  assert.equal(reopened.status().pending, false);
+  assert.deepEqual([...new Set(f.requests)], [action.action.operationId]);
+  assert.equal(reopened.readView().snapshots.filter(row => row.key === `${STORAGE_KEY}::${binding.scopeKey}`).length, 1);
+});
+
+test("ordinary recovery successor confirms without reviving cancelled originals on cold start", async () => {
+  const f = fixture(), adapter = await f.open();
+  const original = await adapter.capture(f.input());
+  await adapter.prepareOrdinaryRecoveryArchive();
+  const successor = await adapter.recoverOrdinaryWithServer(f.recoveryOptions());
+  const cold = await f.open(); await cold.settleOrdinary(f.confirmationOptions());
+  assert.equal(cold.status().pending, false);
+  assert.equal(cold.readView().head.action.operationId, successor.action.operationId);
+  assert.equal(f.requests.includes(original.action.operationId), false);
+  assert.equal(cold.readView().recoveryState.pending, false);
+});
+
+test("confirmation rejects missing mirrors and foreign snapshot writes without publishing applied status", async () => {
+  const f = fixture(), adapter = await f.open(); await adapter.capture(f.input());
+  const before = clone(f.entries);
+  await assert.rejects(adapter.settleOrdinary({ ...f.confirmationOptions(), prepareConfirmation: () => [] }),
+    { code: "personal-async-outbox-confirmation-snapshots" });
+  assert.equal(adapter.status().pending, true); assert.deepEqual(f.entries, before);
+  await assert.rejects(adapter.saveSnapshots([{ key: `${STORAGE_KEY}::id:another`, raw: "foreign" }]),
+    { code: "personal-async-outbox-snapshot-write" });
+  assert.deepEqual(f.entries, before);
 });
