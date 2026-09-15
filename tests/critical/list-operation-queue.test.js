@@ -100,6 +100,23 @@ function legacyPhotoFixture() {
   return f;
 }
 
+test("core extraction: item rename retains legacy photos, original ID and payload after lost receipt and restart", async () => {
+  const f = legacyPhotoFixture(), body = JSON.parse(f.input.body);
+  body.payload.items = { flask: { id: "flask", name: "Походная фляга", weight: 80 } };
+  const unchangedPhotos = structuredClone(body.payload.containers.bag.photos);
+  f.input.body = JSON.stringify(body); f.state.loseResponse = true;
+  f.state.payload = { ok: true, list: { id: "list-a", stateRevision: 1, payload: body.payload } };
+  const first = await f.make().queue.run(f.input);
+  const restarted = await f.make().queue.run(f.input);
+  assert.equal(first.list.payload.items.flask.name, "Походная фляга");
+  assert.deepEqual(restarted, first);
+  assert.equal(f.posts().length, 1);
+  const envelope = JSON.parse(f.posts()[0].options.body);
+  assert.equal(envelope.kind, "list.update"); assert.equal(envelope.operationId, f.input.operationId);
+  assert.deepEqual(envelope.body, body);
+  assert.deepEqual(envelope.body.payload.containers.bag.photos, unchangedPhotos);
+});
+
 test("ordinary legacy photo update requires both gates before creating a transport intent", async () => {
   for (const change of [f => { f.state.legacyPhotoPreservationEnabled = false; }, f => { f.state.capabilities.pop(); }]) {
     const f = legacyPhotoFixture(); change(f);

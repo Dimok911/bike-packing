@@ -1,3 +1,4 @@
+import { createConfirmedDelivery } from "../protocol/confirmed-delivery.js";
 import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED, personalServerPhotoFormCapabilities } from "./personal-server-photo-form-result.js";
 import { personalServerPhotoBodyResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, PERSONAL_SHARE_LINK_CAPABILITY, assertPersonalShareLinkBody, verifyPersonalShareLinkResult } from "./personal-share-link.js";
@@ -293,6 +294,24 @@ export function createListOperationQueue({ transport, getContext = () => null,
     return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
       kind: saved.kind, listId: saved.listId, body: saved.body });
   };
+  const delivery = createConfirmedDelivery({
+    capture: async ({ path, method, bodyText, expected }) => {
+      await transport.beginWrite(path, method, bodyText, expected);
+      assertOrdinaryDispatchAllowed(expected);
+      return transport.writes.find(entry => entry.id === expected.operationId);
+    },
+    send: async entry => {
+      const response = await dispatch(entry);
+      if (response.status !== 200) throw Object.assign(paused(entry.id, personalListOperationAccessMessage(response) || undefined),
+        personalListOperationAccessMessage(response) ? { isPersonalOwnerAccessRefusal: true, isPersonalSaveBlocked: true, code: "owner-access" } : {});
+      return response.data;
+    },
+    readReceipt: entry => read(`${gateway}/${encodeURIComponent(entry.id)}`),
+    accept: recordReceipt,
+    onUncertain: entry => transport.noteFailure(paused(entry.id), entry.path, entry.method, entry.id),
+    canReadAfterError: error => !error.isOperationWaiting,
+    recoveryFailure: (error, recoveryError) => error.isPersonalOwnerAccessRefusal ? error : recoveryError,
+  });
   const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {}, assertCurrentContext = () => {} } = {}) => {
     assertCurrentContext();
     let data = await read(`${gateway}/${encodeURIComponent(entry.id)}`), preparation = null;
@@ -932,25 +951,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(null, "В пакете повторяются или отсутствуют номера элементов. Запрос не отправлен.");
           const expected = { ...protocol, operationId, actorId: initial.actorId, kind: route.kind, listId, body, children, payloadDigest, generation, requestKey };
           if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
-          await transport.beginWrite(path, method, bodyText, expected);
-          assertOrdinaryDispatchAllowed(expected);
-          entry = transport.writes.find(entry => entry.id === operationId);
-          // No await between this final local check and dispatch.
-          if (!contextMatches(initial)) {
-            transport.confirmWrite(operationId, { committed: false });
-            throw paused(null, "Локальные данные изменились. Запрос не отправлен.");
-          }
-          try {
-            const response = await dispatch(entry);
-            if (response.status !== 200) throw Object.assign(paused(operationId, personalListOperationAccessMessage(response) || undefined),
-              personalListOperationAccessMessage(response) ? { isPersonalOwnerAccessRefusal: true, isPersonalSaveBlocked: true, code: "owner-access" } : {});
-            data = recordReceipt(entry, response.data);
-          } catch (error) {
-            if (error.isOperationWaiting) throw error;
-            transport.noteFailure(paused(operationId), path, method, operationId);
-            try { data = await recover(entry); } // Never POST retry, even after 404/5xx/timeout.
-            catch (recoveryError) { if (error.isPersonalOwnerAccessRefusal) throw error; throw recoveryError; }
-          }
+          const delivered = await delivery.deliverNew({ path, method, bodyText, expected }, {
+            assertReady: () => {
+              if (!contextMatches(initial)) {
+                transport.confirmWrite(operationId, { committed: false });
+                throw paused(null, "Локальные данные изменились. Запрос не отправлен.");
+              }
+            },
+          });
+          entry = delivered.entry; data = delivered.receipt;
         }
         assertRunCurrent();
         if (!contextMatches(initial)) throw paused(entry.id, "Подтверждено прежнее сохранение. Более новые локальные изменения не затронуты.");
