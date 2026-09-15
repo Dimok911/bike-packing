@@ -58,12 +58,12 @@ for (const [loseAck, quotaPressure] of [[false, false], [true, false], [true, tr
       expect(marker.recovery.body).toBeUndefined();
     }
     // Another failed load cannot turn an unknown receipt into permission to send.
-    if (quotaPressure) await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("networkidle");
     await page.reload(); await readyLegacyPhotoBrowser(page);
     expect(f.posts).toHaveLength(1);
     f.loseAck = false; f.hideReceipts = false;
   }
-  if (quotaPressure) await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("networkidle");
   await page.reload(); await readyLegacyPhotoBrowser(page);
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   await expect(page.locator(`#packingView [data-item-id="${itemId}"]`)).toContainText("Походная фляга");
