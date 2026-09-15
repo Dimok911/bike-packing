@@ -2,6 +2,7 @@
 // exporting do not send or cancel operations; the caller owns the exact queue.
 import { describePersonalRecoveryActions, explainPersonalRecoveryReason } from "./personal-recovery-action-details.js";
 import { describePersonalRecoveryVersionComparison } from "./personal-recovery-version-comparison.js";
+import { readPersonalRecoveryStorageDiagnostics, formatPersonalRecoveryStorageBytes } from "./personal-recovery-storage-diagnostics.js";
 
 export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef = window,
   language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, comparison = null, getRecoveryCopy, prepareServerChoice } = {}) {
@@ -54,6 +55,48 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
       "Loading the server version will stop local actions that have not been accepted. Their original copy will remain on this device. Changes already accepted by the server will remain. You can decide later.");
     const status = documentRef.createElement("p");
     status.setAttribute("role", "status");
+    let storageSection, storageSummary, storageDetails, beforeServerChoiceStorage = null;
+    const readStorage = () => {
+      try { return readPersonalRecoveryStorageDiagnostics(windowRef.localStorage); }
+      catch { return { available: false }; }
+    };
+    const refreshStorage = () => {
+      const measured = readStorage();
+      try {
+        if (!storageSection) return measured;
+        const size = value => formatPersonalRecoveryStorageBytes(value, language);
+        storageSummary.textContent = text("Хранилище этого сайта", "This site's storage")
+          + (measured.available ? `: ~${size(measured.totalBytes)}` : "");
+        storageDetails.replaceChildren();
+        if (measured.available) {
+          for (const [key, label] of [
+            ["totalBytes", text("Всего в localStorage", "Total in localStorage")],
+            ["personalQueueBytes", text("Очередь личных сохранений", "Personal save queue")],
+            ["recoveryBytes", text("Копии и отметки восстановления", "Recovery copies and completion records")],
+            ["transportJournalBytes", text("Журнал неподтверждённых отправок", "Unconfirmed request journal")],
+            ["publicCacheBytes", text("Кеш опубликованных шаблонов", "Published template cache")],
+            ["otherBytes", text("Другие данные сайта", "Other site data")]
+          ]) {
+            const row = documentRef.createElement("li"); row.textContent = `${label}: ${size(measured[key])}`; storageDetails.append(row);
+          }
+        } else {
+          const row = documentRef.createElement("li");
+          row.textContent = text("Не удалось прочитать размер хранилища. Это не означает, что оно пустое.", "Storage size could not be read. This does not mean it is empty.");
+          storageDetails.append(row);
+        }
+      } catch { /* Optional diagnostics must never disable recovery choices. */ }
+      return measured;
+    };
+    try {
+      storageSection = documentRef.createElement("details");
+      storageSection.setAttribute("data-recovery-storage", "");
+      storageSummary = documentRef.createElement("summary"); storageDetails = documentRef.createElement("ul");
+      const note = documentRef.createElement("p");
+      note.textContent = text(
+        "Оценка localStorage (UTF-16), без файлов фотографий и других хранилищ. Фактическая квота неизвестна; это не показатель свободной памяти устройства.",
+        "Estimated localStorage size (UTF-16), excluding photo files and other stores. The actual quota is unknown; this does not measure free device space.");
+      storageSection.append(storageSummary, storageDetails, note); refreshStorage();
+    } catch { storageSection = null; }
     const buttons = documentRef.createElement("div");
     buttons.className = "dialog-actions";
     const download = documentRef.createElement("button"), useServer = documentRef.createElement("button"), later = documentRef.createElement("button");
@@ -75,7 +118,10 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
         const copy = await getRecoveryCopy();
         if (done) return;
         if (!copy || typeof copy !== "object") throw Error(text("Копия пока недоступна.", "The recovery copy is not available."));
-        const diagnostic = preparationFailure ? { ...copy, recoveryPreparationFailure: preparationFailure } : copy;
+        const diagnostic = { ...copy,
+          ...(preparationFailure ? { recoveryPreparationFailure: preparationFailure } : {}),
+          recoveryStorageDiagnostics: { current: refreshStorage(),
+            ...(beforeServerChoiceStorage ? { beforeServerChoice: beforeServerChoiceStorage } : {}) } };
         const blob = new windowRef.Blob([JSON.stringify(diagnostic, null, 2)], { type: "application/json" });
         url = windowRef.URL.createObjectURL(blob);
         const link = documentRef.createElement("a");
@@ -93,12 +139,14 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
     later.addEventListener("click", () => finish("later"));
     useServer.addEventListener("click", () => {
       useServer.disabled = true;
+      beforeServerChoiceStorage = refreshStorage();
       try {
         // Preserve the choice and recovery copy before closing the only UI
         // that can explain a storage failure and export the original data.
         prepareServerChoice?.();
         finish("server");
       } catch (error) {
+        refreshStorage();
         preparationFailure = {
           code: typeof error?.code === "string" ? error.code : "preparation-failed",
           stage: typeof error?.stage === "string" ? error.stage : "archive",
@@ -130,7 +178,9 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
       }
       section.append(title, note, list); dialog.append(section);
     }
-    dialog.append(consequence, status, buttons);
+    dialog.append(consequence);
+    if (storageSection) dialog.append(storageSection);
+    dialog.append(status, buttons);
     documentRef.body.append(dialog);
     dialog.showModal(); heading.focus({ preventScroll: true }); dialog.scrollTop = 0;
   });

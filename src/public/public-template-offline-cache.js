@@ -1,4 +1,9 @@
+import { canPersistOptionalStorage, noteStoragePressure } from "../utils/storage-pressure.js";
+
 const CACHE_SCHEMA_VERSION = 1;
+// Keep this renewable cache small compared with ordinary browser storage
+// budgets. UTF-16 size is a conservative content estimate, not a quota claim.
+export const PUBLIC_TEMPLATE_OFFLINE_CACHE_MAX_BYTES = 256 * 1024;
 
 function normalizeText(value = "") {
   return String(value || "").trim();
@@ -132,11 +137,14 @@ export function savePublicTemplateOfflineCache(storageKey, source, {
   storage = globalThis.localStorage
 } = {}) {
   const cache = normalizePublicTemplateOfflineCache(source);
-  if (!storageKey || !cache || !storage?.setItem) return false;
+  if (!storageKey || !cache || !storage?.setItem || !canPersistOptionalStorage(storage)) return false;
   try {
-    storage.setItem(storageKey, JSON.stringify(cache));
+    const raw = JSON.stringify(cache);
+    if (raw.length * 2 > PUBLIC_TEMPLATE_OFFLINE_CACHE_MAX_BYTES) return false;
+    storage.setItem(storageKey, raw);
     return true;
-  } catch {
+  } catch (error) {
+    noteStoragePressure(storage, error);
     return false;
   }
 }
