@@ -98,7 +98,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     options = {}
   ) => {
     const deferRender = shouldSeedNewAccountDemoLayout(remoteState);
-    const applied = applyRemoteState(remoteState, updatedAt, integrityMeta, rawPayload, {
+    const applied = await applyRemoteState(remoteState, updatedAt, integrityMeta, rawPayload, {
       ...options,
       deferRender
     });
@@ -160,7 +160,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           syncMeta.listId = startupListId;
           rememberRemoteIntegrityMeta(freshness);
           rememberCurrentSyncAccount();
-          saveBaseState(serializeState({ forSync: true }));
+          await saveBaseState(serializeState({ forSync: true }));
           saveSyncMeta();
           repairPrivateMojibakeLayoutNames();
           runtime.appUnlocked = true;
@@ -411,7 +411,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
     rememberRemoteIntegrityMeta(record, remoteIntegrityMeta, data);
     rememberCurrentSyncAccount();
-    saveBaseState(serializeState({ forSync: true }));
+    await saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     repairPrivateMojibakeLayoutNames();
     runtime.appUnlocked = true;

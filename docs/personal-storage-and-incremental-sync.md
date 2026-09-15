@@ -181,3 +181,32 @@ rechecks its account/editor context. The native outbox's in-memory initial
 baseline must also survive recreation before general reconciliation is enabled.
 Transport/photo journal migration, first-list creation and certified retirement
 remain unresolved; source originals must stay intact.
+
+
+## v1621 integration candidate — 15 September 2026
+
+Supersedes the disconnected v1620 checkpoint above. Experiment startup now
+imports the three personal account mirrors (current, base, recovery) into
+IndexedDB. Exact original strings are retained in an immutable import journal;
+only verified identical legacy mirrors are removed. Guest data stays unchanged.
+Reopen and writes detect old-tab source changes and concurrent revision changes.
+Account discovery offline reads the new store. Startup storage failure keeps
+an explicit retry screen instead of exposing an empty editor.
+
+Operation and transport queues still use their existing localStorage protocol.
+The async outbox facade is NOT enabled by this release. Ordinary confirmation
+waits for the current/base mirror transaction before publishing the small
+applied marker. Administrative mirror boundaries also await durable writes.
+Recovery archives/completions no longer duplicate recoverable snapshots and
+proof bodies; validated archives retain original actions and the successor,
+so their separate physical queue copies can be released and reconstructed.
+Existing v1 archives remain readable. This is a bounded phone-unblocking step,
+not completion of the full storage/command migration.
+
+The private phone export is used locally only: built app, synthetic API,
+5 MiB localStorage ceiling, actual old journal, three server-added bags,
+confirmation, reload and offline reopening in Chromium/mobile WebKit.
+No private export enters source control. Real phone acceptance and publication
+must be recorded separately after release verification; do not infer them from
+browser emulation. Partial catalog loading and expanded offline downloads
+remain roadmap stages B–D.

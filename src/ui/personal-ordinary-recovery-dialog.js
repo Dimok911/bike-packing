@@ -3,6 +3,7 @@
 import { describePersonalRecoveryActions, explainPersonalRecoveryReason } from "./personal-recovery-action-details.js";
 import { describePersonalRecoveryVersionComparison } from "./personal-recovery-version-comparison.js";
 import { readPersonalRecoveryStorageDiagnostics, formatPersonalRecoveryStorageBytes } from "./personal-recovery-storage-diagnostics.js";
+import { personalMirrorDiagnostics } from "../storage/personal-mirror-runtime.js";
 
 export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef = window,
   language = "ru", actionCount, records = [], confirmedOperationIds = [], failure = {}, comparison = null, getRecoveryCopy, prepareServerChoice } = {}) {
@@ -65,7 +66,7 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
       try {
         if (!storageSection) return measured;
         const size = value => formatPersonalRecoveryStorageBytes(value, language);
-        storageSummary.textContent = text("Хранилище этого сайта", "This site's storage")
+        storageSummary.textContent = text("Хранилище localStorage", "localStorage")
           + (measured.available ? `: ~${size(measured.totalBytes)}` : "");
         storageDetails.replaceChildren();
         if (measured.available) {
@@ -84,6 +85,13 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
           row.textContent = text("Не удалось прочитать размер хранилища. Это не означает, что оно пустое.", "Storage size could not be read. This does not mean it is empty.");
           storageDetails.append(row);
         }
+        const indexed = personalMirrorDiagnostics();
+        if (indexed.available) for (const [key, label] of [
+          ["snapshotBytes", text("Снимки данных в IndexedDB", "Data snapshots in IndexedDB")],
+          ["originalBytes", text("Исходные копии переноса в IndexedDB", "Original migration copies in IndexedDB")]
+        ]) {
+          const row = documentRef.createElement("li"); row.textContent = `${label}: ${size(indexed[key])}`; storageDetails.append(row);
+        }
       } catch { /* Optional diagnostics must never disable recovery choices. */ }
       return measured;
     };
@@ -93,8 +101,8 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
       storageSummary = documentRef.createElement("summary"); storageDetails = documentRef.createElement("ul");
       const note = documentRef.createElement("p");
       note.textContent = text(
-        "Оценка localStorage (UTF-16), без файлов фотографий и других хранилищ. Фактическая квота неизвестна; это не показатель свободной памяти устройства.",
-        "Estimated localStorage size (UTF-16), excluding photo files and other stores. The actual quota is unknown; this does not measure free device space.");
+        "Оценка размера текстовых данных (UTF-16), без файлов фотографий и служебных расходов базы. IndexedDB хранится отдельно от localStorage. Фактическая квота неизвестна; это не показатель свободной памяти устройства.",
+        "Estimated text size (UTF-16), excluding photo files and database overhead. IndexedDB is separate from localStorage. The actual quota is unknown; this does not measure free device space.");
       storageSection.append(storageSummary, storageDetails, note); refreshStorage();
     } catch { storageSection = null; }
     const buttons = documentRef.createElement("div");

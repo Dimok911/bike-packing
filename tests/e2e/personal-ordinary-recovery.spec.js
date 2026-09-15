@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY } from "../../src/config/constants.js";
+import { createPersonalOrdinaryRecoveryStore } from "../../src/sync/personal-ordinary-recovery.js";
 import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, nativeLegacyPhotoOutbox, nativeLegacyPhotoTransport,
   seedLegacyPhotoPendingAction, seedLegacyPhotoRebaseAction, legacyPhotoBinding, legacyLayoutId, legacyBagId, legacyPendingBagIds } from "../fixtures/personal-legacy-photo-browser-fixture.js";
 
@@ -16,8 +17,15 @@ const roots = page => page.locator("#packingView [data-root-container-id]");
 const reload = async page => { await page.reload(); await readyLegacyPhotoBrowser(page); };
 
 async function recoveryStorage(page) {
-  return page.evaluate(prefix => Object.entries(localStorage).filter(([key]) => key.startsWith(prefix))
+  const entries = await page.evaluate(prefix => Object.entries(localStorage).filter(([key]) => key.startsWith(prefix))
     .map(([key, raw]) => ({ key, raw, value: JSON.parse(raw) })), storagePrefix);
+  const rows = new Map(entries.map(row => [row.key, row.raw]));
+  const storage = { get length() { return rows.size; }, key: index => [...rows.keys()][index], getItem: key => rows.get(key) ?? null };
+  for (const row of entries.filter(row => row.key.includes(":archive:"))) {
+    row.value = createPersonalOrdinaryRecoveryStore({ storage, binding: row.value.binding }).read().archives
+      .find(entry => entry.archive.recoveryId === row.value.recoveryId).archive;
+  }
+  return entries;
 }
 
 async function assertArchive(page, original, { completed }) {

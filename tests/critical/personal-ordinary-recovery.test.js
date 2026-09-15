@@ -87,6 +87,38 @@ test("server recovery is OFF by default; reading a draft cannot authorize cancel
   assert.deepEqual([...f.values], before); assert.equal(f.cancels.length, 0);
 });
 
+test("compact completion reconstructs all values and retains its proof after queue compaction", async () => {
+  const f = fixture({ changeInput: body => { body.payload.containers.bag.note = "Large retained note ".repeat(20000); } });
+  f.remote.payload = clone(f.records[0].action.body.payload);
+  f.remote.payload.containers.bag.name = "Server name";
+  const proof = f.proof;
+  f.proof = request => ({ ...proof(request), operation: { ...proof(request).operation, body: JSON.parse(request.body) } });
+  const archive = f.prepare(), result = await f.recover();
+  const stored = [...f.values].find(([key]) => key.endsWith(result.action.operationId))[1];
+  const beforeRelease = f.outbox.list();
+  assert.equal(f.outbox.releaseArchivedOrdinaryEntries({ getContext: () => f.context }).removed, 2);
+  assert.deepEqual(f.make().list(), beforeRelease);
+  for (const row of archive.entries) if (archive.operationIds.some(id => row.key.endsWith(id))) assert.equal(f.values.has(row.key), false);
+  const key = [...f.values.keys()].find(key => key.includes(":complete:"));
+  const raw = f.values.get(key), compressed = JSON.parse(raw);
+  assert.equal(compressed.version, 2);
+  const decoded = JSON.parse(f.store().read().archives[0].completion.recordRaw);
+  assert.deepEqual(decoded, JSON.parse(stored));
+  assert.ok(raw.length < stored.length / 5);
+  f.outbox.markApplied({ operationId: result.action.operationId, stateRevision: 1586 });
+  f.outbox.compact();
+  const nextBody = { ...result.action.body, baseStateRevision: 1586, stateRevision: 1586,
+    payload: { ...result.action.body.payload, nextSetting: true } }; delete nextBody.causal;
+  const next = f.outbox.capture({ snapshot: result.snapshot, body: nextBody });
+  f.outbox.markApplied({ operationId: next.action.operationId, stateRevision: 1587 }); f.outbox.compact();
+  assert.equal(f.make().ordinaryRecoveryState().pending, false);
+  assert.deepEqual(f.store().read().archives[0].archive, archive);
+  assert.deepEqual(JSON.parse(f.store().read().archives[0].completion.recordRaw), decoded);
+  compressed.proofBodies[0].operationId = "wrong";
+  f.values.set(key, JSON.stringify(compressed));
+  assert.throws(() => f.store().read(), paused);
+});
+
 test("readonly copy is scoped and detached, then the atomic archive preserves exact original bytes before cancellation", () => {
   const f = fixture({ count: 3 }); f.values.set("unrelated-account-token", "never-export");
   const before = [...f.values], copy = f.outbox.ordinaryRecoveryCopy();

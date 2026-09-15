@@ -89,7 +89,7 @@ function appFixture() {
   const head = outbox.capture({ snapshot: editor, body: { baseStateRevision: 1582, payload: editor } });
   outbox.markApplied({ operationId: head.action.operationId, stateRevision: 1583 }); outbox.compact();
   const syncMeta = { stateRevision: 1583, dirty: true }, messages = [], notifications = [], views = [], persisted = [];
-  const dependencies = { currentUser: { id: binding.actorId }, currentPackingListId: listId, localStorageScopeKey: binding.scopeKey,
+  const dependencies = { clone: copy, flushPersonalMirrors: async () => {}, personalSaveContext: () => binding, currentUser: { id: binding.actorId }, currentPackingListId: listId, localStorageScopeKey: binding.scopeKey,
     modeState: {}, state: editor, syncMeta, personalSavePilotEnabled: () => true, isReadOnlyBikePackingContext: () => false,
     isAdminPublicEditScope: () => false, personalSaveOutboxForScope: () => outbox, hasPendingPersonalSave: () => outbox.hasPending(),
     personalBusinessPayload, personalBusinessPayloadMatchesConfirmed: matches, PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED: true,
@@ -117,11 +117,11 @@ function appFixture() {
     apply: appFunction("applyRemoteState", dependencies), save: appFunction("savePersonalStateFromOutbox", dependencies) };
 }
 
-test("actual load observer then apply use one raw authoritative baseline; normalized editor is only its view", () => {
+test("actual load observer then apply use one raw authoritative baseline; normalized editor is only its view", async () => {
   const f = appFixture(), immutableBody = copy(f.head.action.body);
   assert.notDeepEqual(f.raw, f.editor, "fixture exposes actual raw/normalized route difference");
   f.observe();
-  assert.equal(f.apply(f.editor, "server-time", { stateRevision: 1583 }, f.raw), true);
+  assert.equal(await f.apply(f.editor, "server-time", { stateRevision: 1583 }, f.raw), true);
   assert.deepEqual(f.outbox.confirmedBase().payload, f.raw);
   assert.equal(f.outbox.confirmedBase().stateRevision, 1583);
   assert.deepEqual(f.outbox.recoverSnapshot(), f.editor, "local view survives separately in the snapshot patch");
@@ -143,14 +143,14 @@ test("actual capture reuses a confirmed action for approved aliases and preserve
   assert.deepEqual(f.outbox.list().find(record => record.action.operationId === f.head.action.operationId).action.body, f.head.action.body);
 });
 
-test("pending edits are never skipped even if the draft again matches the old confirmed view", () => {
+test("pending edits are never skipped even if the draft again matches the old confirmed view", async () => {
   const f = appFixture(); f.observe(); const edited = copy(f.editor); edited.items.item.weight++;
   const pending = f.capture(edited), undo = f.capture(f.editor);
   assert.notEqual(undo.action.operationId, pending.action.operationId);
   assert.equal(undo.action.body.causal.baseOperationId, pending.action.operationId);
   assert.equal(f.outbox.hasPending(), true);
   const before = [...f.values];
-  assert.equal(f.apply(f.editor, "server-time", { stateRevision: 1583 }, f.raw), false);
+  assert.equal(await f.apply(f.editor, "server-time", { stateRevision: 1583 }, f.raw), false);
   assert.deepEqual([...f.values], before); assert.deepEqual(f.views, []);
 });
 

@@ -150,6 +150,12 @@ export function createPersonalDataRepository({ indexedDB = globalThis.indexedDB,
   };
   const api = {
     async open() { await open(); return api; },
+    async listBindings() {
+      return transaction("readonly", (tx, finish, guarded) => {
+        const request = tx.objectStore("bindings").getAllKeys();
+        request.onsuccess = guarded(() => finish(request.result.map(key => bindingOf(JSON.parse(key)))));
+      });
+    },
     read,
     async commit(rawBinding, { expectedRevision, puts = [], deletes = [] } = {}) {
       const binding = bindingOf(rawBinding), revision = revisionOf(expectedRevision), entries = entriesOf(puts);

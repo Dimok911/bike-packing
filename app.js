@@ -1106,6 +1106,8 @@ import {
   saveUiLanguage
 } from "./src/storage/ui-language.js";
 import { loadSyncDevice } from "./src/storage/sync-device.js";
+import { initializePersonalMirrors, readPersonalLocalValue, ownsPersonalMirror, writePersonalMirror,
+  writePersonalMirrorBatch, flushPersonalMirrors, personalLocalReadView } from "./src/storage/personal-mirror-runtime.js";
 import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
@@ -1300,6 +1302,21 @@ let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
 applyPublicTemplateLanguage();
 
+try {
+  await initializePersonalMirrors(experimentTransport.experiment && PERSONAL_SAVE_OUTBOX_ENABLED);
+} catch (error) {
+  const startup = document.querySelector(".app-startup");
+  startup?.setAttribute("aria-busy", "false");
+  document.querySelector(".app-startup-spinner")?.remove();
+  document.getElementById("appStartupTitle").textContent = "Не удалось открыть данные на устройстве";
+  document.getElementById("appStartupText").textContent = "Закройте другие вкладки эксперимента и повторите загрузку. Сохранённые данные не очищайте.";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Повторить загрузку";
+  retry.addEventListener("click", () => location.reload());
+  startup?.append(retry);
+  throw error;
+}
 let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 const personalSaveOutboxes = new Map();
 let personalInitialSaveOutbox = null;
@@ -1316,7 +1333,7 @@ const personalSaveRecovery = createPersonalSaveRecovery({
 });
 const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSaveRecoveryDialog({
   getLanguage: () => uiLanguage,
-  getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage),
+  getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(personalLocalReadView()),
   ownsError: error => personalSaveRecovery.owns(error),
   canRecoverDraft: () => personalSaveRecovery.canRecoverDraft(),
   recoverDraft: () => recoverStalePersonalDraft(),
@@ -1336,7 +1353,7 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
     guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
     publicSelectionStore: personalPhotoRecoverySource?.store && personalPublicSelectionStore(personalPhotoRecoverySource.store.binding),
     serverSelectionStore: personalPhotoRecoverySource?.store && personalServerSelectionStore(personalPhotoRecoverySource.store.binding),
-    getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
+    getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(personalLocalReadView()) })
 }) : null;
 let applyingLayoutArrangement = false;
 let hadLocalStateAtStartup = hasLocalSavedState();
@@ -2601,6 +2618,11 @@ function removeScopedLocalValue(key) {
 
 function writeLargeScopedLocalValue(key, value, { clearBase = false, clearRecovery = true } = {}) {
   const scopedKey = scopedLocalStorageKey(key);
+  if (ownsPersonalMirror(scopedKey)) {
+    const scope = localStorageScopeKey, pending = writePersonalMirror(scopedKey, value);
+    pending.catch(error => personalSaveRecovery.report(error, { scopeKey: scope }));
+    return pending;
+  }
   if (safeSetLocalStorage(scopedKey, value, { silent: true })) return true;
   if (clearRecovery && key !== RECOVERY_STATE_KEY) removeScopedLocalValue(RECOVERY_STATE_KEY);
   if (clearBase && key !== BASE_STATE_KEY) removeScopedLocalValue(BASE_STATE_KEY);
@@ -3242,7 +3264,7 @@ function persistStateSnapshot(snapshot = state, { recordAction = true, personalM
   if (intent || personalSavePilotEnabled() && hasPendingPersonalSave()) {
     // The action already owns a durable snapshot. Never evict another recovery
     // record to make space for this optional legacy/UI mirror.
-    safeSetLocalStorage(scopedLocalStorageKey(STORAGE_KEY), JSON.stringify(snapshot), { silent: true });
+    writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(snapshot), { clearBase: false, clearRecovery: false });
     return true;
   }
   const preserveAdminPhotoRecovery = hasOwnedAdminTemplatePhotoEditor(snapshot);
@@ -4584,7 +4606,7 @@ function loadState({ createFallbackLayout = true } = {}) {
   // Resolve before the legacy parser's fallback catch: corrupt/forked intent
   // must not silently turn into an empty editable list.
   const recovered = outbox?.recoverSnapshot();
-  const mirror = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
+  const mirror = readPersonalLocalValue(scopedLocalStorageKey(STORAGE_KEY));
   const adminRecovery = { scopeKey: localStorageScopeKey, enabled: adminTemplateUiEnabled() };
   const saved = recovered ? JSON.stringify(recoverPersonalAdminDrafts(personalSnapshotWithUiPreferences(recovered, mirror), mirror, adminRecovery)) : mirror;
   if (!saved) {
@@ -4671,12 +4693,12 @@ function loadStateForScope(scopeKey) {
 }
 
 function hasLocalSavedState() {
-  return hasPendingPersonalSave() || Boolean(localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY)));
+  return hasPendingPersonalSave() || Boolean(readPersonalLocalValue(scopedLocalStorageKey(STORAGE_KEY)));
 }
 
 function hasStoredLocalValue(key, scope = localStorageScopeKey) {
   try {
-    return Boolean(localStorage.getItem(scopedLocalStorageKey(key, scope)));
+    return Boolean(readPersonalLocalValue(scopedLocalStorageKey(key, scope)));
   } catch {
     return false;
   }
@@ -4688,7 +4710,7 @@ function loadBaseState() {
   const baseline = personalSaveOutboxForScope()?.baseline();
   if (baseline) return normalizeRemoteState(baseline.payload, { repairCatalog: false });
   try {
-    const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(BASE_STATE_KEY)));
+    const parsed = JSON.parse(readPersonalLocalValue(scopedLocalStorageKey(BASE_STATE_KEY)));
     return normalizeRemoteState(parsed, { repairCatalog: false });
   } catch {
     return null;
@@ -4701,9 +4723,29 @@ function saveBaseState(nextState = state) {
   });
 }
 
+function persistRequiredPersonalMirror(key, raw) {
+  const verify = () => {
+    if (readPersonalLocalValue(key) !== raw) throw Error("Не удалось подтвердить запись данных на устройстве.");
+    return true;
+  };
+  if (ownsPersonalMirror(key)) return writePersonalMirror(key, raw).then(verify);
+  localStorage.setItem(key, raw); return verify();
+}
+
+async function persistPersonalConfirmedMirrors(snapshot, base) {
+  const rows = [{ key: scopedLocalStorageKey(STORAGE_KEY), raw: JSON.stringify(snapshot) },
+    { key: scopedLocalStorageKey(BASE_STATE_KEY), raw: JSON.stringify(base) }];
+  if (ownsPersonalMirror(rows[0].key)) return writePersonalMirrorBatch(rows);
+  for (const row of rows) if (!safeSetLocalStorage(row.key, row.raw, { silent: true })) {
+    throw Object.assign(Error("Не удалось сохранить подтверждённые данные на устройстве. Очередь сохранена для повторной проверки."),
+      { code: "storage", isPersonalSaveBlocked: true, isOperationReceiptError: true });
+  }
+  return true;
+}
+
 function loadRecoverySnapshots() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(RECOVERY_STATE_KEY)));
+    const parsed = JSON.parse(readPersonalLocalValue(scopedLocalStorageKey(RECOVERY_STATE_KEY)));
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -6314,7 +6356,7 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
     rememberRemoteIntegrityMeta(result.integrityMeta);
     rememberCurrentSyncAccount();
-    saveBaseState(serializeState({ forSync: true }));
+    await saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     updateSyncUi();
   } catch (error) {
@@ -6549,7 +6591,7 @@ async function loadCurrentServerStateDirectly({ notify = false, preferredLayout 
   if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return false;
   if (!remoteState) throw new Error("Сервер не вернул текущую версию укладки.");
   const updatedAt = remoteUpdatedAt(record) || data?.serverUpdatedAt || remoteIntegrityMeta.updatedAt || nowIso();
-  const applied = applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, {
+  const applied = await applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, {
     allowDestructive: true,
     preferredLayout
   });
@@ -6597,7 +6639,7 @@ function canReuseConfirmedPersonalRemoteBaseline({ listId, freshness }) {
     && base.stateRevision === freshness?.stateRevision);
 }
 
-function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, {
+async function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, {
   allowDestructive = false,
   deferRender = false,
   preferredLayout = null,
@@ -6631,7 +6673,12 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
   setActivePrivateScope();
   rememberPrivateServerLayoutChoice({ preferStored: !preferredLayoutId });
-  saveBaseState(catalogRepairBase || serializeState({ forSync: true }));
+  const appliedContext = personalSavePilotEnabled() ? clone(personalSaveContext()) : null;
+  await saveBaseState(catalogRepairBase || serializeState({ forSync: true }));
+  await flushPersonalMirrors(localStorageScopeKey);
+  if (appliedContext && !sameJson(appliedContext, personalSaveContext())) {
+    throw Object.assign(Error("Редактор изменился во время записи. Данные сохранены для исходного аккаунта."), { code: "context", isPersonalSaveBlocked: true });
+  }
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = updatedAt || null;
   syncMeta.localUpdatedAt = updatedAt || null;
@@ -6899,7 +6946,7 @@ function unlockOfflineState(message = localText("Local · you can work here; sig
 function rememberedOfflineUser(user = null) {
   return buildRememberedOfflineUser({
     user,
-    storage: localStorage,
+    storage: personalLocalReadView(),
     signedOut: isExplicitlySignedOut()
   });
 }
@@ -8137,7 +8184,7 @@ async function ensurePrivateStateForSharedCopy() {
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const rawPayload = record?.payload || data?.payload || data?.serverPayload || data?.state || null;
     if (remoteState && isMeaningfulPackingState(remoteState)) {
-      applyRemoteState(remoteState, remoteUpdatedAt(record) || data?.serverUpdatedAt || null, remoteIntegrityMeta, rawPayload, {
+      await applyRemoteState(remoteState, remoteUpdatedAt(record) || data?.serverUpdatedAt || null, remoteIntegrityMeta, rawPayload, {
         allowDestructive: true
       });
     } else {
@@ -8234,7 +8281,7 @@ async function tryApplyRemoteEntityChanges(listId, freshness, { preferredLayout 
     updatedAt: result.meta.updatedAt || freshness.updatedAt || freshness.serverUpdatedAt || null,
     serverUpdatedAt: result.meta.serverUpdatedAt || freshness.serverUpdatedAt || freshness.updatedAt || null
   };
-  const applied = applyRemoteState(result.state, meta.serverUpdatedAt || meta.updatedAt, meta, result.state, {
+  const applied = await applyRemoteState(result.state, meta.serverUpdatedAt || meta.updatedAt, meta, result.state, {
     preferredLayout
   });
   return {
@@ -9339,7 +9386,10 @@ function personalOrdinaryRecoveredSnapshot(payload, previous) {
   // Preserve the raw server business baseline. Only validated legacy URL
   // aliases may differ in its normalized display; no fields are merged away.
   const business = personalBusinessPayload(payload);
-  const snapshot = normalizeRemoteState({ ...business, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
+  // The old pending snapshot can name a different layout from the one the
+  // user is viewing now. Selection is local UI, not part of the server choice.
+  const activeLayoutId = business.layouts?.[state.activeLayoutId] ? state.activeLayoutId : previous.activeLayoutId;
+  const snapshot = normalizeRemoteState({ ...business, activeLayoutId }, { repairCatalog: false });
   if (!snapshot || !personalBusinessPayloadMatchesConfirmed({ confirmedPayload: business,
     candidatePayload: cloneStateForSync(snapshot, { forSync: true }), listId: currentPackingListId,
     allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) {
@@ -9575,6 +9625,10 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       }
       owner.listId = currentPackingListId;
     }
+    await flushPersonalMirrors(owner.scopeKey);
+    if (owner.actorId !== String(currentUser?.id || "") || owner.scopeKey !== localStorageScopeKey || owner.listId !== currentPackingListId) {
+      throw Object.assign(Error("Аккаунт изменился во время записи."), { code: "context", isPersonalSaveBlocked: true });
+    }
     const outbox = personalSaveOutboxForScope();
     if (!outbox) throw new Error("Сначала нужно подтвердить создание личного списка.");
     // A saved stop choice must resume before another capture. Its archive owns
@@ -9686,6 +9740,9 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     };
     const applyReconciled = record => {
       personalSaveRecovery.assertRunning();
+      // Original operation bytes remain readable from the verified completed
+      // archive. Release only those duplicates to reserve room for transport.
+      outbox.releaseArchivedOrdinaryEntries?.({ getContext });
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
       syncMeta.dirty = true;
       renderPreservingPackingScroll();
@@ -9728,11 +9785,15 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         return confirmed === true ? "keep-server" : "cancel";
       } : undefined,
       onReconciled: applyReconciled,
-      onAdopted(record) {
+      async onAdopted(record) {
         personalSaveRecovery.assertRunning();
         // The journal atomically owns BOTH the historical confirmation and this
         // newer snapshot. Never install the payload of the old write receipt.
         replaceState(record.snapshot);
+        const initial = clone(personalSaveContext());
+        await persistPersonalConfirmedMirrors(state, record.baseline.payload);
+        if (!sameJson(initial, personalSaveContext())) throw Object.assign(Error("Редактор изменился во время записи подтверждения."),
+          { code: "context", isPersonalSaveBlocked: true, isOperationReceiptError: true });
         const writeRequired = (key, value) => {
           if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {
             throw Object.assign(new Error("Актуальная версия сохранена в очереди, но её локальное зеркало недоступно. Не очищайте данные сайта."), {
@@ -9740,8 +9801,6 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
             });
           }
         };
-        writeRequired(STORAGE_KEY, state);
-        writeRequired(BASE_STATE_KEY, record.baseline.payload);
         Object.assign(syncMeta, record.baseline.meta);
         rememberRemoteIntegrityMeta(record.serverRecord);
         rememberCurrentSyncAccount();
@@ -9751,8 +9810,12 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         updateSyncUi();
         if (notify) showToast("Сохранение подтверждено. Более свежие данные загружены.", "success");
       },
-      onConfirmed(data, record) {
+      async onConfirmed(data, record) {
       personalSaveRecovery.assertRunning();
+      const initial = clone(personalSaveContext());
+      await persistPersonalConfirmedMirrors(state, record.action.body.payload);
+      if (!sameJson(initial, personalSaveContext())) throw Object.assign(Error("Редактор изменился во время записи подтверждения."),
+        { code: "context", isPersonalSaveBlocked: true, isOperationReceiptError: true });
       const writeRequired = (key, value) => {
         if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {
           throw Object.assign(new Error("Сервер подтвердил действие, но локальное подтверждение не сохранено. Сверка будет повторена."), {
@@ -9760,8 +9823,6 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
           });
         }
       };
-      writeRequired(STORAGE_KEY, state);
-      writeRequired(BASE_STATE_KEY, record.action.body.payload);
       const serverRecord = data.record || data.list || data;
       rememberRemoteIntegrityMeta(serverRecord, data);
       rememberCurrentSyncAccount();
@@ -10912,7 +10973,7 @@ function submitAdminTemplatePhotoEditForm(input, options) {
   return withAdminTemplatePhotoFormCapture(input, options, captureAdminTemplatePhotoEditForm);
 }
 function persistAdminTemplatePhotoMirror(layoutId, expectedNamespaces) {
-  const key = scopedLocalStorageKey(STORAGE_KEY), mirror = localStorage.getItem(key);
+  const key = scopedLocalStorageKey(STORAGE_KEY), mirror = readPersonalLocalValue(key);
   const previous = mirror && JSON.parse(mirror), selected = adminTemplatePhotoNamespace(state, layoutId);
   const actorId = selected.layouts[layoutId].adminCausalSource?.binding?.actorId;
   if (!previous || localStorageScopeKey !== `id:${actorId}` || !Array.isArray(expectedNamespaces)
@@ -10933,9 +10994,7 @@ function persistAdminTemplatePhotoMirror(layoutId, expectedNamespaces) {
   if (merged.activeLayoutId === layoutId) merged.packedItems = clone(selected.packedItems);
   const encoded = JSON.stringify(merged);
   // This journal has no authority to evict private recovery or baseline data.
-  localStorage.setItem(key, encoded);
-  if (localStorage.getItem(key) !== encoded) throw Error("Не удалось подтвердить запись шаблона на устройстве.");
-  return true;
+  return persistRequiredPersonalMirror(key, encoded);
 }
 function adminTemplatePhotoFormEnabled() {
   return ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED && adminTemplateUiEnabled() && canOpenAdminPublishedEdit() && isAdminPublicEditScope(modeState);
@@ -10969,7 +11028,7 @@ async function adminTemplatePhotoSourcePayload(layout) {
   if (prepared.exists && !prepared.deleted && prepared.visibility === "private" && prepared.stateRevision === source.base.stateRevision) return prepared.payload;
   throw Error("Для фотографий нужен сохранённый исходный снимок этой версии шаблона. Черновик сохранён для сверки.");
 }
-function applyAdminTemplatePhotoCandidate(record) {
+async function applyAdminTemplatePhotoCandidate(record) {
   const { snapshot, action } = record, layoutId = snapshot.layoutId, layout = state.layouts[layoutId];
   const expectedNamespace = adminTemplatePhotoNamespace(state, layoutId);
   const pendingKey = action.body.photoEdit ? "photoEditPending" : "photoAppendPending";
@@ -10987,7 +11046,7 @@ function applyAdminTemplatePhotoCandidate(record) {
   layout.adminCausalSource = { ...clone(snapshot.state.layouts[layoutId].adminCausalSource),
     planId: action.operationId, base: { operationId: action.operationId }, [pendingKey]: action.operationId };
   layout.templateDraftSyncPending = true;
-  if (persistAdminTemplatePhotoMirror(layoutId, [expectedNamespace, adminTemplatePhotoNamespace(state, layoutId)]) === false) {
+  if (await persistAdminTemplatePhotoMirror(layoutId, [expectedNamespace, adminTemplatePhotoNamespace(state, layoutId)]) === false) {
     throw Error("Фотопакет сохранён на устройстве. Не удалось обновить редактор; продолжите сохранение после освобождения места.");
   }
   updateSyncUi("Фотографии сохранены на устройстве и ожидают подтверждения шаблона.");
@@ -11016,7 +11075,7 @@ async function resumeAdminTemplatePhotoAppendForm(layout) {
   await adminTemplatePlansFor(binding, layout.id).capturePhoto({ operationId: action.operationId, body: action.body,
     editorSnapshot: adminTemplatePhotoEditorSnapshot(record.snapshot.state, layout.id, record.snapshot.metadata) }); guard();
   await adminTemplateClient(binding, layout.id).capture(action); guard();
-  applyAdminTemplatePhotoCandidate(record);
+  await applyAdminTemplatePhotoCandidate(record);
 }
 function adminTemplatePhotoEditRecord(plan) {
   const intent = plan.operations[0];
@@ -11050,7 +11109,7 @@ async function resumeAdminTemplatePhotoEditForm(layout) {
   if (pending.length !== 1) throw Error("Найдено несколько действий одной версии. Их данные сохранены для сверки.");
   const record = adminTemplatePhotoEditRecord(pending[0].plan);
   await adminTemplateClient(binding, layout.id).capture(record.action); guard();
-  applyAdminTemplatePhotoCandidate(record);
+  await applyAdminTemplatePhotoCandidate(record);
 }
 async function resumeAdminTemplatePhotoForm(layout) {
   await resumeAdminTemplatePhotoAppendForm(layout);
@@ -11120,7 +11179,7 @@ async function captureAdminTemplatePhotoEditForm(input, { isCurrent, onDurable }
       editorSnapshot: plan.editorSnapshot, photoSnapshot: plan.photoSnapshot }); guard();
     const record = adminTemplatePhotoEditRecord(plan);
     await adminTemplateClient(binding, layoutId).capture(record.action); guard();
-    onDurable(record); durable = true; guard(); applyAdminTemplatePhotoCandidate(record);
+    onDurable(record); durable = true; guard(); await applyAdminTemplatePhotoCandidate(record);
     captureComplete();
     const result = await adminTemplateSaveCoordinator().flush(layoutId);
     if (result.state !== "committed" || !result.applied) throw Error("Изменения фотографий сохранены на устройстве. Подтверждение ещё ожидается.");
@@ -11198,7 +11257,7 @@ async function captureAdminTemplatePhotoAppendForm(input, { isCurrent, onDurable
     await adminTemplateClient(binding, layoutId).capture(record.action); guard();
     // Closing the form is permitted only after both the full file inventory
     // and the exact server action have passed durable read-back.
-    onDurable(record); durable = true; guard(); applyAdminTemplatePhotoCandidate(record);
+    onDurable(record); durable = true; guard(); await applyAdminTemplatePhotoCandidate(record);
     captureComplete();
     const result = await adminTemplateSaveCoordinator().flush(layoutId);
     if (result.state !== "committed" || !result.applied) throw Error("Фотографии сохранены на устройстве. Подтверждение шаблона ещё ожидается.");
@@ -11224,8 +11283,7 @@ function persistNewCausalAdminTemplateDraft(layout) {
   // This mirror is mandatory for discovering the new target after reload, even
   // before its save-plan capture. Do not evict another journal to make room.
   const key = scopedLocalStorageKey(STORAGE_KEY), encoded = JSON.stringify(state);
-  localStorage.setItem(key, encoded);
-  if (localStorage.getItem(key) !== encoded) throw Error("Не удалось сохранить новый черновик на устройстве.");
+  return persistRequiredPersonalMirror(key, encoded);
 }
 async function resumeCausalAdminTemplateCopy(layout) {
   const pending = layout.adminCausalCopyPlan;
@@ -11340,7 +11398,7 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
         layout.adminCausalCopyPlan = adminTemplateSavePlan({ binding: original.binding, operationId, exists: true,
           visibility: original.visibility, base: original.base, payload: stripAdminTemplateEditorMetadata(candidate.payload), metadata: candidate.metadata });
         layout.templateDraftSyncPending = true;
-        persistNewCausalAdminTemplateDraft(layout);
+        await persistNewCausalAdminTemplateDraft(layout);
       } catch (error) {
         for (const id of added) delete state[collection][id]; delete layout.adminCausalCopyPlan;
         if (targetContainerId) {
@@ -11410,9 +11468,9 @@ async function resumePersonalCopyAdminSource(source) {
   const initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id));
   updateSyncUi("Подтверждаю сохранённую правку исходного шаблона…");
   let failure;
-  const persist = () => {
+  const persist = async () => {
     if (!selectionCurrent() || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial) fail();
-    const key = scopedLocalStorageKey(STORAGE_KEY), mirror = localStorage.getItem(key);
+    const key = scopedLocalStorageKey(STORAGE_KEY), mirror = readPersonalLocalValue(key);
     if (!mirror) fail();
     const previous = JSON.parse(mirror), candidate = clone(previous), retained = candidate.layouts?.[layout.id];
     const confirmed = layout.adminCausalSource;
@@ -11426,8 +11484,8 @@ async function resumePersonalCopyAdminSource(source) {
       if (Object.hasOwn(layout, field)) retained[field] = clone(layout[field]); else delete retained[field];
     }
     const merged = recoverPersonalAdminDrafts(previous, JSON.stringify(candidate), { scopeKey: localStorageScopeKey, enabled: true });
-    const encoded = JSON.stringify(merged); localStorage.setItem(key, encoded);
-    if (localStorage.getItem(key) !== encoded) fail();
+    const encoded = JSON.stringify(merged); await persistRequiredPersonalMirror(key, encoded);
+    if (!selectionCurrent()) fail();
     return true;
   };
   try { await adminTemplateSaveCoordinator({ persist }).flush(layout.id); } catch (error) { failure = error; }
@@ -11762,7 +11820,7 @@ async function prepareCausalAdminPlacementCopy(request) {
           body: { version: 1, base: original.base, payload: stripAdminTemplateEditorMetadata(candidate.payload), metadata: candidate.metadata, source: sourceProof },
           sourceSnapshot: sourcePrepared.payload }) : adminTemplateSavePlan({ binding: original.binding, operationId, exists: true,
           visibility: original.visibility, base: original.base, payload: stripAdminTemplateEditorMetadata(candidate.payload), metadata: candidate.metadata });
-        layout.templateDraftSyncPending = true; persistNewCausalAdminTemplateDraft(layout);
+        layout.templateDraftSyncPending = true; await persistNewCausalAdminTemplateDraft(layout);
       } catch (error) {
         for (const { type, targetId } of prepared.entries) delete state[type][targetId];
         for (const { type, id, value } of priorUpdates) state[type][id] = value;
@@ -11863,7 +11921,7 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
   try {
     const editorSnapshot = adminTemplateEditorSnapshot(id); editorSnapshot.payload = stripAdminTemplateEditorMetadata(editorSnapshot.payload);
     layout.adminCausalCopyPlan = adminTemplateCopyPlan({ binding, operationId, body, sourceSnapshot: prepared.payload, editorSnapshot });
-    persistNewCausalAdminTemplateDraft(layout);
+    await persistNewCausalAdminTemplateDraft(layout);
   }
   catch (error) {
     delete state.layouts[id]; for (const type of ["items", "containers"]) Object.keys(payload[type]).forEach(key => delete state[type][key]);
@@ -12052,14 +12110,14 @@ async function prepareAdminTemplateRecovery(layoutId) {
     await recovery.resumeStop(shownSource.planId); assertEditor(); return inspect(false);
   } };
 }
-function applyAdminTemplateConfirmedPhotoResult(layoutId, { plan, receipt, source }) {
+async function applyAdminTemplateConfirmedPhotoResult(layoutId, { plan, receipt, source }) {
   const expectedNamespace = adminTemplatePhotoNamespace(state, layoutId);
   const extension = plan.operations[0].body.photoEdit ? receipt.result.payload.photoEdit : receipt.result.payload.photoAppend;
   const payload = extension.confirmedPayload;
   const projection = projectAdminTemplateServerVariant(state.layouts[layoutId], { exists: true, deleted: false,
     visibility: "private", stateRevision: receipt.result.payload.stateRevision, payload, metadata: plan.operations[0].body.metadata },
   plan.id, { photoBinding: source.binding, photoOwnerMapEnabled: adminTemplatePhotoMechanismEnabled() });
-  const result = applyAdminTemplateServerVariant(state, layoutId, projection, source, { sourcePayload: payload,
+  const result = await applyAdminTemplateServerVariant(state, layoutId, projection, source, { sourcePayload: payload,
     persist: () => persistAdminTemplatePhotoMirror(layoutId, [expectedNamespace, adminTemplatePhotoNamespace(state, layoutId)]),
     applyArrangement: applyLayoutArrangement });
   render(); return result;
@@ -12074,8 +12132,8 @@ function adminTemplateSaveCoordinator({ persist = null } = {}) {
     },
     snapshot: adminTemplateEditorSnapshot,
     plansFor: adminTemplatePlansFor, recoveryFor: adminTemplateRecoveryFor, resolutionFor: adminTemplateStopChoiceFor,
-    applyServerVariant: (layoutId, { projection, source }) => {
-      const result = applyAdminTemplateServerVariant(state, layoutId, projection, source, {
+    applyServerVariant: async (layoutId, { projection, source }) => {
+      const result = await applyAdminTemplateServerVariant(state, layoutId, projection, source, {
         persist: () => persistStateSnapshot(state, { recordAction: false }), applyArrangement: applyLayoutArrangement });
       render(); return result;
     },
@@ -14445,7 +14503,7 @@ async function restorePrivateHistoryRecordOnServer(record, {
   if (!restoredState) throw new Error("Сервер вернул пустую или повреждённую версию.");
   const integrityMeta = stateIntegrityMetaFromResponse(recordData, data);
   const updatedAt = remoteUpdatedAt(recordData) || data?.serverUpdatedAt || integrityMeta.updatedAt || nowIso();
-  if (!applyRemoteState(restoredState, updatedAt, integrityMeta, recordData.payload, {
+  if (!await applyRemoteState(restoredState, updatedAt, integrityMeta, recordData.payload, {
     allowDestructive: true,
     preferredLayout,
     preservePublicDraftId

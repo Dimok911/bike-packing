@@ -122,7 +122,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
       runtime.syncMeta.lastSyncedLocalUpdatedAt = runtime.syncMeta.localUpdatedAt;
       rememberRemoteIntegrityMeta(entitySync.integrityMeta);
       rememberCurrentSyncAccount();
-      saveBaseState(serializeState({ forSync: true }));
+      await saveBaseState(serializeState({ forSync: true }));
       saveSyncMeta();
       updateSyncUi();
       if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
@@ -154,7 +154,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     runtime.syncMeta.lastSyncedLocalUpdatedAt = runtime.syncMeta.localUpdatedAt;
     rememberRemoteIntegrityMeta(data.record || data.list || data, data);
     rememberCurrentSyncAccount();
-    saveBaseState(serializeState({ forSync: true }));
+    await saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     updateSyncUi();
     if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
@@ -318,7 +318,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     return;
   }
   if (preferServerWithoutPrompt || !canLocalStateOverrideRemote()) {
-    if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
+    if (await applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
       const message = localText(
         "The server version was loaded · the temporary local copy was not sent",
         "Загружена серверная версия · временная локальная копия не отправлена"
@@ -350,7 +350,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     }
     const resolution = await askConflictResolution(mergeResult.conflicts);
     if (resolution === "server") {
-      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
+      if (await applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
         showToast(localText("The server version was loaded.", "Загружена серверная версия."), "success");
       }
       return;
@@ -399,7 +399,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     await saveRemoteState({ notify, forceOverwrite: true });
     return;
   }
-  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
+  if (await applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
     showToast(localText("The server version was loaded.", "Загружена серверная версия."), "success");
   }
 }

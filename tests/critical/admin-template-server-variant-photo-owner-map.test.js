@@ -144,3 +144,17 @@ test("a frozen stop-choice without raw payload retains the captured map but stil
     else { assert.throws(apply); assert.equal(persists, 0); assert.deepEqual(f.state, before); }
   }
 });
+
+
+test("server projection waits for async mirror commit and rolls back a rejected transaction", async () => {
+  const f = fixture({ photos: true }), before = structuredClone(f.state), projection = f.project();
+  const source = adminTemplateEditorSource(f.binding, f.server);
+  let rejectWrite, settled = false;
+  const pending = applyAdminTemplateServerVariant(f.state, f.layout.id, projection, source, {
+    sourcePayload: f.payload, persist: () => new Promise((resolve, reject) => { rejectWrite = reject; }) });
+  pending.then(() => { settled = true; }, () => { settled = true; });
+  await Promise.resolve(); assert.equal(settled, false);
+  rejectWrite(Error("IndexedDB commit refused"));
+  await assert.rejects(pending, /IndexedDB commit refused/);
+  assert.deepEqual(f.state, before);
+});

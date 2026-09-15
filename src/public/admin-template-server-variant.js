@@ -167,7 +167,14 @@ export function applyAdminTemplateServerVariant(state, layoutId, projection, sou
       containers: Object.fromEntries(Object.keys(projection.containers).map(id => [id, state.containers[id]])),
       packedItems: clone(layout.arrangement.packedItems || {}) };
     applyArrangement(layoutId, editorState); state.packedItems = editorState.packedItems;
-    if (persist() === false) throw paused();
+    const saved = persist();
+    if (saved && typeof saved.then === "function") return saved.then(value => {
+      if (value === false) throw paused();
+      return true;
+    }).catch(error => {
+      replace(state, before); replace(layout, oldLayout); state.layouts[layoutId] = layout; throw error;
+    });
+    if (saved === false) throw paused();
   } catch (error) {
     replace(state, before); replace(layout, oldLayout); state.layouts[layoutId] = layout; throw error;
   }

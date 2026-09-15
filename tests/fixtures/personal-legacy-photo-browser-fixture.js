@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { expect } from "@playwright/test";
+import { readBrowserPersonalMirror, seedBrowserPersonalMirror } from "./personal-mirror-browser-fixture.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 import { EXPERIMENT_RELEASE_CAPABILITIES } from "../../scripts/experiment-release-profile.mjs";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
@@ -12,7 +13,7 @@ import { canonicalListOperationJson, createListOperationQueue } from "../../src/
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { buildListSaveBody } from "../../src/sync/save-body.js";
 import { scopedLocalStorageKey } from "../../src/storage/scope.js";
-import { STORAGE_KEY, SYNC_META_KEY, ACTIVE_LIST_ID_KEY } from "../../src/config/constants.js";
+import { STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY, SYNC_META_KEY, ACTIVE_LIST_ID_KEY } from "../../src/config/constants.js";
 import { AMBIGUOUS_WRITE_KEY, createExperimentTransport } from "../../src/sync/experiment-transport.js";
 
 export const legacyPhotoOrigin = "https://experiment.vniipo-help.ru";
@@ -25,6 +26,7 @@ const preparationCapability = "personalListOperationPreparationV1";
 export const legacyPhotoBinding = Object.freeze({ actorId: "legacy-photo-user", listId: "legacy-photo-list", scopeKey: "id:legacy-photo-user" });
 export const legacyLayoutId = "personal-layout", legacyBagId = "sumka";
 export const legacyPendingBagIds = Object.freeze([legacyBagId, "second", "third"]);
+const defaultBinding = legacyPhotoBinding, defaultLayoutId = legacyLayoutId, defaultBagId = legacyBagId, defaultPendingIds = legacyPendingBagIds;
 const timestamp = "2026-09-14T10:00:00.000Z", prefix = "bike-packing-personal-save-v1:";
 const scoped = key => scopedLocalStorageKey(key, legacyPhotoBinding.scopeKey);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
@@ -123,6 +125,7 @@ export function assertLegacyPhotoRowsPreserved(before, after, { routeAliases = f
 export async function seedLegacyPhotoRebaseAction(page, { localWeight = 1850 } = {}) {
   const local = await page.evaluate(({ stateKey, metaKey }) => ({ snapshot: JSON.parse(localStorage.getItem(stateKey)),
     meta: JSON.parse(localStorage.getItem(metaKey)) }), { stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY) });
+  local.snapshot = JSON.parse(await readBrowserPersonalMirror(page, scoped(STORAGE_KEY)));
   assert.equal(local.meta.stateRevision, 1582);
   local.snapshot.activeLayoutId = legacyLayoutId;
   const storage = memoryStorage(), outbox = createPersonalSaveOutbox({ storage, ...legacyPhotoBinding });
@@ -163,8 +166,9 @@ export async function seedLegacyPhotoRebaseAction(page, { localWeight = 1850 } =
   const entries = [...storage.values];
   await page.evaluate(({ entries, snapshot, meta, stateKey, metaKey }) => {
     for (const [key, value] of entries) localStorage.setItem(key, value);
-    localStorage.setItem(stateKey, JSON.stringify(snapshot)); localStorage.setItem(metaKey, JSON.stringify({ ...meta, dirty: true }));
+    localStorage.setItem(metaKey, JSON.stringify({ ...meta, dirty: true }));
   }, { entries, snapshot, meta: local.meta, stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY) });
+  await seedBrowserPersonalMirror(page, scoped(STORAGE_KEY), JSON.stringify(snapshot));
   return { record, records: [record], entries, snapshot, seededRequests };
 }
 
@@ -172,6 +176,7 @@ export async function seedLegacyPhotoPendingAction(page, ids = [legacyBagId]) {
   const local = await page.evaluate(({ stateKey, metaKey }) => ({ snapshot: JSON.parse(localStorage.getItem(stateKey)),
     meta: JSON.parse(localStorage.getItem(metaKey)), selectedLayoutId: document.querySelector("#layoutSelect").value }),
   { stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY) });
+  local.snapshot = JSON.parse(await readBrowserPersonalMirror(page, scoped(STORAGE_KEY)));
   assert.equal(local.meta.stateRevision, 1582);
   assert.equal(local.selectedLayoutId, legacyLayoutId);
   // Active layout is a display preference omitted by the persisted personal
@@ -199,19 +204,24 @@ export async function seedLegacyPhotoPendingAction(page, ids = [legacyBagId]) {
   const entries = [...storage.values];
   await page.evaluate(({ entries, snapshot, meta, stateKey, metaKey, listKey, listId }) => {
     for (const [key, value] of entries) localStorage.setItem(key, value);
-    localStorage.setItem(stateKey, JSON.stringify(snapshot)); localStorage.setItem(metaKey, JSON.stringify({ ...meta, dirty: true }));
+    localStorage.setItem(metaKey, JSON.stringify({ ...meta, dirty: true }));
     localStorage.setItem(listKey, listId);
   }, { entries, snapshot, meta: local.meta, stateKey: scoped(STORAGE_KEY), metaKey: scoped(SYNC_META_KEY),
     listKey: scoped(ACTIVE_LIST_ID_KEY), listId: legacyPhotoBinding.listId });
+  await seedBrowserPersonalMirror(page, scoped(STORAGE_KEY), JSON.stringify(snapshot));
   return { record, records, entries, snapshot };
 }
 
 export async function setupPersonalLegacyPhotoBrowser(page, context, {
-  loseAck = false, mixedLegacyRoutes = false, sharedOwnerUpgrade = false, ordinaryRecovery = false, ordinaryRebase = false
+  loseAck = false, mixedLegacyRoutes = false, sharedOwnerUpgrade = false, ordinaryRecovery = false, ordinaryRebase = false,
+  phoneRecovery = null
 } = {}) {
+  const legacyPhotoBinding = phoneRecovery?.binding || defaultBinding, legacyLayoutId = phoneRecovery?.layoutId || defaultLayoutId;
+  const legacyBagId = phoneRecovery?.bagId || defaultBagId, legacyPendingBagIds = phoneRecovery?.pendingIds || defaultPendingIds;
   assert.ok(!ordinaryRebase || ordinaryRecovery, "rebase fixture requires ordinary recovery mode");
-  const initial = legacyPhotoPayload();
-  if (ordinaryRecovery) {
+  const initial = phoneRecovery ? structuredClone(phoneRecovery.payload) : legacyPhotoPayload();
+  if (phoneRecovery) initial.activeLayoutId = legacyLayoutId;
+  if (ordinaryRecovery && !phoneRecovery) {
     for (const bag of Object.values(initial.containers)) bag.weight = 1350;
     initial.layouts[legacyLayoutId].name = "Демо-укладка 2 2";
   }
@@ -392,7 +402,9 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
         data = { ok: true, listId: legacyPhotoBinding.listId, stateRevision: f.revision, serverUpdatedAt: timestamp,
           itemCount: 0, containerCount: Object.keys(f.payload.containers).length, layoutCount: 1 };
       }
-      else if (new RegExp(`^/bike-packing/lists/${legacyPhotoBinding.listId}/photos/legacy-photo-[1-4]/(file|thumb)$`).test(endpoint))
+      else if (new RegExp(`^/bike-packing/lists/${legacyPhotoBinding.listId}/photos/legacy-photo-[1-4]/(file|thumb)$`).test(endpoint)
+        || phoneRecovery && method === "GET" && Object.values({ ...initial.items, ...initial.containers }).some(owner => (owner.photos || [])
+          .some(photo => [photo.url, photo.thumbUrl].some(value => value && new URL(value).pathname.endsWith(endpoint)))))
         return route.fulfill({ headers, contentType: "image/png", body: png });
       else if (/^\/bike-packing\/list-operations\/[^/]+\/prepare$/.test(endpoint) && method === "POST") {
         const action = request.postDataJSON(); f.preparations.push(structuredClone(action));
@@ -555,7 +567,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
         return route.fulfill({ status: 404, body: "Optional shared input layout is not served by the isolated fixture" });
       }
       if (ordinaryRecovery) {
-        const knownPhotos = Object.values(f.initial.containers).flatMap(owner => (owner.photos || []).flatMap(photo => [photo.url, photo.thumbUrl]));
+        const knownPhotos = Object.values({ ...f.initial.items, ...f.initial.containers }).flatMap(owner => (owner.photos || []).flatMap(photo => [photo.url, photo.thumbUrl]));
         assert.ok(method === "GET" && knownPhotos.some(value => value === url.href), `Unexpected external fixture request ${method} ${url.origin}${url.pathname}`);
         return route.fulfill({ contentType: "image/png", body: png });
       }
@@ -568,7 +580,40 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
     try { return route.fulfill({ body: await readFile(file), contentType: mime[path.extname(file)] || "application/octet-stream" }); }
     catch (error) { if (error.code !== "ENOENT") throw error; return route.fulfill({ status: 404, body: "Not in release bundle" }); }
   });
-  await page.goto(legacyPhotoOrigin); await readyLegacyPhotoBrowser(page);
+  if (phoneRecovery) {
+    const outbox = createPersonalSaveOutbox({ storage: memoryStorage(phoneRecovery.entries.map(row => [row.key, row.value])), ...legacyPhotoBinding });
+    f.registerOrdinaryRecovery({ records: outbox.list(), record: outbox.recover() });
+    await page.addInitScript(({ entries, snapshot, binding, keys }) => {
+      if (location.hostname !== "experiment.vniipo-help.ru") return;
+      const nativeSet = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, raw) {
+        if (this === localStorage) {
+          let bytes = 2 * (String(key).length + String(raw).length);
+          for (let i = 0; i < this.length; i++) { const other = this.key(i); if (other !== key) bytes += 2 * (other.length + this.getItem(other).length); }
+          if (bytes > 5 * 1024 * 1024) {
+            (window.__phoneQuotaFailures ||= []).push({ bytes, completion: String(key).includes(":complete:"), archive: String(key).includes(":archive:") });
+            throw new DOMException("Fixture localStorage quota", "QuotaExceededError");
+          }
+        }
+        return nativeSet.call(this, key, raw);
+      };
+      if (sessionStorage.getItem("phone-mirror-seeded")) return;
+      sessionStorage.setItem("phone-mirror-seeded", "1");
+      for (const row of entries) localStorage.setItem(row.key, row.value);
+      for (const key of keys.mirrors) localStorage.setItem(`${key}::${binding.scopeKey}`, JSON.stringify(snapshot));
+      localStorage.setItem(`${keys.meta}::${binding.scopeKey}`, JSON.stringify({ stateRevision: 1582, dirty: true,
+        listId: binding.listId, accountId: binding.actorId, accountKey: binding.scopeKey }));
+      localStorage.setItem(`${keys.list}::${binding.scopeKey}`, binding.listId);
+      const total = Object.entries(localStorage).reduce((sum, [key, raw]) => sum + 2 * (key.length + raw.length), 0);
+      const padding = Math.max(0, Math.floor((3.79 * 1024 * 1024 - total) / 2) - 32);
+      localStorage.setItem("phone-unrelated-fixture-data", "x".repeat(padding));
+      window.__phoneSeedBytes = Object.entries(localStorage).reduce((sum, [key, raw]) => sum + 2 * (key.length + raw.length), 0);
+    }, { entries: phoneRecovery.entries, snapshot: phoneRecovery.snapshot, binding: legacyPhotoBinding,
+      keys: { mirrors: [STORAGE_KEY, BASE_STATE_KEY, RECOVERY_STATE_KEY], meta: SYNC_META_KEY, list: ACTIVE_LIST_ID_KEY } });
+  }
+  await page.goto(legacyPhotoOrigin);
+  if (phoneRecovery) await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  else await readyLegacyPhotoBrowser(page);
   return f;
 }
 

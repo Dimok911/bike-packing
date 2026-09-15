@@ -7142,7 +7142,7 @@ function updateLayoutCreateNameSuggestion({ force = false } = {}) {
   }
 }
 
-function createNewPublicTemplateLayout(requestedName, kind, language) {
+async function createNewPublicTemplateLayout(requestedName, kind, language) {
   if (!canOpenAdminPublishedEdit()) {
     showToast(localText("Only an administrator can create templates.", "Шаблоны может создавать только админ."), "error");
     return "";
@@ -7170,7 +7170,7 @@ function createNewPublicTemplateLayout(requestedName, kind, language) {
     try {
       layout = newCausalAdminTemplateDraft(layout, kind);
       state.layouts[id] = layout;
-      persistNewCausalAdminTemplateDraft(layout);
+      await persistNewCausalAdminTemplateDraft(layout);
     } catch (error) {
       if (state.layouts[id] === layout) delete state.layouts[id];
       showToast(localText(`Could not create the draft: ${error.message}`, `Не удалось создать черновик: ${error.message}`), "error");
@@ -7194,7 +7194,7 @@ async function saveNewLayout(event) {
   if (!requestedName) return;
   if (mode === "template" || mode === "demo-template" || mode === "shared-template") {
     const kind = mode === "shared-template" || refs.layoutTemplateKind?.value === "shared" ? "shared" : "demo";
-    const createdId = createNewPublicTemplateLayout(
+    const createdId = await createNewPublicTemplateLayout(
       requestedName,
       kind,
       refs.layoutTemplateLanguage?.value || uiLanguage

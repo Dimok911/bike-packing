@@ -39,7 +39,7 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
     layout.language = prepared.metadata.language; layout.templatePublished = false; layout.templateDraftServerHydrated = true;
     delete layout.templateDraftSyncPending; delete layout.templateUnpublishPending;
     await rememberSource?.(layout, prepared); guard();
-    persist(); restored++;
+    await persist(); guard(); restored++;
   }
   return { records, restored, migrationPending };
 }

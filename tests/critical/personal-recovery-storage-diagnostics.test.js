@@ -74,7 +74,7 @@ test("dialog exports before/after sizes on preparation failure and keeps recover
   assert.equal(downloaded.recoveryStorageDiagnostics.current.publicCacheBytes, 0);
   assert.equal(downloaded.recoveryPreparationFailure.reason, "quota");
   assert.deepEqual(original, { marker: "original-copy", entries: [] });
-  assert.ok(f.nodes.some(node => /Хранилище этого сайта: ~/.test(node.textContent)));
+  assert.ok(f.nodes.some(node => /Хранилище localStorage: ~/.test(node.textContent)));
   assert.ok(f.nodes.some(node => /фактическая квота неизвестна/i.test(node.textContent)));
   await f.button("Решить позже").click(); assert.equal(await pending, "later");
 });

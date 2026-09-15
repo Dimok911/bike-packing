@@ -184,6 +184,20 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     try {
       const records = new Map(), applied = new Map();
       const entries = readStablePersonalEntries(storage, keyPrefix);
+      // Completed recovery already retains the exact original records and their
+      // terminal proofs. Their physical queue duplicates may be released before
+      // the new CAS is sent; hydrate them here until normal confirmed retirement.
+      for (const { archive, completed, completion } of ordinaryRecovery.read().archives) if (completed) {
+        for (const operationId of archive.operationIds) {
+          const key = keyPrefix + operationId, row = archive.entries.find(entry => entry.key === key);
+          if (!row || entries.has(key) && entries.get(key) !== row.value) throw Error("Changed archived action");
+          if (!entries.has(key)) entries.set(key, row.value);
+        }
+        const successorKey = keyPrefix + archive.successorOperationId;
+        if (entries.has(successorKey) && canonicalListOperationJson(JSON.parse(entries.get(successorKey)))
+          !== canonicalListOperationJson(JSON.parse(completion.recordRaw))) throw Error("Changed recovery successor");
+        if (!entries.has(successorKey)) entries.set(successorKey, completion.recordRaw);
+      }
       const { anchor, checkpoints } = readPersonalCheckpoints(entries, keyPrefix);
       const retired = new Set(anchor?.retired || []);
       for (const [key, value] of entries) {
@@ -439,6 +453,29 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     ordinaryRecoveryArchives() {
       return clone(ordinaryRecovery.read().archives.filter(entry => entry.completed).map(entry => entry.archive));
     },
+    releaseArchivedOrdinaryEntries({ getContext }) {
+      const current = assertObserved(), guard = guardEditor(getContext, current.head);
+      const archives = ordinaryRecovery.read();
+      if (archives.pending) throw ordinaryRecoveryBlocked();
+      let removed = 0;
+      for (const { archive, completed, completion } of archives.archives) if (completed) {
+        for (const operationId of archive.operationIds) {
+          guard();
+          const key = keyPrefix + operationId, retained = archive.entries.find(entry => entry.key === key), raw = storage.getItem(key);
+          if (!retained || raw !== null && raw !== retained.value) throw ordinaryRecoveryBlocked();
+          if (raw !== null) { storage.removeItem(key); if (storage.getItem(key) === null) removed++; }
+        }
+        // Completion also contains the validated successor. Keep one durable
+        // representation instead of duplicating its full payload and proofs.
+        guard();
+        const key = keyPrefix + archive.successorOperationId, raw = storage.getItem(key);
+        if (raw !== null) {
+          if (!same(JSON.parse(raw), JSON.parse(completion.recordRaw))) throw ordinaryRecoveryBlocked();
+          storage.removeItem(key); if (storage.getItem(key) === null) removed++;
+        }
+      }
+      guard(); return { removed };
+    },
     canReconcileStaleCapture: () => Boolean(staleCapture?.base),
     ordinaryRecoveryState() {
       const pending = ordinaryRecovery.read().pending, current = read();
@@ -676,7 +713,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       assertObserved();
       return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
     },
-    list() { return clone([...read().records.values()]); },
+    list() { return clone([...read().records.values()].sort((a, b) => a.action.generation - b.action.generation)); },
     photoRecoveryReferences() {
       const current = assertObserved();
       return clone({ binding, observation: observation(current), retiredOperationIds: current.anchor?.retired || [],
@@ -1519,7 +1556,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const last = head.action;
       result = await queue.run(operationRequest(last));
       assertContext();
-      onConfirmed(result, clone(head));
+      await onConfirmed(result, clone(head));
       return result;
     }
   };

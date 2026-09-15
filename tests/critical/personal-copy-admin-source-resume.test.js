@@ -60,7 +60,8 @@ async function harness() {
     `let applyingLayoutArrangement = false;\n${app.match(/function applyLayoutArrangement\([^]*?\n\}/)[0]}\nreturn applyLayoutArrangement;`)(
     state, applyLayoutArrangementToState, normalizeLayoutArrangement, migrateContainerOrder, repairContainerMembershipFromItemLinks);
   let returningFrom;
-  const deps = { PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED: true, canOpenAdminPublishedEdit: () => controls.enabled,
+  const deps = { readPersonalLocalValue: key => storageValues.get(key) ?? null,
+    async persistRequiredPersonalMirror(key, value) { localStorage.setItem(key, value); return true; }, PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED: true, canOpenAdminPublishedEdit: () => controls.enabled,
     state, clone: structuredClone, canonicalTemplateJson, personalSaveContext, personalBusinessPayload,
     serializeState: () => structuredClone(controls.privatePayload), personalPhotoRecoverySource: source,
     currentUser, localStorageScopeKey: f.binding.scopeKey, currentPackingListId: f.binding.listId,

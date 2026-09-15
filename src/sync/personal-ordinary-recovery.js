@@ -1,4 +1,5 @@
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
+import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 export const PERSONAL_ORDINARY_RECOVERY_ENABLED = false;
 const environment = "bike-packing-experiment";
 const prefix = "bike-packing-personal-ordinary-recovery-v1:";
@@ -37,6 +38,48 @@ const archivedRecords = archive => new Map(archive.operationIds.map(id => {
   return [id, record];
 }));
 
+// A completion previously duplicated the entire successor (including its base
+// and historical proof bodies). Retain the exact values as a patch against the
+// immutable archive; the recovered object still passes the same full validator.
+function compactCompletion(archive, recordRaw) {
+  const record = JSON.parse(recordRaw), payload = record.action.body.payload;
+  const originals = archivedRecords(archive), proofBodies = [];
+  const payloadPatch = encodePersonalSnapshot(archive.snapshot, payload);
+  delete record.action.body.payload;
+  delete record.mergeBase.payload;
+  for (const [index, proof] of record.reconciliation.settled.entries()) {
+    const original = originals.get(proof.operation.id);
+    if (original && same(proof.operation.body, original.action.body)) {
+      proofBodies.push({ index, operationId: proof.operation.id });
+      delete proof.operation.body;
+    }
+  }
+  return { version: 2, recoveryId: archive.recoveryId, record, payloadPatch, proofBodies };
+}
+
+function expandCompletion(archive, value) {
+  if (value?.version === 1) {
+    if (typeof value.recordRaw !== "string" || Object.keys(value).length !== 3) fail();
+    return value;
+  }
+  if (value?.version !== 2 || Object.keys(value).length !== 5 || !plain(value.record)
+    || !Array.isArray(value.proofBodies) || !Array.isArray(value.payloadPatch)) fail();
+  const record = clone(value.record), originals = archivedRecords(archive);
+  if (!plain(record.action?.body) || !plain(record.mergeBase) || !Array.isArray(record.reconciliation?.settled)
+    || Object.hasOwn(record.action.body, "payload") || Object.hasOwn(record.mergeBase, "payload")) fail();
+  const payload = decodePersonalSnapshot(archive.snapshot, value.payloadPatch);
+  record.action.body.payload = payload; record.mergeBase.payload = clone(payload);
+  const seen = new Set();
+  for (const row of value.proofBodies) {
+    if (!plain(row) || Object.keys(row).length !== 2 || !Number.isSafeInteger(row.index) || row.index < 0 || seen.has(row.index)) fail();
+    seen.add(row.index);
+    const proof = record.reconciliation.settled[row.index], original = originals.get(row.operationId);
+    if (!original || proof?.operation?.id !== row.operationId || Object.hasOwn(proof.operation, "body")) fail();
+    proof.operation.body = clone(original.action.body);
+  }
+  return { ...value, recordRaw: JSON.stringify(record) };
+}
+
 export function validPersonalOrdinaryRecoveryDecision(record, records, archive) {
   try {
     const decision = record?.reconciliation?.decision, action = record?.action, base = record?.mergeBase;
@@ -72,6 +115,16 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
   const binding = bindingOf(rawBinding), keyPrefix = `${prefix}${encodeURIComponent(JSON.stringify(binding))}:`;
   const parseArchive = (raw, key) => {
     const archive = JSON.parse(raw);
+    if (archive?.version === 2) {
+      if (Object.hasOwn(archive, "snapshot") || !Array.isArray(archive.entries)) fail();
+      const entry = archive.entries.find(row => row.key === outboxPrefix(binding) + archive.headOperationId);
+      if (!entry || typeof entry.value !== "string") fail();
+      const head = JSON.parse(entry.value);
+      if (head.version === 2) archive.snapshot = decodePersonalSnapshot(head.action?.body?.payload, head.snapshotPatch);
+      else if (head.version === 1 && plain(head.snapshot)) archive.snapshot = clone(head.snapshot);
+      else fail();
+      archive.version = 1; // Public recovery-copy shape remains unchanged.
+    }
     if (archive?.version !== 1 || archive.format !== "bike-packing-personal-ordinary-recovery-v1" || !same(archive.binding, binding)
       || !same(archive.choice, { type: "server" })
       || !uuid(archive.recoveryId) || !uuid(archive.successorOperationId) || key !== `${keyPrefix}archive:${archive.recoveryId}`
@@ -106,9 +159,9 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
         const archive = parseArchive(raw, key), completionRaw = entries.get(`${keyPrefix}complete:${archive.recoveryId}`);
         let completion = null;
         if (completionRaw !== undefined) {
-          completion = JSON.parse(completionRaw);
-          if (completion?.version !== 1 || completion.recoveryId !== archive.recoveryId || typeof completion.recordRaw !== "string"
-            || Object.keys(completion).length !== 3 || !validPersonalOrdinaryRecoveryDecision(JSON.parse(completion.recordRaw), archivedRecords(archive), archive)) fail();
+          completion = expandCompletion(archive, JSON.parse(completionRaw));
+          if (completion.recoveryId !== archive.recoveryId
+            || !validPersonalOrdinaryRecoveryDecision(JSON.parse(completion.recordRaw), archivedRecords(archive), archive)) fail();
         }
         archives.push({ archive, raw, completed: Boolean(completion), completion });
       }
@@ -140,7 +193,10 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
       const archive = { format: "bike-packing-personal-ordinary-recovery-v1", version: 1, binding, choice: { type: "server" }, recoveryId: crypto.randomUUID(),
         successorOperationId: crypto.randomUUID(), headOperationId, headGeneration, operationIds, entries, snapshot };
       const key = `${keyPrefix}archive:${archive.recoveryId}`;
-      parseArchive(JSON.stringify(archive), key); const raw = publish(key, archive, "archive");
+      parseArchive(JSON.stringify(archive), key);
+      const compact = { ...archive, version: 2 }; delete compact.snapshot;
+      if (!same(parseArchive(JSON.stringify(compact), key), archive)) fail();
+      const raw = publish(key, compact, "archive");
       const pending = read().pending; if (!pending || pending.raw !== raw) fail();
       return clone(archive);
     },
@@ -149,7 +205,9 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
       if (!stored || !same(stored.archive, archive) || !validPersonalOrdinaryRecoveryDecision(JSON.parse(recordRaw), archivedRecords(archive), archive)) fail();
       if (storage.getItem(outboxPrefix(binding) + archive.successorOperationId) !== recordRaw) fail();
       if (stored.completed) return;
-      publish(`${keyPrefix}complete:${archive.recoveryId}`, { version: 1, recoveryId: archive.recoveryId, recordRaw }, "completion");
+      const full = { version: 1, recoveryId: archive.recoveryId, recordRaw }, compact = compactCompletion(archive, recordRaw);
+      if (!same(JSON.parse(expandCompletion(archive, compact).recordRaw), JSON.parse(recordRaw))) fail();
+      publish(`${keyPrefix}complete:${archive.recoveryId}`, JSON.stringify(compact).length < JSON.stringify(full).length ? compact : full, "completion");
       if (!read().archives.find(entry => entry.archive.recoveryId === archive.recoveryId)?.completed) fail();
     }
   };

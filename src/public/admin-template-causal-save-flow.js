@@ -111,7 +111,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       // A newer capture already carries this operation as its predecessor.
       if (captures.get(layoutId) === job) {
         layout.adminCausalSource = clone(nextSource); layout.templateDraftSyncPending = true;
-        persist(); notify("pending", layoutId);
+        await persist(); notify("pending", layoutId);
       }
       return clone({ operationId, finalOperationId: finalId });
     });
@@ -163,7 +163,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       guard(layoutId, layout, initial, base.binding);
       if (captures.get(layoutId) === job) {
         layout.adminCausalSource = clone(nextSource); layout.templateDraftSyncPending = true;
-        persist(); notify("pending", layoutId);
+        await persist(); notify("pending", layoutId);
       }
       return { operationId, finalOperationId: operationId };
     });
@@ -180,11 +180,11 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     if (!next) return false;
     if (!equal(source(layout), observed) || captures.get(layoutId) !== pending) throw blocked();
     if (next.serverAdoption) {
-      if (!applyServerVariant || applyServerVariant(layoutId, next.serverAdoption) !== true) throw blocked();
+      if (!applyServerVariant || await applyServerVariant(layoutId, next.serverAdoption) !== true) throw blocked();
       captures.delete(layoutId); notify("adopted", layoutId); return true;
     }
     layout.adminCausalSource = next; layout.templateDraftSyncPending = true;
-    if (persist() === false) { layout.adminCausalSource = observed; throw blocked(); }
+    if (await persist() === false) { layout.adminCausalSource = observed; throw blocked(); }
     captures.delete(layoutId); notify("pending", layoutId); return true;
   };
   const recover = async layoutId => {
@@ -204,7 +204,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       ...(successor.plan.version === 6 ? { photoEditPending: successor.plan.id } : {}),
       visibility, deleted: successor.plan.operations.at(-1).kind === "template.delete",
       indexes: removedReferences ? [] : observed.indexes };
-    layout.templateDraftSyncPending = true; captures.delete(layoutId); persist(); notify("pending", layoutId);
+    layout.templateDraftSyncPending = true; captures.delete(layoutId); await persist(); notify("pending", layoutId);
     return { state: "pending" };
   };
   const flush = async layoutId => {
@@ -246,7 +246,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
       delete nextSource[plan.version === 6 ? "photoEditPending" : "photoAppendPending"];
       // The photo projection replaces local owner IDs and persists the whole
       // selected namespace atomically, rolling it back if storage fails.
-      if (!apply || apply(layoutId, { plan, receipt, source: nextSource }) !== true) throw blocked();
+      if (!apply || await apply(layoutId, { plan, receipt, source: nextSource }) !== true) throw blocked();
       captures.delete(layoutId); notify("committed", layoutId);
       return { ...result, applied: true };
     }
@@ -255,7 +255,7 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     layout.adminCausalSource = nextSource;
     layout.templatePublished = receipt.result.payload.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
-    if (persist() === false) {
+    if (await persist() === false) {
       layout.adminCausalSource = observed;
       for (const [key, value] of Object.entries(beforeFlags)) { if (value === undefined) delete layout[key]; else layout[key] = value; }
       throw blocked();

@@ -7,10 +7,11 @@ import {
   SYNC_META_KEY
 } from "../config/constants.js";
 import { normalizeAuthAuthorization } from "../auth/permissions.js";
+import { personalLocalReadView } from "./personal-mirror-runtime.js";
 import { GUEST_STORAGE_SCOPE, scopedLocalStorageKey, userStorageScopeKey } from "./scope.js";
 
 function defaultStorage() {
-  return typeof localStorage === "undefined" ? null : localStorage;
+  return personalLocalReadView();
 }
 
 function storageGet(storage, key) {

@@ -48,6 +48,7 @@ function emptyQueueSaveFixture({ confirmed = true, changed = false, writable = t
     personalSaveRecovery: { assertRunning() {}, report() {} },
     personalPhotoFormPreparing: false, personalPhotoFormLiveSource: null,
     checkPersonalPhotoRecoveryBeforeLoad: async () => {}, isForcedOffline: () => false,
+    flushPersonalMirrors: async () => {},
     isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false,
     persistStateSnapshot: () => {
       if (confirmed && !changed) f.outbox.capture({ snapshot: state, body: input.body });
@@ -731,7 +732,12 @@ test("actual app persistence writes the intent before its mirror and cannot fall
     },
     scopedLocalStorageKey: key => key,
     safeSetLocalStorage: () => { calls.push("mirror"); return false; },
-    writeLargeScopedLocalValue: () => { calls.push("legacy"); return true; }
+    writeLargeScopedLocalValue: (_key, _value, options) => {
+      if (calls.includes("intent")) {
+        assert.equal(options.clearBase, false); assert.equal(options.clearRecovery, false); calls.push("mirror");
+      } else calls.push("legacy");
+      return true;
+    }
   });
   assert.equal(persist({ items: {} }), true);
   assert.deepEqual(calls, ["intent", "mirror"]);

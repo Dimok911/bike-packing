@@ -24,7 +24,7 @@ function fixture({ enabled = true, editEnabled = false, actor = "admin-a", perso
   const originalRecovery = JSON.stringify([{ reason: "Original recovery", payload: { exact: [3, 1, 2] } }]);
   const values = new Map([["base", "Original private baseline"], ["recovery", originalRecovery], ["mirror", "Previous editor"]]);
   const controls = { failedKeys: new Set(), writes: [], removed: [], captured: [] };
-  const deps = { state, ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: enabled, ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED: editEnabled, localStorageScopeKey: "id:admin-a",
+  const deps = { ownsPersonalMirror: () => false, readPersonalLocalValue: key => values.get(key) ?? null, state, ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: enabled, ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED: editEnabled, localStorageScopeKey: "id:admin-a",
     STORAGE_KEY: "mirror", BASE_STATE_KEY: "base", RECOVERY_STATE_KEY: "recovery", RECOVERY_STATE_MAX: 10,
     scopedLocalStorageKey: key => key, localStorage: { getItem: key => values.get(key) ?? null,
       removeItem: key => { controls.removed.push(key); values.delete(key); } },

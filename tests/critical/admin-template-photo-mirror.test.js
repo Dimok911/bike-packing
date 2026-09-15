@@ -56,7 +56,12 @@ async function fixture({ active = "private", scopeKey = "id:admin-a" } = {}) {
       if (!controls.dropWrite) values.set(name, value);
       controls.afterSet?.(name, value);
     }, removeItem(name) { controls.removed.push(name); values.delete(name); } };
-  const deps = { state, localStorage, localStorageScopeKey: scopeKey, STORAGE_KEY: "mirror",
+  const deps = { readPersonalLocalValue: key => localStorage.getItem(key),
+    persistRequiredPersonalMirror(key, raw) {
+      localStorage.setItem(key, raw);
+      if (localStorage.getItem(key) !== raw) throw Error("Не удалось подтвердить запись данных на устройстве.");
+      return true;
+    }, state, localStorage, localStorageScopeKey: scopeKey, STORAGE_KEY: "mirror",
     scopedLocalStorageKey: name => `${scopeKey}:${name}`, canonicalTemplateJson, clone, adminTemplatePhotoNamespace };
   const persist = new Function(...Object.keys(deps), `${actualSource}\nreturn persistAdminTemplatePhotoMirror;`)(...Object.values(deps));
   return { state, previous, layoutId, expected, persist, controls, values, key, baselineKey, recoveryKey,
@@ -127,7 +132,7 @@ test("failed readback cannot report success, erase recovery or overwrite a write
       newer.items["local-item"].name = "Another tab after this write";
       f.values.set(name, JSON.stringify(newer));
     };
-    assert.throws(() => f.persist(f.layoutId, [f.expected]), /Не удалось подтвердить запись шаблона/);
+    assert.throws(() => f.persist(f.layoutId, [f.expected]), /Не удалось подтвердить запись данных/);
     assert.deepEqual(f.controls.removed, []); assert.equal(f.controls.writes.length, 1); assert.deepEqual(journals(f), journalBefore);
     if (mode === "lost-write") assert.deepEqual(f.values, before); else assert.deepEqual(f.read(), newer);
   }
