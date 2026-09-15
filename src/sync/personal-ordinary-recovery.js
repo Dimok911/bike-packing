@@ -1,3 +1,4 @@
+import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 export const PERSONAL_ORDINARY_RECOVERY_ENABLED = false;
 const environment = "bike-packing-experiment";
 const prefix = "bike-packing-personal-ordinary-recovery-v1:";
@@ -14,10 +15,10 @@ const publicationError = (stage, reason, cause) => {
   if (["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(cause?.name)) reason = "quota";
   const message = stage === "archive"
     ? reason === "quota"
-      ? "Не хватает места на устройстве для копии восстановления. Серверная версия не загружена; исходные действия остались на устройстве. Не очищайте данные сайта."
+      ? "Не хватает места в хранилище этого сайта для копии восстановления. Серверная версия не загружена; исходные действия остались на устройстве. Не очищайте данные сайта."
       : "Не удалось подтвердить сохранение копии восстановления на устройстве. Серверная версия не загружена; исходные действия остались на устройстве."
     : reason === "quota"
-      ? "Не хватает места на устройстве для отметки завершения восстановления. Копия исходных действий и выбранная серверная версия сохранены; проверку нужно завершить. Не очищайте данные сайта."
+      ? "Не хватает места в хранилище этого сайта для отметки завершения восстановления. Копия исходных действий и выбранная серверная версия сохранены; проверку нужно завершить. Не очищайте данные сайта."
       : "Не удалось подтвердить запись отметки завершения восстановления. Копия исходных действий и выбранная серверная версия сохранены; проверку нужно завершить.";
   return Object.assign(new Error(message), { code: "ordinary-recovery-storage", stage, reason,
     isPersonalSaveBlocked: true, isOperationReceiptError: true });
@@ -123,7 +124,7 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
     try { existing = storage.getItem(key); }
     catch (error) { throw publicationError(stage, "storage-read", error); }
     if (existing !== null) fail();
-    try { storage.setItem(key, raw); }
+    try { setRequiredStorageItem(storage, key, raw); }
     catch (error) { throw publicationError(stage, "storage-write", error); }
     let written;
     try { written = storage.getItem(key); }

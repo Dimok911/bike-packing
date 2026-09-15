@@ -4,9 +4,32 @@ import { createHash } from "node:crypto";
 import { createExperimentTransport, EXPERIMENT_FRONTEND_ORIGIN } from "../../src/sync/experiment-transport.js";
 import { createListOperationQueue, canonicalListOperationJson as canonical } from "../../src/sync/list-operation-queue.js";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
+import { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY } from "../../src/config/constants.js";
 
 const operationId = "f50a8c45-dca7-4392-a61e-bab74c56bed8", environment = "bike-packing-experiment", listId = "list-a";
 const copy = structuredClone;
+
+test("quota in cancellation journal evicts only public cache and sends the exact original operation once", async () => {
+  const f = fixture();
+  f.capture(); const archive = f.archive(), originals = archive.entries;
+  f.values.set(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY, "renewable public cache");
+  const setItem = f.storage.setItem, attempts = [];
+  f.storage.setItem = (key, raw) => {
+    if (key.startsWith("bike-packing-experiment-uncertain-write-v1:") && !f.values.has(key)) {
+      attempts.push([key, raw]);
+      if (f.values.has(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY)) throw new DOMException("Quota", "QuotaExceededError");
+    }
+    setItem(key, raw);
+  };
+  const proof = await f.make({ ordinaryRecoveryEnabled: true, recoveryStorage: f.storage }).queue.cancelExact(f.input);
+  assert.equal(proof.rejectionCode, "operation_cancelled");
+  assert.equal(attempts.length, 2); assert.deepEqual(attempts[0], attempts[1]);
+  assert.equal(f.posts().length, 1); assert.ok(f.posts()[0].path.endsWith("/cancel"));
+  assert.equal(f.posts()[0].envelope.operationId, operationId);
+  assert.deepEqual(f.posts()[0].envelope.body, f.body);
+  for (const entry of originals) assert.equal(f.values.get(entry.key), entry.value);
+  assert.equal(f.values.has(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY), false);
+});
 const digest = value => createHash("sha256").update(canonical(value)).digest("hex");
 
 function fixture() {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
+import { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY } from "../../src/config/constants.js";
 import { preservesConfirmedPersonalPhotoChain } from "../../src/sync/personal-confirmed-photos.js";
 import { personalDeletionReference, preservesUndeletedEntities } from "../../src/sync/personal-deletion-intent.js";
 import { PERSONAL_ORDINARY_RECOVERY_ENABLED, createPersonalOrdinaryRecoveryStore,
@@ -10,6 +11,36 @@ import { PERSONAL_ORDINARY_RECOVERY_ENABLED, createPersonalOrdinaryRecoveryStore
 
 const clone = value => structuredClone(value);
 const paused = { code: "ordinary-recovery", isPersonalSaveBlocked: true };
+
+for (const stage of ["archive", "successor", "completion"]) test(`recovery evicts renewable cache at ${stage} and retains exact originals through cold reload`, async () => {
+  const f = fixture(), original = [...f.values], attempts = [];
+  f.values.set("private-unrelated-draft", "keep this exact draft");
+  const setItem = f.storage.setItem;
+  f.storage.setItem = (key, raw) => {
+    const selected = stage === "archive" ? key.includes(":archive:")
+      : stage === "completion" ? key.includes(":complete:")
+      : key.startsWith("bike-packing-personal-save-v1:") && !original.some(([oldKey]) => oldKey === key);
+    if (selected) {
+      attempts.push([key, raw]);
+      if (f.values.has(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY)) throw new DOMException("Quota", "QuotaExceededError");
+    }
+    setItem(key, raw);
+  };
+  if (stage === "archive") f.values.set(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY, "renewable cache");
+  const archive = f.prepare();
+  if (stage !== "archive") f.values.set(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY, "cache repopulated during network wait");
+  const result = await f.recover();
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts[0], attempts[1], "quota retry must use the exact same key and bytes");
+  assert.equal(f.values.has(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY), false);
+  assert.equal(f.values.get("private-unrelated-draft"), "keep this exact draft");
+  for (const [key, raw] of original) assert.equal(f.values.get(key), raw);
+  assert.deepEqual(archive.entries.map(entry => [entry.key, entry.value]), original);
+  assert.equal(f.store().read().archives[0].completed, true);
+  assert.deepEqual(f.make().recover(), result);
+  assert.equal(result.action.operationId, archive.successorOperationId);
+  assert.equal(f.cancels.length, original.length);
+});
 function fixture({ count = 1, enabled = true, changeInput = () => {} } = {}) {
   const values = new Map();
   const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
