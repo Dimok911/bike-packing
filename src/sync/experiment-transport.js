@@ -1,4 +1,5 @@
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
+import { createRequestJournalBodies, serializeRequestJournalEntry } from "../storage/request-journal-bodies.js";
 import { API_BASE, EXPERIMENT_API_BASE } from "../config/constants.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../config/api-contract.js";
 
@@ -171,6 +172,7 @@ export function createExperimentTransport({
   locks = globalThis.navigator?.locks,
   euEnabled = EU_TRANSPORT_RELEASE_ENABLED,
   autoEnabled = AUTO_TRANSPORT_RELEASE_ENABLED, probeTimeoutMs = 7000,
+  journalBodies = globalThis.indexedDB ? createRequestJournalBodies() : null,
 } = {}) {
   const experiment = isExperimentFrontend(locationLike);
   const requestedMode = experiment && ["auto", "direct", "eu"].includes(selection) ? selection : "direct";
@@ -183,7 +185,7 @@ export function createExperimentTransport({
   const ownActiveWrites = new Set();
   const refreshJournal = () => {
     journal = experiment ? pendingExperimentWrites(storage).map((entry) => ({
-      ...entry, uncertain: !entry.confirmed && (entry.uncertain || !ownActiveWrites.has(entry.id)),
+      ...(journalBodies ? journalBodies.hydrate(entry) : entry), uncertain: !entry.confirmed && (entry.uncertain || !ownActiveWrites.has(entry.id)),
     })) : [];
   };
   refreshJournal();
@@ -335,9 +337,9 @@ export function createExperimentTransport({
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
     const identity = await photoWriteIdentity(path, method, body);
-    return locks.request(EXPERIMENT_WRITE_LOCK, () => {
-      // Atomic across tabs, including direct and EU. No network/await in this
-      // critical section; independent photos in this page can upload concurrently.
+    return locks.request(EXPERIMENT_WRITE_LOCK, async () => {
+      // Atomic across tabs, including direct and EU. The lock spans the optional
+      // IndexedDB commit too; no business request runs in this critical section.
       assertWritable(path, method, recovery, cancellation);
       if (identity && journal.some((entry) => entry.identity === identity)) {
         const error = transportError("Photo operation was already sent; reconcile before replay");
@@ -347,14 +349,25 @@ export function createExperimentTransport({
       }
       const id = recovery?.operationId || globalThis.crypto.randomUUID();
       if (journal.some((entry) => entry.id === id)) throw transportError("Operation ID already exists; write was not sent");
-      const entry = { id, path, method: String(method).toUpperCase(), mode, identity, createdAt: new Date().toISOString(), uncertain: false,
+      let entry = { id, path, method: String(method).toUpperCase(), mode, identity, createdAt: new Date().toISOString(), uncertain: false,
         ...(recovery ? { recovery } : {}) };
       try {
         if (!storage) throw new Error("Storage unavailable");
-        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry));
-      } catch { throw transportError("Cannot persist request journal; write was not sent"); }
+        if (journalBodies && recovery?.type === "list" && recovery.protocol === "causal-v1"
+          && recovery.kind === "list.update" && JSON.stringify(recovery.body).length > 65536) {
+          entry = await journalBodies.capture(entry);
+          assertWritable(path, method, recovery, cancellation);
+          if (journal.some(value => value.id === id)) throw new Error("Operation ID already exists");
+        }
+        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry(entry));
+        if (storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${id}`) !== serializeRequestJournalEntry(entry)) throw new Error("Journal readback failed");
+      } catch (cause) {
+        const error = transportError("Не удалось записать журнал сохранения на устройстве. Изменение не отправлено на сервер; местные данные сохранены.");
+        error.code = "request-journal-persistence"; error.cause = cause;
+        throw error;
+      }
       ownActiveWrites.add(id);
-      journal.push(entry);
+      journal.push(journalBodies ? journalBodies.hydrate(entry) : entry);
       return id;
     });
   };
@@ -368,7 +381,7 @@ export function createExperimentTransport({
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
       if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template", "admin-template-photo-stage"].includes(entry?.recovery?.type))) {
-        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
+        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
@@ -384,7 +397,7 @@ export function createExperimentTransport({
       const entry = journal.find((entry) => entry.id === id);
       ownActiveWrites.delete(id);
       if (entry) entry.uncertain = true;
-      try { if (entry) setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry)); } catch { /* Intent already persisted. */ }
+      try { if (entry) setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry(entry)); } catch { /* Intent already persisted. */ }
       error.isAmbiguousMutation = true;
       error.uncertainWriteId = id;
     } else confirmWrite(id, { committed: false });
@@ -428,6 +441,30 @@ export function createExperimentTransport({
     get mode() { return mode; },
     get ready() { return ready; },
     selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
+    async prepareJournal() {
+      if (!experiment) return;
+      if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
+      return locks.request(EXPERIMENT_WRITE_LOCK, async () => {
+        const entries = experiment ? pendingExperimentWrites(storage) : [];
+        if (!journalBodies && entries.some(entry => entry.bodyReference && !entry.confirmed)) throw transportError("Хранилище сохранённых действий недоступно. Местные данные сохранены.");
+        await journalBodies?.prepare(entries);
+        // Best-effort cleanup only after a durable terminal proof exists. Retain
+        // the reference on failure so a later preparation can finish retirement.
+        for (const entry of entries.filter(value => value.confirmed && value.bodyReference)) {
+          try {
+            const key = `${AMBIGUOUS_WRITE_KEY}:${entry.id}`, previous = storage.getItem(key);
+            if (previous !== serializeRequestJournalEntry(entry)) continue;
+            if (await journalBodies?.retire(entry) && storage.getItem(key) === previous) {
+              const terminal = { ...entry }; delete terminal.bodyReference;
+              setRequiredStorageItem(storage, key, serializeRequestJournalEntry(terminal));
+            }
+          } catch { /* The confirmed operation and remaining body are recoverable. */ }
+        }
+        try { await journalBodies?.pruneUnreferenced(id => storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${id}`) !== null); }
+        catch { /* Orphans remain available; cleanup never gates saving. */ }
+        refreshJournal();
+        });
+    },
     get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain) || null; },
     get writes() { refreshJournal(); return journal.map((entry) => ({ ...entry })); },
     async fetchPhoto(source, options = {}) {

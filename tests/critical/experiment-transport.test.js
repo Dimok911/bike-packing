@@ -326,7 +326,7 @@ test("transport: pending intent survives reload; reconciling one concurrent uplo
 test("transport: no write is dispatched if its durable intent cannot be saved", async () => {
   const transport = eu({ storage: { getItem: () => null, setItem() { throw Error("quota"); } } });
   await transport.prepare();
-  await assert.rejects(transport.beginWrite("/bike-packing/lists", "POST"), /write was not sent/);
+  await assert.rejects(transport.beginWrite("/bike-packing/lists", "POST"), /write was not sent|не отправлено/);
 });
 
 test("transport: changing selection or signing out does not clear an unresolved write or local queue", async () => {
@@ -378,7 +378,7 @@ test("release gate: unsupported lock API or failed persistence prevents network 
   globalThis.fetch = async () => { sends++; return new Response('{"ok":true}'); };
   try {
     for (const transport of [eu({ locks: null }), eu({ storage: { length: 0, setItem() { throw Error("quota"); } } })]) {
-      await assert.rejects(apiFetchRequest("/bike-packing/lists", { method: "POST" }, { transport }), /write was not sent/);
+      await assert.rejects(apiFetchRequest("/bike-packing/lists", { method: "POST" }, { transport }), /write was not sent|не отправлено/);
     }
     assert.equal(sends, 0);
   } finally { globalThis.fetch = previousFetch; }
@@ -397,7 +397,7 @@ test("release blocker: disabling EU does not disable direct journaling; unsuppor
   await assert.rejects(restarted.beginWrite("/bike-packing/lists", "POST"), { isAmbiguousMutation: true });
   for (const options of [{ locks: null }, { storage: null }]) {
     const unsupported = eu({ selection: "direct", euEnabled: false, ...options });
-    await assert.rejects(unsupported.beginWrite("/bike-packing/lists", "POST"), /write was not sent/);
+    await assert.rejects(unsupported.beginWrite("/bike-packing/lists", "POST"), /write was not sent|не отправлено/);
   }
 });
 

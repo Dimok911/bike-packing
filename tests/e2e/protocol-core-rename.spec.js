@@ -4,11 +4,12 @@ import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, legacyPhotoPa
 
 // Normal release bundle, actual item edit dialog; isolated synthetic API/user.
 // The paired HTTP/MySQL check is a separate verification of the real server.
-for (const loseAck of [false, true]) test(`core item rename, unchanged photos, cold recovery; lost ACK=${loseAck}`, async ({ page, context }) => {
+for (const [loseAck, quotaPressure] of [[false, false], [true, false], [true, true]]) test(`core item rename, unchanged photos, cold recovery; lost ACK=${loseAck}; quota=${quotaPressure}`, async ({ page, context }) => {
   test.setTimeout(90000);
   const payload = legacyPhotoPayload(), itemId = "core-rename-item";
   payload.items[itemId] = { id: itemId, name: "Фляга до переименования", weight: 80,
-    quantity: 1, containerId: "placed-bag", location: "Велосипед", category: "", categories: [], color: "", note: "", photos: [] };
+    quantity: 1, containerId: "placed-bag", location: "Велосипед", category: "", categories: [], color: "",
+    note: quotaPressure ? "Сохранённые данные. ".repeat(24000) : "", photos: [] };
   payload.containers["placed-bag"].itemIds = [itemId];
   const arrangement = payload.layouts[legacyLayoutId].arrangement;
   arrangement.items[itemId] = "placed-bag";
@@ -23,6 +24,19 @@ for (const loseAck of [false, true]) test(`core item rename, unchanged photos, c
       for (const key of ["userPlacement", "userDeletion", "photoResults", "archiveImport"]) expect(body[key]).toBeUndefined();
     },
   });
+  if (quotaPressure) {
+    const limitJournal = () => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-experiment-uncertain-write-v1:") && value.length > 65536) {
+          throw new DOMException("No room for another full payload", "QuotaExceededError");
+        }
+        return set.call(this, key, value);
+      };
+    };
+    await context.addInitScript(limitJournal);
+    await page.evaluate(limitJournal);
+  }
   const item = page.locator(`#packingView [data-item-id="${itemId}"]`);
   await expect(item).toContainText("Фляга до переименования");
   await item.locator(".item-title-hitarea").click();
@@ -38,11 +52,18 @@ for (const loseAck of [false, true]) test(`core item rename, unchanged photos, c
   if (loseAck) {
     await expect.poll(() => f.receiptReads.includes(id)).toBe(true);
     expect((await nativeLegacyPhotoOutbox(page)).pending).toBe(true);
+    if (quotaPressure) {
+      const marker = await page.evaluate(id => JSON.parse(localStorage.getItem(`bike-packing-experiment-uncertain-write-v1:${id}`)), id);
+      expect(marker.bodyReference).toEqual({ version: 1 });
+      expect(marker.recovery.body).toBeUndefined();
+    }
     // Another failed load cannot turn an unknown receipt into permission to send.
+    if (quotaPressure) await page.waitForLoadState("networkidle");
     await page.reload(); await readyLegacyPhotoBrowser(page);
     expect(f.posts).toHaveLength(1);
     f.loseAck = false; f.hideReceipts = false;
   }
+  if (quotaPressure) await page.waitForLoadState("networkidle");
   await page.reload(); await readyLegacyPhotoBrowser(page);
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   await expect(page.locator(`#packingView [data-item-id="${itemId}"]`)).toContainText("Походная фляга");

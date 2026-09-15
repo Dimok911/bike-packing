@@ -277,8 +277,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
     const current = getContext();
     return ["actorId", "generation", "scope", "scopeKey", "listId", "environment"].every(key => current?.[key] === initial[key]);
   };
+  const journalWrites = () => {
+    const entries = transport.writes;
+    if (entries.some(entry => entry.bodyReference && !entry.confirmed && !entry.recovery?.body)) {
+      throw paused(null, "Сохранённое действие ещё не прочитано из хранилища. Повторите синхронизацию; данные остались на устройстве.");
+    }
+    return entries;
+  };
   const journal = createOperationJournal({
-    read: id => transport.writes.find(entry => entry.id === id),
+    read: id => journalWrites().find(entry => entry.id === id),
     writeIntent: ({ path, method, bodyText, expected }) => transport.beginWrite(path, method, bodyText, expected),
     writeConfirmation: (entry, proof) => transport.confirmWrite(entry.id, { receipt: proof }),
     identityOf: entry => intentIdentity(entry.recovery),
@@ -333,7 +340,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           await assertBeforeDispatch();
           assertCurrentContext();
           preparation = await preparePersonalListOperationRetry({ entry, known: data, enabled: operationPreparationEnabled,
-            getContext, getEntry: id => transport.writes.find(value => value.id === id), read, request, assertContext: assertCurrentContext });
+            getContext, getEntry: id => journalWrites().find(value => value.id === id), read, request, assertContext: assertCurrentContext });
           preparation.assertCurrent(); data = preparation.data;
         }
         // Only a server-bound waiting/prepared intent authorizes a frozen retry.
@@ -384,10 +391,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       assertListOperationPayload(expected);
       const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId, "Редактор изменился. Отмена остановлена; данные сохранены."); };
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
-        assertCurrent(); await transport.prepare(); assertCurrent();
+        assertCurrent(); await transport.prepare(); await transport.prepareJournal?.(); assertCurrent();
         const me = await read("/auth/me"); assertCurrent();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
-        let entry = transport.writes.find(value => value.id === operationId);
+        let entry = journalWrites().find(value => value.id === operationId);
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId || entry.recovery.payloadDigest !== expected.payloadDigest
           || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
@@ -468,7 +475,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
           assertCurrent();
           await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
-          entry = transport.writes.find(value => value.id === operationId);
+          entry = journalWrites().find(value => value.id === operationId);
         }
         assertCurrent();
         try {
@@ -477,7 +484,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (response.status !== 200) throw paused(operationId);
           return await terminal(response.data);
         } catch (error) {
-          if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
+          if (!journalWrites().find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
           assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
         }
       });
@@ -507,10 +514,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       };
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
         assertContext();
-        await transport.prepare(); assertContext();
+        await transport.prepare(); await transport.prepareJournal?.(); assertContext();
         const me = await read("/auth/me"); assertContext();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId, "Аккаунт изменился. Сверка остановлена.");
-        const entry = transport.writes.find(entry => entry.id === operationId);
+        const entry = journalWrites().find(entry => entry.id === operationId);
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== expected.actorId
           || entry.recovery.kind !== expected.kind || entry.recovery.listId !== listId
           || entry.recovery.payloadDigest !== expected.payloadDigest)) throw paused(operationId, "Номер действия связан с другими данными.");
@@ -592,7 +599,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: parentRoute.kind, listId, body: parentBody })) };
       const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId, "Редактор изменился. Сверка зависимого действия остановлена."); };
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
-        assertCurrent(); await transport.prepare(); assertCurrent();
+        assertCurrent(); await transport.prepare(); await transport.prepareJournal?.(); assertCurrent();
         const me = await read("/auth/me"); assertCurrent();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
         const parentReceipt = await read(`${gateway}/${encodeURIComponent(parent.operationId)}`); assertCurrent();
@@ -601,7 +608,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const copyReceipt = copyExpected.operationId === parent.operationId ? parentReceipt : await read(`${gateway}/${encodeURIComponent(copyExpected.operationId)}`);
           assertCurrent(); if (!validateListReceipt(copyReceipt, copyExpected)) throw paused(operationId);
         }
-        let entry = transport.writes.find(value => value.id === operationId);
+        let entry = journalWrites().find(value => value.id === operationId);
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.listId !== listId || entry.recovery.kind !== route.kind
           || entry.recovery.payloadDigest !== expected.payloadDigest
@@ -637,7 +644,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
           assertCurrent();
           await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
-          entry = transport.writes.find(value => value.id === operationId);
+          entry = journalWrites().find(value => value.id === operationId);
         }
         assertCurrent();
         try {
@@ -669,14 +676,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
         entityType: body.entityType, entityId: body.entityId, photoId: body.photoId, fileHash, thumbHash };
       const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId); };
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId}`, async () => {
-        assertCurrent(); await transport.prepare(); assertCurrent();
+        assertCurrent(); await transport.prepare(); await transport.prepareJournal?.(); assertCurrent();
         const me = await read("/auth/me"); assertCurrent();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
         // Re-read the immutable stage decision; a supplied/local proof or a
         // hash match alone is never authority for another network request.
         const stage = await read(`/bike-packing/lists/${encodeURIComponent(route.listId)}/photo-assets/${encodeURIComponent(body.assetId)}`);
         assertCurrent(); if (!validateCancelledStagedPhotoReceipt(stage, stageExpected)) throw paused(operationId);
-        let entry = transport.writes.find(value => value.id === operationId);
+        let entry = journalWrites().find(value => value.id === operationId);
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.listId !== route.listId || entry.recovery.kind !== route.kind || entry.recovery.payloadDigest !== expected.payloadDigest
           || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
@@ -707,7 +714,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
           assertCurrent();
           await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
-          entry = transport.writes.find(value => value.id === operationId);
+          entry = journalWrites().find(value => value.id === operationId);
         }
         assertCurrent();
         try {
@@ -715,7 +722,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (response.status !== 200) throw paused(operationId);
           return await terminal(response.data);
         } catch (error) {
-          if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
+          if (!journalWrites().find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
           assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
         }
       });
@@ -806,20 +813,20 @@ export function createListOperationQueue({ transport, getContext = () => null,
       assertRunCurrent();
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId || body.id || requestKey}`, async () => {
         assertRunCurrent();
-        await transport.prepare();
+        await transport.prepare(); await transport.prepareJournal?.();
         assertRunCurrent();
         const me = await read("/auth/me");
         assertRunCurrent();
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(null, "Аккаунт изменился. Сохранение приостановлено.");
         // Settle old same-account unknown list actions first, without applying
         // their historical result to a newer local generation or another action.
-        for (const entry of transport.writes.filter(entry => entry.recovery?.type === "list" && !entry.confirmed && entry.recovery.protocol !== "causal-v1")) {
+        for (const entry of journalWrites().filter(entry => entry.recovery?.type === "list" && !entry.confirmed && entry.recovery.protocol !== "causal-v1")) {
           if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
           await recover(entry);
           assertRunCurrent();
         }
-        let entry = requestedId ? transport.writes.find(entry => entry.id === requestedId)
-          : transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
+        let entry = requestedId ? journalWrites().find(entry => entry.id === requestedId)
+          : journalWrites().find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
         if (entry && requestedId) {
           const listId = route.listId || body.id;
           const digest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
@@ -828,9 +835,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
             || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId
             || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
         }
-        const related = relatedCausalOperationIds(transport.writes, { actorId: initial.actorId,
+        const related = relatedCausalOperationIds(journalWrites(), { actorId: initial.actorId,
           listId: route.listId || body.id, operationId: requestedId || entry?.id, body });
-        for (const other of transport.writes.filter(value => value.recovery?.protocol === "causal-v1" && !value.confirmed
+        for (const other of journalWrites().filter(value => value.recovery?.protocol === "causal-v1" && !value.confirmed
           && value.recovery.requestKey !== requestKey && value.recovery.listId === (route.listId || body.id))) {
           if (other.recovery.actorId !== initial.actorId) throw paused(other.id);
           if (!related.has(other.id)) await recover(other);
