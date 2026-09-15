@@ -763,6 +763,7 @@ import { personalBusinessPayloadMatchesConfirmed } from "./src/sync/personal-con
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
+import { createRemoteChangeStream } from "./src/sync/remote-change-stream.js";
 import { preparePersonalShareLink, PERSONAL_SHARE_LINK_ENABLED } from "./src/sync/personal-share-link.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate } from "./src/sync/personal-pending-archive-update.js";
@@ -1457,6 +1458,7 @@ let appUnlocked = true;
 let initialRemoteLoadPending = false;
 let sharedLayoutCatalogDiagnostics = null;
 let remoteRefreshTimer = null;
+let remoteChangeStream = null;
 let remoteRefreshInFlight = false;
 let remoteStateLoadPromise = null;
 let personalListApiUnavailable = false;
@@ -7269,6 +7271,7 @@ function renderSyncUi(effectiveMessage = "") {
 }
 
 function updateSyncUi(message = "") {
+  remoteChangeStream?.reconcile();
   stableSyncStatusMessageController ||= createStableSyncStatusMessageController({
     render: renderSyncUi
   });
@@ -10586,8 +10589,28 @@ async function loadRemoteState(options = {}) {
 }
 
 function startRemoteStateWatcher() {
+  if (!remoteChangeStream && experimentTransport.experiment) {
+    remoteChangeStream = createRemoteChangeStream({ transport: experimentTransport,
+      getContext: () => {
+        if (!currentUser || initialRemoteLoadPending || document.hidden || isForcedOffline() ||
+            navigator.onLine === false || isOfflineRememberedSession() || isSharedListLinkRoute() ||
+            isPublicLayoutContext() || localStorageScopeKey !== `id:${currentUser.id}`) return null;
+        const listId = currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId;
+        return listId ? { actorId: currentUser.id, listId } : null;
+      },
+      refresh: () => checkRemoteStateFreshness({ preferredLayout: preferredCurrentLayoutRef() })
+    });
+    for (const event of ["online", "offline"]) {
+      window.addEventListener(event, () => remoteChangeStream.reconcile());
+    }
+    window.addEventListener("pagehide", () => remoteChangeStream.pause());
+    window.addEventListener("pageshow", () => remoteChangeStream.resume());
+    document.addEventListener("visibilitychange", () => remoteChangeStream.reconcile());
+    remoteChangeStream.reconcile();
+  }
   if (remoteRefreshTimer) window.clearInterval(remoteRefreshTimer);
   remoteRefreshTimer = window.setInterval(() => {
+    remoteChangeStream?.reconcile();
     if (isSharedListLinkRoute()) return;
     checkRemoteStateFreshness({ preferredLayout: preferredCurrentLayoutRef() });
   }, REMOTE_REFRESH_INTERVAL_MS);
@@ -10598,10 +10621,13 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) return;
   if (!currentUser || remoteRefreshInFlight) return;
+  if (syncInFlight || applyingRemoteState || remoteStateLoadPromise || initialRemoteLoadPending) return;
   if (recoverUnsyncedLocalChanges("remote-freshness")) return;
   if (syncMeta.dirty) return;
   if (document.hidden) return;
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
+  const actorId = currentUser.id;
+  const scopeKey = localStorageScopeKey;
   try {
     remoteRefreshInFlight = true;
     const listId = currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId;
@@ -10617,6 +10643,10 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
       updateSyncUi();
       return;
     }
+    if (currentUser?.id !== actorId || localStorageScopeKey !== scopeKey ||
+        listId !== (currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId) ||
+        syncMeta.dirty || syncInFlight || isForcedOffline() || isPublicLayoutContext() ||
+        recoverUnsyncedLocalChanges("remote-freshness-response")) return;
     if (!hasListFreshnessSignal(freshness)) {
       console.info("[bike-packing] Remote freshness check returned no revision/hash; skipped full state polling", {
         listId
@@ -10626,13 +10656,14 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
     }
     if (!listFreshnessChanged(syncMeta, freshness)) {
       updateSyncUi();
-      return;
+      return true;
     }
     const preferred = preferredLayout || preferredCurrentLayoutRef();
     let entityChangesApplied = false;
     try {
       const changesResult = await tryApplyRemoteEntityChanges(listId, freshness, { preferredLayout: preferred });
       entityChangesApplied = Boolean(changesResult?.applied);
+      if (!entityChangesApplied && changesResult?.fallbackRequired === false) return;
       if (!entityChangesApplied) {
         console.info("[bike-packing] Entity changes feed fell back to full state refresh", {
           listId,
@@ -10646,13 +10677,19 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
         message: error?.message || String(error || "")
       });
     }
-    if (!entityChangesApplied) await loadRemoteState({ preferredLayout: preferred });
+    if (!entityChangesApplied) {
+      if (currentUser?.id !== actorId || localStorageScopeKey !== scopeKey || syncMeta.dirty || syncInFlight ||
+          listId !== (currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId) ||
+          recoverUnsyncedLocalChanges("remote-freshness-fallback")) return;
+      await loadRemoteState({ preferredLayout: preferred });
+    }
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;
     if (notify && serverChanged && !syncMeta.dirty) {
       showToast(localText("Latest server changes loaded.", "Подтянуты свежие изменения с сервера."), "success");
     }
+    return true;
   } finally {
     remoteRefreshInFlight = false;
   }

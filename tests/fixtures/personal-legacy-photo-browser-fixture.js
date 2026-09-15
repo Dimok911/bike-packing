@@ -214,7 +214,7 @@ export async function seedLegacyPhotoPendingAction(page, ids = [legacyBagId]) {
 
 export async function setupPersonalLegacyPhotoBrowser(page, context, {
   loseAck = false, mixedLegacyRoutes = false, sharedOwnerUpgrade = false, ordinaryRecovery = false, ordinaryRebase = false,
-  phoneRecovery = null
+  phoneRecovery = null, liveUpdates = false
 } = {}) {
   const legacyPhotoBinding = phoneRecovery?.binding || defaultBinding, legacyLayoutId = phoneRecovery?.layoutId || defaultLayoutId;
   const legacyBagId = phoneRecovery?.bagId || defaultBagId, legacyPendingBagIds = phoneRecovery?.pendingIds || defaultPendingIds;
@@ -241,6 +241,8 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
   }
   const f = { initial, payload: structuredClone(initial), revision: 1582, calls: [], posts: [], receiptReads: [],
     receipts: new Map(), captured: [], errors: [], browserErrors: [], pageErrors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
+  f.eventWaiters = [];
+  f.notifyRemoteChange = () => { for (const resolve of f.eventWaiters.splice(0)) resolve(); };
   Object.assign(f, { bundleDirectory: sharedOwnerUpgrade ? previousLegacyPhotoBundle : root,
     legacyOwnerDenied: sharedOwnerUpgrade, preparationEnabled: !sharedOwnerUpgrade, ownerAllowed: true,
     detailOwnerId: legacyPhotoBinding.actorId,
@@ -381,7 +383,11 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
       let data;
       if (endpoint === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
         capabilities: [...new Set([...REQUIRED_ADMIN_API_CAPABILITIES, ...EXPERIMENT_RELEASE_CAPABILITIES,
-          "personalLegacyPhotoPreservationV1", preparationCapability])].filter(value => f.preparationEnabled || value !== preparationCapability) };
+          "personalLegacyPhotoPreservationV1", preparationCapability, ...(liveUpdates ? ["listLiveUpdatesV1"] : [])])].filter(value => f.preparationEnabled || value !== preparationCapability) };
+      else if (liveUpdates && endpoint === `/bike-packing/lists/${legacyPhotoBinding.listId}/events`) {
+        await new Promise(resolve => f.eventWaiters.push(resolve));
+        return route.fulfill({ headers, contentType: "text/event-stream", body: "event: changed\ndata: {}\n\n" });
+      }
       else if (endpoint === "/auth/me") data = { ok: true, user: { id: legacyPhotoBinding.actorId, email: "legacy-photo@example.test" } };
       else if (endpoint === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (endpoint === "/bike-packing/lists") data = { ok: true, lists: [list()] };
