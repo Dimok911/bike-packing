@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
+import { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY } from "../../src/config/constants.js";
 import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, nativeLegacyPhotoOutbox, nativeLegacyPhotoTransport,
   seedLegacyPhotoPendingAction, seedLegacyPhotoRebaseAction, legacyPhotoBinding, legacyLayoutId, legacyBagId, legacyPendingBagIds } from "../fixtures/personal-legacy-photo-browser-fixture.js";
 
@@ -222,7 +223,68 @@ test("lost cancellation ACK resumes the durable server choice on reload without 
   expect(f.cancellations).toHaveLength(1); expect(f.posts).toHaveLength(1); expect(f.errors).toEqual([]);
 });
 
-test("quota while archiving the explicit choice blocks cancellation and preserves all old action bytes", async ({ page, context }) => {
+test("byte-budget quota evicts only renewable cache and completes the same recovery after cache renewal", async ({ page, context }) => {
+  const { f, original, server } = await oldPhone(page, context);
+  await openChoice(page);
+  await page.evaluate(({ cacheKey, recoveryPrefix, originalEntries }) => {
+    const nativeSet = Storage.prototype.setItem, nativeRemove = Storage.prototype.removeItem;
+    const bytes = () => Object.entries(localStorage).reduce((total, [key, value]) => total + 2 * (key.length + value.length), 0);
+    // Model a large renewable cache left by an older release. The budget
+    // applies to every localStorage write, not just a selected error branch.
+    nativeSet.call(localStorage, cacheKey, JSON.stringify({ version: 1, padding: "c".repeat(1024 * 1024) }));
+    const budget = bytes() + 128;
+    const evidence = window.ordinaryQuotaEvidence = { budget, failures: [], attempts: [], evictions: 0, renewed: false };
+    Storage.prototype.removeItem = function(key) {
+      if (this === localStorage && key === cacheKey) evidence.evictions++;
+      return nativeRemove.call(this, key);
+    };
+    Storage.prototype.setItem = function(key, value) {
+      if (this !== localStorage) return nativeSet.call(this, key, value);
+      key = String(key); value = String(value);
+      const prior = localStorage.getItem(key), projected = bytes() - (prior === null ? 0 : 2 * (key.length + prior.length))
+        + 2 * (key.length + value.length);
+      const stage = key.startsWith(recoveryPrefix) ? key.includes(":archive:") ? "archive" : "completion" : "other";
+      if (stage !== "other") evidence.attempts.push({ stage, key, raw: value });
+      if (projected > budget) {
+        evidence.failures.push({ stage, projected, originalsPreserved: originalEntries.every(([savedKey, raw]) => localStorage.getItem(savedKey) === raw) });
+        throw new DOMException("Synthetic total storage budget exceeded", "QuotaExceededError");
+      }
+      const result = nativeSet.call(this, key, value);
+      if (!evidence.renewed && key.startsWith("bike-packing-personal-save-v1:") && !key.includes(":applied:")) {
+        let record; try { record = JSON.parse(value); } catch { return result; }
+        if (record.reconciliation?.decision?.type === "keep-server-after-stopped-ordinary") {
+          // A second page can refill its renewable cache after this page has
+          // suppressed optional caching. Inject only that cache, never a queue
+          // record, so the completion write must handle pressure independently.
+          const free = budget - bytes() - 128 - 2 * cacheKey.length;
+          const overhead = JSON.stringify({ version: 1, padding: "" }).length;
+          nativeSet.call(localStorage, cacheKey, JSON.stringify({ version: 1, padding: "c".repeat(Math.max(0, Math.floor(free / 2) - overhead)) }));
+          evidence.renewed = true;
+        }
+      }
+      return result;
+    };
+  }, { cacheKey: PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY, recoveryPrefix: storagePrefix, originalEntries: original.entries });
+  await dialog(page).getByRole("button", { name: "Загрузить серверную версию", exact: true }).click();
+  await green(page, f);
+  const evidence = await page.evaluate(() => window.ordinaryQuotaEvidence);
+  expect(evidence.failures.map(failure => failure.stage)).toEqual(["archive", "completion"]);
+  expect(evidence.failures.every(failure => failure.projected > evidence.budget && failure.originalsPreserved)).toBe(true);
+  expect(evidence.evictions).toBe(2); expect(evidence.renewed).toBe(true);
+  for (const stage of ["archive", "completion"]) {
+    const attempts = evidence.attempts.filter(attempt => attempt.stage === stage);
+    expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]);
+  }
+  expect(await page.evaluate(key => localStorage.getItem(key), PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY)).toBeNull();
+  expect(f.cancellations).toEqual([...f.ordinaryOriginals.values()]); expect(f.posts).toHaveLength(1);
+  expect(f.posts[0].body.payload).toEqual(personalBusinessPayload(server));
+  const archive = await assertArchive(page, original, { completed: true });
+  await reload(page); await green(page, f);
+  expect(await assertArchive(page, original, { completed: true })).toEqual(archive);
+  expect(f.cancellations).toHaveLength(1); expect(f.posts).toHaveLength(1); expect(f.errors).toEqual([]);
+});
+
+test("quota while archiving the explicit choice blocks cancellation and preserves all old action bytes", async ({ page, context }, info) => {
   const { f, original, server } = await oldPhone(page, context);
   await openChoice(page);
   await page.evaluate(prefix => {
@@ -241,6 +303,16 @@ test("quota while archiving the explicit choice blocks cancellation and preserve
   const copy = JSON.parse(await readFile(await (await downloaded).path(), "utf8"));
   expect(copy.recoveryPreparationFailure).toEqual({ code: "ordinary-recovery-storage", stage: "archive", reason: "quota" });
   expect(copy.entries).toEqual(original.entries.map(([key, value]) => ({ key, value })));
+  expect(copy.recoveryStorageDiagnostics.current).toMatchObject({ available: true, estimate: "utf16-key-and-value-bytes", recoveryBytes: 0 });
+  expect(copy.recoveryStorageDiagnostics.current.personalQueueBytes).toBeGreaterThan(0);
+  expect(copy.recoveryStorageDiagnostics.beforeServerChoice.available).toBe(true);
+  const storageDetails = dialog(page).locator("details[data-recovery-storage]");
+  await expect(storageDetails.locator("summary")).toContainText("Хранилище этого сайта");
+  await storageDetails.locator("summary").click();
+  await expect(storageDetails).toHaveAttribute("open", "");
+  await expect(storageDetails).toContainText("Очередь личных сохранений");
+  await storageDetails.scrollIntoViewIfNeeded();
+  if (info.project.name === "mobile-webkit") await page.screenshot({ path: info.outputPath("storage-breakdown.png") });
   await dialog(page).getByRole("button", { name: "Решить позже", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   expect(f.cancellations).toEqual([]); expect(f.posts).toEqual([]); expect(await recoveryStorage(page)).toEqual([]);

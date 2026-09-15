@@ -1,3 +1,4 @@
+import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate, personalServerPhotoResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, assertPersonalShareLinkBody } from "./personal-share-link.js";
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
@@ -526,7 +527,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const raw = JSON.stringify({ version: 2, action, mergeBase, reconciliation, snapshotPatch: encodePersonalSnapshot(action.body.payload, snapshot) });
       try {
         if (storage.getItem(keyPrefix + action.operationId) !== null) throw ordinaryRecoveryBlocked();
-        storage.setItem(keyPrefix + action.operationId, raw);
+        setRequiredStorageItem(storage, keyPrefix + action.operationId, raw);
         if (storage.getItem(keyPrefix + action.operationId) !== raw) throw ordinaryRecoveryBlocked();
       } catch { throw ordinaryRecoveryBlocked(); }
       observe({ head: record, anchor: current.anchor });
@@ -627,7 +628,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       try {
         // Revision-qualified keys cannot overwrite a different confirmation
         // racing from another tab. Identical retries write identical bytes.
-        storage.setItem(`${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision }));
+        setRequiredStorageItem(storage, `${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision }));
       } catch {
         throw blocked("storage", "Подтверждение получено, но не сохранено на устройстве. Повтор будет сверен с сервером.");
       }
@@ -643,7 +644,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         // to an ordinary checkpoint, durably materialize its conventional marker.
         // A crash/quota here leaves the original atomic certificate authoritative.
         const stateRevision = applied.get(operationId).stateRevision;
-        try { storage.setItem(`${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision })); }
+        try { setRequiredStorageItem(storage, `${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision })); }
         catch { return { removed: 0, pending: true }; }
         assertObserved();
       }
@@ -798,7 +799,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (attachment) assertPersonalPhotoFile(record, file, binding);
         preflight(record.action, record.snapshot);
         try {
-          storage.setItem(keyPrefix + record.action.operationId, JSON.stringify({ version: 3, action: record.action,
+          setRequiredStorageItem(storage, keyPrefix + record.action.operationId, JSON.stringify({ version: 3, action: record.action,
             photoState: record.photoState, mergeBase: record.mergeBase, snapshotPatch: encodePersonalSnapshot(input.payload, input.snapshot) }));
         } catch { throw blocked("quota", "Не хватило места для связи фото с очередью. Файл и черновик сохранены; отправка не начата."); }
         observe({ head: record, anchor: current.anchor }); assertObserved();
@@ -970,7 +971,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       try {
         // The recoverable local data AND operation are one atomic setItem.
         // No await, network, mirror update, or older-record deletion precedes it.
-        storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action,
+        setRequiredStorageItem(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action,
           ...(mergeBase ? { mergeBase } : {}),
           ...(localReconciliation ? { localReconciliation } : {}),
           snapshotPatch: encodePersonalSnapshot(action.body.payload, record.snapshot) }));
@@ -1222,7 +1223,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
       preflight(action, snapshot);
       try {
-        storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
+        setRequiredStorageItem(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
           snapshotPatch: encodePersonalSnapshot(payload, snapshot) }));
       } catch { throw Object.assign(blocked("quota", "Не хватает места для объединённого действия. Прежние версии сохранены."), { unconfirmedMemoryDraft: snapshot }); }
       observe({ head: record, anchor });

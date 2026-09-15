@@ -1,3 +1,4 @@
+import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { API_BASE, EXPERIMENT_API_BASE } from "../config/constants.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../config/api-contract.js";
 
@@ -72,7 +73,7 @@ export function saveTransportSelection(mode, { storage = tabStorage(), locationL
   if (!isExperimentFrontend(locationLike) || !["auto", "direct", "eu"].includes(mode)) throw new Error("Invalid Experiment transport");
   if (!storage) throw new Error("Session storage is unavailable");
   // Only next page load consumes this setting. Never switch in-flight requests.
-  storage.setItem(EXPERIMENT_TRANSPORT_KEY, mode);
+  setRequiredStorageItem(storage, EXPERIMENT_TRANSPORT_KEY, mode);
 }
 
 export function validateApiPath(path) {
@@ -350,7 +351,7 @@ export function createExperimentTransport({
         ...(recovery ? { recovery } : {}) };
       try {
         if (!storage) throw new Error("Storage unavailable");
-        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry));
+        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry));
       } catch { throw transportError("Cannot persist request journal; write was not sent"); }
       ownActiveWrites.add(id);
       journal.push(entry);
@@ -367,7 +368,7 @@ export function createExperimentTransport({
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
       if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template", "admin-template-photo-stage"].includes(entry?.recovery?.type))) {
-        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
+        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
@@ -383,7 +384,7 @@ export function createExperimentTransport({
       const entry = journal.find((entry) => entry.id === id);
       ownActiveWrites.delete(id);
       if (entry) entry.uncertain = true;
-      try { if (entry) storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry)); } catch { /* Intent already persisted. */ }
+      try { if (entry) setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry)); } catch { /* Intent already persisted. */ }
       error.isAmbiguousMutation = true;
       error.uncertainWriteId = id;
     } else confirmWrite(id, { committed: false });
