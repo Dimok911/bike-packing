@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -82,7 +83,7 @@ test("the real layout adapter journals once before display/preferences and retai
     const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: k => values.get(k) ?? null,
       setItem: (k, v) => { if (mode === "quota") throw Error("quota"); values.set(k, v); }, removeItem: k => values.delete(k) };
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(() => createPersonalSaveOutbox({ storage, actorId: "actor", scopeKey: "id:actor", listId: "list" }), "id:actor");
-    const deps = { state, preparePersonalLayoutCopy, PERSONAL_PHOTO_LAYOUT_COPY_ENABLED: true, personalInitialSaveOutbox: null,
+    const deps = { commitPreparedPersonalChange, state, preparePersonalLayoutCopy, PERSONAL_PHOTO_LAYOUT_COPY_ENABLED: true, personalInitialSaveOutbox: null,
       personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor", modeState: {}, isReadOnlyBikePackingContext: () => false,
       isAdminPublicEditScope: () => false, personalSaveRecovery: recovery,
       personalSaveContext: () => ({ listId: "list", generation }), crypto: { randomUUID }, personalPhotoFormUiEnabled: () => true,

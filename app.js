@@ -758,6 +758,7 @@ import {
 } from "./src/sync/legacy-personal-sync.js";
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { recoverPendingPersonalSaveBeforeLoad } from "./src/sync/personal-pending-startup.js";
+import { commitPreparedPersonalChange } from "./src/sync/personal-prepared-commit.js";
 import { personalBusinessPayloadMatchesConfirmed } from "./src/sync/personal-confirmed-business-equality.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
@@ -2773,10 +2774,10 @@ function preparePersonalCatalogDeletion(value) {
       return false;
     }
     personalSaveRecovery.assertRunning();
-    let prepared;
+    let prepared, operationId;
     try {
       const allowPhotoOwners = personalPhotoFormUiEnabled() && PERSONAL_PHOTO_OWNER_DELETION_ENABLED;
-      const operationId = crypto.randomUUID();
+      operationId = crypto.randomUUID();
       prepared = preparePersonalDeletionBatch(state, intent, {
         changedAt: nowIso(), markEdited,
         hasPhotos: record => !allowPhotoOwners && normalizeItemPhotos(record).length > 0
@@ -2803,16 +2804,22 @@ function preparePersonalCatalogDeletion(value) {
       // Publish the complete intent before replacing live state. A storage
       // failure leaves the visible owner and its photos in their original place.
       used = true;
-      persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId });
     } catch (error) { showToast(error.message, "error"); return false; }
-    // Keep the runtime active-layout accessor/UI state; one complete business
-    // candidate and one durable action, before rendering or file cleanup.
-    for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
-      if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
-    }
-    saveState({ captureArrangement: false, recordAction: false });
-    if (editingRootContainerId && !state.containers[editingRootContainerId]) editingRootContainerId = null;
-    return true;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        // Keep the runtime active-layout accessor/UI state; one complete business
+        // candidate and one durable action, before rendering or file cleanup.
+        for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
+          if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+        }
+        saveState({ captureArrangement: false, recordAction: false });
+        if (editingRootContainerId && !state.containers[editingRootContainerId]) editingRootContainerId = null;
+        return true;
+      }
+    });
   };
 }
 
@@ -2869,12 +2876,17 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     personalSaveRecovery.assertRunning();
     if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
     used = true;
-    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
-    if (keepPlacement) applyLayoutArrangement(state.activeLayoutId);
-    saveState({ captureArrangement: false, recordAction: false });
-    return true;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
+        if (keepPlacement) applyLayoutArrangement(state.activeLayoutId);
+        saveState({ captureArrangement: false, recordAction: false });
+        return true;
+      }
+    });
   };
 }
 
@@ -2924,12 +2936,17 @@ async function preparePersonalContainerTreeAction(request) {
     if (mode === "copy" && (!requireUsageCapacity("containers", selected.intent.containers.length)
       || !requireUsageCapacity("items", selected.intent.items.length))) return false;
     used = true;
-    try { persistStateSnapshot(selected.snapshot, { personalMutation: selected.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers"]) state[key] = selected.snapshot[key];
-    applyLayoutArrangement(state.activeLayoutId);
-    saveState({ captureArrangement: false, recordAction: false });
-    return selected.rootId;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(selected.snapshot, { personalMutation: selected.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers"]) state[key] = selected.snapshot[key];
+        applyLayoutArrangement(state.activeLayoutId);
+        saveState({ captureArrangement: false, recordAction: false });
+        return selected.rootId;
+      }
+    });
   };
 }
 
@@ -2968,10 +2985,16 @@ function preparePersonalItemCopyPlacementAction({ sourceId, targetContainerId, t
         const { record } = await session.submit(); scheduleRemoteSave();
         return record.action.body.owners[0].entityId;
       }
-      persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId });
-      for (const key of ["items", "layouts", "packedItems"]) if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
-      applyLayoutArrangement(state.activeLayoutId);
-      saveState({ captureArrangement: false, recordAction: false }); scheduleRemoteSave(); return prepared.itemId;
+      return await commitPreparedPersonalChange({
+        persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+        isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+        onError: error => { showToast(error.message, "error"); return false; },
+        apply: () => {
+          for (const key of ["items", "layouts", "packedItems"]) if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+          applyLayoutArrangement(state.activeLayoutId);
+          saveState({ captureArrangement: false, recordAction: false }); scheduleRemoteSave(); return prepared.itemId;
+        }
+      });
     } catch (error) {
       if (session) reportPersonalPhotoFormError(error, { recovery: session.recoveryCopy() });
       else showToast(error.message, "error");
@@ -2999,17 +3022,22 @@ function preparePersonalLayoutCopyAction({ sourceLayoutId = "", requestedName, a
       showToast("Список изменился. Выберите исходную укладку заново.", "error"); return false;
     }
     personalSaveRecovery.assertRunning(); used = true;
-    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    // The full candidate is durable before active-layout preferences or view.
-    state.layouts = prepared.snapshot.layouts;
-    if (activate) {
-      state.activeLayoutId = prepared.layoutId; state.packedItems = prepared.snapshot.packedItems;
-      setActivePrivateScope(); applyLayoutArrangement(prepared.layoutId);
-    }
-    saveState({ captureArrangement: false, recordAction: false });
-    if (activate) rememberActiveLayoutChoice(prepared.layoutId);
-    render(); return prepared.layoutId;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        // The full candidate is durable before active-layout preferences or view.
+        state.layouts = prepared.snapshot.layouts;
+        if (activate) {
+          state.activeLayoutId = prepared.layoutId; state.packedItems = prepared.snapshot.packedItems;
+          setActivePrivateScope(); applyLayoutArrangement(prepared.layoutId);
+        }
+        saveState({ captureArrangement: false, recordAction: false });
+        if (activate) rememberActiveLayoutChoice(prepared.layoutId);
+        render(); return prepared.layoutId;
+      }
+    });
   };
 }
 
@@ -3037,14 +3065,19 @@ function preparePersonalLayoutDeletionAction(layoutId) {
       return false;
     }
     personalSaveRecovery.assertRunning(); used = true;
-    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
-    state.activeLayoutId = prepared.nextLayoutId;
-    setActivePrivateScope(); applyLayoutArrangement(prepared.nextLayoutId);
-    saveState({ captureArrangement: false, recordAction: false });
-    rememberActiveLayoutChoice(prepared.nextLayoutId);
-    return true;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()) && state.activeLayoutId === layoutId && canDeleteActiveLayout(),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
+        state.activeLayoutId = prepared.nextLayoutId;
+        setActivePrivateScope(); applyLayoutArrangement(prepared.nextLayoutId);
+        saveState({ captureArrangement: false, recordAction: false });
+        rememberActiveLayoutChoice(prepared.nextLayoutId);
+        return true;
+      }
+    });
   };
 }
 
@@ -3068,14 +3101,19 @@ function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner(
     personalSaveRecovery.assertRunning();
     if (request.action === "add" && !requireUsageCapacity(request.type === "location" ? "locations" : "categories")) return false;
     used = true;
-    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    for (const key of ["items", "containers", "locations", "categories", "customLocations", "customCategories", "locationDictionary", "categoryDictionary"]) {
-      if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
-      else delete state[key];
-    }
-    saveState({ captureArrangement: false, recordAction: false });
-    return true;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext()) && owner === state && activeDictionaryOwner() === owner,
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        for (const key of ["items", "containers", "locations", "categories", "customLocations", "customCategories", "locationDictionary", "categoryDictionary"]) {
+          if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+          else delete state[key];
+        }
+        saveState({ captureArrangement: false, recordAction: false });
+        return true;
+      }
+    });
   };
 }
 
@@ -3098,14 +3136,20 @@ function preparePersonalPlacementAction(request) {
       return false;
     }
     personalSaveRecovery.assertRunning(); used = true;
-    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
-    catch (error) { showToast(error.message, "error"); return false; }
-    for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
-      if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
-    }
-    applyLayoutArrangement(state.activeLayoutId);
-    saveState({ captureArrangement: false, recordAction: false });
-    return true;
+    return commitPreparedPersonalChange({
+      persist: () => persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }),
+      isCurrent: () => initial === JSON.stringify(personalSaveContext())
+        && (request.layoutId === state.activeLayoutId || request.action === "link-item") && !warnLockedLayoutMutation(request.layoutId),
+      onError: error => { showToast(error.message, "error"); return false; },
+      apply: () => {
+        for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
+          if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+        }
+        applyLayoutArrangement(state.activeLayoutId);
+        saveState({ captureArrangement: false, recordAction: false });
+        return true;
+      }
+    });
   };
 }
 
@@ -10374,6 +10418,20 @@ async function loadRemoteState(options = {}) {
       getContext: personalSaveContext,
       hasPending: hasPendingPersonalSave,
       resume: () => saveRemoteState({ notify: false }),
+      onCheckingPending: () => {
+        assertBaselineLoadOwner();
+        if (!initialRemoteLoadPending) return;
+        // Authentication, local scope and retained photo recovery are already
+        // checked. Reveal this device's saved view while network verification
+        // continues through the existing guarded queue.
+        renderBeforeFinishingAppStartup({ documentRef: document, render: () => {
+          renderInitialLocalFallbackIfNeeded();
+          const message = localText("Local layout shown; checking save confirmation…",
+            "Показана местная версия; проверяем подтверждение сохранения…");
+          setLayoutLoadStatus("loading", message);
+          updateSyncUi(message);
+        } });
+      },
       onPending: () => {
         appUnlocked = true;
         renderInitialLocalFallbackIfNeeded();

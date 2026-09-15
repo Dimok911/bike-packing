@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -223,23 +224,26 @@ test("linking rejects already placed IDs, unavailable records, public sources an
   }
 });
 
-test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", () => {
+test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", async () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalPlacementAction\([^]*?\n\}/)[0];
-  const make = () => {
+  const make = ({ persistenceGate } = {}) => {
     const issued = [];
     const state = installRuntimeActiveLayoutId(initial(), "l"), values = new Map(), events = [];
     const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" });
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1;
-    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalPlacementMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { commitPreparedPersonalChange, crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalPlacementMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       warnLockedLayoutMutation: () => false, personalSaveContext: () => ({ generation }), nowIso: () => "fixed", markEdited() {},
       normalizeItemPhotos: record => record.photos || [], localText: (en, ru) => ru, showToast: message => events.push(message),
       applyLayoutArrangement: layoutId => applyLayoutArrangementToState(state, layoutId, {
         normalizeLayoutArrangement, repairContainerMembershipFromItemLinks, migrateContainerOrder() {}
       }), persistStateSnapshot: (snapshot, { personalMutation, operationId }) => {
-        outbox.capture({ snapshot, operationId, body: { payload: snapshot, baseStateRevision: 1, userPlacement: personalMutation } }); events.push("durable");
+        const capture = () => {
+          outbox.capture({ snapshot, operationId, body: { payload: snapshot, baseStateRevision: 1, userPlacement: personalMutation } }); events.push("durable");
+        };
+        return persistenceGate ? persistenceGate.then(capture) : capture();
       }, saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().layouts, state.layouts); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
     return { state, values, storage, events, prepare, issued, outbox, makeOutbox, recovery, change: () => { generation++; } };
@@ -264,4 +268,24 @@ test("actual placement confirmation is single-use, binds the active layout and p
   assert.equal(quota.values.size, 0); assert.deepEqual(Object.keys(quota.state.items), ["a", "b"]);
   assert.deepEqual(quota.state.layouts.l.arrangement.items, { a: "bag", b: "pocket" }); assert.ok(!quota.events.includes("durable"));
   assert.deepEqual(quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft.layouts.l.arrangement.items, {});
+  for (const mode of ["success", "editor", "layout", "rejected"]) {
+    let release, reject;
+    const persistenceGate = new Promise((resolve, fail) => { release = resolve; reject = fail; });
+    const delayed = make({ persistenceGate }), original = structuredClone(delayed.state);
+    const commit = delayed.prepare({ layoutId: "l", action: "remove-container", ids: ["bag"] }), pending = commit();
+    assert.deepEqual(delayed.state, original); assert.equal(delayed.values.size, 0);
+    assert.equal(commit(), false, "a pending durable capture cannot be submitted twice");
+    if (mode === "editor") delayed.change();
+    if (mode === "layout") delayed.state.activeLayoutId = "other";
+    const visible = structuredClone(delayed.state);
+    if (mode === "rejected") reject(Error("IndexedDB write failed")); else release();
+    assert.equal(await pending, mode === "success");
+    if (mode === "success") assert.deepEqual(delayed.state.layouts.l.arrangement.items, {});
+    else assert.deepEqual(delayed.state, visible, "stale or failed capture cannot replace the current view");
+    if (mode === "rejected") assert.equal(delayed.values.size, 0);
+    else {
+      assert.deepEqual(delayed.makeOutbox().recoverSnapshot().layouts.l.arrangement.items, {});
+      assert.equal(delayed.makeOutbox().recover().action.operationId, delayed.issued[0]);
+    }
+  }
 });

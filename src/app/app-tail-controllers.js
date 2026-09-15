@@ -1195,7 +1195,7 @@ function removeContainerFromLayoutWithAnimation(containerId, prepared = prepareP
   }
   if (prepared) {
     const finish = applied => { if (!applied) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; };
-    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
+    return finishPreparedPersonalMutation(prepared, finish);
   }
   const element = findContainerElementInPacking(containerId);
   refs.rootContainerDialog?.close("cancel");
@@ -1372,6 +1372,16 @@ function applyRootContainerDialogPlacement() {
   return true;
 }
 
+function finishPreparedPersonalMutation(commit, finish = value => value) {
+  // Keep synchronous callers synchronous, but publish UI success only after
+  // the durable capture resolves. Event callbacks may ignore this Promise.
+  const failed = error => { showToast(error.message, "error"); return false; };
+  try {
+    const result = commit();
+    return result?.then ? result.then(finish).catch(failed) : finish(result);
+  } catch (error) { return failed(error); }
+}
+
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
   const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
@@ -1389,7 +1399,13 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   const action = state.layouts?.[layoutId]?.arrangement?.containers?.[containerId] ? "lift-container" : "link-root";
   const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, includeContents: !pendingCopyTargetContainerSetup });
   if (commit === false) return;
-  if (commit ? !commit() : !addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
+  if (commit) return finishPreparedPersonalMutation(commit, applied => {
+    if (!applied) return false;
+    if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
+    if (renderAfter) render();
+    return true;
+  });
+  if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
     includeContents: !pendingCopyTargetContainerSetup,
     markRecordActivePublicCatalog,
     touchLayout
@@ -1458,7 +1474,7 @@ async function addExistingItemToContainer(itemId) {
   }
   const commit = preparePersonalPlacementAction({ layoutId, action: "link-item", ids: [itemId], targetContainerId: containerId });
   if (commit === false) return;
-  if (commit ? !commit() : !placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
+  if (commit ? !await finishPreparedPersonalMutation(commit) : !placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
     showToast(localText("Could not add the item to this layout.", "Не удалось добавить вещь в эту укладку."), "error");
     return;
   }
@@ -2482,7 +2498,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
       showToast(localText("Copy skipped: the item is already in the target layout.", "Копирование пропущено: вещь уже есть в целевой укладке."), "success");
       return;
     }
-    if (linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
+    if (await linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
     return;
   }
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
@@ -2526,20 +2542,22 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   if (getLayoutItemIdSet(targetLayout).has(itemId)) return false;
   const commit = preparePersonalPlacementAction({ layoutId: targetLayoutId, action: "link-item", ids: [itemId], targetContainerId });
   if (commit === false) return false;
-  if (commit) { if (!commit()) return false; }
-  else {
-    ensureWritableTargetLayoutContext(targetLayoutId);
-    if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
-    saveLayoutMutation(targetLayoutId);
-  }
-  markRecentlyAddedItem(itemId, targetLayoutId);
-  openCopiedTargetLayout(targetLayoutId);
-  refs.containerPickerDialog.close();
-  closeSourceEditorAfterCopy("item", itemId);
-  render();
-  requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
-  showToast(localText("The item was added to the selected layout without creating a duplicate.", "Вещь добавлена в выбранную укладку без создания дубля."), "success");
-  return true;
+  const finish = applied => {
+    if (!applied) return false;
+    markRecentlyAddedItem(itemId, targetLayoutId);
+    openCopiedTargetLayout(targetLayoutId);
+    refs.containerPickerDialog.close();
+    closeSourceEditorAfterCopy("item", itemId);
+    render();
+    requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
+    showToast(localText("The item was added to the selected layout without creating a duplicate.", "Вещь добавлена в выбранную укладку без создания дубля."), "success");
+    return true;
+  };
+  if (commit) return finishPreparedPersonalMutation(commit, finish);
+  ensureWritableTargetLayoutContext(targetLayoutId);
+  if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
+  saveLayoutMutation(targetLayoutId);
+  return finish(true);
 }
 
 async function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId, {
@@ -4350,7 +4368,7 @@ function togglePacked(itemId) {
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
   const prepared = preparePersonalPlacementAction({ layoutId: state.activeLayoutId, action: "set-packed", ids: [itemId], packed: !state.packedItems?.[itemId] });
   if (prepared === false) return;
-  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
+  if (prepared) { capturePackingScroll(); return finishPreparedPersonalMutation(prepared, applied => { if (applied) render(); return applied; }); }
   capturePackingScroll();
   const changedAt = nowIso();
   state.packedItems = state.packedItems || {};
@@ -4371,7 +4389,7 @@ function unpackAllItems() {
     text: localText("All packed marks will be removed. The items and layout will stay in place.", "Все отметки «собрано» будут сняты. Сами вещи и укладка останутся на месте."),
     okText: localText("Mark as unpacked", "Разобрать"),
     onConfirm: () => {
-      if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
+      if (prepared) { capturePackingScroll(); return finishPreparedPersonalMutation(prepared, applied => { if (applied) render(); return applied; }); }
       capturePackingScroll();
       const changedAt = nowIso();
       Object.keys(state.packedItems || {}).forEach((itemId) => touchItem(itemId, changedAt));
@@ -5413,7 +5431,7 @@ function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
   }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-item", ids: [itemId], targetContainerId, targetIndex });
   if (prepared === false) return;
-  if (prepared) { if (options.captureScroll !== false) capturePackingScroll(); if (prepared()) render(); return; }
+  if (prepared) { if (options.captureScroll !== false) capturePackingScroll(); return finishPreparedPersonalMutation(prepared, applied => { if (applied) render(); return applied; }); }
   if (options.captureScroll !== false) capturePackingScroll();
   const changedAt = nowIso();
   if (!moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex)) return;
@@ -5436,7 +5454,7 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
   }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-container", ids: [containerId], targetContainerId: targetParentId, targetIndex });
   if (prepared === false) return;
-  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
+  if (prepared) { capturePackingScroll(); return finishPreparedPersonalMutation(prepared, applied => { if (applied) render(); return applied; }); }
   capturePackingScroll();
   const changedAt = nowIso();
   if (!moveContainerInLayoutArrangement(layout, containerId, targetParentId, targetIndex)) return;
@@ -5451,14 +5469,14 @@ function moveItemIntoContainerTop(itemId, containerId) {
   if (!state.items[itemId] || !state.containers[containerId]) return;
   state.collapsedContainers[containerId] = false;
   saveLocalUiState();
-  moveItem(itemId, containerId, 0);
+  return moveItem(itemId, containerId, 0);
 }
 
 function moveContainerIntoContainerTop(containerId, targetContainerId) {
   if (!state.containers[containerId] || !state.containers[targetContainerId]) return;
   state.collapsedContainers[targetContainerId] = false;
   saveLocalUiState();
-  moveContainer(containerId, targetContainerId, 0);
+  return moveContainer(containerId, targetContainerId, 0);
 }
 
 function createGroupFromItems(itemId, targetItemId) {
@@ -5480,7 +5498,7 @@ function createGroupFromItems(itemId, targetItemId) {
   const groupId = createEntityId("container");
   const prepared = preparePersonalPlacementAction({ layoutId, action: "group-items", ids: [itemId, targetItemId], groupId });
   if (prepared === false) return;
-  if (prepared) { if (prepared()) { runtime.editingContainerId = groupId; render(); } return; }
+  if (prepared) return finishPreparedPersonalMutation(prepared, applied => { if (applied) { runtime.editingContainerId = groupId; render(); } return applied; });
   const created = createGroupFromItemsInState(state, layoutId, itemId, targetItemId, {
     changedAt,
     currentEditMeta,
@@ -5503,7 +5521,7 @@ function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId, pre
   }
   if (prepared) {
     capturePackingScroll(); const finish = applied => { if (!applied) return false; render(); return true; };
-    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
+    return finishPreparedPersonalMutation(prepared, finish);
   }
   if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
@@ -5572,7 +5590,7 @@ function placeExistingContainerInLayout(containerId, parentId, layoutId = state.
   const action = !parentId ? "lift-container" : layout.arrangement?.containers?.[containerId] ? "move-container" : "link-container";
   const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, targetContainerId: parentId });
   if (commit === false) return false;
-  if (commit) { const placed = commit(); if (placed && renderAfter) render(); return placed; }
+  if (commit) return finishPreparedPersonalMutation(commit, placed => { if (placed && renderAfter) render(); return placed; });
   capturePackingScroll();
   const placed = placeExistingContainerInLayoutInState(state, containerId, parentId, layoutId, {
     activeLayoutId: state.activeLayoutId,
@@ -5717,7 +5735,7 @@ function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = tru
   }
   if (personalDelete) {
     const finish = applied => { if (!applied) return false; if (renderAfter) render(); return true; };
-    const result = personalDelete(); return result?.then ? result.then(finish) : finish(result);
+    return finishPreparedPersonalMutation(personalDelete, finish);
   }
   const changedAt = nowIso();
   const deleted = deleteItemFromState(state, itemId, {
@@ -5945,7 +5963,7 @@ function deleteRootContainer(containerId, personalDelete = preparePersonalCatalo
   }
   if (personalDelete) {
     const finish = applied => { if (!applied) return false; if (runtime.editingRootContainerId === containerId) runtime.editingRootContainerId = null; render(); return true; };
-    const result = personalDelete(); return result?.then ? result.then(finish) : finish(result);
+    return finishPreparedPersonalMutation(personalDelete, finish);
   }
   const changedAt = nowIso();
   const deleted = deleteRootContainerFromState(state, containerId, {
@@ -5968,7 +5986,7 @@ function removeRootContainerFromActiveLayout(containerId, prepared = preparePers
   }
   if (prepared) {
     const finish = applied => { if (!applied) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; };
-    const result = prepared(); return result?.then ? result.then(finish) : finish(result);
+    return finishPreparedPersonalMutation(prepared, finish);
   }
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
@@ -6069,7 +6087,7 @@ function moveRootColumn(containerId, targetIndex) {
   }
   const prepared = preparePersonalPlacementAction({ layoutId, action: "move-root", ids: [containerId], targetIndex });
   if (prepared === false) return;
-  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
+  if (prepared) { capturePackingScroll(); return finishPreparedPersonalMutation(prepared, applied => { if (applied) render(); return applied; }); }
   capturePackingScroll();
   moveRootColumnInState(state, layoutId, containerId, targetIndex, { touchLayout });
   saveState({ captureArrangement: false });
@@ -7271,7 +7289,7 @@ async function saveNewLayout(event) {
     requestedName, activate: !pendingCopyTargetLayoutCreation });
   if (personalCopy === false) return;
   if (personalCopy) {
-    const createdId = personalCopy(); if (!createdId) return;
+    const createdId = await finishPreparedPersonalMutation(personalCopy); if (!createdId) return;
     refs.layoutDialog.close();
     if (!resumeCopyPickerAfterLayoutCreation(createdId)) switchView("packing");
     return;
@@ -8148,7 +8166,7 @@ async function confirmDeleteEditableLayout(layoutId) {
     isLastLayout
   }));
   if (!confirmed) return;
-  if (deleteActiveLayout(personalDelete)) refs.layoutEditDialog.close();
+  if (await deleteActiveLayout(personalDelete)) refs.layoutEditDialog.close();
 }
 
 async function confirmDeleteManagedPublicLayout(layoutId) {
@@ -8345,9 +8363,11 @@ function deleteActiveLayout(personalDelete = preparePersonalLayoutDeletionAction
   if (!canDeleteActiveLayout() || !layout) return;
   if (personalDelete === false) return;
   if (personalDelete) {
-    if (!personalDelete()) return false;
-    render(); showToast(localText("Layout deleted.", "Укладка удалена."), "success");
-    return true;
+    return finishPreparedPersonalMutation(personalDelete, applied => {
+      if (!applied) return false;
+      render(); showToast(localText("Layout deleted.", "Укладка удалена."), "success");
+      return true;
+    });
   }
   captureActiveLayoutArrangement();
   const remainingLayouts = userEditableLayouts().filter((entry) => entry.id !== layoutId);

@@ -17,7 +17,8 @@ const owner = getContext => {
 // The normal replacement loader is never used to settle pending actions. The
 // injected existing saver owns receipts, CAS, photo guards and reconciliation.
 // A resolved save promise alone is not success: it may have handled a refusal.
-export async function recoverPendingPersonalSaveBeforeLoad({ enabled = false, getContext, hasPending, resume, onPending = () => {} }) {
+export async function recoverPendingPersonalSaveBeforeLoad({ enabled = false, getContext, hasPending, resume,
+  onCheckingPending = () => {}, onPending = () => {} }) {
   if (enabled !== true) return true;
   const initial = owner(getContext);
   if (!initial) return false;
@@ -35,6 +36,13 @@ export async function recoverPendingPersonalSaveBeforeLoad({ enabled = false, ge
   if (before === null) return false;
   if (!before) return true;
   if (!initial.listId || typeof resume !== "function") invalid();
+  // Local scope and photo recovery have already been checked by the caller.
+  // The retained view can be shown before slow receipt/state reads settle,
+  // without treating that view or this callback as a server confirmation.
+  synchronous(onCheckingPending);
+  const stillPending = pending();
+  if (stillPending === null) return false;
+  if (!stillPending) return true;
   let failure;
   try { await resume(); } catch (error) { failure = error; }
   // Reconciliation may legitimately change the editor generation. The saver

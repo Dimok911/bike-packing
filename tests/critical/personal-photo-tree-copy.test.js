@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -131,7 +132,7 @@ test("a refused independent copy does not block the separately validated existin
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/async function preparePersonalContainerTreeAction\([^]*?\n\}/)[0];
   for (const mode of ["copy", "link"]) {
     const f = fixture(), state = f.input.snapshot, before = structuredClone(state), events = [];
-    const deps = { state, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor", modeState: {},
+    const deps = { commitPreparedPersonalChange, state, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor", modeState: {},
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, personalSaveRecovery: { assertRunning() {} },
       personalSaveContext: f.options.getContext, nowIso: () => f.input.changedAt, currentEditMeta: () => f.input.editMeta,
       normalizeItemPhotos: owner => owner.photos || [], PERSONAL_PHOTO_TREE_COPY_ENABLED: true, PERSONAL_PHOTO_COPY_BATCH_ENABLED: true,

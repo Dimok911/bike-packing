@@ -10,6 +10,15 @@ function localText(en, ru) {
 
 const renameKeyHandlers = new WeakMap();
 
+function finishPreparedDictionaryMutation(commit, finish, showToast) {
+  const failed = error => { showToast(error.message, "error"); return false; };
+  const applied = value => { if (!value) return false; finish(); return value; };
+  try {
+    const result = commit();
+    return result?.then ? result.then(applied).catch(failed) : applied(result);
+  } catch (error) { return failed(error); }
+}
+
 export function bindDictionaryControls(type, {
   activeDictionaryOwner,
   addCustomDictionaryValue,
@@ -44,8 +53,7 @@ export function bindDictionaryControls(type, {
     const prepared = prepareDictionaryMutation({ type, action: "add", value }, owner);
     if (prepared === false) return;
     if (prepared) {
-      if (prepared()) { setEditingDictionaryEntry(null); input.value = ""; render(); }
-      return;
+      return finishPreparedDictionaryMutation(prepared, () => { setEditingDictionaryEntry(null); input.value = ""; render(); }, showToast);
     }
     addCustomDictionaryValue(owner, type, value);
     setEditingDictionaryEntry(null);
@@ -161,7 +169,7 @@ export function bindDictionaryControls(type, {
         okText: localText("Delete", "Удалить"),
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
-          if (prepared) { if (prepared()) { setEditingDictionaryEntry(null); render(); } return; }
+          if (prepared) return finishPreparedDictionaryMutation(prepared, () => { setEditingDictionaryEntry(null); render(); }, showToast);
           const changedAt = nowIso();
           removeCustomDictionaryValue(owner, type, value);
           scope.items.forEach((item) => {
@@ -232,8 +240,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
   const prepared = prepareDictionaryMutation({ type, action: "rename", value: oldValue, nextValue: newValue }, owner);
   if (prepared === false) return;
   if (prepared) {
-    if (prepared()) { onRenamed(type, oldValue, newValue); setEditingDictionaryEntry(null); render(); }
-    return;
+    return finishPreparedDictionaryMutation(prepared, () => { onRenamed(type, oldValue, newValue); setEditingDictionaryEntry(null); render(); }, showToast);
   }
   const changedAt = nowIso();
   renameCustomDictionaryValue(owner, type, oldValue, newValue);

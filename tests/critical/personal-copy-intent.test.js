@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -70,7 +71,7 @@ test("actual copy adapter freezes all IDs before confirmation, registers once, a
     const binding = { actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" };
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(() => createPersonalSaveOutbox({ storage, ...binding }), binding.scopeKey);
     let generation = 1, actorId = "actor-a", capacity = true;
-    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalCopyBatch, PERSONAL_PHOTO_COPY_FORM_ENABLED: false, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { commitPreparedPersonalChange, crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalCopyBatch, PERSONAL_PHOTO_COPY_FORM_ENABLED: false, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       adminTemplateUiEnabled: () => false, isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
       personalSaveRecovery: recovery, personalSaveContext: () => ({ generation, actorId }),
       showToast: message => messages.push(message), localText: (en, ru) => ru,

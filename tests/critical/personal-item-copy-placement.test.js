@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -117,7 +118,7 @@ test("the real item adapter saves DB-only copy before the view, retains it on qu
     const f = fixture(false), state = f.input.snapshot, before = structuredClone(state), events = [], recovery = createPersonalSaveRecovery();
     if (mode === "quota") f.storage.setItem = () => { throw Error("quota"); };
     const outbox = recovery.outbox(() => f.outbox, "id:actor");
-    const deps = { state, preparePersonalItemCopyPlacement, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor", modeState: {},
+    const deps = { commitPreparedPersonalChange, state, preparePersonalItemCopyPlacement, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor", modeState: {},
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, personalSaveRecovery: recovery, requireUsageCapacity: () => true,
       personalSaveContext: () => f.context, nowIso: () => f.input.changedAt, currentEditMeta: () => f.input.editMeta, crypto: { randomUUID },
       normalizeItemPhotos: owner => owner?.photos || [], cloneStateForSync: project, showToast: text => events.push(text), applyLayoutArrangement() {}, scheduleRemoteSave() {},

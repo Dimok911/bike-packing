@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -1409,7 +1410,7 @@ test("a later explicit choice filters only retained deletions from a new batch i
 test("actual deletion adapter publishes one whole action and binds confirmation to its editor version", () => {
   const state = deletionBatchFixture(), f = fixture(), warnings = [], saved = [];
   let context = { actorId: "actor-a", generation: 1, scope: "personal" };
-  const prepare = appFunction("preparePersonalCatalogDeletion", {
+  const prepare = appFunction("preparePersonalCatalogDeletion", { commitPreparedPersonalChange,
     personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a", isReadOnlyBikePackingContext: () => false,
     isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
     personalDeletionIntent, personalSaveContext: () => context, showToast: message => warnings.push(message),

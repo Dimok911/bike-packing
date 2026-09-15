@@ -123,6 +123,39 @@ test("asynchronous or nonboolean pending readers cannot skip the recovery barrie
     await assert.rejects(recover({ enabled: true, getContext: context, hasPending, resume: unexpected }));
 });
 
+test("validated pending view is announced before the remote save settles without confirming or altering it", async () => {
+  const f = fixture(); let release, announced = 0, resumed = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const loading = recover({ ...f.options,
+    onCheckingPending: () => { announced++; assert.equal(resumed, false); },
+    resume: async () => { resumed = true; await gate; } });
+  assert.equal(announced, 1); assert.equal(resumed, true);
+  assert.equal(f.outbox.hasPending(), true); assert.deepEqual([...f.values], f.before);
+  assert.deepEqual(f.events, []);
+  release(); assert.equal(await loading, false); assert.equal(f.events[0].type, "pending");
+});
+
+test("showing the pending view cannot resume work after the owner changes", async () => {
+  const f = fixture();
+  assert.equal(await recover({ ...f.options,
+    onCheckingPending: () => { f.current.actorId = "another-user"; }, resume: unexpected }), false);
+  assert.deepEqual(f.events, []); assert.deepEqual([...f.values], f.before);
+});
+
+test("pending visibility never runs for disabled, readonly or already settled loading", async () => {
+  for (const options of [{ enabled: false }, { getContext: () => ({ ...context(), scope: "readonly" }) }, { hasPending: () => false }]) {
+    const f = fixture();
+    await recover({ ...f.options, ...options, onCheckingPending: unexpected, resume: unexpected });
+    assert.deepEqual([...f.values], f.before);
+  }
+});
+
+test("an asynchronous visibility callback stops before any remote resume", async () => {
+  const f = fixture();
+  await assert.rejects(recover({ ...f.options, onCheckingPending: async () => {}, resume: unexpected }));
+  assert.deepEqual([...f.values], f.before);
+});
+
 function appFixture({ pending = true, photoFailure = null } = {}) {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/async function loadRemoteState\([^]*?\n\}/)?.[0];
   assert.ok(source);
@@ -141,6 +174,7 @@ function appFixture({ pending = true, photoFailure = null } = {}) {
     saveRemoteState: async options => { events.push(["resume", options.notify]); pending = false; },
     loadRemoteStateFlow: async () => { assert.equal(pending, false); events.push("normal-load"); return "loaded"; },
     renderInitialLocalFallbackIfNeeded: () => { events.push("local-fallback"); scope.initialRemoteLoadPending = false; },
+    document: {}, renderBeforeFinishingAppStartup: ({ render }) => { render(); events.push("startup-ready"); },
     setLayoutLoadStatus: (tone, text) => events.push([tone, text]), updateSyncUi: text => events.push(["sync-ui", text]),
     localText: (en, ru) => ru });
   const vm = createContext(scope); runInContext(source, vm);
@@ -177,6 +211,8 @@ test("actual app entry preserves the photo-recovery stop without a plain-save or
 
 test("actual app entry does not apply old pending recovery to a newly selected account/list", async () => {
   const f = appFixture();
-  f.scope.saveRemoteState = async () => { await Promise.resolve(); f.scope.currentUser.id = "other"; f.scope.localStorageScopeKey = "id:other"; };
-  assert.equal(await f.load(), false); assert.deepEqual(f.events, ["photo-check"]);
+  f.scope.saveRemoteState = async () => { await Promise.resolve(); f.scope.currentUser.id = "other"; f.scope.localStorageScopeKey = "id:other"; f.events.push("owner-changed"); };
+  assert.equal(await f.load(), false);
+  assert.equal(f.events.includes("startup-ready"), true, "old local data was shown only while its authenticated owner was current");
+  assert.equal(f.events.at(-1), "owner-changed", "no old warning or local-state rendering occurs after the owner switch");
 });

@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -58,7 +59,7 @@ test("actual layout adapter records replacement before preference writes and kee
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" });
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1;
-    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalLayoutDeletion, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { commitPreparedPersonalChange, crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalLayoutDeletion, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       canDeleteActiveLayout: () => true, personalSaveContext: () => ({ generation }), userEditableLayouts: () => Object.values(state.layouts),
       ensureLayoutDictionaries: layout => layout, locations: ["Bike"], categories: ["Repair"], uniqueLayoutName: () => "New layout",

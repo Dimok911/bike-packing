@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -202,7 +203,7 @@ test("real tree adapter guards asynchronous preparation and confirmation, capaci
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(() => createPersonalSaveOutbox({ storage, actorId: "actor", listId: "list", scopeKey: "id:actor" }), "id:actor");
     let actorId = "actor", generation = 1, capacity = true, blocked = false;
-    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state: f.state, preparePersonalContainerTreeCopy, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor",
+    const deps = { commitPreparedPersonalChange, crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state: f.state, preparePersonalContainerTreeCopy, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, uiLanguage: "ru",
       personalSaveRecovery: { assertRunning() { if (blocked) throw Error("recovery blocked"); recovery.assertRunning(); } }, personalSaveContext: () => ({ actorId, generation }),
       showToast: message => messages.push(message), requireUsageCapacity: (type, count) => { counts.push([type, count]); return capacity; },

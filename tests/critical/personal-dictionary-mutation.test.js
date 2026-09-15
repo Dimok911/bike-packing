@@ -1,3 +1,4 @@
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -53,7 +54,7 @@ test("actual dictionary adapter binds confirmation to the editor and persists al
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" });
     const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1, capacity = true;
-    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalDictionaryMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { commitPreparedPersonalChange, crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalDictionaryMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       activeDictionaryOwner: () => state, personalSaveContext: () => ({ generation }), dictionaryEditScope: () => ({ items: [state.items.a, state.items.b], containers: [state.containers.bag] }),
       dictionaryOptionsForOwner: type => state[type === "location" ? "locations" : "categories"], nowIso: () => "fixed", markEdited() {},

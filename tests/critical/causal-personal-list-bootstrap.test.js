@@ -1,4 +1,5 @@
 import test from "node:test";
+import { commitPreparedPersonalChange } from "../../src/sync/personal-prepared-commit.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ensureCausalPersonalListId, initialPersonalListId } from "../../src/sync/causal-personal-list-bootstrap.js";
@@ -145,6 +146,18 @@ test("actual first UI edit stores its create action synchronously, before the po
   assert.equal(f.outbox().recover().action.kind, "list.create");
   assert.equal(f.outbox().recover().snapshot.items.a.weight, 100);
   assert.equal(f.values.size, 1);
+  const completed = fixture(), events = [], context = { listId: "" };
+  const initialOutbox = createPersonalSaveOutbox({ storage: completed.storage, ...completed.context, listId });
+  const successfulDependencies = { ...dependencies, personalInitialSaveOutbox: initialOutbox, personalSaveOutboxes: new Map(),
+    saveActivePackingListId: id => { assert.equal(initialOutbox.recover().action.kind, "list.create"); context.listId = id; events.push("pointer"); } };
+  const captureCompleted = new Function(...Object.keys(successfulDependencies), `return (${captureSource});`)(...Object.values(successfulDependencies));
+  const oldListId = context.listId;
+  const result = commitPreparedPersonalChange({ persist: () => captureCompleted(completed.input.snapshot),
+    isCurrent: () => context.listId === oldListId,
+    apply: () => { assert.equal(context.listId, listId); assert.equal(initialOutbox.recover().snapshot.items.a.weight, 100); events.push("apply"); return true; },
+    onError: error => { throw error; } });
+  assert.equal(result, true, "initial list ID established synchronously is not mistaken for an editor switch");
+  assert.deepEqual(events, ["pointer", "apply"]);
 });
 
 test("actual inventory load cannot authorize first creation after an account switch", async () => {
