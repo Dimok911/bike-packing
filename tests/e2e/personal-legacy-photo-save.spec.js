@@ -40,7 +40,15 @@ async function green(page, f, revision) {
 async function startupGreen(page, f, revision) {
   await expect.poll(() => f.revision, { timeout: 30000 }).toBe(revision);
   await expect.poll(async () => (await nativeLegacyPhotoOutbox(page)).pending, { timeout: 30000 }).toBe(false);
-  await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
+  try {
+    await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
+  } catch (error) {
+    console.log(JSON.stringify({ phase: "legacy-confirmation-ui", ui: await page.evaluate(() => ({
+      status: document.querySelector("#syncStatus")?.textContent,
+      load: document.querySelector("#layoutLoadStatus")?.textContent,
+      dialogs: [...document.querySelectorAll("dialog[open]")].map(node => node.textContent.slice(-400))
+    })) })); throw error;
+  }
   await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
   const native = await nativeLegacyPhotoOutbox(page);
   expect(native.confirmed.stateRevision).toBe(revision);

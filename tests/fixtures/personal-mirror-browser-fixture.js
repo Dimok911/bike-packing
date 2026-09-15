@@ -23,6 +23,9 @@ export async function readBrowserPersonalMirror(page, key) {
 
 export async function seedBrowserPersonalMirror(page, key, raw) {
   await page.evaluate(async ({ key, raw }) => {
+    // Old releases have no IndexedDB mirror repository. Do not create an empty
+    // version-1 database while merely seeding their existing localStorage.
+    if (localStorage.getItem(key) !== null) { localStorage.setItem(key, raw); return; }
     await new Promise((resolve, reject) => {
       const request = indexedDB.open("bike-packing-personal-mirrors-v1", 1);
       request.onerror = () => reject(request.error);

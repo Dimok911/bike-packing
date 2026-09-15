@@ -7,6 +7,8 @@ const contextChanged = error => error?.isPersonalSelectionContextChanged === tru
   || error?.code === "context-changed" && error.isPersonalPhotoStorageBlocked === true
   || error?.code === "photo-recovery-context" && error.isPersonalPhotoRecoveryBlocked === true
   || error?.code === "photo-recovery-superseded";
+const observationChanged = error => error?.code === "stale-tab" && error.isPersonalSaveBlocked === true
+  || error?.code === "photo-recovery-changed" && error.isPersonalPhotoRecoveryBlocked === true;
 
 // Retry only a cancelled read of this same editor. A storage/corruption error
 // must retain its original meaning even when an edit happened at the same time.
@@ -22,9 +24,13 @@ export async function readPersonalPhotoRecoveryInCurrentContext({ binding, getCo
       return result;
     } catch (error) {
       const current = getContext();
-      if (!contextChanged(error)) throw error;
+      // A confirmed baseline can advance while IndexedDB is being read without
+      // changing the visible editor generation. Rebuild this read-only inventory
+      // with a fresh outbox; dispatch/capture fences remain unchanged.
+      const changedObservation = observationChanged(error);
+      if (!contextChanged(error) && !changedObservation) throw error;
       if (!sameOwner(current, binding)) throw superseded();
-      if (current.generation === initial.generation) throw error;
+      if (current.generation === initial.generation && !changedObservation) throw error;
       if (attempt === 2) throw superseded();
     }
   }

@@ -65,3 +65,28 @@ test("a context failure without a changed generation remains an error", async ()
   });
   await assert.rejects(readPersonalPhotoRecoveryInCurrentContext({ ...f, read: async () => { throw failure; } }), error => error === failure);
 });
+
+
+test("a receipt arriving during an inventory read refreshes the observation without latching a photo failure", async () => {
+  const { createPersonalSaveOutbox } = await import("../../src/sync/personal-save-outbox.js");
+  const { inspectPersonalPhotoRecovery } = await import("../../src/sync/personal-photo-recovery-inventory.js");
+  const f = fixture(), rows = new Map();
+  const storage = { get length() { return rows.size; }, key: i => [...rows.keys()][i],
+    getItem: key => rows.get(key) ?? null, setItem: (key, raw) => rows.set(key, raw), removeItem: key => rows.delete(key) };
+  const writer = createPersonalSaveOutbox({ ...binding, storage });
+  const payload = { items: {}, containers: {}, layouts: {} };
+  const record = writer.capture({ snapshot: payload, body: { payload, baseStateRevision: 1 } });
+  let reads = 0, receiptArrived = false;
+  const result = await readPersonalPhotoRecoveryInCurrentContext({ ...f, read: () => {
+    reads++;
+    return inspectPersonalPhotoRecovery({ getContext: f.getContext,
+      outbox: createPersonalSaveOutbox({ ...binding, storage }), store: { binding, ids: async () => {
+        if (!receiptArrived) {
+          receiptArrived = true; writer.markApplied({ operationId: record.action.operationId, stateRevision: 2 }); writer.compact();
+          writer.adoptRemoteBaseline({ payload, snapshot: payload, stateRevision: 2 });
+        }
+        return [];
+      } } });
+  } });
+  assert.equal(reads, 2); assert.deepEqual(result.entries, []); assert.equal(writer.hasPending(), false);
+});

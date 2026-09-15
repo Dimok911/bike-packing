@@ -315,7 +315,7 @@ test("quota while archiving the explicit choice blocks cancellation and preserve
   expect(copy.recoveryStorageDiagnostics.current.personalQueueBytes).toBeGreaterThan(0);
   expect(copy.recoveryStorageDiagnostics.beforeServerChoice.available).toBe(true);
   const storageDetails = dialog(page).locator("details[data-recovery-storage]");
-  await expect(storageDetails.locator("summary")).toContainText("Хранилище этого сайта");
+  await expect(storageDetails.locator("summary")).toContainText("Хранилище localStorage");
   await storageDetails.locator("summary").click();
   await expect(storageDetails).toHaveAttribute("open", "");
   await expect(storageDetails).toContainText("Очередь личных сохранений");
