@@ -1,3 +1,4 @@
+import { initializePersonalJournal, personalJournalStorage, preparePersonalJournal, flushPersonalJournal } from "./src/storage/personal-journal-runtime.js";
 import { isExperimentHost, migrateExperimentSession, clearLegacyExperimentCookie } from "./src/sync/experiment-shared-auth.js";
 import { createPersonalPendingServerFormSession } from "./src/sync/personal-pending-server-form.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate } from "./src/sync/personal-pending-server-update.js";
@@ -1305,6 +1306,7 @@ applyPublicTemplateLanguage();
 
 try {
   await initializePersonalMirrors(experimentTransport.experiment && PERSONAL_SAVE_OUTBOX_ENABLED);
+  await initializePersonalJournal(experimentTransport.experiment && PERSONAL_SAVE_OUTBOX_ENABLED);
 } catch (error) {
   const startup = document.querySelector(".app-startup");
   startup?.setAttribute("aria-busy", "false");
@@ -2053,7 +2055,9 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, getPersonalSaveErrorScope: () => localStorageScopeKey,
+  reportPersonalSaveError: (error, { scopeKey } = {}) => { if (scopeKey !== localStorageScopeKey) return; personalSaveRecovery.report(error, { scopeKey, snapshot: error.unconfirmedMemoryDraft || clone(state) }); showToast(error.message, "warning"); },
+  reportPersonalPhotoFormError,
   runCausalPersonalShareLink, personalSavePilotEnabled, PERSONAL_SHARE_LINK_ENABLED,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
@@ -2769,7 +2773,7 @@ function reportPersonalPhotoFormError(error, { recovery } = {}) {
       // normal editor's outbox wrapper has latched a storage failure.
       try {
         personalPhotoRecoverySource.outbox = createPersonalSaveOutbox({
-          ...personalPhotoRecoverySource.store.binding, storage: localStorage });
+          ...personalPhotoRecoverySource.store.binding, storage: personalJournalStorage() });
       } catch {
         // A corrupt queue still permits a raw recovery export. Never let its
         // failed reader hide the frozen form/bytes behind a second exception.
@@ -3186,7 +3190,7 @@ function personalSaveOutboxForScope({ reload = false } = {}) {
   const key = JSON.stringify([actorId, listId, localStorageScopeKey]);
   if (reload) personalSaveOutboxes.delete(key);
   if (!personalSaveOutboxes.has(key)) personalSaveOutboxes.set(key, personalSaveRecovery.outbox(() => createPersonalSaveOutbox({
-    storage: localStorage, actorId, listId, scopeKey: localStorageScopeKey
+    storage: personalJournalStorage(), actorId, listId, scopeKey: localStorageScopeKey
   }), localStorageScopeKey));
   return personalSaveOutboxes.get(key);
 }
@@ -3195,7 +3199,25 @@ function hasPendingPersonalSave() {
   return Boolean(personalSaveOutboxForScope()?.hasPending());
 }
 
+let personalCaptureTail = Promise.resolve();
 function capturePersonalSaveIntent(snapshot, personalMutation = null, operationId) {
+  if (!personalSavePilotEnabled() || localStorageScopeKey === GUEST_STORAGE_SCOPE
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  const frozen = clone(snapshot), mutation = personalMutation && clone(personalMutation), initial = clone(personalSaveContext());
+  const assertCurrent = () => {
+    if (!sameJson(initial, personalSaveContext())) throw Object.assign(Error("Редактор изменился во время записи. Черновик сохранён для разбора."),
+      { code: "stale-tab", isPersonalSaveBlocked: true, unconfirmedMemoryDraft: frozen });
+    personalSaveRecovery.assertRunning();
+  };
+  const task = personalCaptureTail.then(async () => {
+    assertCurrent(); await preparePersonalJournal(); assertCurrent();
+    return capturePersonalSaveIntentNow(frozen, mutation, operationId, assertCurrent);
+  });
+  personalCaptureTail = task.catch(error => { personalSaveRecovery.report(error, { scopeKey: initial.scopeKey, snapshot: frozen }); });
+  return task;
+}
+
+async function capturePersonalSaveIntentNow(snapshot, personalMutation = null, operationId, assertCurrent = () => {}) {
   if (!personalSavePilotEnabled() || localStorageScopeKey === GUEST_STORAGE_SCOPE
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   let outbox = personalSaveOutboxForScope();
@@ -3217,8 +3239,8 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
     // Prepared after an authenticated empty inventory. This first UI save is
     // synchronous too: durable snapshot/action before the active-list mirror.
     outbox = personalInitialSaveOutbox;
-    const intent = outbox.capture({ snapshot, create: true, operationId,
-      body: { ...body, title: localText("My packing lists", "Мои укладки") } });
+    const intent = await outbox.capture({ snapshot, create: true, operationId,
+      body: { ...body, title: localText("My packing lists", "Мои укладки") } }, { assertCurrent });
     personalSaveOutboxes.set(JSON.stringify([outbox.binding.actorId, outbox.binding.listId, localStorageScopeKey]), outbox);
     saveActivePackingListId(outbox.binding.listId);
     personalInitialSaveOutbox = null;
@@ -3237,7 +3259,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
   if (!personalMutation && (!latest || latest.action.kind === "list.update") && !outbox.hasPending()
     && personalBusinessPayloadMatchesConfirmed({ confirmedPayload: outbox.confirmedBase()?.payload, candidatePayload: body.payload,
       listId: outbox.binding.listId, allowLegacy: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED })) return latest;
-  return outbox.capture({ snapshot, body, operationId });
+  return outbox.capture({ snapshot, body, operationId }, { assertCurrent });
 }
 
 async function prepareInitialPersonalSave() {
@@ -3251,7 +3273,7 @@ async function prepareInitialPersonalSave() {
     throw new Error("Локальная версия изменилась при подготовке списка. Требуется повторная проверка.");
   }
   const outbox = personalSaveRecovery.outbox(() => createPersonalSaveOutbox({
-    storage: localStorage, actorId: initial.actorId, scopeKey: initial.scopeKey, listId
+    storage: personalJournalStorage(), actorId: initial.actorId, scopeKey: initial.scopeKey, listId
   }), initial.scopeKey);
   if (outbox.recover()) throw new Error("Найдено сохранённое действие. Сначала восстановите локальный список.");
   // Retain this editor's empty head. Do not create a fresh outbox on its first
@@ -3261,18 +3283,18 @@ async function prepareInitialPersonalSave() {
 
 function persistStateSnapshot(snapshot = state, { recordAction = true, personalMutation = null, operationId } = {}) {
   if (personalSavePilotEnabled()) personalSaveRecovery.assertRunning();
+  const frozen = clone(snapshot), scope = localStorageScopeKey;
   const intent = recordAction && personalSavePilotEnabled() && !applyingRemoteState
-    ? capturePersonalSaveIntent(snapshot, personalMutation, operationId) : null;
-  if (intent || personalSavePilotEnabled() && hasPendingPersonalSave()) {
-    // The action already owns a durable snapshot. Never evict another recovery
-    // record to make space for this optional legacy/UI mirror.
-    writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(snapshot), { clearBase: false, clearRecovery: false });
-    return true;
-  }
-  const preserveAdminPhotoRecovery = hasOwnedAdminTemplatePhotoEditor(snapshot);
-  return writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(snapshot), {
-    clearBase: !preserveAdminPhotoRecovery, clearRecovery: !preserveAdminPhotoRecovery
-  });
+    ? capturePersonalSaveIntent(frozen, personalMutation, operationId) : null;
+  const finish = saved => {
+    if (scope !== localStorageScopeKey) throw Object.assign(Error("Аккаунт изменился во время записи."), { code: "stale-tab", isPersonalSaveBlocked: true });
+    const preserve = saved || personalSavePilotEnabled() && hasPendingPersonalSave() || hasOwnedAdminTemplatePhotoEditor(frozen);
+    return writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(frozen), { clearBase: !preserve, clearRecovery: !preserve });
+  };
+  if (!intent?.then) return finish(intent);
+  const task = intent.then(finish);
+  task.catch(error => personalSaveRecovery.report(error, { scopeKey: scope, snapshot: frozen }));
+  return task;
 }
 
 function hasOwnedAdminTemplatePhotoEditor(snapshot) {
@@ -4981,7 +5003,7 @@ function loadActivePackingListId() {
   });
   if (storedId || !personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")) return storedId;
   return personalSaveRecovery.run(() => recoverPersonalSaveListId({
-    storage: localStorage, actorId: localStorageScopeKey.slice(3), scopeKey: localStorageScopeKey
+    storage: personalJournalStorage(), actorId: localStorageScopeKey.slice(3), scopeKey: localStorageScopeKey
   }), { scopeKey: localStorageScopeKey });
 }
 
@@ -5528,10 +5550,13 @@ function saveState({ captureArrangement = true, sync = true, personalMutation = 
   ) {
     markManagedTemplateDraftSyncPending(activeManagedDraft);
   }
+  const owner = clone(personalSaveContext());
+  const initialListId = !owner.listId ? personalInitialSaveOutbox?.binding.listId : null;
+  let persistence;
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     if (sync && !applyingRemoteState) markCurrentGuestWorkspaceForLoginHandoff();
-    persistStateSnapshot(state, { personalMutation, recordAction });
+    persistence = persistStateSnapshot(state, { personalMutation, recordAction });
   } else if (!isAdminEditablePublishedLayout()) {
     if (sync && !applyingRemoteState) {
       syncMeta.dirty = false;
@@ -5540,6 +5565,7 @@ function saveState({ captureArrangement = true, sync = true, personalMutation = 
     }
     return;
   }
+  const finish = () => {
   if (sync && !applyingRemoteState && isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout()) {
     if (isManagedTemplateUnpublished(state.layouts?.[getPublishedEditLayoutId()])) {
       scheduleActivePublishedEditSave();
@@ -5570,13 +5596,22 @@ function saveState({ captureArrangement = true, sync = true, personalMutation = 
     updateSyncUi();
     scheduleRemoteSave();
   }
+  };
+  if (!persistence?.then) return finish();
+  const task = persistence.then(() => {
+    const expected = initialListId ? { ...owner, listId: initialListId } : owner;
+    if (!sameJson(owner, personalSaveContext()) && !sameJson(expected, personalSaveContext())) throw Error("Редактор изменился во время записи.");
+    return finish();
+  });
+  task.catch(error => { personalSaveRecovery.report(error, { scopeKey: owner.scopeKey }); updateSyncUi(error.message); });
+  return task;
 }
 
 function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900, publishNow = false, forcePublic = false } = {}) {
   solidifyTemplateDraftLayout(layoutId);
   const targetIsPublic = (forcePublic || isAdminPublicEditScope(modeState)) && isAdminEditablePublishedLayout(layoutId);
   const shouldPublishTarget = targetIsPublic && shouldAutoPublishManagedTemplate(state.layouts?.[layoutId]);
-  saveState({ sync: !targetIsPublic });
+  const persistence = saveState({ sync: !targetIsPublic });
   if (targetIsPublic && !shouldPublishTarget) updateSyncUi(t("template.draftStatus"));
   if (targetIsPublic) {
     if (publishNow) {
@@ -5585,7 +5620,7 @@ function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 90
     }
     schedulePublishedLayoutSave(layoutId, publishDelay);
   }
-  return null;
+  return persistence ?? null;
 }
 
 function hasLocalSyncChanges(baseState = loadBaseState()) {
@@ -5705,7 +5740,7 @@ function markCurrentGuestWorkspaceForLoginHandoff() {
     layoutIds: enabled ? guestWorkspaceSessionTracker.changedLayoutIds(state) : [],
     manifestKey: GUEST_WORKSPACE_MANIFEST_KEY,
     sessionId: guestWorkspaceSessionTracker.sessionId,
-    storage: localStorage
+    storage: personalJournalStorage()
   });
 }
 
@@ -5723,7 +5758,7 @@ function prepareGuestLoginHandoff(email) {
     guestSessionId: guestWorkspaceSessionTracker.sessionId,
     handoffKey: GUEST_LOGIN_HANDOFF_KEY,
     manifestKey: GUEST_WORKSPACE_MANIFEST_KEY,
-    storage: localStorage
+    storage: personalJournalStorage()
   });
 }
 
@@ -5733,7 +5768,7 @@ function storedGuestLoginHandoffCandidate() {
     candidateFromState: guestLocalLayoutCandidate,
     guestStateKey: STORAGE_KEY,
     handoffKey: GUEST_LOGIN_HANDOFF_KEY,
-    storage: localStorage,
+    storage: personalJournalStorage(),
     user: currentUser
   });
 }
@@ -6626,8 +6661,10 @@ function adoptConfirmedPersonalRemoteBaseline({ state: remoteState, payload, int
   // An already captured action owns its original bytes. A new server read
   // cannot replace its missing base or any pending predecessor.
   if (outbox.hasPending()) return;
-  outbox.adoptRemoteBaseline({ snapshot: remoteState, payload: personalBusinessPayload(payload),
-    stateRevision: integrityMeta?.stateRevision, meta: integrityMeta || {} });
+  const expected = clone(personalSaveContext());
+  const assertCurrent = () => { if (!sameJson(expected, personalSaveContext())) throw Error("Редактор изменился во время записи исходной версии."); };
+  return outbox.adoptRemoteBaseline({ snapshot: remoteState, payload: personalBusinessPayload(payload),
+    stateRevision: integrityMeta?.stateRevision, meta: integrityMeta || {} }, { assertCurrent });
 }
 
 function canReuseConfirmedPersonalRemoteBaseline({ listId, freshness }) {
@@ -6647,6 +6684,7 @@ async function applyRemoteState(remoteState, updatedAt, integrityMeta = null, ra
   preferredLayout = null,
   preservePublicDraftId = ""
 } = {}) {
+  if (personalSavePilotEnabled()) { await personalCaptureTail; personalSaveRecovery.assertRunning(); }
   if (hasPendingPersonalSave()) {
     updateSyncUi("Есть неподтверждённые локальные действия. Серверная версия пока не заменяет их.");
     return false;
@@ -6663,13 +6701,16 @@ async function applyRemoteState(remoteState, updatedAt, integrityMeta = null, ra
   }
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)) {
-    personalSaveOutboxForScope()?.adoptRemoteBaseline({ snapshot: remoteState,
+    const expected = clone(personalSaveContext());
+    const assertCurrent = () => { if (!sameJson(expected, personalSaveContext())) throw Error("Редактор изменился во время записи серверной версии."); };
+    await personalSaveOutboxForScope()?.adoptRemoteBaseline({ snapshot: remoteState,
       // The load observer already owns this exact raw business baseline. Editor
       // normalization (including legacy photo URL aliases) is only a view.
       payload: rawPayload ? personalBusinessPayload(rawPayload) : catalogRepairBase || cloneStateForSync(remoteState, { forSync: true }),
       stateRevision: integrityMeta?.stateRevision,
       meta: { ...integrityMeta, serverUpdatedAt: updatedAt || null, localUpdatedAt: updatedAt || null,
-        lastSyncedLocalUpdatedAt: updatedAt || null, dirty: false } });
+        lastSyncedLocalUpdatedAt: updatedAt || null, dirty: false } }, { assertCurrent });
+    assertCurrent();
   }
   replaceState(remoteState);
   removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
@@ -7628,7 +7669,7 @@ async function ensureCurrentPackingListId() {
     && !isAdminPublicEditScope(modeState)) {
     if (isPublicTemplateListId(currentPackingListId)) throw new Error("Для сохранения нужен личный список, не публичный шаблон.");
     return personalSaveRecovery.run(() => ensureCausalPersonalListId({
-      storage: localStorage, getContext: personalSaveContext, getCurrentListId: () => currentPackingListId,
+      storage: personalJournalStorage(), getContext: personalSaveContext, getCurrentListId: () => currentPackingListId,
       snapshot: state, body: { ...buildListSaveBody(), title: localText("My packing lists", "Мои укладки") },
       fetchLists: async () => {
         const data = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
@@ -8469,11 +8510,11 @@ async function runCausalPersonalShareLink(selection) {
   } else {
     // First persist any field/placement edits. The share is a separate action
     // even when its payload equals the last saved business snapshot.
-    capturePersonalSaveIntent(state);
+    await capturePersonalSaveIntent(state);
     const snapshot = JSON.parse(JSON.stringify(state));
     const prepared = preparePersonalShareLink({ binding: outbox.binding, snapshot, basePayload: cloneStateForSync(snapshot, { forSync: true }),
       baseStateRevision: Number(syncMeta.stateRevision), selection }, { snapshotToPayload: value => cloneStateForSync(value, { forSync: true }) });
-    record = outbox.capture(prepared);
+    record = await outbox.capture(prepared, { assertCurrent });
     syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
   }
   await queuedPersonalSave({ notify: false }); assertCurrent();
@@ -9243,7 +9284,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       // Reader works with every photo writer gate off, including rollback.
       await readPersonalPhotoRecoveryInCurrentContext({ binding, getContext: personalPhotoRecoveryReadContext, read: async () => {
         source.guestPreparation = null;
-        const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
+        const outbox = createPersonalSaveOutbox({ ...binding, storage: personalJournalStorage(), photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
         source.outbox = outbox; // Preserve the observed head while the dialog is open.
         source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
         const publicEntries = await personalPublicSelectionStore(binding).entries();
@@ -9601,6 +9642,8 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
 async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = false } = {}) {
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
+    await personalCaptureTail;
+    await flushPersonalJournal();
     personalSaveRecovery.assertRunning();
     // Do not mistake this form's file-commit -> queue-link interval for an
     // abandoned startup record. Its own session guards every awaited step.
@@ -9636,7 +9679,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     if (!outbox) throw new Error("Сначала нужно подтвердить создание личного списка.");
     // A saved stop choice must resume before another capture. Its archive owns
     // the old local snapshot until the new selected-server action is durable.
-    if (!outbox.ordinaryRecoveryState?.().pending) persistStateSnapshot(state);
+    if (!outbox.ordinaryRecoveryState?.().pending) await persistStateSnapshot(state);
     if (!outbox.hasPending()) {
       // An empty queue alone is not a server confirmation. UI-only edits can
       // leave dirty set after capture reused an already confirmed operation.
@@ -9808,7 +9851,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         rememberRemoteIntegrityMeta(record.serverRecord);
         rememberCurrentSyncAccount();
         writeRequired(SYNC_META_KEY, syncMeta);
-        outbox.compact();
+        await outbox.compact();
+        await flushPersonalJournal();
         renderPreservingPackingScroll();
         updateSyncUi();
         if (notify) showToast("Сохранение подтверждено. Более свежие данные загружены.", "success");
@@ -9834,7 +9878,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       syncMeta.dirty = false;
       writeRequired(SYNC_META_KEY, syncMeta);
       outbox.markApplied({ operationId: record.action.operationId, stateRevision: data.list?.stateRevision ?? data.stateRevision });
-      outbox.compact();
+      await outbox.compact();
+        await flushPersonalJournal();
       updateSyncUi();
       if (notify) showToast("Синхронизация подтверждена.", "success");
     } }) });
@@ -9993,7 +10038,7 @@ async function loadPersonalServerCopyFile({ photo }) {
 
 async function retainPersonalServerPreparationForRecovery(source) {
   try {
-    source.outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
+    source.outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: personalJournalStorage() });
     source.inventory = await inspectPersonalPhotoRecovery({ outbox: source.outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
     assignPersonalServerPreparations(source, await personalServerSelectionStore(source.outbox.binding).entries());
   } catch { /* Original failure and partial files remain available for export. */ }
@@ -10011,7 +10056,7 @@ async function retainPersonalPublicPreparationForRecovery(source) {
   try {
     // The normal editor wrapper may have latched the quota failure. Inspect a
     // fresh reader, as the recovery dialog does, without releasing that fence.
-    const outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
+    const outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: personalJournalStorage() });
     source.outbox = outbox;
     source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
     assignPersonalPublicPreparations(source, await personalPublicSelectionStore(outbox.binding).entries());
@@ -10103,7 +10148,7 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
   const outbox = personalSaveOutboxForScope(), initial = clone(personalSaveContext());
   if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) throw Error("Личный список ещё не подтверждён.");
   if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, personalBusinessPayload(state))) {
-    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta(); await queuedPersonalSave();
+    await capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta(); await queuedPersonalSave();
     if (outbox.hasPending() || !sameJson(initial, personalSaveContext())) throw Error("Подготовка личного списка ещё не подтверждена.");
   }
   const selectionInput = { binding: outbox.binding, basePayload: personalBusinessPayload(state),
@@ -10175,7 +10220,7 @@ async function runCausalPublicLayoutCopy(layout, progress) {
   const outbox = personalSaveOutboxForScope(), initial = clone(personalSaveContext());
   if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) throw Error("Личный список ещё не подтверждён.");
   if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, personalBusinessPayload(state))) {
-    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+    await capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
     await queuedPersonalSave();
     if (outbox.hasPending() || !sameJson(initial, personalSaveContext())) throw Error("Подготовка личного списка ещё не подтверждена.");
   }
@@ -10268,7 +10313,7 @@ async function runCausalGuestLoginImport(candidate, selected = null) {
   const baseline = outbox.confirmedBase();
   if (!baseline) throw Error("Не подтверждена исходная личная версия. Гостевая работа сохранена.");
   if (!selected && personalGuestBaseNeedsPreparation(baseline.payload, personalBusinessPayload(state))) {
-    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+    await capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
     await queuedPersonalSave();
     if (outbox.hasPending() || Object.keys(initialBinding).some(key => personalSaveContext()[key] !== initialBinding[key])
       || !sameJson(handoff, currentGuestLoginHandoff())) throw Error("Подготовка личного списка ещё не подтверждена. Гостевой перенос сохранён.");
@@ -10456,7 +10501,7 @@ async function handleInitialListMigrationRequired(error) {
       updateSyncUi("Старый список ждёт подготовки. Серверные данные не изменены.");
       return true;
     }
-    confirm();
+    await confirm();
     await saveRemoteState({ notify: true });
   } catch (failure) {
     setLayoutLoadStatus("error", `Подготовка списка остановлена: ${failure.message}`);
@@ -10530,7 +10575,7 @@ async function loadRemoteState(options = {}) {
       cloneStateForSync,
       createEmptyUserState,
       canUseCachedStartupState,
-      adoptConfirmedRemoteBaseline: input => { assertBaselineLoadOwner(); return adoptConfirmedPersonalRemoteBaseline(input); },
+      adoptConfirmedRemoteBaseline: async input => { assertBaselineLoadOwner(); await adoptConfirmedPersonalRemoteBaseline(input); assertBaselineLoadOwner(); },
       canReuseConfirmedRemoteBaseline: input => { assertBaselineLoadOwner(); return canReuseConfirmedPersonalRemoteBaseline(input); },
       currentPackingListId: () => currentPackingListId || remoteRecordId(currentPackingListMeta),
       fetchRemoteListFreshnessRecord,
@@ -12030,7 +12075,7 @@ async function finishCausalAdminTemplateOrder(work) {
         && source.lastConfirmedOperation?.id === intent.id && !source.planId
         && !administrativeSaveCoordinator?.hasPendingCapture(layout.id)) layout.layoutOrder = intent.body.metadata.layoutOrder;
     }
-    if (!persistStateSnapshot(state)) throw Error("Не удалось сохранить результат порядка на устройстве. Исходное действие сохранено для продолжения.");
+    if (!await persistStateSnapshot(state)) throw Error("Не удалось сохранить результат порядка на устройстве. Исходное действие сохранено для продолжения.");
     await work.batch.acknowledge(work.pending.id);
   }
 }
@@ -14465,7 +14510,7 @@ async function restoreHistoryRecord(recordKey) {
   if (!confirmed) return;
   if (commitPersonalRestore) {
     try {
-      if (!commitPersonalRestore()) return;
+      if (!await commitPersonalRestore()) return;
       refs.historyDialog.close(); refs.historyDetailDialog?.close();
       showToast("Восстановление записано в очередь. Проверяем подтверждение сервера.", "success");
     } catch (error) { showToast(error.message, "error"); }

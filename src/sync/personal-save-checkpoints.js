@@ -112,10 +112,28 @@ export function readPersonalCheckpoints(entries, prefix) {
     ...(latestBaseline?.stateRevision >= anchor.stateRevision ? { baseline: latestBaseline } : {}) }, checkpoints };
 }
 
-export function publishPersonalCheckpoint(storage, prefix, checkpoint) {
+export function publishPersonalCheckpoint(storage, prefix, checkpoint, { assertCurrent } = {}) {
   const key = `${prefix}checkpoint:${crypto.randomUUID()}`;
   if (storage.getItem(key) !== null) throw Error("Checkpoint ID collision");
-  storage.setItem(key, JSON.stringify(checkpoint));
+  const raw = JSON.stringify(checkpoint);
+  if (typeof storage.writeRequired === "function") {
+    const observed = readStablePersonalEntries(storage, prefix);
+    const guard = () => {
+      assertCurrent?.();
+      const current = readStablePersonalEntries(storage, prefix);
+      if (observed.size !== current.size || [...observed].some(([entryKey, value]) => current.get(entryKey) !== value)) {
+        throw Error("Journal changed before checkpoint publication");
+      }
+      if (storage.getItem(key) !== null) throw Error("Checkpoint ID collision");
+    };
+    guard();
+    return Promise.resolve(storage.writeRequired(key, raw, { assertCurrent: guard })).then(() => {
+      if (storage.getItem(key) !== raw) throw Error("Checkpoint write unverified");
+      return key;
+    });
+  }
+  assertCurrent?.();
+  storage.setItem(key, raw);
   return key;
 }
 

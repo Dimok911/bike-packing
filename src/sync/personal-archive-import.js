@@ -12,13 +12,13 @@ export async function preparePersonalArchiveImport({ source, mode, layoutTargets
   const context = clone(getContext()), previous = clone(getState()), revision = getRevision();
   const initial = { currentPayload: personalArchiveBusinessPayload(previous), sourcePayload: personalArchiveBusinessPayload(source),
     mode, layoutTargets: clone(layoutTargets || []), sourceActiveLayoutId: sourceActiveLayoutId || "", editMeta: clone(editMeta || {}) };
-  const assertCurrent = () => {
+  const assertCurrent = (captured = false) => {
     const now = getContext();
     if (context.scope !== "personal" || context.environment !== "bike-packing-experiment" || context.scopeKey !== `id:${context.actorId}`
       || Object.keys(context).some(key => context[key] !== now?.[key]) || getRevision() !== revision
       || ["actorId", "listId", "scopeKey", "environment"].some(key => outbox.binding[key] !== context[key])
       || personalArchiveJson(getState()) !== personalArchiveJson(previous)) throw Error("Аккаунт или данные изменились. Повторите выбор архива.");
-    if (outbox.hasPending()) throw Error("Сначала подтвердите сохранённые изменения, затем повторите импорт архива.");
+    if (!captured && outbox.hasPending()) throw Error("Сначала подтвердите сохранённые изменения, затем повторите импорт архива.");
   };
   assertCurrent();
   const plan = personalArchiveImportPlan(initial), snapshot = clone(makeSnapshot(clone(plan.payload), previous, plan.activeLayoutId));
@@ -32,7 +32,8 @@ export async function preparePersonalArchiveImport({ source, mode, layoutTargets
   return () => {
     if (used) return null;
     assertCurrent(); used = true;
-    const record = outbox.capture({ snapshot, body, archiveImport: true, operationId });
-    onCaptured(record); return record;
+    const record = outbox.capture({ snapshot, body, archiveImport: true, operationId }, { assertCurrent });
+    const finish = saved => { assertCurrent(true); onCaptured(saved); return saved; };
+    return record && typeof record.then === "function" ? record.then(finish) : finish(record);
   };
 }

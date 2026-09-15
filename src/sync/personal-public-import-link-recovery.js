@@ -36,7 +36,8 @@ export async function recoverPersonalRemoteImportLink({ entry, outbox, store, ge
   if (!snapshot) fail();
   // The persisted base is the original local observation. Only the causal
   // server queue can establish whether that revision is still current.
-  if (!outbox.recover()) outbox.adoptRemoteBaseline({ snapshot: selection.basePayload, payload: selection.basePayload, stateRevision: selection.baseStateRevision });
+  if (!outbox.recover()) await outbox.adoptRemoteBaseline({ snapshot: selection.basePayload, payload: selection.basePayload, stateRevision: selection.baseStateRevision }, { assertCurrent });
+  assertCurrent();
   const body = structuredClone(action.body); delete body.causal;
   const plan = outbox.preparePhoto({ snapshot, payload: body.payload, body, operationId: selection.operationId });
   if (!same(plan.action, action) || !same(plan.mergeBase.payload, selection.basePayload)) fail();

@@ -69,7 +69,8 @@ export async function recoverPersonalRemoteImportPreparation({ entry, selectionS
   }
   if (!outbox.confirmedBase()) {
     if (outbox.recover()) fail();
-    outbox.adoptRemoteBaseline({ snapshot: selection.basePayload, payload: selection.basePayload, stateRevision: selection.baseStateRevision });
+    await outbox.adoptRemoteBaseline({ snapshot: selection.basePayload, payload: selection.basePayload, stateRevision: selection.baseStateRevision }, { assertCurrent });
+    assertCurrent();
   }
   const commit = await adapter.prepare({ selection, selectionStore, outbox, store,
     getContext,

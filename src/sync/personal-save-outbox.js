@@ -1,3 +1,4 @@
+import { writeJournalValue, afterJournalWrite } from "../storage/durable-journal-write.js";
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate, personalServerPhotoResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, assertPersonalShareLinkBody } from "./personal-share-link.js";
@@ -500,9 +501,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       assertCurrent();
       const archive = ordinaryRecovery.prepare({ entries: entryCopy(current.entries), snapshot: clone(current.head.snapshot),
         operationIds: [...current.records.values()].sort((a, b) => a.action.generation - b.action.generation).map(record => record.action.operationId),
-        headOperationId: current.head.action.operationId, headGeneration: current.head.action.generation });
-      assertCurrent(); assertArchiveRecords(archive, assertObserved());
-      return archive;
+        headOperationId: current.head.action.operationId, headGeneration: current.head.action.generation, assertCurrent });
+      const finish = value => { assertCurrent(); assertArchiveRecords(value, assertObserved()); return value; };
+      return archive?.then ? archive.then(finish) : finish(archive);
     },
     async recoverOrdinaryWithServer({ queue, getContext, readRemote, makeSnapshot = payload => payload }) {
       if (!ordinaryRecoveryEnabled) throw ordinaryRecoveryBlocked();
@@ -525,7 +526,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // completion marker. Never allocate another action or cancel that one.
       if (successorRaw !== null) {
         if (head?.action.operationId !== archive.successorOperationId || !validPersonalOrdinaryRecoveryDecision(head, originals, archive)) throw ordinaryRecoveryBlocked();
-        ordinaryRecovery.complete(archive, successorRaw); return clone(head);
+        await ordinaryRecovery.complete(archive, successorRaw, { assertCurrent }); return clone(head);
       }
       if (head?.action.operationId !== archive.headOperationId || typeof queue?.cancelExact !== "function"
         || typeof readRemote !== "function") throw ordinaryRecoveryBlocked();
@@ -564,13 +565,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const raw = JSON.stringify({ version: 2, action, mergeBase, reconciliation, snapshotPatch: encodePersonalSnapshot(action.body.payload, snapshot) });
       try {
         if (storage.getItem(keyPrefix + action.operationId) !== null) throw ordinaryRecoveryBlocked();
-        setRequiredStorageItem(storage, keyPrefix + action.operationId, raw);
+        await writeJournalValue(storage, keyPrefix + action.operationId, raw, assertCurrent);
         if (storage.getItem(keyPrefix + action.operationId) !== raw) throw ordinaryRecoveryBlocked();
       } catch { throw ordinaryRecoveryBlocked(); }
       observe({ head: record, anchor: current.anchor });
       const written = assertObserved(); assertArchiveRecords(archive, written, raw);
       assertBinding();
-      ordinaryRecovery.complete(archive, raw);
+      await ordinaryRecovery.complete(archive, raw, { assertCurrent: assertBinding });
       assertBinding();
       return clone(record);
     },
@@ -603,7 +604,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return head.photoState ? null
         : clone({ payload: personalRecordPayload(head), stateRevision: confirmed.stateRevision });
     },
-    adoptRemoteBaseline({ snapshot, payload, stateRevision, meta = {} }) {
+    adoptRemoteBaseline({ snapshot, payload, stateRevision, meta = {} }, { assertCurrent: assertBaselineContext = () => {} } = {}) {
       assertNoOrdinaryRecovery();
       const input = clone({ snapshot, payload, stateRevision, meta });
       const { records, applied, anchor, checkpoints, head } = assertObserved();
@@ -632,12 +633,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
       const photoReceipts = retainedPhotoProofs(records, anchor);
       if (photoReceipts.length) next.photoReceipts = photoReceipts;
-      try { publishPersonalCheckpoint(storage, keyPrefix, next); }
-      catch { throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); }
-      retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
-      observe({ head, anchor: next });
-      assertObserved();
-      return true;
+      return afterJournalWrite(() => publishPersonalCheckpoint(storage, keyPrefix, next, { assertCurrent: () => { assertBaselineContext(); assertObserved(); } }), () => {
+        retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
+        observe({ head, anchor: next }); assertObserved(); return true;
+      }, error => { if (error?.isPersonalSaveBlocked) throw error;
+        throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); });
     },
     hasPending() {
       const { head, applied } = read();
@@ -693,8 +693,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (photoReceipts.length) nextAnchor.photoReceipts = photoReceipts;
       // Commit the exact retirement set BEFORE deleting anything. An interrupted
       // cleanup is recoverable and may only delete these immutable old keys.
-      try { publishPersonalCheckpoint(storage, keyPrefix, nextAnchor); }
-      catch { return { removed: 0, pending: true }; }
+      return afterJournalWrite(() => publishPersonalCheckpoint(storage, keyPrefix, nextAnchor, { assertCurrent: () => assertObserved() }), () => {
       let removed = 0;
       const retirementSet = new Set(retired);
       const cleanupKeys = [...entries.keys()].filter(key => {
@@ -712,6 +711,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       observe({ head, anchor: nextAnchor });
       assertObserved();
       return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
+      }, () => ({ removed: 0, pending: true }));
     },
     list() { return clone([...read().records.values()].sort((a, b) => a.action.generation - b.action.generation)); },
     photoRecoveryReferences() {
@@ -836,14 +836,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (attachment) assertPersonalPhotoFile(record, file, binding);
         preflight(record.action, record.snapshot);
         try {
-          setRequiredStorageItem(storage, keyPrefix + record.action.operationId, JSON.stringify({ version: 3, action: record.action,
-            photoState: record.photoState, mergeBase: record.mergeBase, snapshotPatch: encodePersonalSnapshot(input.payload, input.snapshot) }));
+          await writeJournalValue(storage, keyPrefix + record.action.operationId, JSON.stringify({ version: 3, action: record.action,
+            photoState: record.photoState, mergeBase: record.mergeBase, snapshotPatch: encodePersonalSnapshot(input.payload, input.snapshot) }), assertCurrent);
         } catch { throw blocked("quota", "Не хватило места для связи фото с очередью. Файл и черновик сохранены; отправка не начата."); }
         observe({ head: record, anchor: current.anchor }); assertObserved();
         return clone(record);
       } catch (error) { error.unconfirmedMemoryDraft = input.snapshot; throw error; }
     },
-    capture({ snapshot, body, create = false, restore = false, migration = false, archiveImport = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
+    capture({ snapshot, body, create = false, restore = false, migration = false, archiveImport = false, operationId = crypto.randomUUID(), localReconciliation = null }, { assertCurrent: assertCaptureContext = () => {} } = {}) {
       assertNoOrdinaryRecovery();
       const input = clone({ snapshot, body });
       const sharing = Object.hasOwn(input.body || {}, "shareLink");
@@ -1005,19 +1005,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const record = { version: 1, snapshot: input.snapshot, action, ...(mergeBase ? { mergeBase: clone(mergeBase) } : {}),
         ...(localReconciliation ? { localReconciliation: clone(localReconciliation) } : {}) };
       preflight(action, input.snapshot);
-      try {
-        // The recoverable local data AND operation are one atomic setItem.
-        // No await, network, mirror update, or older-record deletion precedes it.
-        setRequiredStorageItem(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action,
-          ...(mergeBase ? { mergeBase } : {}),
-          ...(localReconciliation ? { localReconciliation } : {}),
-          snapshotPatch: encodePersonalSnapshot(action.body.payload, record.snapshot) }));
-      } catch {
-        throw blocked("quota", "Не хватает места для надёжного сохранения. Изменение не отправлено; не закрывайте вкладку.");
-      }
-      observe({ head: record, anchor });
-      assertObserved(); // Detect a racing writer if it has already completed.
-      return clone(record);
+      return afterJournalWrite(() => writeJournalValue(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action,
+        ...(mergeBase ? { mergeBase } : {}), ...(localReconciliation ? { localReconciliation } : {}),
+        snapshotPatch: encodePersonalSnapshot(action.body.payload, record.snapshot) }), () => { assertCaptureContext(); assertObserved(); }), () => {
+        observe({ head: record, anchor }); assertObserved(); return clone(record);
+      }, error => {
+        if (error?.isPersonalSaveBlocked && error.code !== "quota") throw error;
+        const failure = blocked("quota", "Не удалось записать действие: возможно, не хватает места на устройстве. Изменение не отправлено; не закрывайте вкладку.");
+        failure.unconfirmedMemoryDraft = input.snapshot; throw failure;
+      });
     },
     async reconcileStaleCapture({ getContext, makeSnapshot = payload => payload, resolveConflicts } = {}) {
       assertNoOrdinaryRecovery();
@@ -1160,7 +1156,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         // ONE atomic record closes the old outcome and owns the new remote
         // snapshot. Writing an applied marker first could recover stale UI data
         // after a crash; this does neither a business write nor intent replay.
-        try { publishPersonalCheckpoint(storage, keyPrefix, checkpoint); }
+        try { await publishPersonalCheckpoint(storage, keyPrefix, checkpoint, { assertCurrent }); }
         catch { throw blocked("quota", "Не хватило места для подтверждения и актуальной версии. Локальные данные сохранены."); }
         observe({ head, anchor: checkpoint });
         assertObserved();
@@ -1260,8 +1256,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
       preflight(action, snapshot);
       try {
-        setRequiredStorageItem(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
-          snapshotPatch: encodePersonalSnapshot(payload, snapshot) }));
+        await writeJournalValue(storage, keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
+          snapshotPatch: encodePersonalSnapshot(payload, snapshot) }), assertCurrent);
       } catch { throw Object.assign(blocked("quota", "Не хватает места для объединённого действия. Прежние версии сохранены."), { unconfirmedMemoryDraft: snapshot }); }
       observe({ head: record, anchor });
       assertObserved();

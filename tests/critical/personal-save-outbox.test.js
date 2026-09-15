@@ -46,6 +46,7 @@ function emptyQueueSaveFixture({ confirmed = true, changed = false, writable = t
     currentUser: { id: f.context.actorId }, localStorageScopeKey: f.context.scopeKey,
     currentPackingListId: f.context.listId, modeState: {}, state, syncMeta,
     personalSaveRecovery: { assertRunning() {}, report() {} },
+    personalCaptureTail: Promise.resolve(), flushPersonalJournal: async () => {},
     personalPhotoFormPreparing: false, personalPhotoFormLiveSource: null,
     checkPersonalPhotoRecoveryBeforeLoad: async () => {}, isForcedOffline: () => false,
     flushPersonalMirrors: async () => {},
@@ -722,6 +723,7 @@ test("actual app persistence writes the intent before its mirror and cannot fall
   const calls = [], f = fixture();
   let fail = false;
   const persist = appFunction("persistStateSnapshot", {
+    clone: structuredClone, localStorageScopeKey: "id:actor-a",
     personalSaveRecovery: createPersonalSaveRecovery(),
     hasOwnedAdminTemplatePhotoEditor: appFunction("hasOwnedAdminTemplatePhotoEditor", {
       ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: true, localStorageScopeKey: "id:actor-a"
@@ -748,6 +750,37 @@ test("actual app persistence writes the intent before its mirror and cannot fall
   calls.length = 0;
   persist({ items: {} }, { recordAction: false });
   assert.deepEqual(calls, ["legacy"], "read-time normalization is not a user action");
+});
+
+test("actual saveState accepts its reserved first list only after capture and refuses foreign list or changed editor", async () => {
+  for (const change of ["reserved-list", "other-list", "actor", "generation"]) {
+    const context = { environment: "bike-packing-experiment", actorId: "actor-a", scopeKey: "id:actor-a",
+      scope: "personal", listId: "", generation: "original" };
+    const events = [], noop = () => {};
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const save = appFunction("saveState", {
+      captureActiveLayoutArrangement: noop, solidifyManagedTemplateDrafts: noop,
+      sanitizePrivateCopiedPublicOrigins: noop, state: { layouts: {} }, GUEST_DEMO_COPY_FLAG: "demo",
+      getPublishedEditLayoutId: () => "", applyingRemoteState: false, modeState: {},
+      isAdminPublicEditScope: () => false, isAdminEditablePublishedLayout: () => false,
+      isReadOnlyBikePackingContext: () => false, canUseLocalEditableState: () => true, isReadOnlyStateScope: () => false,
+      personalInitialSaveOutbox: { binding: { listId: "reserved-list" } },
+      personalSaveContext: () => ({ ...context }), clone: structuredClone, sameJson: snapshotsEqual,
+      persistStateSnapshot: () => pending, markCurrentGuestWorkspaceForLoginHandoff: noop,
+      hasPendingPersonalSave: () => true, syncMeta: {}, nowIso: () => "saved-time", saveSyncMeta: noop,
+      scheduleRemoteSave: () => events.push("schedule"), updateSyncUi: noop,
+      personalSaveRecovery: { report: (_error, details) => { assert.equal(details.scopeKey, "id:actor-a"); events.push("blocked"); } }
+    });
+    const result = save();
+    assert.deepEqual(events, []);
+    context.listId = change === "other-list" ? "other-list" : "reserved-list";
+    if (change === "actor") context.actorId = "actor-b";
+    if (change === "generation") context.generation = "changed";
+    release(true);
+    if (change === "reserved-list") { await result; assert.deepEqual(events, ["schedule"]); }
+    else { await assert.rejects(result, /Редактор изменился/); assert.deepEqual(events, ["blocked"]); }
+  }
 });
 
 test("storage recovery latches the failure, freezes the unsaved draft and blocks subsequent writes", () => {

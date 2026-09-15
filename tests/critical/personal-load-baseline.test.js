@@ -160,7 +160,7 @@ test("a changed actor at the observation boundary stops before baseline adoption
   assert.match(f.statuses.at(-1).text, /actor changed before baseline adoption/);
 });
 
-for (const boundary of ["canReuseConfirmedRemoteBaseline", "adoptConfirmedRemoteBaseline"]) {
+for (const boundary of ["canReuseConfirmedRemoteBaseline"]) {
   for (const rejected of [false, true]) {
     test(`an async ${boundary} (${rejected ? "rejected" : "fulfilled"}) never authorizes capture or cache reuse`, async () => {
       const f = fixture({ cache: true, dirty: true }), unhandled = [];
@@ -180,4 +180,41 @@ for (const boundary of ["canReuseConfirmedRemoteBaseline", "adoptConfirmedRemote
       } finally { process.removeListener("unhandledRejection", listener); }
     });
   }
+}
+
+for (const outcome of ["success", "quota", "actor-change"]) {
+  test(`async baseline publication waits before dirty capture: ${outcome}`, async () => {
+    const f = fixture({ cache: true, dirty: true }), local = structuredClone(f.runtime.state);
+    const adopt = f.dependencies.adoptConfirmedRemoteBaseline;
+    let finish, reject, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    f.dependencies.adoptConfirmedRemoteBaseline = async input => {
+      entered();
+      await new Promise((yes, no) => { finish = yes; reject = no; });
+      return adopt(input);
+    };
+    const loading = f.load();
+    await started;
+    assert.equal(f.events.includes("capture"), false);
+    assert.equal(f.events.includes("legacy-mirror"), false);
+    assert.equal(f.outbox.confirmedBase(), null);
+    assert.deepEqual([...f.values], f.initialBytes);
+    if (outcome === "quota") reject(new DOMException("baseline quota", "QuotaExceededError"));
+    else { if (outcome === "actor-change") f.changeActor(); finish(); }
+    const result = await loading;
+    assert.deepEqual(f.runtime.state, local);
+    if (outcome === "success") {
+      assert.ok(f.events.indexOf("adopt") < f.events.indexOf("capture"));
+      const saved = f.make().recover();
+      assert.deepEqual(saved.mergeBase, { stateRevision: 1582, payload: f.remote });
+      assert.equal(saved.snapshot.containers.external.name, "Unsaved local name");
+    } else {
+      assert.equal(result, false);
+      assert.equal(f.events.includes("capture"), false);
+      assert.equal(f.outbox.confirmedBase(), null);
+      assert.deepEqual([...f.values], f.initialBytes);
+      assert.equal(f.statuses.at(-1).tone, "error");
+      assert.match(f.statuses.at(-1).text, outcome === "quota" ? /baseline quota/ : /actor changed/);
+    }
+  });
 }

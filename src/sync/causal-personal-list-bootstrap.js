@@ -62,7 +62,8 @@ export async function ensureCausalPersonalListId({ storage, getContext, getCurre
     assertContext();
     if (recoverId() || getCurrentListId()) throw paused("Список изменился во время подготовки. Создание остановлено.");
     const outbox = createPersonalSaveOutbox({ storage, actorId: initial.actorId, scopeKey: initial.scopeKey, listId });
-    outbox.capture({ ...input, create: true }); // snapshot + UUID + ID: one durable write
+    await outbox.capture({ ...input, create: true }, { assertCurrent: assertContext }); // one durable write
+    assertContext();
     onRegistered(listId); // preference is a recoverable mirror, never the authority
     return listId;
   });

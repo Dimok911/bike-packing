@@ -1,5 +1,6 @@
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
+import { readStablePersonalEntries } from "./personal-save-checkpoints.js";
 export const PERSONAL_ORDINARY_RECOVERY_ENABLED = false;
 const environment = "bike-packing-experiment";
 const prefix = "bike-packing-personal-ordinary-recovery-v1:";
@@ -171,44 +172,74 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
       return { archives, pending: pending[0] || null };
     } catch { fail(); }
   };
-  const publish = (key, value, stage) => {
+  const publicationGuard = assertCurrent => {
+    const prefixes = [keyPrefix, outboxPrefix(binding)];
+    const observed = prefixes.map(prefix => readStablePersonalEntries(storage, prefix));
+    return () => {
+      assertCurrent?.();
+      for (const [index, prefix] of prefixes.entries()) {
+        const current = readStablePersonalEntries(storage, prefix), previous = observed[index];
+        if (previous.size !== current.size || [...previous].some(([key, raw]) => current.get(key) !== raw)) fail();
+      }
+    };
+  };
+  const publish = (key, value, stage, assertCurrent) => {
     const raw = JSON.stringify(value);
     let existing;
     try { existing = storage.getItem(key); }
     catch (error) { throw publicationError(stage, "storage-read", error); }
     if (existing !== null) fail();
-    try { setRequiredStorageItem(storage, key, raw); }
-    catch (error) { throw publicationError(stage, "storage-write", error); }
-    let written;
-    try { written = storage.getItem(key); }
-    catch (error) { throw publicationError(stage, "storage-read", error); }
-    if (written !== raw) throw publicationError(stage, "write-unverified");
-    return raw;
+    const verify = () => {
+      let written;
+      try { written = storage.getItem(key); }
+      catch (error) { throw publicationError(stage, "storage-read", error); }
+      if (written !== raw) throw publicationError(stage, "write-unverified");
+      return raw;
+    };
+    const guard = () => { assertCurrent?.(); if (storage.getItem(key) !== null) fail(); };
+    try {
+      guard();
+      if (typeof storage.writeRequired === "function") {
+        return Promise.resolve(storage.writeRequired(key, raw, { assertCurrent: guard })).then(verify,
+          error => { throw publicationError(stage, "storage-write", error); });
+      }
+      setRequiredStorageItem(storage, key, raw);
+    } catch (error) { throw publicationError(stage, "storage-write", error); }
+    return verify();
   };
   return {
     read,
     archive(recoveryId) { return clone(read().archives.find(entry => entry.archive.recoveryId === recoveryId)?.archive || null); },
-    prepare({ entries, snapshot, operationIds, headOperationId, headGeneration }) {
+    prepare({ entries, snapshot, operationIds, headOperationId, headGeneration, assertCurrent }) {
       if (read().pending) fail();
+      const guard = publicationGuard(assertCurrent);
       const archive = { format: "bike-packing-personal-ordinary-recovery-v1", version: 1, binding, choice: { type: "server" }, recoveryId: crypto.randomUUID(),
-        successorOperationId: crypto.randomUUID(), headOperationId, headGeneration, operationIds, entries, snapshot };
+        successorOperationId: crypto.randomUUID(), headOperationId, headGeneration, operationIds: clone(operationIds), entries: clone(entries), snapshot: clone(snapshot) };
       const key = `${keyPrefix}archive:${archive.recoveryId}`;
       parseArchive(JSON.stringify(archive), key);
       const compact = { ...archive, version: 2 }; delete compact.snapshot;
       if (!same(parseArchive(JSON.stringify(compact), key), archive)) fail();
-      const raw = publish(key, compact, "archive");
-      const pending = read().pending; if (!pending || pending.raw !== raw) fail();
-      return clone(archive);
+      const finish = raw => {
+        const pending = read().pending; if (!pending || pending.raw !== raw) fail();
+        return clone(archive);
+      };
+      const raw = publish(key, compact, "archive", guard);
+      return raw && typeof raw.then === "function" ? raw.then(finish) : finish(raw);
     },
-    complete(archive, recordRaw) {
+    complete(archive, recordRaw, { assertCurrent } = {}) {
+      archive = clone(archive);
       const current = read(), stored = current.archives.find(entry => entry.archive.recoveryId === archive.recoveryId);
       if (!stored || !same(stored.archive, archive) || !validPersonalOrdinaryRecoveryDecision(JSON.parse(recordRaw), archivedRecords(archive), archive)) fail();
       if (storage.getItem(outboxPrefix(binding) + archive.successorOperationId) !== recordRaw) fail();
       if (stored.completed) return;
+      const guard = publicationGuard(assertCurrent);
       const full = { version: 1, recoveryId: archive.recoveryId, recordRaw }, compact = compactCompletion(archive, recordRaw);
       if (!same(JSON.parse(expandCompletion(archive, compact).recordRaw), JSON.parse(recordRaw))) fail();
-      publish(`${keyPrefix}complete:${archive.recoveryId}`, JSON.stringify(compact).length < JSON.stringify(full).length ? compact : full, "completion");
-      if (!read().archives.find(entry => entry.archive.recoveryId === archive.recoveryId)?.completed) fail();
+      const finish = () => {
+        if (!read().archives.find(entry => entry.archive.recoveryId === archive.recoveryId)?.completed) fail();
+      };
+      const result = publish(`${keyPrefix}complete:${archive.recoveryId}`, JSON.stringify(compact).length < JSON.stringify(full).length ? compact : full, "completion", guard);
+      return result && typeof result.then === "function" ? result.then(finish) : finish();
     }
   };
 }

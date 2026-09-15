@@ -1,3 +1,4 @@
+import { personalJournalStorage } from "./personal-journal-runtime.js";
 import { createPersonalMirrorStorage } from "./personal-mirror-storage.js";
 
 let mirrors = null;
@@ -5,7 +6,7 @@ export async function initializePersonalMirrors(enabled) {
   if (enabled && !mirrors) mirrors = await createPersonalMirrorStorage();
   return mirrors;
 }
-export const readPersonalLocalValue = key => mirrors ? mirrors.getItem(key) : localStorage.getItem(key);
+export const readPersonalLocalValue = key => mirrors?.owns(key) ? mirrors.getItem(key) : personalJournalStorage().getItem(key);
 export const ownsPersonalMirror = key => Boolean(mirrors?.owns(key));
 export const writePersonalMirror = (key, raw) => mirrors.write(key, raw);
 export const writePersonalMirrorBatch = rows => mirrors.writeBatch(rows);

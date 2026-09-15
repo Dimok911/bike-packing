@@ -45,7 +45,7 @@ export async function preparePersonalListMigration({ outbox, getContext, getStat
   readPreview, makeSnapshot, onCaptured, operationId = crypto.randomUUID() }) {
   if (typeof hasLocalChanges !== "function" || typeof onCaptured !== "function") throw Error("Не подключена проверка локальных изменений.");
   const initial = clone(getContext()), previous = clone(getState());
-  const assertCurrent = () => {
+  const assertCurrent = (captured = false) => {
     const current = getContext();
     if (!initial.actorId || !initial.listId || !initial.generation || initial.scope !== "personal"
       || initial.environment !== "bike-packing-experiment" || initial.scopeKey !== `id:${initial.actorId}`
@@ -54,7 +54,7 @@ export async function preparePersonalListMigration({ outbox, getContext, getStat
       || canonicalListOperationJson(previous) !== canonicalListOperationJson(getState())) {
       throw Error("Аккаунт или локальные данные изменились. Повторите подготовку списка.");
     }
-    if (hasLocalChanges() || outbox.recover() || outbox.hasPending()) throw Error("Сначала нужно разобраться с локальными изменениями. Они не будут заменены старым серверным списком.");
+    if (hasLocalChanges() || !captured && (outbox.recover() || outbox.hasPending())) throw Error("Сначала нужно разобраться с локальными изменениями. Они не будут заменены старым серверным списком.");
   };
   assertCurrent();
   if (photos(previous)) throw Error("Локальная версия содержит фотографии. Сначала требуется проверить её связь со старым списком.");
@@ -71,8 +71,8 @@ export async function preparePersonalListMigration({ outbox, getContext, getStat
     if (used) return null;
     assertCurrent();
     used = true;
-    const saved = outbox.capture({ snapshot, body, migration: true, operationId });
-    onCaptured(saved);
-    return saved;
+    const saved = outbox.capture({ snapshot, body, migration: true, operationId }, { assertCurrent });
+    const finish = record => { assertCurrent(true); onCaptured(record); return record; };
+    return saved && typeof saved.then === "function" ? saved.then(finish) : finish(saved);
   };
 }

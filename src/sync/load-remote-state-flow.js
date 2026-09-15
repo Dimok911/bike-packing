@@ -231,7 +231,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     if (remoteState && adoptConfirmedRemoteBaseline !== undefined) {
       // Observe the guarded server payload before an equal-state return or a
       // delegated save of newer local edits. Never pass the live dirty state.
-      callSynchronousBaseline(adoptConfirmedRemoteBaseline, {
+      await adoptConfirmedRemoteBaseline({
         state: remoteState, payload: remoteRawPayload, integrityMeta: remoteIntegrityMeta,
         listId: record?.id || record?.listId || ""
       });

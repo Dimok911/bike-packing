@@ -1,3 +1,4 @@
+import { personalJournalStorage } from "../storage/personal-journal-runtime.js";
 import { createConfirmedDelivery } from "../protocol/confirmed-delivery.js";
 import { canonicalOperationJson, matchesOperationIdentity } from "../protocol/operation-identity.js";
 import { createOperationJournal } from "../protocol/operation-journal.js";
@@ -241,7 +242,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   const assertOrdinaryDispatchAllowed = expected => {
     if (expected.kind !== "list.update") return;
     let storage;
-    try { storage = recoveryStorage === undefined ? globalThis.localStorage : recoveryStorage; }
+    try { storage = recoveryStorage === undefined ? personalJournalStorage() : recoveryStorage; }
     catch { throw Object.assign(paused(expected.operationId), { isPersonalSaveBlocked: true, code: "ordinary-recovery" }); }
     // Older non-browser callers have no durable recovery store. In browsers,
     // retained choices remain barriers even when creation is rolled back OFF.

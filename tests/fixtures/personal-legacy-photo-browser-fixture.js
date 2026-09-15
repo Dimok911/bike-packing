@@ -75,8 +75,25 @@ function releaseSerializedPayload(snapshot) {
 }
 
 export async function nativeLegacyPhotoOutbox(page) {
-  const storageEntries = await page.evaluate(prefix => Object.entries(localStorage).filter(([key]) => key.startsWith(prefix)
-    || key.startsWith("bike-packing-personal-ordinary-recovery-v1:")), prefix);
+  const storageEntries = await page.evaluate(async prefix => {
+    const rows = Object.entries(localStorage).filter(([key]) => key.startsWith(prefix)
+      || key.startsWith("bike-packing-personal-ordinary-recovery-v1:"));
+    if (!rows.some(([, raw]) => JSON.parse(raw)?.personalJournalReference)) return rows;
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("bike-packing-personal-journal-v1"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+    });
+    try {
+      const stored = await new Promise((resolve, reject) => {
+        const req = db.transaction("entries").objectStore("entries").getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+      });
+      return rows.map(([key, raw]) => {
+        const marker = JSON.parse(raw); if (!marker.personalJournalReference) return [key, raw];
+        const body = stored.find(row => row.key === "raw:" + marker.sha256);
+        if (!body || body.raw.length !== marker.utf16Length) throw Error("Fixture cannot read journal reference");
+        return [key, body.raw];
+      });
+    } finally { db.close(); }
+  }, prefix);
   const entries = storageEntries.filter(([key]) => key.startsWith(prefix));
   const outbox = createPersonalSaveOutbox({ storage: memoryStorage(storageEntries), ...legacyPhotoBinding,
     ordinaryRecoveryEnabled: page.legacyPhotoFixture?.ordinaryRecovery === true });

@@ -2,6 +2,10 @@ import { createEntityId } from "../utils/entity-id.js";
 
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
+// The dialog remains the visible draft until its action has durable storage.
+// Plain legacy writers keep their synchronous return contract.
+const afterDialogSave = (saved, finish) => saved && typeof saved.then === "function" ? saved.then(finish) : finish();
+
 export function itemDialogContainerPickerMode(editingItemId = "") {
   return editingItemId ? "item" : NEW_ITEM_PLACEMENT_PICKER_MODE;
 }
@@ -85,10 +89,11 @@ export function saveRootContainerDialogAction({
     placeCreatedRootContainer(id, changedAt);
     const layoutId = getPublishedEditLayoutId();
     restoreAdminPublishedLayoutContext(layoutId);
-    saveLayoutMutation(layoutId, { publishDelay: 500 });
-    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
-    render();
-    return { created: true, dialogCloseSettled, id, type: "container" };
+    return afterDialogSave(saveLayoutMutation(layoutId, { publishDelay: 500 }), () => {
+      const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
+      render();
+      return { created: true, dialogCloseSettled, id, type: "container" };
+    });
   }
   container.name = name;
   container.weight = parseWeightInput(refs.rootContainerWeight.value);
@@ -107,10 +112,11 @@ export function saveRootContainerDialogAction({
   applyRootContainerDialogPlacement();
   const layoutId = getPublishedEditLayoutId();
   restoreAdminPublishedLayoutContext(layoutId);
-  saveLayoutMutation(layoutId, { publishDelay: 500 });
-  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
-  render();
-  return { created: false, dialogCloseSettled, id: container.id, type: "container" };
+  return afterDialogSave(saveLayoutMutation(layoutId, { publishDelay: 500 }), () => {
+    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
+    render();
+    return { created: false, dialogCloseSettled, id: container.id, type: "container" };
+  });
 }
 
 export function saveItemDialogAction({
@@ -194,20 +200,20 @@ export function saveItemDialogAction({
         setLayoutItemQuantity(layout, editingItemId, placementQuantity);
         touchLayout(layoutId, changedAt);
         restoreAdminPublishedLayoutContext(layoutId);
-        saveLayoutMutation(layoutId);
-        closeDialogWithoutRestoringFocus(refs.dialog);
-        render();
-        return;
+        return afterDialogSave(saveLayoutMutation(layoutId), () => {
+          closeDialogWithoutRestoringFocus(refs.dialog);
+          render();
+        });
       }
       removeItemFromLayoutArrangement(layout, editingItemId);
       cleanupEmptyContainersInLayoutArrangement(layout, previousContainerId);
       touchLayout(layoutId, changedAt);
       if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
       restoreAdminPublishedLayoutContext(layoutId);
-      saveLayoutMutation(layoutId);
-      closeDialogWithoutRestoringFocus(refs.dialog);
-      render();
-      return;
+      return afterDialogSave(saveLayoutMutation(layoutId), () => {
+        closeDialogWithoutRestoringFocus(refs.dialog);
+        render();
+      });
     }
     if (containerId && setLayoutItemQuantity(layout, editingItemId, placementQuantity)) {
       touchLayout(layoutId, changedAt);
@@ -252,8 +258,9 @@ export function saveItemDialogAction({
   }
 
   restoreAdminPublishedLayoutContext(layoutId);
-  saveLayoutMutation(layoutId);
-  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.dialog);
-  render();
-  return { created, dialogCloseSettled, id: savedItemId, type: "item" };
+  return afterDialogSave(saveLayoutMutation(layoutId), () => {
+    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.dialog);
+    render();
+    return { created, dialogCloseSettled, id: savedItemId, type: "item" };
+  });
 }

@@ -397,7 +397,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalPendingImportCreateEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError, reportPersonalSaveError, getPersonalSaveErrorScope,
     runCausalPersonalShareLink, personalSavePilotEnabled, PERSONAL_SHARE_LINK_ENABLED,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
@@ -9579,7 +9579,7 @@ function updateItemDialogSaveState() {
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.itemDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.itemDialogInitialSnapshot);
   updateModalSaveButton(refs.saveItemBtn, { hasName, changed });
-  if (adminTemplatePhotoForms.busy("item") || personalPhotoForms.busy("item")) refs.saveItemBtn.disabled = true;
+  if (itemFormDraftSaving || adminTemplatePhotoForms.busy("item") || personalPhotoForms.busy("item")) refs.saveItemBtn.disabled = true;
   scheduleNewItemFormDraftSave();
 }
 
@@ -9595,7 +9595,7 @@ function updateRootContainerDialogSaveState() {
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.rootContainerDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.rootContainerDialogInitialSnapshot);
   updateModalSaveButton(refs.saveRootContainerBtn, { hasName, changed });
-  if (adminTemplatePhotoForms.busy("container") || personalPhotoForms.busy("container")) refs.saveRootContainerBtn.disabled = true;
+  if (rootContainerFormDraftSaving || adminTemplatePhotoForms.busy("container") || personalPhotoForms.busy("container")) refs.saveRootContainerBtn.disabled = true;
   scheduleNewRootContainerFormDraftSave();
 }
 
@@ -9764,20 +9764,22 @@ function shareEditingContainerByLink() {
   });
 }
 
-function saveRootContainerDialog(event) {
+async function saveRootContainerDialog(event) {
   event?.preventDefault();
+  if (rootContainerFormDraftSaving) return false;
   if (adminTemplatePhotoForms.save("container")) return;
   if (personalPhotoForms.save("container")) return;
   if (warnLockedRootContainerDialogPlacementChange()) return;
-  const creatingNewContainer = !runtime.editingRootContainerId;
   const shouldPlaceInCurrentLayout = placeNewRootInCurrentLayout;
   const placementTargetLayoutId = rootContainerPlacementTargetLayoutId;
   const returningToCopyPicker = Boolean(pendingCopyTargetContainerSetup);
   let createdRootPlaced = false;
-  if (creatingNewContainer) rootContainerFormDraftSaving = true;
+  rootContainerFormDraftSaving = true;
+  const saveErrorScope = getPersonalSaveErrorScope?.();
+  const dialogWasInert = Boolean(refs.rootContainerDialog?.inert), additionalWrites = [];
   let result;
   try {
-    result = saveRootContainerDialogAction({
+    const saving = saveRootContainerDialogAction({
     applyRootContainerDialogParent,
     applyRootContainerDialogPhotoDraft,
     applyRootContainerDialogPlacement,
@@ -9811,7 +9813,8 @@ function saveRootContainerDialog(event) {
       if (createdRootPlaced && layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
       if (createdRootPlaced) markRecentlyAddedContainer(containerId, layoutId);
       if (createdRootPlaced && layoutId !== getPublishedEditLayoutId()) {
-        saveLayoutMutation(layoutId, { publishDelay: 500 });
+        const extra = saveLayoutMutation(layoutId, { publishDelay: 500 });
+        if (extra?.then) { extra.catch(() => {}); additionalWrites.push(extra); }
       }
       return createdRootPlaced;
     },
@@ -9821,12 +9824,26 @@ function saveRootContainerDialog(event) {
     requireUsageCapacity,
     restoreAdminPublishedLayoutContext,
     rootContainerDialogPhotoDraft: runtime.rootContainerDialogPhotoDraft,
-    saveLayoutMutation,
+    saveLayoutMutation: (...args) => {
+      const saved = saveLayoutMutation(...args);
+      return additionalWrites.length ? Promise.all([...additionalWrites, saved]) : saved;
+    },
     state,
       touchContainer
     });
+    if (saving?.then) {
+      refs.saveRootContainerBtn.disabled = true;
+      if (refs.rootContainerDialog) refs.rootContainerDialog.inert = true;
+    }
+    result = await saving;
+  } catch (error) {
+    if (reportPersonalSaveError) reportPersonalSaveError(error, { scopeKey: saveErrorScope });
+    else showToast(error.message || "Не удалось сохранить сумку. Поля остались в форме.", "warning");
+    return false;
   } finally {
     rootContainerFormDraftSaving = false;
+    if (refs.rootContainerDialog) refs.rootContainerDialog.inert = dialogWasInert;
+    if (refs.rootContainerDialog?.open) updateRootContainerDialogSaveState();
   }
   if (result?.created) clearStoredNewEntityFormDraft("container");
   if (result) {
@@ -9845,19 +9862,22 @@ function saveRootContainerDialog(event) {
       type: "container"
     });
   }
+  return result;
 }
 
-function saveDialogItem(event) {
+async function saveDialogItem(event) {
   event?.preventDefault();
+  if (itemFormDraftSaving) return false;
   if (adminTemplatePhotoForms.save("item")) return;
   if (personalPhotoForms.save("item")) return;
   if (warnLockedItemDialogPlacementChange()) return;
   capturePackingScroll();
-  const creatingNewItem = !runtime.editingItemId;
-  if (creatingNewItem) itemFormDraftSaving = true;
+  itemFormDraftSaving = true;
+  const saveErrorScope = getPersonalSaveErrorScope?.();
+  const dialogWasInert = Boolean(refs.dialog?.inert);
   let result;
   try {
-    result = saveItemDialogAction({
+    const saving = saveItemDialogAction({
     applyItemAvailabilityStatus,
     applyItemDimensions,
     applyItemDialogPhotoDraft,
@@ -9899,8 +9919,19 @@ function saveDialogItem(event) {
     touchLayout,
       unavailablePlacementText: t("items.unavailableCannotAdd")
     });
+    if (saving?.then) {
+      refs.saveItemBtn.disabled = true;
+      if (refs.dialog) refs.dialog.inert = true;
+    }
+    result = await saving;
+  } catch (error) {
+    if (reportPersonalSaveError) reportPersonalSaveError(error, { scopeKey: saveErrorScope });
+    else showToast(error.message || "Не удалось сохранить вещь. Поля остались в форме.", "warning");
+    return false;
   } finally {
     itemFormDraftSaving = false;
+    if (refs.dialog) refs.dialog.inert = dialogWasInert;
+    if (refs.dialog?.open) updateItemDialogSaveState();
   }
   if (result?.created) clearStoredNewEntityFormDraft("item");
   if (result?.created && getCurrentView() === "items") {
@@ -9914,6 +9945,7 @@ function saveDialogItem(event) {
     markRecentlyAddedItem(result.id, runtime.itemDialogTargetLayoutId);
     result.dialogCloseSettled?.then?.(() => focusRecentlyAddedItem(result.id));
   }
+  return result;
 }
 
 function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {

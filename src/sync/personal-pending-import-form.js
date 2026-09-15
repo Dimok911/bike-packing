@@ -6,8 +6,8 @@ const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJ
 const fail = () => { throw Error("Форма больше не совпадает с сохранённым переносом. Поля остались в открытой форме."); };
 
 // Field-only continuation of a frozen import. It never touches the source,
-// file inventory or selected photo references. Capture is synchronous, before
-// the first await, closing the dialog, replacing memory or scheduling a writer.
+// file inventory or selected photo references. Capture must finish durably before
+// closing the dialog, replacing memory or scheduling a writer.
 export function createPersonalPendingImportFormSession({ outbox, getContext, onDurable,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = false, findSource,
   readPayload = record => record.action.body.payload, recoveryPhase = "pending-import-fields", disabledMessage = "" }) {
@@ -17,6 +17,10 @@ export function createPersonalPendingImportFormSession({ outbox, getContext, onD
       if (completion) return completion;
       let resolve, reject;
       completion = new Promise((yes, no) => { resolve = yes; reject = no; });
+      const failed = error => {
+        if (preview) error.unconfirmedMemoryDraft = clone(preview);
+        reject(error);
+      };
       try {
         if (!enabled && disabledMessage) throw Error(disabledMessage);
         if (!enabled || !outbox || typeof findSource !== "function" || typeof onDurable !== "function") fail();
@@ -42,17 +46,21 @@ export function createPersonalPendingImportFormSession({ outbox, getContext, onD
           if (key === "dimensions" && value === null) delete owner[key]; else owner[key] = value;
         }
         preview = frozen.snapshot; operationId = createUuid();
-        if (!same(initial, getContext())) fail();
+        const assertCurrent = () => {
+          if (!same(initial, getContext()) || outbox.recover()?.action.operationId !== head.action.operationId) fail();
+        };
+        assertCurrent();
         const record = outbox.capture({ operationId, snapshot: preview,
-          body: { payload: snapshotToPayload(clone(preview)), baseStateRevision: frozen.baseStateRevision } });
-        if (!same(initial, getContext())) fail();
-        const adopted = onDurable(record);
-        if (adopted?.then) throw Error("Отображение сохранённой формы должно быть синхронным.");
-        resolve(record);
-      } catch (error) {
-        if (preview) error.unconfirmedMemoryDraft = clone(preview);
-        reject(error);
-      }
+          body: { payload: snapshotToPayload(clone(preview)), baseStateRevision: frozen.baseStateRevision } }, { assertCurrent });
+        const finish = saved => {
+          if (!same(initial, getContext())) fail();
+          const adopted = onDurable(saved);
+          if (adopted?.then) throw Error("Отображение сохранённой формы должно быть синхронным.");
+          resolve(saved);
+        };
+        if (record && typeof record.then === "function") record.then(finish).catch(failed);
+        else finish(record);
+      } catch (error) { failed(error); }
       return completion;
     },
     recoveryCopy() {

@@ -1,3 +1,4 @@
+import { personalJournalDiagnostics } from "../storage/personal-journal-runtime.js";
 // A decision about this device's retained changes. Opening, postponing and
 // exporting do not send or cancel operations; the caller owns the exact queue.
 import { describePersonalRecoveryActions, explainPersonalRecoveryReason } from "./personal-recovery-action-details.js";
@@ -84,6 +85,11 @@ export function askPersonalOrdinaryRecovery({ documentRef = document, windowRef 
           const row = documentRef.createElement("li");
           row.textContent = text("Не удалось прочитать размер хранилища. Это не означает, что оно пустое.", "Storage size could not be read. This does not mean it is empty.");
           storageDetails.append(row);
+        }
+        const queue = personalJournalDiagnostics();
+        if (queue.available) {
+          const row = documentRef.createElement("li");
+          row.textContent = `${text("Активная личная очередь (IndexedDB и малые отметки)", "Active personal queue (IndexedDB and small markers)")}: ${size(queue.journalBytes)}`; storageDetails.append(row);
         }
         const indexed = personalMirrorDiagnostics();
         if (indexed.available) for (const [key, label] of [

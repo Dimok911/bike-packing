@@ -41,7 +41,7 @@ export function assertPersonalPhotoHistoryRestore({ body, base, listId }) {
 export async function preparePersonalHistoryRestore({ historyId, layoutIds = [], outbox, getContext, getState,
   getRevision, readPreview, makeSnapshot, onCaptured, operationId = crypto.randomUUID(), photoRestoreEnabled = PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED }) {
   const initial = clone(getContext()), previous = clone(getState()), revision = getRevision();
-  const assertCurrent = () => {
+  const assertCurrent = (captured = false) => {
     const current = getContext();
     if (initial.scope !== "personal" || initial.environment !== "bike-packing-experiment"
       || initial.scopeKey !== `id:${initial.actorId}` || !validId(initial.listId)
@@ -49,7 +49,7 @@ export async function preparePersonalHistoryRestore({ historyId, layoutIds = [],
       || ["actorId", "listId", "scopeKey", "environment"].some(key => outbox.binding[key] !== initial[key])) {
       throw Error("Аккаунт или версия списка изменились. Повторите выбор восстановления.");
     }
-    if (outbox.hasPending()) throw Error("Сначала подтвердите сохранённые изменения кнопкой синхронизации, затем повторите восстановление.");
+    if (!captured && outbox.hasPending()) throw Error("Сначала подтвердите сохранённые изменения кнопкой синхронизации, затем повторите восстановление.");
   };
   assertCurrent();
   if (!Number.isSafeInteger(historyId) || historyId < 1 || !Array.isArray(layoutIds)
@@ -76,9 +76,9 @@ export async function preparePersonalHistoryRestore({ historyId, layoutIds = [],
     if (used) return null;
     assertCurrent();
     used = true;
-    const record = outbox.capture({ snapshot, body, restore: true, operationId });
+    const record = outbox.capture({ snapshot, body, restore: true, operationId }, { assertCurrent });
     // The exact state and action already survive a crash before UI adoption.
-    onCaptured(record);
-    return record;
+    const finish = saved => { assertCurrent(true); onCaptured(saved); return saved; };
+    return record && typeof record.then === "function" ? record.then(finish) : finish(record);
   };
 }

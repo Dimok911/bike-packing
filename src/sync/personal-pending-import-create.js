@@ -81,7 +81,7 @@ export function createPersonalPendingImportCreateSession({ outbox, store, getCon
             && (entry.state !== "linked" || !chain.forms.some(form => form.action.operationId === entry.operationId)))
             || chain.forms.some(form => !inventory.entries.some(entry => entry.operationId === form.action.operationId
               && ["linked", "settled-retained"].includes(entry.state)))) fail();
-          const record = outbox.capture({ ...clone(attempt.plan), operationId: attempt.operationId });
+          const record = await outbox.capture({ ...clone(attempt.plan), operationId: attempt.operationId }, { assertCurrent });
           if (!same(initial, getContext())) fail();
           const result = onDurable(clone(record)); if (result?.then) fail();
           resolve(record);
