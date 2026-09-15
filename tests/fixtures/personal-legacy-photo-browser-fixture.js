@@ -214,12 +214,12 @@ export async function seedLegacyPhotoPendingAction(page, ids = [legacyBagId]) {
 
 export async function setupPersonalLegacyPhotoBrowser(page, context, {
   loseAck = false, mixedLegacyRoutes = false, sharedOwnerUpgrade = false, ordinaryRecovery = false, ordinaryRebase = false,
-  phoneRecovery = null, liveUpdates = false
+  phoneRecovery = null, liveUpdates = false, initialPayload = null, validateBusinessIntent = null
 } = {}) {
   const legacyPhotoBinding = phoneRecovery?.binding || defaultBinding, legacyLayoutId = phoneRecovery?.layoutId || defaultLayoutId;
   const legacyBagId = phoneRecovery?.bagId || defaultBagId, legacyPendingBagIds = phoneRecovery?.pendingIds || defaultPendingIds;
   assert.ok(!ordinaryRebase || ordinaryRecovery, "rebase fixture requires ordinary recovery mode");
-  const initial = phoneRecovery ? structuredClone(phoneRecovery.payload) : legacyPhotoPayload();
+  const initial = phoneRecovery ? structuredClone(phoneRecovery.payload) : initialPayload ? structuredClone(initialPayload) : legacyPhotoPayload();
   if (phoneRecovery) initial.activeLayoutId = legacyLayoutId;
   if (ordinaryRecovery && !phoneRecovery) {
     for (const bag of Object.values(initial.containers)) bag.weight = 1350;
@@ -509,6 +509,8 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
           assert.deepEqual(action.body.causal, { dependsOn: [], reads: [] });
           for (const key of ["force", "forceOverwrite", "fullReplace"]) assert.ok(action.body[key] === undefined || action.body[key] === false);
           f.noopPosts.push(structuredClone(action));
+        } else if (validateBusinessIntent) {
+          validateBusinessIntent(action.body);
         } else {
           assert.ok(["link-root", "remove-container"].includes(action.body.userPlacement?.action), "unexpected business intent");
           if (ordinaryRecovery) assert.equal(f.noopPosts.length, 1, "ordinary editing cannot resume before the server-choice CAS");

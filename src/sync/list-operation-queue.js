@@ -1,4 +1,6 @@
 import { createConfirmedDelivery } from "../protocol/confirmed-delivery.js";
+import { canonicalOperationJson, matchesOperationIdentity } from "../protocol/operation-identity.js";
+import { createOperationJournal } from "../protocol/operation-journal.js";
 import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED, personalServerPhotoFormCapabilities } from "./personal-server-photo-form-result.js";
 import { personalServerPhotoBodyResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, PERSONAL_SHARE_LINK_CAPABILITY, assertPersonalShareLinkBody, verifyPersonalShareLinkResult } from "./personal-share-link.js";
@@ -56,11 +58,11 @@ const gateway = "/bike-packing/list-operations";
 const sha = async value => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))]
   .map(byte => byte.toString(16).padStart(2, "0")).join("");
 
-export function canonicalListOperationJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalListOperationJson).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalListOperationJson(value[key])}`).join(",")}}`;
-  return JSON.stringify(value);
-}
+export const canonicalListOperationJson = canonicalOperationJson;
+const intentIdentity = value => ({ id: value.operationId, namespace: environment,
+  owner: value.actorId, resource: value.listId, kind: value.kind, digest: value.payloadDigest });
+const receiptIdentity = value => ({ id: value?.id, namespace: value?.environment,
+  owner: value?.actorId, resource: value?.listId, kind: value?.kind, digest: value?.payloadDigest });
 
 export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
@@ -87,8 +89,7 @@ function paused(id, message = "Сохранение ещё не подтверж
 export function validateListReceipt(data, expected) {
   const op = data?.operation, result = data?.result;
   if (data?.ok !== true || !["committed", "rejected"].includes(op?.state)
-    || op.id !== expected.operationId || op.environment !== environment || op.actorId !== expected.actorId
-    || op.kind !== expected.kind || op.listId !== expected.listId || op.payloadDigest !== expected.payloadDigest) return false;
+    || !matchesOperationIdentity(receiptIdentity(op), intentIdentity(expected))) return false;
   if (op.state === "rejected") {
     if (![400, 403, 404, 409, 413, 422].includes(result?.status) || result.payload?.ok !== false) return false;
     const proof = result.payload.cancellation;
@@ -276,7 +277,17 @@ export function createListOperationQueue({ transport, getContext = () => null,
     const current = getContext();
     return ["actorId", "generation", "scope", "scopeKey", "listId", "environment"].every(key => current?.[key] === initial[key]);
   };
-  const recordReceipt = (entry, data) => {
+  const journal = createOperationJournal({
+    read: id => transport.writes.find(entry => entry.id === id),
+    writeIntent: ({ path, method, bodyText, expected }) => transport.beginWrite(path, method, bodyText, expected),
+    writeConfirmation: (entry, proof) => transport.confirmWrite(entry.id, { receipt: proof }),
+    identityOf: entry => intentIdentity(entry.recovery),
+    contentOf: entry => entry.recovery.body,
+    captureContentOf: intent => intent.expected.body,
+    confirmationOf: entry => entry.receipt,
+    error: (code, id) => Object.assign(paused(id), { protocolCode: code }),
+  });
+  const recordReceipt = async (entry, data) => {
     if (validateWaitingOperation(data, entry.recovery)) throw waitingError(entry.id);
     if (!validateListReceipt(data, entry.recovery)) throw paused(entry.id);
     // Keep a compact terminal proof, not another multi-megabyte copy of list
@@ -285,7 +296,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
     const proof = { operation: { id: op.id, actorId: op.actorId, environment: op.environment,
       kind: op.kind, listId: op.listId, payloadDigest: op.payloadDigest, state: op.state },
       resultStatus: data.result.status };
-    if (!transport.confirmWrite(entry.id, { receipt: proof })) throw paused(entry.id);
+    await journal.confirm(entry, proof, receiptIdentity(op));
     return data;
   };
   const dispatch = entry => {
@@ -296,9 +307,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
   };
   const delivery = createConfirmedDelivery({
     capture: async ({ path, method, bodyText, expected }) => {
-      await transport.beginWrite(path, method, bodyText, expected);
+      const entry = await journal.capture(intentIdentity(expected), { path, method, bodyText, expected });
       assertOrdinaryDispatchAllowed(expected);
-      return transport.writes.find(entry => entry.id === expected.operationId);
+      return entry;
     },
     send: async entry => {
       const response = await dispatch(entry);
@@ -313,35 +324,30 @@ export function createListOperationQueue({ transport, getContext = () => null,
     recoveryFailure: (error, recoveryError) => error.isPersonalOwnerAccessRefusal ? error : recoveryError,
   });
   const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {}, assertCurrentContext = () => {} } = {}) => {
-    assertCurrentContext();
-    let data = await read(`${gateway}/${encodeURIComponent(entry.id)}`), preparation = null;
-    assertCurrentContext();
-    if (resumeWaiting && operationPreparationEnabled && !readOnly && !entry.confirmed && !entry.recovery.cancellationOnly
-      && isPersonalListOperationPreparation(entry.recovery)
-      && (isUnknownPersonalListOperation(data, entry.recovery) || validatePreparedPersonalListOperation(data, entry.recovery))) {
-      await assertBeforeDispatch();
-      assertCurrentContext();
-      preparation = await preparePersonalListOperationRetry({ entry, known: data, enabled: operationPreparationEnabled,
-        getContext, getEntry: id => transport.writes.find(value => value.id === id), read, request, assertContext: assertCurrentContext });
-      preparation.assertCurrent(); data = preparation.data;
-    }
-    // ONLY an exact server-bound waiting intent permits another POST of the
-    // frozen manifest. Unknown/timeout/404 never means permission to resend.
-    if (resumeWaiting && !entry.recovery.cancellationOnly && (validateWaitingOperation(data, entry.recovery)
-      || preparation && validatePreparedPersonalListOperation(data, entry.recovery))) {
-      await assertBeforeDispatch();
-      if (preparation) { await preparation.beforeDispatch(); preparation.assertCurrent(); }
-      assertCurrentContext();
-      try {
-        const response = await dispatch(entry);
-        if (response.status !== 200) throw paused(entry.id);
-        return recordReceipt(entry, response.data);
-      } catch (error) {
-        if (error.isOperationWaiting) throw error;
-        return recordReceipt(entry, await read(`${gateway}/${encodeURIComponent(entry.id)}`));
-      }
-    }
-    return recordReceipt(entry, data);
+    const result = await delivery.recover(entry, { assertCurrent: assertCurrentContext,
+      prepareRecovery: async (_entry, known) => {
+        let data = known, preparation = null;
+        if (resumeWaiting && operationPreparationEnabled && !readOnly && !entry.confirmed && !entry.recovery.cancellationOnly
+          && isPersonalListOperationPreparation(entry.recovery)
+          && (isUnknownPersonalListOperation(data, entry.recovery) || validatePreparedPersonalListOperation(data, entry.recovery))) {
+          await assertBeforeDispatch();
+          assertCurrentContext();
+          preparation = await preparePersonalListOperationRetry({ entry, known: data, enabled: operationPreparationEnabled,
+            getContext, getEntry: id => transport.writes.find(value => value.id === id), read, request, assertContext: assertCurrentContext });
+          preparation.assertCurrent(); data = preparation.data;
+        }
+        // Only a server-bound waiting/prepared intent authorizes a frozen retry.
+        if (resumeWaiting && !entry.recovery.cancellationOnly && (validateWaitingOperation(data, entry.recovery)
+          || preparation && validatePreparedPersonalListOperation(data, entry.recovery))) {
+          return { receipt: data, beforeDispatch: async () => {
+            await assertBeforeDispatch();
+            if (preparation) { await preparation.beforeDispatch(); preparation.assertCurrent(); }
+          } };
+        }
+        return { receipt: data };
+      },
+    });
+    return result.receipt;
   };
 
   return {
@@ -385,9 +391,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId || entry.recovery.payloadDigest !== expected.payloadDigest
           || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
-        const terminal = data => {
+        const terminal = async data => {
           assertCurrent(); if (!validateListReceipt(data, expected)) throw paused(operationId);
-          if (entry) recordReceipt({ ...entry, recovery: expected }, data);
+          if (entry) await recordReceipt({ ...entry, recovery: expected }, data);
           assertCurrent(); return historicalProof(data);
         };
         const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
@@ -469,7 +475,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           const response = await request(`${gateway}/${encodeURIComponent(operationId)}/cancel`, {
             operationId, expectedActorId: initial.actorId, environment, kind: route.kind, listId, body });
           if (response.status !== 200) throw paused(operationId);
-          return terminal(response.data);
+          return await terminal(response.data);
         } catch (error) {
           if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
           assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
@@ -511,7 +517,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         const data = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertContext();
         if (validateWaitingOperation(data, expected)) throw waitingError(operationId);
         if (!validateListReceipt(data, expected)) throw Object.assign(paused(operationId), { reason: "receipt-unconfirmed" });
-        if (entry) recordReceipt({ ...entry, recovery: expected }, data);
+        if (entry) await recordReceipt({ ...entry, recovery: expected }, data);
         assertContext();
         return historicalProof(data);
       });
@@ -600,11 +606,12 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || entry.recovery.listId !== listId || entry.recovery.kind !== route.kind
           || entry.recovery.payloadDigest !== expected.payloadDigest
           || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
-        const terminal = data => {
+        const terminal = async data => {
           assertCurrent();
           if (!validateListReceipt(data, expected) || data.operation.state !== "rejected"
             || data.result.status !== 409 || data.result.payload.code !== "dependency_rejected") throw paused(operationId);
-          if (entry) recordReceipt(entry, data);
+          if (entry) await recordReceipt(entry, data);
+          assertCurrent();
           return historicalProof(data);
         };
         const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
@@ -636,7 +643,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         try {
           const response = await dispatch(entry);
           if (response.status !== 200) throw paused(operationId);
-          return terminal(response.data);
+          return await terminal(response.data);
         } catch {
           // One POST at most in this call. A lost result is read by exact ID;
           // no loop and no replacement ID, even for this no-effect rejection.
@@ -673,12 +680,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.listId !== route.listId || entry.recovery.kind !== route.kind || entry.recovery.payloadDigest !== expected.payloadDigest
           || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
-        const terminal = data => {
+        const terminal = async data => {
           assertCurrent();
           // Any exact durable rejection proves no owner effects. A committed
           // owner contradicts the stage fence and must remain blocked.
           if (!validateListReceipt(data, expected) || data.operation.state !== "rejected") throw paused(operationId);
-          if (entry) recordReceipt({ ...entry, recovery: expected }, data);
+          if (entry) await recordReceipt({ ...entry, recovery: expected }, data);
+          assertCurrent();
           return historicalProof(data);
         };
         const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
@@ -705,7 +713,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         try {
           const response = await dispatch(entry);
           if (response.status !== 200) throw paused(operationId);
-          return terminal(response.data);
+          return await terminal(response.data);
         } catch (error) {
           if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
           assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));

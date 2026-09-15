@@ -5,8 +5,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { createConfirmedDelivery } from '../../src/protocol/confirmed-delivery.js';
+import { canonicalOperationJson, matchesOperationIdentity } from '../../src/protocol/operation-identity.js';
+import { createOperationJournal } from '../../src/protocol/operation-journal.js';
 
-const digest = intent => createHash('sha256').update(JSON.stringify(intent)).digest('hex');
+const digest = intent => createHash('sha256').update(canonicalOperationJson(intent)).digest('hex');
+const identity = (intent, hash = digest(intent)) => ({ id: intent.id, namespace: 'confirmed-notes',
+  owner: intent.owner, resource: intent.resource, kind: 'note.rename', digest: hash });
 function writeJson(file, value) {
   writeFileSync(`${file}.tmp`, JSON.stringify(value));
   renameSync(`${file}.tmp`, file);
@@ -85,31 +89,36 @@ export function createNotesClient({ url, storage, getContext = () => 'local-demo
         if (response.status !== 200) throw Error('unknown-outcome');
         return response.json();
       };
-      const delivery = createConfirmedDelivery({
-        capture: value => {
+      const journal = createOperationJournal({
+        read: operationId => operationId === id && storage.getItem(key) ? JSON.parse(storage.getItem(key)) : null,
+        identityOf: entry => identity(entry.intent), confirmationOf: entry => entry.receipt,
+        contentOf: entry => entry.intent, captureContentOf: intent => intent,
+        writeIntent: value => {
           if (storage.getItem(key)) throw Error('already-recorded');
-          const entry = { intent: value, confirmed: false };
-          storage.setItem(key, JSON.stringify(entry));
-          return entry;
+          storage.setItem(key, JSON.stringify({ intent: value, confirmed: false }));
         },
+        writeConfirmation: (entry, receipt) => {
+          storage.setItem(key, JSON.stringify({ ...entry, confirmed: true, receipt }));
+          return true;
+        },
+      });
+      const delivery = createConfirmedDelivery({
+        capture: value => journal.capture(identity(value), value),
         send: entry => request('/operations', entry.intent),
         readReceipt: entry => request(`/receipts/${encodeURIComponent(entry.intent.id)}`),
-        accept: (entry, receipt) => {
-          if (!['committed', 'rejected'].includes(receipt.state) || receipt.id !== entry.intent.id
-            || receipt.owner !== entry.intent.owner || receipt.resource !== entry.intent.resource
-            || receipt.digest !== digest(entry.intent) || typeof receipt.title !== 'string'
+        accept: async (entry, receipt) => {
+          if (!['committed', 'rejected'].includes(receipt.state)
+            || !matchesOperationIdentity(identity(receipt, receipt.digest), identity(entry.intent)) || typeof receipt.title !== 'string'
             || !Number.isSafeInteger(receipt.revision)) throw Error('unconfirmed-receipt');
-          storage.setItem(key, JSON.stringify({ ...entry, confirmed: true, receipt }));
+          await journal.confirm(entry, receipt, identity(receipt, receipt.digest));
           return receipt;
         },
       });
       assertCurrent();
-      const saved = storage.getItem(key);
+      const saved = await journal.find(identity(intent));
       let result;
       if (saved) {
-        const entry = JSON.parse(saved);
-        if (digest(entry.intent) !== digest(intent)) throw Error('identity-reuse');
-        result = await delivery.recover(entry);
+        result = await delivery.recover(saved, { assertCurrent });
       } else result = await delivery.deliverNew(intent, { assertReady: assertCurrent });
       assertCurrent(); // A historical receipt cannot update another user's view.
       return result.receipt;

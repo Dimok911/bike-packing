@@ -10,27 +10,44 @@
  * before resolving. Its result is historical evidence, NOT permission to replace
  * the current screen. The application still checks account/generation/freshness.
  *
- * Recovery only reads the original operation's receipt. Unknown/timeout/404 cannot
- * authorize resending. Protocol-specific prepared/waiting retries stay in adapters.
+ * Recovery defaults to read-only. Unknown/timeout/404 cannot authorize resending.
+ * prepareRecovery is an optional application adapter: only a freshly checked,
+ * server-bound authorization may return beforeDispatch. It must never replace
+ * the entry/ID/body. Storage, capability and dependency checks stay in that hook.
  */
 export function createConfirmedDelivery({ capture, send, readReceipt, accept,
   onUncertain = () => {}, canReadAfterError = () => true,
   recoveryFailure = (_sendError, readError) => readError }) {
-  const recover = async entry => ({ entry, receipt: await accept(entry, await readReceipt(entry)) });
+  const readAccepted = async entry => ({ entry, receipt: await accept(entry, await readReceipt(entry)) });
+  const dispatchOnce = async (entry, noteFailure) => {
+    try { return { entry, receipt: await accept(entry, await send(entry)) }; }
+    catch (error) {
+      if (!canReadAfterError(error)) throw error;
+      if (noteFailure) await onUncertain(entry, error);
+      try { return await readAccepted(entry); }
+      catch (readError) { throw recoveryFailure(error, readError); }
+    }
+  };
+  const recover = async (entry, { assertCurrent = () => {}, prepareRecovery } = {}) => {
+    assertCurrent();
+    let receipt = await readReceipt(entry);
+    assertCurrent();
+    const plan = prepareRecovery ? await prepareRecovery(entry, receipt) : null;
+    if (plan) receipt = plan.receipt;
+    if (plan?.beforeDispatch) {
+      await plan.beforeDispatch();
+      assertCurrent(); // No await between this check and the frozen dispatch.
+      return dispatchOnce(entry, false);
+    }
+    return { entry, receipt: await accept(entry, receipt) };
+  };
 
   return {
     recover,
     async deliverNew(intent, { assertReady = () => {} } = {}) {
       const entry = await capture(intent);
       assertReady(entry);
-      try {
-        return { entry, receipt: await accept(entry, await send(entry)) };
-      } catch (error) {
-        if (!canReadAfterError(error)) throw error;
-        await onUncertain(entry, error);
-        try { return await recover(entry); }
-        catch (readError) { throw recoveryFailure(error, readError); }
-      }
+      return dispatchOnce(entry, true);
     },
   };
 }
