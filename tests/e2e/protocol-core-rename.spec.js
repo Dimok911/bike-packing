@@ -143,7 +143,7 @@ test("two compact form renames stay ordered offline through a cold restart", asy
   await assertCleanFinish(page, f, secondName, 2);
   expect(f.posts.map(action => action.operationId)).toEqual([first.operationId, second.operationId]);
   assertServerRename(f, payload, second);
-  await page.waitForLoadState("networkidle"); await page.reload(); await readyLegacyPhotoBrowser(page);
+  await f.waitForApiIdle(); await page.reload(); await readyLegacyPhotoBrowser(page);
   await assertCleanFinish(page, f, secondName, 2);
 });
 

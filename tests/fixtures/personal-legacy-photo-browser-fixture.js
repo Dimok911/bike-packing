@@ -258,6 +258,24 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
   }
   const f = { initial, payload: structuredClone(initial), revision: 1582, calls: [], posts: [], receiptReads: [],
     receipts: new Map(), captured: [], errors: [], browserErrors: [], pageErrors: [], loseAck, dropped: false, hideReceipts: false, failWrites: false, freshnessAvailable: true };
+  // A previously reached load-state "networkidle" can return immediately while
+  // a queued sync starts another read. Observe fresh request completion before
+  // a test tears down the document; do not abort requests or hide diagnostics.
+  const activeApiRequests = new Set();
+  let lastApiActivity = Date.now();
+  page.on("request", request => {
+    if (!request.url().startsWith(api + "/")) return;
+    activeApiRequests.add(request); lastApiActivity = Date.now();
+  });
+  const finishApiRequest = request => {
+    if (activeApiRequests.delete(request)) lastApiActivity = Date.now();
+  };
+  page.on("requestfinished", finishApiRequest); page.on("requestfailed", finishApiRequest);
+  f.waitForApiIdle = async () => {
+    const started = Date.now();
+    await expect.poll(() => activeApiRequests.size === 0 && Date.now() - Math.max(started, lastApiActivity) >= 750,
+      { timeout: 15000, message: "All synthetic API requests completed and remained idle in a fresh observation window" }).toBe(true);
+  };
   f.eventWaiters = [];
   f.notifyRemoteChange = () => { for (const resolve of f.eventWaiters.splice(0)) resolve(); };
   Object.assign(f, { bundleDirectory: sharedOwnerUpgrade ? previousLegacyPhotoBundle : root,
