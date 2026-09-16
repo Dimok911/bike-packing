@@ -8,7 +8,7 @@ const paused = () => Object.assign(Error("Загрузка черновиков 
 // exact data, revision and current authority used to open a new editor. Existing
 // local drafts are never rebased or replaced by a background catalog refresh.
 export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts, getBinding, readCatalog, normalizeRecords,
-  readTemplate, materialize, rememberSource = null, acceptRecords = () => {}, persist = () => {} }) {
+  readTemplate, materialize, canMaterialize = async () => true, rememberSource = null, acceptRecords = () => {}, persist = () => {} }) {
   const initial = canonicalTemplateJson(getContext());
   if (getContext()?.admin !== true) throw paused();
   const guard = () => { if (canonicalTemplateJson(getContext()) !== initial) throw paused(); };
@@ -22,6 +22,8 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
       if (!existing.adminCausalSource || canonicalTemplateJson(existing.adminCausalSource.binding) !== canonicalTemplateJson(binding)) migrationPending++;
       continue;
     }
+    const allowed = await canMaterialize(binding, record); guard();
+    if (!allowed) continue;
     let prepared;
     try { prepared = await readTemplate(binding, record); } catch { guard(); continue; }
     guard();
@@ -30,6 +32,9 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
     if (!prepared?.exists || prepared.deleted || prepared.visibility !== "private" || !prepared.payload
       || Object.keys(prepared.payload.layouts || {}).length !== 1) continue;
     const source = adminTemplateEditorSource(binding, prepared);
+    // A pending copy can reserve this target while the server read is in flight.
+    const stillAllowed = await canMaterialize(binding, record); guard();
+    if (!stillAllowed) continue;
     if (findLocalAdminTemplateDraft(getLayouts(), record)) continue;
     const layout = materialize(record, prepared); guard();
     if (!layout) continue;

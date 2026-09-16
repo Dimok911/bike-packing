@@ -97,6 +97,7 @@ export async function treeAppRunnerFixture(options = {}) {
       readAdminTemplateOrderInventory: options => readAdminTemplateOrderInventory({ ...options, storage: f.storage }) };
     const names = ["adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
       "readAdminTemplatePhotoWholeCopyAccepted", "readAdminTemplatePhotoWholeCopyStopped", "findAdminTemplatePhotoWholeCopyFormRecord",
+      "findAdminTemplatePhotoWholeCopyTargetReservation", "assertAdminTemplatePhotoWholeCopyTargetAvailable",
       "prepareAdminTemplatePhotoWholeCopyRecovery", "adminTemplatePhotoWholeCopyRecoveryRunner",
       "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory", "withAdminTemplatePhotoTreeCopyNamespaceScope", "runAdminTemplatePhotoTreeCopyPlan", ...(extra.names || [])];
     for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);

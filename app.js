@@ -9124,6 +9124,7 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
       getBinding: record => adminTemplateBinding(targetForRecord(record)),
       readCatalog: () => apiFetch("/bike-packing/admin/template-records", { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
       normalizeRecords: normalizeAdminTemplateHistoryRecords,
+      canMaterialize: async binding => !await findAdminTemplatePhotoWholeCopyTargetReservation(binding),
       readTemplate: binding => adminTemplateClient(binding, "", true).prepare(),
       materialize: (record, prepared) => materializeCausalAdminTemplate(targetForRecord(record), prepared),
       rememberSource: rememberAdminTemplateSourceBaseline,
@@ -11466,6 +11467,30 @@ async function readAdminTemplatePhotoWholeCopyAccepted(binding, layoutId, operat
   const accepted = await readAdminTemplatePhotoWholeCopyAcceptance({ binding, operationId, store, getContext,
     getMirrorContext: () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, guard);
   guard(); return accepted;
+}
+async function findAdminTemplatePhotoWholeCopyTargetReservation(binding) {
+  const getContext = () => adminTemplateOperationContext(binding, "", true), initial = canonicalTemplateJson(getContext());
+  const guard = () => {
+    if (getContext().admin !== true || canonicalTemplateJson(getContext()) !== initial) throw Error("Контекст восстановления копии изменился.");
+  };
+  guard();
+  // Read retained actor records even with every copy writer disabled. A server
+  // catalog row is not local acceptance and cannot allocate another target ID.
+  const inventory = await readAdminTemplatePhotoWholeCopyActorInventory({ actorId: binding.actorId, environment: binding.environment, getContext }); guard();
+  const records = inventory.records.filter(record => canonicalTemplateJson(record.binding) === canonicalTemplateJson(binding));
+  if (records.length > 1) throw Error("Найдено несколько сохранённых копий одного шаблона. Требуется сверка.");
+  for (const record of records) {
+    const accepted = await readAdminTemplatePhotoWholeCopyAccepted(binding, record.snapshot.source.layoutId, record.action.operationId, guard, true); guard();
+    if (!accepted) return record;
+    accepted.assertCurrent(); guard();
+    if (canonicalTemplateJson(accepted.record) !== canonicalTemplateJson(record)) throw Error("Сохранённую копию нужно сверить.");
+  }
+  return null;
+}
+async function assertAdminTemplatePhotoWholeCopyTargetAvailable(binding) {
+  if (await findAdminTemplatePhotoWholeCopyTargetReservation(binding)) {
+    throw Error("Этот шаблон относится к незавершённому копированию. Откройте исходную укладку и проверьте сохранение, чтобы завершить восстановление копии.");
+  }
 }
 async function readAdminTemplatePhotoWholeCopyStopped(binding, layoutId, operationId, guard, preparing = true) {
   const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
@@ -14326,6 +14351,7 @@ async function reconcileLegacyAdminTemplate(layout, binding) {
 async function openCausalAdminTemplate(target, { remember = true } = {}) {
   try {
     const binding = adminTemplateBinding(target);
+    await assertAdminTemplatePhotoWholeCopyTargetAvailable(binding);
     const matching = Object.values(state.layouts || {}).filter(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
       : layout.adminSharedSourceId === target.sharedId);
     if (matching.length > 1) throw Error("Найдено несколько местных черновиков этого шаблона. Сохранение остановлено для сверки; все варианты сохранены.");
@@ -14347,6 +14373,7 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
       return existing;
     }
     const prepared = await adminTemplateClient(binding, "", true).prepare();
+    await assertAdminTemplatePhotoWholeCopyTargetAvailable(binding);
     if (Object.values(state.layouts || {}).some(layout => target.type === "demo" ? layout.adminDemoListId === binding.listId
       : layout.adminSharedSourceId === target.sharedId)) return openCausalAdminTemplate(target, { remember });
     if (!prepared.exists || prepared.deleted || !prepared.payload) throw Error("Шаблон недоступен для редактирования.");

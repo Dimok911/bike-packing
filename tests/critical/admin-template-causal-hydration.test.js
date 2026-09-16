@@ -68,3 +68,24 @@ test("changing context during baseline capture prevents a stale hydration write"
   const f = fixture(); f.options.rememberSource = async () => { f.context.generation = "changed"; };
   await assert.rejects(f.run()); assert.equal(f.counts().writes, 0);
 });
+
+test("reserved whole-copy targets are skipped before read and rechecked after preparation", async () => {
+  for (const reserveAfterRead of [false, true]) {
+    const f = fixture(); let reserved = !reserveAfterRead;
+    f.options.canMaterialize = async binding => { assert.deepEqual(binding, f.binding); return !reserved; };
+    f.afterRead(() => { reserved = true; });
+    assert.equal((await f.run()).restored, 0);
+    assert.deepEqual(f.counts(), { reads: Number(reserveAfterRead), materialized: 0, writes: 0 });
+  }
+});
+
+test("reservation read failures and context switches stop hydration without a write", async () => {
+  for (const fail of [true, false]) {
+    const f = fixture(); f.options.canMaterialize = async () => {
+      if (fail) throw Error("retained storage unavailable");
+      f.context.generation = "changed during reservation read"; return true;
+    };
+    await assert.rejects(f.run());
+    assert.deepEqual(f.counts(), { reads: 0, materialized: 0, writes: 0 });
+  }
+});
