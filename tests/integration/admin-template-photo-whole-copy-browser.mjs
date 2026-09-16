@@ -129,6 +129,7 @@ async function observe(page, seed, requests) {
       context: target ? __adminUiTest.operationContext(target.adminCausalSource.binding, target.id, true) : null,
       mirror, plans: rows("bike-packing-admin-save-plans-v1:"),
       journals: rows(journalPrefix), acceptances: rows(acceptedPrefix), error: window.__adminUiLastError || null,
+      sourcePicker: { value: document.querySelector("#layoutCopyFrom")?.value, mode: document.querySelector("#layoutCreateMode")?.value },
       bodyText: document.body.innerText, decodedPhoto: window.__wholeDecodedPhoto || null };
   }, { sourceList: seed.source.listId, targetList: targetBinding?.listId, acceptedPrefix, journalPrefix });
   assert.equal(local.mirror.indexedDB, true, "The actual release must use its IndexedDB account mirror");
@@ -152,12 +153,15 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
   bundleOnDirectory = path.join(frontendDirectory, "test-results/admin-template-photo-whole-copy-browser-on-build"),
   bundleOffDirectory = path.join(frontendDirectory, "test-results/admin-template-photo-whole-copy-browser-off-build") }) {
   assert.equal(apiPath, bike); assert.equal(session.cookieName, "personal_tags_session");
+  const sourceRoute = process.env.BIKE_PACKING_WHOLE_BROWSER_SOURCE || "template-draft";
+  assert.ok(["template-draft", "public-demo"].includes(sourceRoute));
+  if (sourceRoute === "public-demo") artifactDirectory = path.join(artifactDirectory, "public-demo");
   const options = { apiBaseUrl: loopback(apiBaseUrl, "API"), authBaseUrl: loopback(authBaseUrl, "auth") };
   for (const directory of [bundleOnDirectory, bundleOffDirectory]) await fs.access(path.join(directory, "index.html"));
   await fs.mkdir(artifactDirectory, { recursive: true });
   for (const engine of selection("BIKE_PACKING_WHOLE_BROWSER_ENGINE", engines))
     for (const caseName of selection("BIKE_PACKING_WHOLE_BROWSER_CASE", cases))
-      await t.test(`real browser whole ${engine}: ${caseName}`, { timeout: 360_000 }, async caseTest => {
+      await t.test(`real browser whole ${engine}: ${caseName} (${sourceRoute})`, { timeout: 360_000 }, async caseTest => {
         const seed = await seedCase({ engine, caseName });
         assert.ok(seed.source.listId && seed.source.itemKey && seed.personal.listId);
         const browser = await (engine === "chromium" ? chromium : webkit).launch({ headless: true });
@@ -194,6 +198,8 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             const target = destination(request.url(), request.method(), options), raw = request.postDataBuffer();
             const row = { method: request.method(), path: target.pathname, body: raw?.length ? JSON.parse(raw.toString("utf8")) : null, status: null };
             requests.push(row);
+            if (sourceRoute === "public-demo" && row.method === "POST" && row.path === stagePath)
+              row.sourcePickerAtStage = await page.locator("#layoutCopyFrom").inputValue();
             if (hideParent && row.method === "GET" && row.path === parentPath + "/" + faultId) {
               row.dropped = "parent read hidden until cold recovery"; await route.abort("failed"); return;
             }
@@ -220,12 +226,12 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             await route.abort("failed").catch(() => {});
           }
         });
-        const start = async () => {
+        const start = async ({ prepareSource = true } = {}) => {
           page = await context.newPage(); page.on("pageerror", error => errors.push(error.stack)); page.setDefaultTimeout(60_000);
           await page.goto(frontendOrigin); await page.locator("body.app-ready").waitFor();
           await page.waitForFunction(actor => __adminUiTest?.user()?.id === actor && __adminUiTest.privateLoadContext().initialRemoteLoadPending === false,
             session.actorId, { timeout: 60_000 });
-          await openTemplate(page, seed.source, session);
+          if (prepareSource) await openTemplate(page, seed.source, session);
         };
         const cold = async off => {
           await page.close(); hideParent = false; bundle = off ? bundleOffDirectory : bundleOnDirectory;
@@ -233,14 +239,20 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
           await start();
         };
         try {
-          await start(); const before = await checkpoint("bootstrap");
-          const sourceId = before.state.source.layout.id, title = `Полная копия ${engine} ${caseName}`;
+          await start({ prepareSource: sourceRoute !== "public-demo" }); const before = await checkpoint("bootstrap");
+          const sourceId = before.state.source?.layout.id, title = `Полная копия ${engine} ${caseName}`;
           await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
           await page.locator("#layoutCreateMode").selectOption("template-copy");
-          await page.locator("#layoutCopyFrom").selectOption("template-draft:" + sourceId);
+          const sourceChoice = sourceRoute === "public-demo" ? "demo:ru:" + encodeURIComponent(seed.source.listId) : "template-draft:" + sourceId;
+          if (sourceRoute === "public-demo") {
+            assert.notEqual(before.state.full.layouts[before.state.full.activeLayoutId]?.adminCausalSource?.binding.listId, seed.source.listId, "Public source must activate through Add, not test setup");
+            await expect(page.locator(`#layoutCopyFrom option[value="${sourceChoice}"]`)).toHaveCount(1);
+          }
+          await page.locator("#layoutCopyFrom").selectOption(sourceChoice);
           await page.locator("#layoutName").fill(title); await page.locator("#layoutName").blur(); await activate("#saveLayoutBtn");
           if (caseName === "positive") {
             await waitAccepted(page, 1); await expect(page.locator("#layoutDialog")).toBeHidden();
+            if (sourceRoute === "public-demo") assert.equal(stages(requests)[0]?.sourcePickerAtStage, sourceChoice, "Source activation render must preserve the selected public demo");
             const accepted = await checkpoint("accepted"), owner = Object.values(accepted.state.target.items).find(item => item.photos?.length);
             assert.ok(owner, "A copied item with a real photograph is required");
             await activate('.tab[data-view="items"]'); await activate(`#itemsView [data-list-item-id="${owner.id}"] .item-title`);
