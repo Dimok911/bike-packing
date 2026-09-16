@@ -13,7 +13,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const same = (left, right) => canonicalListOperationJson(left) === canonicalListOperationJson(right);
 const fail = () => { throw Object.assign(new Error("Фотодействие не совпадает с сохранённой версией карточки. Данные сохранены, отправка остановлена."),
   { isPersonalSaveBlocked: true, code: "photo-record" }); };
-export const personalRecordPayload = record => record?.photoState?.payload ?? record?.action.body.payload;
+export const personalRecordPayload = record => record?.compactState?.payload ?? record?.photoState?.payload ?? record?.action.body.payload;
 
 // A photo-only action may not smuggle in/drop another business edit. Its complete
 // candidate is derived from the exact confirmed base and the frozen manifest.

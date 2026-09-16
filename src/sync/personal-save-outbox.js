@@ -1,4 +1,6 @@
 import { writeJournalValue, afterJournalWrite } from "../storage/durable-journal-write.js";
+import { PERSONAL_COMPACT_CAPTURE_ENABLED, encodeCompactPersonalRecord, decodeCompactPersonalRecord,
+  applyPersonalItemRename, retainCompactPersonalSource } from "./personal-compact-record.js";
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate, personalServerPhotoResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, assertPersonalShareLinkBody } from "./personal-share-link.js";
@@ -81,9 +83,9 @@ export function recoverPersonalSaveListId({ storage, actorId, scopeKey }) {
   return [...candidates][0] || "";
 }
 const environment = "bike-packing-experiment";
-const updateKind = kind => ["list.update", "list.restore", "photos.mutate", "list.migrate", "list.import"].includes(kind);
+const updateKind = kind => ["list.update", "list.restore", "photos.mutate", "list.migrate", "list.import", "item.rename"].includes(kind);
 const operationRequest = action => ({ operationId: action.operationId,
-  path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "list.import" ? "/import" : action.kind === "list.restore" ? "/restore" : action.kind === "photos.mutate" ? "/photos/mutate" : action.kind === "list.migrate" ? "/migration" : ""}`,
+  path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "item.rename" ? "/items/rename" : action.kind === "list.import" ? "/import" : action.kind === "list.restore" ? "/restore" : action.kind === "photos.mutate" ? "/photos/mutate" : action.kind === "list.migrate" ? "/migration" : ""}`,
   method: action.kind === "list.update" ? "PUT" : "POST", body: JSON.stringify(action.body) });
 const prefix = "bike-packing-personal-save-v1:";
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -131,6 +133,7 @@ const preflight = (action, snapshot) => {
 import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENABLED } from "./personal-server-photo-form-result.js";
 
 export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
+  compactCaptureEnabled = PERSONAL_COMPACT_CAPTURE_ENABLED,
   environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED,
   shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
@@ -201,11 +204,27 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const { anchor, checkpoints } = readPersonalCheckpoints(entries, keyPrefix);
       const retired = new Set(anchor?.retired || []);
+      const decoded = new Map(), decoding = new Set();
+      const resolveCompact = id => {
+        if (decoded.has(id)) return decoded.get(id);
+        if (decoding.has(id) || retired.has(id)) throw Error("Invalid compact ancestry");
+        const raw = entries.get(keyPrefix + id);
+        if (!raw) throw Error("Missing compact source");
+        decoding.add(id);
+        let value = JSON.parse(raw);
+        if (value.version === 4) value = decodeCompactPersonalRecord(value, resolveCompact, anchor);
+        else if (value.version === 2) value = { ...value, version: 1,
+          snapshot: decodePersonalSnapshot(value.action?.body?.payload, value.snapshotPatch) };
+        else if (value.version === 3) value = { ...value, version: 1,
+          snapshot: decodePersonalSnapshot(value.photoState?.payload, value.snapshotPatch) };
+        decoding.delete(id); decoded.set(id, value); return value;
+      };
       for (const [key, value] of entries) {
         if (checkpoints.has(key)) continue;
         const suffix = key.slice(keyPrefix.length);
         if (retired.has(suffix) || suffix.startsWith("applied:") && retired.has(suffix.slice(8).split(":")[0])) continue;
         let record = JSON.parse(value);
+        if (record?.version === 4) record = resolveCompact(suffix);
         if (key.startsWith(`${keyPrefix}applied:`)) {
           if (record?.version !== 1 || !uuid(record.operationId)
             || ![`${keyPrefix}applied:${record.operationId}`, `${keyPrefix}applied:${record.operationId}:${record.stateRevision}`].includes(key)
@@ -222,6 +241,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (record?.version === 3) record = { version: 1, action: record.action, photoState: record.photoState, mergeBase: record.mergeBase,
           snapshot: decodePersonalSnapshot(record.photoState?.payload, record.snapshotPatch) };
         const action = record?.action;
+        if (action?.kind === "item.rename" && (JSON.parse(value).version !== 4 || !record.compactState)) throw Error("Missing compact projection");
         if (record?.version !== 1 || !action || !uuid(action.operationId)
           || key !== keyPrefix + action.operationId
           || Object.keys(binding).some(field => action[field] !== binding[field])
@@ -633,6 +653,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
       const photoReceipts = retainedPhotoProofs(records, anchor);
       if (photoReceipts.length) next.photoReceipts = photoReceipts;
+      retainCompactPersonalSource(next, head);
       return afterJournalWrite(() => publishPersonalCheckpoint(storage, keyPrefix, next, { assertCurrent: () => { assertBaselineContext(); assertObserved(); } }), () => {
         retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
         observe({ head, anchor: next }); assertObserved(); return true;
@@ -689,6 +710,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const nextAnchor = { version: 1, operationId, generation: head.action.generation,
         stateRevision: applied.get(operationId).stateRevision, retired,
         ...(anchor?.operationId === operationId && anchor.baseline ? { baseline: anchor.baseline } : {}) };
+      retainCompactPersonalSource(nextAnchor, head);
       const photoReceipts = retainedPhotoProofs(records, anchor);
       if (photoReceipts.length) nextAnchor.photoReceipts = photoReceipts;
       // Commit the exact retirement set BEFORE deleting anything. An interrupted
@@ -842,6 +864,50 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         observe({ head: record, anchor: current.anchor }); assertObserved();
         return clone(record);
       } catch (error) { error.unconfirmedMemoryDraft = input.snapshot; throw error; }
+    },
+    captureItemRename({ itemId, name, snapshot, operationId = crypto.randomUUID() }, { assertCurrent = () => {} } = {}) {
+      assertNoOrdinaryRecovery(); assertCurrent();
+      if (!compactCaptureEnabled) throw blocked("compact-capture-disabled", "Компактная запись ещё не включена.");
+      const current = assertObserved(), { head, anchor, applied, records } = current;
+      if (head && (!["list.update", "item.rename"].includes(head.action.kind) || head.photoState
+        || head.reconciliation || head.localReconciliation || !isOrdinaryLegacyPersonalUpdate(head.action.body) && head.action.kind !== "item.rename")) {
+        throw blocked("compact-source", "Сначала завершите текущее составное действие.");
+      }
+      const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
+      const payload = baseline?.payload || personalRecordPayload(head) || initialMergeBase?.payload;
+      const stateRevision = baseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision
+        || head?.action.body.baseStateRevision || initialMergeBase?.stateRevision;
+      const item = payload?.items?.[itemId];
+      if (!item || item.id !== itemId || !uuid(operationId) || records.has(operationId)
+        || anchor?.retired.includes(operationId) || storage.getItem(keyPrefix + operationId) !== null) throw blocked("compact-input", "Не определено переименование вещи.");
+      if (name === item.name) return clone(head);
+      const causal = { dependsOn: [], reads: [] };
+      if (head && !baseline) {
+        causal.baseOperationId = head.action.operationId;
+        causal.dependsOn.push({ operationId: head.action.operationId, listId });
+      }
+      const body = { version: 1, itemId, expectedName: item.name, name, baseStateRevision: stateRevision, causal };
+      let candidate;
+      try { candidate = applyPersonalItemRename(payload, body); }
+      catch { throw blocked("compact-input", "Не подтверждены имя вещи или исходная версия для переименования."); }
+      // The caller passes a business snapshot for this first storage seam.
+      // Form metadata and local UI projection are connected in the next step.
+      if (!same(snapshot, candidate)) throw blocked("compact-input", "Вместе с именем изменились другие данные. Нужен обычный путь сохранения.");
+      const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
+        ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}), kind: "item.rename", body };
+      const source = head && !baseline ? { operationId: head.action.operationId,
+        ...(applied.has(head.action.operationId) ? { stateRevision: applied.get(head.action.operationId).stateRevision } : {}) }
+        : { payload, stateRevision };
+      const raw = encodeCompactPersonalRecord({ action, source, sourcePayload: payload, snapshot });
+      const record = decodeCompactPersonalRecord(raw, id => records.get(id));
+      preflight(action, snapshot);
+      return afterJournalWrite(() => writeJournalValue(storage, keyPrefix + operationId, JSON.stringify(raw),
+        () => { assertCurrent(); assertObserved(); }), () => {
+        observe({ head: record, anchor }); assertObserved(); return clone(record);
+      }, error => {
+        if (error?.isPersonalSaveBlocked) throw error;
+        throw Object.assign(blocked("quota", "Компактное действие не записано. Черновик не отправлен."), { unconfirmedMemoryDraft: clone(snapshot) });
+      });
     },
     capture({ snapshot, body, create = false, restore = false, migration = false, archiveImport = false, operationId = crypto.randomUUID(), localReconciliation = null }, { assertCurrent: assertCaptureContext = () => {} } = {}) {
       assertNoOrdinaryRecovery();
@@ -1150,6 +1216,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const checkpoint = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
           stateRevision: headProof.stateRevision, confirmation: headProof, baseline,
           retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
+        retainCompactPersonalSource(checkpoint, head);
         const photoReceipts = mergePersonalPhotoReceipts(retainedPhotoProofs(records, anchor),
           settled.outcomes.filter(proof => (proof.operation.kind === "photos.mutate" || records.get(proof.operation.id)?.photoState)));
         if (photoReceipts.length) checkpoint.photoReceipts = photoReceipts;
@@ -1425,6 +1492,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     async drain({ queue, getContext, photoStore, photoStaging, onConfirmed = () => {} }) {
       assertNoOrdinaryRecovery();
       const { records, head } = assertObserved();
+      // This storage increment is deliberately not a new network rollout.
+      // Photo preflight, conflict recovery and UI confirmation still need the
+      // compact projection before the mixed chain may leave this device.
+      if ([...records.values()].some(record => record.action.kind === "item.rename")) {
+        throw blocked("compact-delivery-disabled", "Отправка компактной очереди ещё не включена. Действия сохранены на устройстве.");
+      }
       if (!head) return null;
       if (([6, 7].includes(head.action.body.ownerResult?.version) || [13, 14].includes(head.action.body.photoResults?.version))
         && !canWriteServerForm(head.action.body.ownerResult || head.action.body.photoResults)) throw blocked("server-photo-form-disabled");

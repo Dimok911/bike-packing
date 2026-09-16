@@ -58,6 +58,9 @@ export function readPersonalCheckpoints(entries, prefix) {
     if (entry.baseline && (!revision(entry.baseline.stateRevision)
       || entry.baseline.stateRevision < entry.stateRevision || !entry.baseline.payload
       || !Array.isArray(entry.baseline.snapshotPatch))) throw Error("Invalid baseline");
+    if (entry.compactSource && (!uuid(entry.compactSource.operationId)
+      || !entry.retired.includes(entry.compactSource.operationId) || !entry.compactSource.payload
+      || Object.hasOwn(entry.compactSource, "stateRevision") && !revision(entry.compactSource.stateRevision))) throw Error("Invalid compact checkpoint source");
     if (entry.confirmation && (!entry.baseline || entry.confirmation.historicalOnly !== true
       || entry.confirmation.operation?.state !== "committed" || entry.confirmation.operation.id !== entry.operationId
       || entry.confirmation.stateRevision !== entry.stateRevision
@@ -84,6 +87,10 @@ export function readPersonalCheckpoints(entries, prefix) {
     const previous = groups.get(checkpoint.operationId);
     if (!previous) { groups.set(checkpoint.operationId, { ...checkpoint, retired: [...checkpoint.retired] }); continue; }
     if (previous.generation !== checkpoint.generation || previous.stateRevision !== checkpoint.stateRevision) throw Error("Inconsistent confirmation");
+    if (checkpoint.compactSource) {
+      if (previous.compactSource && canonicalListOperationJson(previous.compactSource) !== canonicalListOperationJson(checkpoint.compactSource)) throw Error("Inconsistent compact checkpoint source");
+      previous.compactSource = checkpoint.compactSource;
+    }
     if (checkpoint.confirmation) {
       if (previous.confirmation && canonicalListOperationJson(previous.confirmation) !== canonicalListOperationJson(checkpoint.confirmation)) throw Error("Inconsistent inline confirmation");
       previous.confirmation = checkpoint.confirmation;
