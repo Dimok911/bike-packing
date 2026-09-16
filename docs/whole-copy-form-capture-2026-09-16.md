@@ -48,7 +48,13 @@ and `whole-copy-form-source.txt`.
 These checks model IndexedDB and HTTP; they are not native-browser, phone or
 live API acceptance. No Actions, push or publication occurred.
 
-## Exact next boundary
+## Historical next boundary at 88ba71ec
+
+The acceptance, cold-recovery and gated existing-form routing work listed in
+items 1–3 below is now implemented. See
+`whole-copy-acceptance-2026-09-16.md` for current evidence and the remaining
+cancellation, paired API and native-browser/real-file boundary. This section
+records the earlier checkpoint rather than the current status.
 
 1. Durable acceptance of the newly applied target, including explicit original
    record/plan/journal proof. Only that acceptance may release source/target

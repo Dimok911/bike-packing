@@ -25,6 +25,7 @@ import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save
 import { assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
 import { readAdminTemplateOrderInventory } from "../../src/public/admin-template-order-batch.js";
 import * as treeAcceptance from "../../src/public/admin-template-photo-tree-copy-acceptance.js";
+import * as wholeAcceptance from "../../src/public/admin-template-photo-whole-copy-acceptance.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 const actual = (names, deps) => new Function(...Object.keys(deps), names.map(name => {
@@ -65,7 +66,7 @@ export async function wholeAppRunnerFixture() {
     const copyStore = (binding, id, preparing) => createAdminTemplatePhotoCopyActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const deps = { state, globalThis: { localStorage: f.storage }, localStorage: f.storage,
       scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
-      ...treeAcceptance, canonicalTemplateJson, validTemplateOperationId, clone: copy, adminTemplatePhotoWholeCopyJournal,
+      ...treeAcceptance, ...wholeAcceptance, canonicalTemplateJson, validTemplateOperationId, clone: copy, adminTemplatePhotoWholeCopyJournal,
       adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot, assertAdminTemplateCaptureLease,
       adminTemplateOperationContext: context, adminTemplateUiEnabled: () => flags.admin,
       ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED: flags.whole, ADMIN_TEMPLATE_PHOTO_COPY_ENABLED: flags.copy,
@@ -83,6 +84,7 @@ export async function wholeAppRunnerFixture() {
       administrativePhotoWholeCopyAttempts, allocateAdminTemplatePhotoWholeCopySelection, prepareAdminTemplatePhotoWholeCopyForm,
       adminTemplatePhotoNamespace, uiLanguage: "en", normalizeUiLanguage,
       applyAdminTemplatePhotoWholeCopyResult,
+      render: () => {}, activateAdminPublishedLayout: id => { modeState.adminPublishedEditLayoutId = id; state.activeLayoutId = id; },
       createAdminTemplatePhotoWholeCopyAdmission: options => {
         const enter = name => (proof, task) => options[name](proof, scope => { scopes.push(scope); return task(scope); });
         const real = createAdminTemplatePhotoWholeCopyAdmission({ ...options, locks, withInventory: enter("withInventory"), withNamespaces: enter("withNamespaces") });
@@ -103,10 +105,13 @@ export async function wholeAppRunnerFixture() {
     const names = ["adminTemplatePhotoWholeCopyInventory", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted",
       "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor", "withAdminTemplatePhotoWholeCopyDispatchInventory",
       "withAdminTemplatePhotoWholeCopyCaptureInventory", "withAdminTemplatePhotoWholeCopyInventoryScope",
+      "withAdminTemplatePhotoWholeCopyApplyInventory", "readAdminTemplatePhotoWholeCopyAccepted",
       "adminTemplatePhotoWholeCopyFormEnabled", "captureAdminTemplatePhotoWholeCopyForm",
       "prepareAndCaptureAdminTemplatePhotoWholeCopyForm",
       "applyAdminTemplatePhotoWholeCopyFormResult",
       "findAdminTemplatePhotoWholeCopyFormRecord", "resumeAdminTemplatePhotoWholeCopyCapture",
+      "resumeAdminTemplatePhotoWholeCopyForm",
+      "prepareAdminTemplatePhotoWholeCopyRecovery", "createCausalAdminTemplateWholeCopy",
       "withAdminTemplatePhotoWholeCopyNamespaceScope", "runAdminTemplatePhotoWholeCopyPlan", ...(extra.names || [])];
     for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);
     return actual(names.filter(name => !Object.hasOwn(extra.replace || {}, name)), { ...deps, ...extra.deps, ...extra.replace });

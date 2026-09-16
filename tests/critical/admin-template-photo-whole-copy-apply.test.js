@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { wholeCopyClientFixture } from "../fixtures/admin-template-photo-whole-copy-client-fixture.js";
+import { seedWholeCopyAcceptanceFacts } from "../fixtures/admin-template-photo-whole-copy-acceptance-fixture.js";
+import { adminTemplatePhotoWholeCopyAcceptanceKey, readAdminTemplatePhotoWholeCopyAcceptance } from "../../src/public/admin-template-photo-whole-copy-acceptance.js";
 import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
 import { adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot } from "../../src/sync/admin-template-photo-whole-copy-save-plan.js";
 import { applyAdminTemplatePhotoWholeCopyResult as apply } from "../../src/public/admin-template-photo-whole-copy-apply.js";
@@ -12,15 +14,19 @@ async function fixture() {
   state.preferences = { filter: "old" }; state.packedItems = { private: true };
   const plan = adminTemplatePhotoWholeCopySavePlan({ binding: f.binding, operationId: f.id, body: f.record.action.body,
     sourceEditorSnapshot: adminTemplatePhotoWholeCopySourceEditorSnapshot(f.record), recordIntentHash: f.record.intentHash });
-  const values = new Map([[key, JSON.stringify(state)]]), hooks = { set: null, get: null }, writes = [];
+  f.plan = plan; await seedWholeCopyAcceptanceFacts(f);
+  const acceptanceKey = adminTemplatePhotoWholeCopyAcceptanceKey(f.binding, f.id);
+  const values = new Map([...f.values, [key, JSON.stringify(state)]]), hooks = { set: null, get: null }, writes = [], allWrites = [];
   const storage = { getItem(name) { hooks.get?.(name); return values.get(name) ?? null; },
-    setItem(name, value) { writes.push(value); if (hooks.set) hooks.set(name, value); else values.set(name, value); } };
+    setItem(name, value) { allWrites.push(name); if (name === key) writes.push(value); if (hooks.set) hooks.set(name, value); else values.set(name, value); } };
   const mirrorContext = { storage, key, scopeKey: `id:${f.binding.actorId}` };
   const bindings = [f.record.snapshot.source.ownerMap.binding, f.binding];
   const input = { plan, store: f.store, receipt: copy(f.receipt), stageReceipts: copy(f.stages),
     getState: () => state, getContext: () => f.current, getMirrorContext: () => mirrorContext };
-  return Object.assign(f, { state, plan, values, hooks, writes, key, bindings, input, mirrorContext,
+  return Object.assign(f, { state, plan, values, hooks, writes, allWrites, acceptanceKey, key, bindings, input, mirrorContext,
     mirror: () => JSON.parse(values.get(key)),
+    readAcceptance: () => readAdminTemplatePhotoWholeCopyAcceptance({ binding: f.binding, operationId: f.id, store: f.store,
+      getContext: input.getContext, getMirrorContext: input.getMirrorContext }, () => {}),
     run: (guard = () => {}) => withAdminTemplateCapture({ bindings, locks: f.locks }, captureLease => apply({ ...input, captureLease }, guard)) });
 }
 const noServerEffects = f => {
@@ -40,6 +46,8 @@ test("whole copy applies the verified target only after persistence, preserving 
   };
   const result = await f.run();
   assert.equal(result.state, "applied"); assert.equal(f.writes.length, 1);
+  assert.deepEqual(f.allWrites, [f.key, f.acceptanceKey]);
+  assert.deepEqual((await f.readAcceptance()).acceptance, result.acceptance);
   assert.equal(f.state.items.private.quantity, 23); assert.equal(f.mirror().items.private.quantity, 19);
   assert.equal(f.state.preferences.filter, "live edit"); assert.equal(f.mirror().preferences.filter, "other tab");
   assert.equal(f.state.items.private, privateRef); assert.equal(f.state.layouts[sourceId], sourceRef);
@@ -66,8 +74,23 @@ test("successful mirror write with lost readback can retry while live target rem
   await assert.rejects(f.run(), /readback lost/); assert.deepEqual(f.state, before);
   f.hooks.set = null; f.hooks.get = null;
   const result = await f.run(); assert.equal(result.state, "applied"); assert.equal(f.writes.length, 1);
-  // Cold/live acceptance is deliberately not fabricated by this helper.
+  // An already-present live target requires the separate cold-adoption path.
   await assert.rejects(f.run()); assert.equal(f.writes.length, 1); noServerEffects(f);
+});
+
+test("whole acceptance quota leaves confirmed mirror and absent live target, then retry finishes same copy", async () => {
+  const f = await fixture(), before = copy(f.state);
+  f.hooks.set = (key, value) => {
+    if (key === f.acceptanceKey) throw Error("acceptance quota");
+    f.values.set(key, value);
+  };
+  await assert.rejects(f.run(), /acceptance quota/);
+  assert.deepEqual(f.state, before); assert.equal(f.writes.length, 1); assert.equal(await f.readAcceptance(), null);
+  assert.equal(f.mirror().layouts[f.record.snapshot.target.layoutId].adminCausalSource.base.stateRevision, 1);
+  f.hooks.set = null;
+  const result = await f.run();
+  assert.equal(result.operationId, f.id); assert.equal(f.writes.length, 1);
+  assert.deepEqual((await f.readAcceptance()).acceptance, result.acceptance); noServerEffects(f);
 });
 
 test("changed source, occupied target and mirror aliases reject before persistence", async () => {

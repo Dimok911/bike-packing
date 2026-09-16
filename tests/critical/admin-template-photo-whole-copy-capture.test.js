@@ -137,7 +137,7 @@ test("actual whole capture to receipt to target-only apply survives quota and re
   assert.equal(f.state.activeLayoutId, before.activeLayoutId);
   assert.equal(f.server.parentPosts.length, 1); assert.equal(f.held.size, 0);
   const appliedState = copy(f.state);
-  await assert.rejects(app.applyAdminTemplatePhotoWholeCopyFormResult(result));
+  assert.equal((await app.applyAdminTemplatePhotoWholeCopyFormResult(result)).state, "already-accepted");
   assert.deepEqual(f.state, appliedState); assert.equal(f.server.parentPosts.length, 1);
 });
 

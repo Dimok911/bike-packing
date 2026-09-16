@@ -2,7 +2,7 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
   getLanguage = () => "ru", documentRef = document }) {
   let dialog, status, resume, stop, check, compare, close, busy = false, work, info;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
-  const tree = value => value?.recoveryKind === "photo-tree-copy";
+  const tree = value => ["photo-tree-copy", "photo-whole-copy"].includes(value?.recoveryKind);
   const committed = value => value?.operations.length > 0 && value.operations.every(row => row.state === "committed");
   const treeStopped = value => tree(value) && !committed(value) && (value.stopped || value.operations.some(row => row.cancelled));
   const message = value => {

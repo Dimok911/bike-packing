@@ -37,6 +37,15 @@ const noTreeComparison = async f => {
   await f.compare.dispatch("click"); assert.equal(f.calls.compare, 0, "even a dispatched hidden event cannot invoke generic comparison");
 };
 
+test("whole-copy recovery follows explicit resume/stop permissions and never offers generic comparison", async () => {
+  const f = await fixture(treeInfo({ recoveryKind: "photo-whole-copy", canResume: false, canStop: false }));
+  assert.equal(f.resume.disabled, true); assert.equal(f.stop.disabled, true); await noTreeComparison(f);
+  f.controls.info = { ...committedInfo(false), recoveryKind: "photo-whole-copy" };
+  await f.check.click(); assert.equal(f.resume.disabled, false); assert.equal(f.stop.disabled, true);
+  f.controls.info = { ...committedInfo(true), recoveryKind: "photo-whole-copy" };
+  await f.resume.click(); assert.equal(f.resume.disabled, true); await noTreeComparison(f);
+});
+
 test("cancelled tree retains source/records with no automatic new save and never offers V8 comparison", async () => {
   const f = await fixture(treeInfo({ stopped: true, stopRequested: true, stopCoversHead: true,
     operations: [{ id: "same-operation", kind: "template.save", state: "rejected", cancelled: true }] }));

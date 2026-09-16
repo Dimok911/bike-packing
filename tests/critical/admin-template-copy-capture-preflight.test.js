@@ -5,7 +5,9 @@ import { adminPhotoCopyClientFixture, copy, hash } from "../fixtures/admin-templ
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
-import { createAdminTemplatePhotoWholeCopyActionStore } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { createAdminTemplatePhotoWholeCopyActionStore, readAdminTemplatePhotoWholeCopyActorInventory } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { readAdminTemplatePhotoWholeCopyAcceptance } from "../../src/public/admin-template-photo-whole-copy-acceptance.js";
+import { wholePhotoIndexedDBFixture } from "../fixtures/admin-template-photo-whole-copy-idb-fixture.js";
 import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
@@ -21,8 +23,14 @@ function actual(names, deps) {
 }
 async function fixture() {
   const f = await adminPhotoCopyClientFixture(), controls = { excluded: [], afterExcluded: null }, factories = [];
+  // Whole-copy discovery uses its own database and requires getAllKeys, which
+  // the older single-copy IDB double does not implement.
+  const wholeIdb = wholePhotoIndexedDBFixture();
   const layoutId = f.record.snapshot.target.layoutId, state = copy(f.record.snapshot.target.beforeState);
   const deps = { canonicalTemplateJson, validTemplateOperationId, assertAdminTemplateCaptureLease,
+    readAdminTemplatePhotoWholeCopyAcceptance, localStorage: f.storage, scopedLocalStorageKey: () => "private-mirror",
+    STORAGE_KEY: "private-mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
+    readAdminTemplatePhotoWholeCopyActorInventory: options => readAdminTemplatePhotoWholeCopyActorInventory({ ...options, indexedDB: wholeIdb.indexedDB }),
     createAdminTemplateSavePlans: options => createAdminTemplateSavePlans({ ...options, storage: f.storage, locks: f.locks }),
     ADMIN_TEMPLATE_PHOTO_COPY_ENABLED: false, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: false,
     adminTemplateOperationContext: () => f.current,
@@ -30,7 +38,7 @@ async function fixture() {
     createAdminTemplatePhotoCopyActionStore: options => { factories.push(options); return createAdminTemplatePhotoCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }); },
     createAdminTemplatePhotoTreeCopyActionStore: options => createAdminTemplatePhotoTreeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
     createAdminTemplatePhotoTreeCopyClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks: f.locks }),
-    createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
+    createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore({ ...options, indexedDB: wholeIdb.indexedDB }),
     createAdminTemplatePhotoWholeCopyClient: options => createAdminTemplatePhotoWholeCopyClient({ ...options, storage: f.storage, locks: f.locks, fetchImpl: f.fetchImpl }),
     experimentTransport: f.make().transport,
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,
@@ -41,7 +49,8 @@ async function fixture() {
         .map(method => [method, () => assert.fail(`Ordinary preflight must not call copy client ${method}`)])) };
     },
     adminTemplateRecoveryFor: () => ({ requiresCancellation: () => false }) };
-  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
+  const api = actual(["adminTemplatePhotoCopyStore", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoWholeCopyAccepted",
+    "assertAdminTemplateCopyCaptureAllowed", "adminTemplatePlansFor"], deps);
   const ordinary = { operationId: crypto.randomUUID(), body: { version: 1, base: copy(f.intent.body.base),
     payload: copy(f.intent.body.payload), metadata: copy(f.intent.body.metadata) } };
   const check = (request = ordinary) => withAdminTemplateCapture({ bindings: [f.binding], locks: f.locks }, captureLease =>
