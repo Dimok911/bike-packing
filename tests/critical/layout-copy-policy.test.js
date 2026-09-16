@@ -1,5 +1,39 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { renderFilterControls } from "../../src/ui/filter-controls.js";
+
+function copyPickerRenderFixture() {
+  const control = () => ({ value: "", classList: { toggle() {} }, setAttribute() {},
+    closest: () => null, parentElement: { classList: { toggle() {} } } });
+  const refs = Object.fromEntries(["layoutSelect", "newLayoutBtn", "layoutCopyFrom", "searchInput", "locationFilter",
+    "itemLocation", "clearSearchBtn", "clearLocationFilterBtn", "clearCategoryFilterBtn", "collectionModeBtn",
+    "unpackedOnlyBtn", "unpackAllBtn"].map(key => [key, control()]));
+  refs.layoutDialog = { open: true };
+  refs.layoutCopyFrom.value = "demo:template-300";
+  refs.layoutCopyFrom.options = [["demo:template-300", "Шаблон 300"]];
+  const state = { layouts: { personal: { id: "personal", name: "Укладка 2026" },
+    source: { id: "source", name: "Шаблон 300", adminDemo: true } } };
+  const render = () => renderFilterControls({ refs, state, canUsePrivateState: () => true,
+    getActiveEditableLayoutId: () => "source", publicLayoutChoiceForLayout: () => "demo:template-300",
+    fillSelect(select, entries, selected) {
+      select.options = entries;
+      select.value = entries.some(row => row[0] === selected) ? selected : entries[0]?.[0] || "";
+    } });
+  return { refs, render };
+}
+
+test("CRITICAL template copy form keeps its chosen public source through source activation and background render", () => {
+  const f = copyPickerRenderFixture(), options = f.refs.layoutCopyFrom.options;
+  f.render(); f.render();
+  assert.equal(f.refs.layoutCopyFrom.value, "demo:template-300");
+  assert.equal(f.refs.layoutCopyFrom.options, options);
+  assert.equal(f.refs.layoutSelect.value, "personal");
+});
+
+test("CRITICAL closed copy form still refreshes personal source defaults", () => {
+  const f = copyPickerRenderFixture(); f.refs.layoutDialog.open = false; f.render();
+  assert.equal(f.refs.layoutCopyFrom.value, "personal");
+});
 import { planLayoutTreeMissingItems } from "../../src/public/copy-duplicates.js";
 import {
   linkExistingContainerTreeToLayoutState,

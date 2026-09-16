@@ -269,11 +269,16 @@ export function renderFilterControls({
     refs.editLayoutBtn.title = t("tooltips.editLayout");
     refs.editLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideManageLayout);
   }
-  fillSelect(
-    refs.layoutCopyFrom,
-    personalLayouts.map((layout) => [layout.id, layoutDisplayNameForLanguage(layout, uiLanguage)]),
-    activeEditableLayoutId
-  );
+  // The open creation form owns its options and selection. Opening a public
+  // source for a copy renders the page while that form is awaiting the source;
+  // replacing its options here would silently switch it to a personal layout.
+  if (!refs.layoutDialog?.open) {
+    fillSelect(
+      refs.layoutCopyFrom,
+      personalLayouts.map((layout) => [layout.id, layoutDisplayNameForLanguage(layout, uiLanguage)]),
+      activeEditableLayoutId
+    );
+  }
   const nextSelectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
   const locationOptions = dictionaryOptionsForUi("location");
   fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, dictionaryValueLabel(loc)])], refs.locationFilter.value);
