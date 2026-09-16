@@ -64,6 +64,65 @@ async function assertCleanFinish(page, f, name, count) {
   await f.flushErrors(); expect(f.errors).toEqual([]); expect(f.pageErrors).toEqual([]);
 }
 
+test("healthy photo recovery fence never opens a modal during compact rename or reload", async ({ page, context }) => {
+  test.setTimeout(90000);
+  // A visibility assertion after saving would miss a transient modal. Observe
+  // the actual native open call before startup and retain observations across
+  // reload, without changing dialog behavior.
+  await context.addInitScript(() => {
+    const showModal = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function(...args) {
+      if (this.id === "personalSaveRecoveryDialog") {
+        const key = "test-personal-recovery-modal-opens";
+        sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) || 0) + 1));
+      }
+      return showModal.apply(this, args);
+    };
+  });
+  const payload = renamePayload();
+  const f = await setupPersonalLegacyPhotoBrowser(page, context, { initialPayload: payload });
+  await renameThroughForm(page, firstName);
+  await assertCleanFinish(page, f, firstName, 1);
+  assertCompactAction(f.posts[0], originalName, firstName);
+  assertServerRename(f, payload, f.posts[0]);
+  await f.waitForApiIdle(); await page.reload(); await readyLegacyPhotoBrowser(page);
+  await assertCleanFinish(page, f, firstName, 1);
+  await f.waitForApiIdle();
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  expect(await page.evaluate(() => Number(sessionStorage.getItem("test-personal-recovery-modal-opens") || 0))).toBe(0);
+});
+
+test("photo recovery storage failure still opens the blocking dialog before sending a rename", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const payload = renamePayload();
+  const f = await setupPersonalLegacyPhotoBrowser(page, context, { initialPayload: payload });
+  await f.waitForApiIdle();
+  await page.evaluate(() => {
+    const open = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function(name, ...args) {
+      if (name === "bike-packing-personal-photo-actions-v1") {
+        window.__photoRecoveryStorageFailures = (window.__photoRecoveryStorageFailures || 0) + 1;
+        throw new DOMException("Synthetic photo recovery storage unavailable", "UnknownError");
+      }
+      return open.call(this, name, ...args);
+    };
+  });
+  await renameThroughForm(page, firstName);
+  const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery).toBeVisible({ timeout: 30000 });
+  await expect(recovery).toHaveAttribute("role", "alertdialog");
+  await expect(recovery.locator("#personalSaveRecoveryTitle")).toHaveText("Фото требуют проверки");
+  await expect(recovery.locator("[data-recovery-reason]")).toContainText("их журнал недоступен");
+  expect(await recovery.evaluate(dialog => dialog.matches(":modal"))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(recovery).toBeVisible();
+  expect(await page.evaluate(() => window.__photoRecoveryStorageFailures)).toBeGreaterThan(0);
+  expect(f.posts).toHaveLength(0);
+  expect(f.payload.items[itemId]).toEqual(payload.items[itemId]);
+  expect(f.payload.containers[legacyBagId].photos).toEqual(payload.containers[legacyBagId].photos);
+  await f.flushErrors(); expect(f.errors).toEqual([]); expect(f.pageErrors).toEqual([]);
+});
+
 for (const [loseAck, quotaPressure] of [[false, false], [true, false], [true, true]]) test(`compact form rename survives cold recovery; lost ACK=${loseAck}; quota=${quotaPressure}`, async ({ page, context }) => {
   test.setTimeout(90000);
   const payload = renamePayload(quotaPressure);

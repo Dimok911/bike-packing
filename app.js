@@ -7037,7 +7037,8 @@ function activateOfflineRememberedSession(
   appUnlocked = true;
   activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
   setActivePrivateScope();
-  // Starts the blocking read-only dialog synchronously; no network is needed.
+  // Inspect the local queue without interrupting normal use; actual recovery
+  // failures still open the blocking dialog through personalSaveRecovery.
   checkPersonalPhotoRecoveryBeforeLoad().catch(error => {
     if (!personalSaveRecovery.owns(error)) console.warn("Local photo recovery check stopped", error.code || "context");
   });
@@ -9294,7 +9295,8 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
   if (personalPhotoRecoveryCheck?.key === key) return personalPhotoRecoveryCheck.promise;
   const source = { store: createPersonalPhotoActionStore({ ...binding, getContext: personalPhotoRecoveryReadContext }), inventory: null };
   personalPhotoRecoverySource = source;
-  personalSaveRecoveryDialog?.showChecking();
+  // Ordinary saves and loads also pass through this read-only fence. Only an
+  // actual recovery failure needs a modal; a healthy inventory stays silent.
   const pending = { key, promise: null };
   personalPhotoRecoveryCheck = pending;
   pending.promise = (async () => {
@@ -9326,7 +9328,6 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       await completePersonalPublicImportSelections(source);
       if (personalPhotoRecoveryCheck === pending) {
         personalPhotoRecoverySource = null;
-        personalSaveRecoveryDialog?.finishChecking();
       }
     } catch (cause) {
       // A concurrent storage failure owns its existing dialog and draft.
@@ -9336,7 +9337,6 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
         || Object.keys(binding).some(name => current[name] !== binding[name]) || current.scope !== "personal") {
         if (personalPhotoRecoveryCheck === pending) {
           personalPhotoRecoverySource = null;
-          personalSaveRecoveryDialog?.finishChecking();
         }
         throw cause; // Never expose/adopt a previous account's recovery result.
       }
