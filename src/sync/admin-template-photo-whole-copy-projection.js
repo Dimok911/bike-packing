@@ -1,6 +1,7 @@
 import { canonicalTemplateJson as canonical, validTemplateOperationId as uuid } from "./admin-template-protocol.js";
 import { projectAdminTemplateCopy } from "./admin-template-copy-projection.js";
-import { adminTemplatePhotoCopyReference } from "./admin-template-photo-copy-protocol.js";
+import { adminTemplatePhotoWholeCopySourceReference, adminTemplatePhotoWholeCopySourceArrangement } from "./admin-template-photo-whole-copy-source.js";
+export { adminTemplatePhotoWholeCopySourceReference } from "./admin-template-photo-whole-copy-source.js";
 
 // Pure whole-catalog preparation, deliberately separate from tree-v2. Neither
 // inventory nor supplied canonical photo references proves rights, SQL absence,
@@ -59,7 +60,7 @@ function forests(payload, layout) {
     if (["parentContainerId", "parentId", "childIds", "itemIds", "order"].some(field => Object.hasOwn(row, field))) fail("placement");
     const parent = ref(row.containerId); if (parent && (!raw.has(parent) || !raw.get(parent).members.includes(key))) fail("raw-forest");
   }
-  const a = layout.arrangement;
+  const a = adminTemplatePhotoWholeCopySourceArrangement(payload, layout.arrangement);
   if (!plain(a) || !ids(layout.rootContainerIds) || !ids(a.rootContainerIds) || !same(layout.rootContainerIds, a.rootContainerIds)
     || !["containers", "items", "itemQuantities", "packedItems"].every(key => plain(a[key]))) fail("arrangement");
   const visited = new Set(), placed = new Set();
@@ -103,7 +104,7 @@ function sourceInventory(payload, listId) {
   let photoCount = 0;
   const owners = types.flatMap(type => Object.keys(payload[type]).sort().map(sourceEntityId => {
     const row = payload[type][sourceEntityId], photos = (row.photos || []).map(reference => {
-      adminTemplatePhotoCopyReference(reference, listId); const sourcePhotoId = reference.id ?? reference.photoId;
+      adminTemplatePhotoWholeCopySourceReference(reference, listId); const sourcePhotoId = reference.id ?? reference.photoId;
       if (photoIds.has(sourcePhotoId) || reference.assetId && assets.has(reference.assetId)) fail("photos");
       photoIds.add(sourcePhotoId); occupied.add(sourcePhotoId); if (reference.assetId) { assets.add(reference.assetId); occupied.add(reference.assetId); }
       // Legacy external URLs remain supported; recognized API paths must bind
@@ -130,7 +131,7 @@ export function adminTemplatePhotoWholeCopySourceInventory(input) {
 const bases = ["/letters-vniipo/api", "https://api.vniipo-help.ru/experiment/letters-vniipo/api",
   "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api", "https://experiment.vniipo-help.ru/letters-vniipo/api", "https://api.vniipo-help.ru/letters-vniipo/api"];
 function targetPhoto(entry, source, targetListId, occupied) {
-  const metadata = adminTemplatePhotoCopyReference(source.reference, source.reference.listId), p = entry?.photo;
+  const metadata = adminTemplatePhotoWholeCopySourceReference(source.reference, source.reference.listId), p = entry?.photo;
   const keys = ["id", "photoId", "assetId", "listId", "status", "url", "thumbUrl", "fileName", "type", "size", "width", "height", ...Object.keys(metadata)];
   if (!exact(entry, ["sourcePhotoId", "photo"]) || entry.sourcePhotoId !== source.sourcePhotoId || !exact(p, keys)
     || !id(p.id) || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(p.id) || p.id !== p.photoId || !uuid(p.assetId)
@@ -153,7 +154,9 @@ export function projectAdminTemplatePhotoWholeCopyPayload(input) {
     || !["ru", "en"].includes(metadata.language)) fail("projection");
   const { inventory, occupied } = sourceInventory(sourcePayload, sourceListId);
   if (occupied.has(operationId) || occupied.has(targetListId)) fail("collision"); occupied.add(operationId); occupied.add(targetListId);
-  const projected = projectAdminTemplateCopy(sourcePayload, operationId, metadata);
+  const projectionSource = clone(sourcePayload), sourceLayout = Object.values(projectionSource.layouts)[0];
+  sourceLayout.arrangement = adminTemplatePhotoWholeCopySourceArrangement(sourcePayload, sourceLayout.arrangement);
+  const projected = projectAdminTemplateCopy(projectionSource, operationId, metadata);
   for (const type of ["layouts", ...types]) for (const key of Object.keys(projected[type])) {
     if (occupied.has(key)) fail("collision"); occupied.add(key);
   }

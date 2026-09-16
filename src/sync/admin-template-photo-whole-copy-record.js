@@ -36,7 +36,7 @@ function validate(input) {
     .some(key => Object.hasOwn(sourceMeta, key))) invalid();
   const source = intent.body.source;
   const sourceBinding = adminTemplatePhotoActionBinding({ ...binding, listId: source.listId, itemKey: source.itemKey });
-  assertAdminTemplatePhotoCopyEditor({ binding: sourceBinding, revision: source.base.stateRevision, payload: copy.sourcePayload, side: snapshot.source });
+  assertAdminTemplatePhotoCopyEditor({ binding: sourceBinding, revision: source.base.stateRevision, payload: copy.sourcePayload, side: snapshot.source, allowPublicSource: true });
 
   // Allocations only: this record does not prove absence from another local
   // namespace, SQL, or another store. Admission must prove those live facts.

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
-import { adminTemplatePhotoCopyReference } from "../../src/sync/admin-template-photo-copy-protocol.js";
+import { adminTemplatePhotoWholeCopySourceReference } from "../../src/sync/admin-template-photo-whole-copy-source.js";
 import { wholeCopyFixture } from "./admin-template-photo-whole-copy-fixture.js";
 import { adminTemplatePhotoWholeCopyIntent, adminTemplatePhotoWholeCopyStageManifests, adminTemplatePhotoWholeCopyStageDigest,
   adminTemplatePhotoWholeCopyPayload } from "../../src/sync/admin-template-photo-whole-copy-protocol.js";
@@ -32,7 +32,7 @@ export async function prepareWholeCopyProtocolFixture(input) {
       return { assetId: asset.assetId, assetDigest: asset.assetDigest, sourcePhotoId: asset.sourcePhotoId,
         photo: { id: asset.photoId, photoId: asset.photoId, assetId: asset.assetId, listId: intent.listId, status: "synced",
           url: route + "/file", thumbUrl: route + "/thumb", fileName: "Original.png", type: "image/png", size: 42, width: 1, height: 1,
-          ...adminTemplatePhotoCopyReference(original, intent.body.source.listId) } };
+          ...adminTemplatePhotoWholeCopySourceReference(original, intent.body.source.listId) } };
     }) }));
   return { input, request: input, body: input.body, intent, sourcePayload, manifests, added, resultOwners: added,
     projected: adminTemplatePhotoWholeCopyPayload(intent, added) };

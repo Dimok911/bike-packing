@@ -15,7 +15,7 @@ const freeze = value => { if (value && typeof value === "object") { Object.value
 const fail = () => { throw Object.assign(Error("Исходный шаблон и выбранная копия требуют сверки. Новая копия не создана."),
   { code: "admin-template-photo-whole-copy-selection", isAdminTemplateBlocked: true }); };
 
-// Capture the complete confirmed private editor before the first await. Server
+// Capture the complete confirmed source editor before the first await. Server
 // owner IDs are deterministic protocol allocations; local editor IDs remain
 // separate. This selection grants no live namespace, persistence or POST rights.
 export function allocateAdminTemplatePhotoWholeCopySelection(input, { newUuid = () => crypto.randomUUID() } = {}) {
@@ -31,7 +31,7 @@ export function allocateAdminTemplatePhotoWholeCopySelection(input, { newUuid = 
     if (!plain(meta) || ["treePending", "photoTreeCopyPending", "wholePending", "photoWholeCopyPending"]
       .some(key => Object.hasOwn(meta, key))) fail();
     const inventory = adminTemplatePhotoWholeCopySourceInventory({ payload: value.sourcePayload, listId: sourceBinding.listId });
-    assertAdminTemplatePhotoCopyEditor({ binding: sourceBinding, revision: meta.base?.stateRevision, payload: value.sourcePayload, side: source });
+    assertAdminTemplatePhotoCopyEditor({ binding: sourceBinding, revision: meta.base?.stateRevision, payload: value.sourcePayload, side: source, allowPublicSource: true });
     const occupied = new Set(value.occupiedIds);
     for (const key of [sourceBinding.listId, sourceBinding.itemKey, sourceBinding.itemKey.split(":")[1]]) if (key) occupied.add(key);
     for (const state of [value.sourcePayload, source.beforeState]) for (const type of ["layouts", "items", "containers"])

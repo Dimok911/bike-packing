@@ -6,6 +6,7 @@ import { assertAdminTemplatePhotoOwnerMap } from "./admin-template-photo-owner-m
 import { assertAdminTemplatePhotoView } from "./admin-template-photo-view.js";
 import { recoverPersonalAdminDrafts } from "./personal-admin-draft-recovery.js";
 import { normalizeItemPhotos } from "../state/item-photos.js";
+import { adminTemplatePhotoWholeCopySourceArrangement } from "./admin-template-photo-whole-copy-source.js";
 
 const kind = "admin-template-photo-copy", types = ["items", "containers"], collections = ["layouts", ...types];
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
@@ -39,7 +40,7 @@ function assertDerivedPhotoView(rawPhotos, viewPhotos) {
 // As with create's before-proof, compare every business field against its exact
 // raw source. Only proven projector-owned IDs, metadata and placement mirrors
 // may differ. No normalization of the supplied editor can hide an unsaved edit.
-function assertEditor({ binding, revision, payload, side }) {
+function assertEditor({ binding, revision, payload, side, allowPublicSource = false }) {
   if (!exact(side, ["layoutId", "ownerMap", "beforeState", "metadata"]) || !id(side.layoutId)
     || !exact(side.metadata, ["title", "description", "language"])) invalid();
   const { beforeState: before, layoutId, ownerMap, metadata } = side;
@@ -55,7 +56,7 @@ function assertEditor({ binding, revision, payload, side }) {
     || types.some(type => Object.values(before[type]).some(row => !plain(row) || row.publicCatalogLayoutId !== layoutId))) invalid();
   const source = before.layouts[layoutId].adminCausalSource;
   if (!plain(source) || source.version !== 1 || !same(source.binding, binding) || source.exists !== true || source.deleted
-    || source.visibility !== "private" || source.planId || source.photoAppendPending || source.photoEditPending || source.photoCreatePending || source.photoCopyPending
+    || !(source.visibility === "private" || allowPublicSource === true && source.visibility === "public") || source.planId || source.photoAppendPending || source.photoEditPending || source.photoCreatePending || source.photoCopyPending
     || !exact(source.base, ["stateRevision"]) || source.base.stateRevision !== revision
     || source.photoOwnerMap !== undefined && !same(source.photoOwnerMap, ownerMap)) invalid();
   const recovered = recoverPersonalAdminDrafts({ layouts: {}, items: {}, containers: {} }, canonical(before),
@@ -71,7 +72,9 @@ function assertEditor({ binding, revision, payload, side }) {
   const links = row => ({ parentId: ref("containers", row.parentId),
     childIds: (row.childIds || []).map(key => local("containers", key)), itemIds: (row.itemIds || []).map(key => local("items", key)),
     order: (row.order || []).map(entry => ({ ...entry, id: local(entry.type === "item" ? "items" : "containers", entry.id) })) });
-  const rawLayout = Object.values(payload.layouts)[0], actualLayout = before.layouts[layoutId], arrangement = clone(rawLayout.arrangement);
+  const rawLayout = Object.values(payload.layouts)[0], actualLayout = before.layouts[layoutId], arrangement = allowPublicSource === true
+    ? adminTemplatePhotoWholeCopySourceArrangement(payload, rawLayout.arrangement) : clone(rawLayout.arrangement);
+  if (allowPublicSource === true && source.visibility === "public" && actualLayout.templatePublished !== true) invalid();
   arrangement.rootContainerIds = arrangement.rootContainerIds.map(key => local("containers", key));
   arrangement.containers = Object.fromEntries(Object.entries(arrangement.containers).map(([key, row]) => [local("containers", key), { ...row, ...links(row) }]));
   arrangement.items = Object.fromEntries(Object.entries(arrangement.items).map(([key, value]) => [local("items", key), local("containers", value)]));
@@ -109,7 +112,7 @@ function assertEditor({ binding, revision, payload, side }) {
   const localMetadata = { adminDemo: value => value === demo, adminDemoLanguage: value => demo && value === metadata.language,
     adminDemoListId: value => demo && value === binding.listId, adminSharedSourceId: value => !demo && value === binding.listId.slice("public-shared-layout-".length),
     adminTemplateCopy: value => value === Boolean(copied), publicCatalogLayoutId: value => value === layoutId,
-    templatePublished: value => value === false, templateDraftServerHydrated: value => value === true,
+    templatePublished: value => value === (allowPublicSource === true && source.visibility === "public"), templateDraftServerHydrated: value => value === true,
     templateDraftSyncPending: value => value === false, templateUnpublishPending: value => value === false };
   for (const [key, valid] of Object.entries(localMetadata)) {
     if (Object.hasOwn(actual, key) && !valid(actual[key])) invalid(); delete actual[key]; delete expected[key];

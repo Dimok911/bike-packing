@@ -3,6 +3,7 @@ import { createLayoutArrangementFromCurrentState } from "../state/layout-arrange
 import { normalizeItemPhotos } from "../state/item-photos.js";
 import { captureAdminTemplatePhotoView, assertAdminTemplatePhotoView } from "../sync/admin-template-photo-view.js";
 import { captureAdminTemplatePhotoOwnerMap, assertAdminTemplatePhotoOwnerMap } from "../sync/admin-template-photo-owner-map.js";
+import { adminTemplatePhotoWholeCopySourceArrangement } from "../sync/admin-template-photo-whole-copy-source.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const paused = () => Error("Серверный вариант требует отдельной сверки связей. Местный черновик сохранён.");
@@ -21,11 +22,12 @@ const order = (values, containers, items) => (values || []).map(row => {
 
 // Prepare a detached editor patch. The decision stores its IDs before applying
 // it, so a reload never creates a second set of server-derived local entities.
-export function projectAdminTemplateServerVariant(layout, server, decisionId, { photoBinding = null, photoOwnerMapEnabled = false } = {}) {
+export function projectAdminTemplateServerVariant(layout, server, decisionId, { photoBinding = null, photoOwnerMapEnabled = false, allowPublicSource = false } = {}) {
   if (!layout?.id || !validTemplateOperationId(decisionId) || !server?.exists || server.deleted
     || Object.keys(server.payload?.layouts || {}).length !== 1) throw paused();
   const payload = server.payload, sourceLayout = Object.values(payload.layouts)[0], items = {}, containers = {};
-  if (photoOwnerMapEnabled && (!photoBinding || server.exists !== true || server.visibility !== "private")) throw paused();
+  if (photoOwnerMapEnabled && (!photoBinding || server.exists !== true
+    || !(server.visibility === "private" || allowPublicSource === true && server.visibility === "public"))) throw paused();
   const copiedLayoutId = adminTemplateCopiedLayoutId(payload);
   const containerMap = new Map(Object.keys(payload.containers || {}).sort().map((id, i) => [id, `admin-server-container-${decisionId}-${i}`]));
   const itemMap = new Map(Object.keys(payload.items || {}).sort().map((id, i) => [id, `admin-server-item-${decisionId}-${i}`]));
@@ -43,7 +45,8 @@ export function projectAdminTemplateServerVariant(layout, server, decisionId, { 
   }
   const rootContainerIds = mapIds(sourceLayout.rootContainerIds, containerMap);
   const mapObject = (value, map, convert) => Object.fromEntries(Object.entries(value || {}).map(([id, row]) => [ref(id, map), convert(row)]));
-  const old = sourceLayout.arrangement;
+  const old = allowPublicSource === true && sourceLayout.arrangement
+    ? adminTemplatePhotoWholeCopySourceArrangement(payload, sourceLayout.arrangement) : sourceLayout.arrangement;
   const arrangement = old ? { ...clone(old), rootContainerIds: mapIds(old.rootContainerIds, containerMap),
     containers: mapObject(old.containers, containerMap, placement), items: mapObject(old.items, itemMap, id => ref(id, containerMap)),
     itemQuantities: mapObject(old.itemQuantities, itemMap, value => value), packedItems: mapObject(old.packedItems, itemMap, value => value) }

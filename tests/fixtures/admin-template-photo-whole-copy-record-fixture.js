@@ -9,7 +9,7 @@ export async function refreshWholeRecordDigests(input) {
   input.action.body.source.payloadDigest = hash(input.action.body.photoCopy.sourcePayload);
   await prepareWholeCopyProtocolFixture({ ...input.binding, ...input.action });
 }
-export async function wholeRecordInput({ protocolInput } = {}) {
+export async function wholeRecordInput({ protocolInput, sourceVisibility = "private" } = {}) {
   const f = protocolInput ? await prepareWholeCopyProtocolFixture(structuredClone(protocolInput)) : await wholeCopyProtocolFixture();
   const { environment, actorId, itemKey, listId } = f.intent, binding = { environment, actorId, itemKey, listId };
   const action = { operationId: f.intent.id, kind: "template.copy", itemKey, listId, body: structuredClone(f.body) };
@@ -17,10 +17,11 @@ export async function wholeRecordInput({ protocolInput } = {}) {
   const payload = action.body.photoCopy.sourcePayload, revision = action.body.source.base.stateRevision;
   const layoutId = "whole-source-editor", metadata = { title: "Whole source", description: "Confirmed raw catalog", language: "en" };
   const projection = projectAdminTemplateServerVariant({ id: layoutId, adminDemo: true, adminDemoListId: sourceBinding.listId, adminDemoLanguage: "en" },
-    { exists: true, visibility: "private", stateRevision: revision, payload, metadata }, randomUUID(), { photoBinding: sourceBinding, photoOwnerMapEnabled: true });
+    { exists: true, visibility: sourceVisibility, stateRevision: revision, payload, metadata }, randomUUID(), { photoBinding: sourceBinding, photoOwnerMapEnabled: true, allowPublicSource: true });
   const ownerMap = projection.layout.adminCausalSource.photoOwnerMap;
   projection.layout.adminCausalSource = { ...projection.layout.adminCausalSource, version: 1, binding: structuredClone(sourceBinding),
-    exists: true, visibility: "private", deleted: false, base: { stateRevision: revision }, planId: null };
+    exists: true, visibility: sourceVisibility, deleted: false, base: { stateRevision: revision }, planId: null };
+  projection.layout.templatePublished = sourceVisibility === "public";
   const source = { layoutId, ownerMap, metadata, beforeState: { activeLayoutId: layoutId, layouts: { [layoutId]: projection.layout },
     items: projection.items, containers: projection.containers, locations: structuredClone(payload.locations),
     categories: structuredClone(payload.categories), packedItems: structuredClone(projection.layout.arrangement.packedItems) } };
