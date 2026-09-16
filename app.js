@@ -224,6 +224,7 @@ import { adminTemplatePhotoWholeCopyJournal } from "./src/sync/admin-template-ph
 import { createAdminTemplatePhotoWholeCopyAdmission } from "./src/sync/admin-template-photo-whole-copy-admission.js";
 import { prepareAdminTemplatePhotoWholeCopyNamespaces, prepareAdminTemplatePhotoWholeCopyCaptureNamespaces } from "./src/public/admin-template-photo-whole-copy-namespaces.js";
 import { allocateAdminTemplatePhotoWholeCopySelection } from "./src/public/admin-template-photo-whole-copy-selection.js";
+import { prepareAdminTemplateWholeCopySourceUpgrade } from "./src/public/admin-template-whole-copy-source-upgrade.js";
 import { prepareAdminTemplatePhotoWholeCopyForm } from "./src/public/admin-template-photo-whole-copy-flow.js";
 import { applyAdminTemplatePhotoWholeCopyResult } from "./src/public/admin-template-photo-whole-copy-apply.js";
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ACCEPTANCE_PREFIX, readAdminTemplatePhotoWholeCopyAcceptance,
@@ -13533,7 +13534,8 @@ function adminTemplateSourceBaseline(binding, layoutId) {
 async function rememberAdminTemplateSourceBaseline(layout, prepared) {
   // Both callers materialize a fresh prepared editor. The background hydrator
   // installs its complete source after projection, so bind raw data here too.
-  if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private" && layout.adminCausalSource?.photoOwnerMap
+  if ((ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private"
+    || adminTemplatePhotoWholeCopyFormEnabled() && prepared.visibility === "public") && layout.adminCausalSource?.photoOwnerMap
     && !layout.adminCausalSource.planId && layout.adminCausalSource.base?.stateRevision === prepared.stateRevision) {
     layout.adminCausalSource.canonicalPayload = clone(prepared.payload);
   }
@@ -13746,6 +13748,30 @@ async function prepareCausalAdminPlacementCopy(request) {
   }, { canLink: Boolean(linked), canMissing: Boolean(missingPrepared), missingItemCount: missingPrepared?.missingItemCount || 0 });
 }
 async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
+  if (adminTemplatePhotoWholeCopyFormEnabled() && sourceLayout?.adminCausalSource?.visibility === "public"
+    && (!sourceLayout.adminCausalSource.canonicalPayload || !sourceLayout.adminCausalSource.photoOwnerMap)) {
+    const observed = sourceLayout.adminCausalSource, layoutId = sourceLayout.id;
+    const before = canonicalTemplateJson(adminTemplatePhotoNamespace(state, layoutId));
+    const initial = canonicalTemplateJson(adminTemplateOperationContext(observed.binding, layoutId, true));
+    const guard = () => {
+      if (state.layouts[layoutId] !== sourceLayout || sourceLayout.adminCausalSource !== observed
+        || validateSelection?.() === false || adminTemplateSaveCoordinator().hasPendingCapture(layoutId)
+        || canonicalTemplateJson(adminTemplateOperationContext(observed.binding, layoutId, true)) !== initial
+        || canonicalTemplateJson(adminTemplatePhotoNamespace(state, layoutId)) !== before) {
+        throw Error("Источник копии или выбор изменился. Откройте копирование заново.");
+      }
+    };
+    guard();
+    const prepared = await adminTemplateClient(observed.binding, layoutId, true).prepare(); guard();
+    const upgraded = prepareAdminTemplateWholeCopySourceUpgrade({ beforeState: JSON.parse(before), layoutId, prepared });
+    guard(); sourceLayout.adminCausalSource = upgraded;
+    try {
+      if (await persistStateSnapshot(state, { recordAction: false }) === false) throw Error("Не удалось сохранить подготовку копии на устройстве.");
+    } catch (error) {
+      if (sourceLayout.adminCausalSource === upgraded) sourceLayout.adminCausalSource = observed;
+      throw error;
+    }
+  }
   if (adminTemplatePhotoWholeCopyFormEnabled() && ["items", "containers"].some(type =>
     Object.values(sourceLayout?.adminCausalSource?.canonicalPayload?.[type] || {}).some(owner => owner.photos?.length))) {
     return createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind, validateSelection });
@@ -14233,7 +14259,8 @@ function adminTemplateSaveCoordinator({ persist = null } = {}) {
 }
 function materializeCausalAdminTemplate(target, prepared) {
   const binding = adminTemplateBinding(target);
-  if (target.type === "shared" || ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private") {
+  const wholePublicSource = adminTemplatePhotoWholeCopyFormEnabled() && prepared.visibility === "public";
+  if (target.type === "shared" || ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private" || wholePublicSource) {
     // Fresh private demos use the exact projector. Existing drafts are selected
     // before materialization and never reset here.
     // The legacy public-copy path normalizes away detached quantities and
@@ -14242,7 +14269,8 @@ function materializeCausalAdminTemplate(target, prepared) {
     const markers = target.type === "shared" ? { adminSharedSourceId: target.sharedId }
       : { adminDemo: true, adminDemoLanguage: prepared.metadata.language, adminDemoListId: binding.listId };
     const projection = projectAdminTemplateServerVariant({ id, ...markers }, prepared, crypto.randomUUID(), {
-      photoBinding: binding, photoOwnerMapEnabled: adminTemplatePhotoMechanismEnabled() && prepared.visibility === "private" });
+      photoBinding: binding, photoOwnerMapEnabled: adminTemplatePhotoMechanismEnabled() && (prepared.visibility === "private" || wholePublicSource),
+      allowPublicSource: wholePublicSource });
     if (state.layouts[id] || ["items", "containers"].some(kind => Object.keys(projection[kind]).some(key => state.items[key] || state.containers[key] || state.layouts[key]))) {
       throw Error("Идентификатор редактора уже используется.");
     }
@@ -14383,7 +14411,8 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
     if (!layout) throw Error("Не удалось открыть шаблон.");
     layout.adminCausalSource = { ...editorSource, ...(layout.adminCausalSource?.photoView ? { photoView: layout.adminCausalSource.photoView } : {}),
       ...(layout.adminCausalSource?.photoOwnerMap ? { photoOwnerMap: layout.adminCausalSource.photoOwnerMap } : {}) };
-    if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private") layout.adminCausalSource.canonicalPayload = clone(prepared.payload);
+    if (ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && prepared.visibility === "private"
+      || adminTemplatePhotoWholeCopyFormEnabled() && prepared.visibility === "public") layout.adminCausalSource.canonicalPayload = clone(prepared.payload);
     layout.name = prepared.metadata.title; layout.note = prepared.metadata.description;
     layout.language = prepared.metadata.language; layout.templatePublished = prepared.visibility === "public";
     layout.templateDraftServerHydrated = true; delete layout.templateDraftSyncPending;
