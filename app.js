@@ -8215,11 +8215,12 @@ async function runSyncNow(options = {}) {
       // A confirmed mirror may still lack its separate acceptance. Discover it
       // through the full record proof even after the pending pointer is gone.
       const context = canonicalTemplateJson(adminTemplateOperationContext(source.binding, adminLayoutId));
-      pending = await findAdminTemplatePhotoTreeCopyFormRecord(adminLayoutId);
+      pending = await findAdminTemplatePhotoWholeCopyFormRecord(adminLayoutId)
+        || await findAdminTemplatePhotoTreeCopyFormRecord(adminLayoutId);
       if (state.layouts?.[adminLayoutId] !== layout || layout.adminCausalSource !== source
         || getPublishedEditLayoutId() !== adminLayoutId
         || canonicalTemplateJson(adminTemplateOperationContext(source.binding, adminLayoutId)) !== context) {
-        throw Error("Контекст восстановления дерева изменился.");
+        throw Error("Контекст восстановления копии изменился.");
       }
     }
     if (pending) return showAdminTemplateRecovery(adminLayoutId);
