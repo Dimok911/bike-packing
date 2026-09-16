@@ -55,9 +55,10 @@ The pure V10 plan helper is now implemented and registered: 15 focused tests
 passed, with an unchanged 45-file import graph. It separates the source editor
 snapshot from the absent target declaration, rederives typed records after
 awaits, and projects a new target only from full stage/parent receipt proofs.
-It does not yet connect to the generic plan registry or application.
+It now has a guarded generic-registry integration described in
+`whole-copy-registry-2026-09-16.md`. It is not connected to the application.
 
-Still required: V10 registry integration; complete source and absent-target admission,
+Still required: complete source and absent-target admission,
 namespace inventory and capture leases; connection to the existing copy form;
 target-only apply/mirror/acceptance and cold recovery in the application; real
 browser acceptance of that complete user flow. The protocol/server/client

@@ -22,8 +22,8 @@ const synchronous = guard => {
   if (result === false) paused();
 };
 
-// Unwired pure V10 grammar. No capture, dispatch, admission, adoption or gate
-// changes. Only the source exists: the target record is an allocation declaration,
+// Pure V10 grammar used by the guarded registry. No application admission,
+// adoption or gate changes. Only the source exists: the target is an allocation declaration,
 // never a fabricated before-state or proof of current local/server absence.
 // This comparison view does not replace the complete raw source record proof.
 export function adminTemplatePhotoWholeCopySourceEditorSnapshot(input) {

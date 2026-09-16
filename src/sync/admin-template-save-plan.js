@@ -14,6 +14,10 @@ import { ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED } from "./admin-template-photo-t
 import { validateAdminTemplatePhotoTreeCopyStageReceipt, validateAdminTemplatePhotoTreeCopyStages,
   validateAdminTemplatePhotoTreeCopyReceipt } from "./admin-template-photo-tree-copy-receipt.js";
 export { adminTemplatePhotoTreeCopySavePlan } from "./admin-template-photo-tree-copy-save-plan.js";
+import { adminTemplatePhotoWholeCopySavePlan, assertAdminTemplatePhotoWholeCopyPlanRecord } from "./admin-template-photo-whole-copy-save-plan.js";
+import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./admin-template-photo-whole-copy-protocol.js";
+import { validateAdminTemplatePhotoWholeCopyJournal } from "./admin-template-photo-whole-copy-parent-fence.js";
+export { adminTemplatePhotoWholeCopySavePlan } from "./admin-template-photo-whole-copy-save-plan.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./admin-template-capture-lease.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -77,6 +81,12 @@ export function adminTemplateSourceSavePlan({ binding, operationId, body, source
 }
 
 function validatePlan(plan) {
+  if (plan?.version === 10) {
+    if (!exact(plan, ["version", "id", "binding", "operations", "sourceEditorSnapshot", "recordIntentHash"]) || !Array.isArray(plan.operations)
+      || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoWholeCopySavePlan({ binding: plan.binding, operationId: plan.id,
+        body: plan.operations[0]?.body, sourceEditorSnapshot: plan.sourceEditorSnapshot, recordIntentHash: plan.recordIntentHash }))) throw paused();
+    return plan;
+  }
   if (plan?.version === 9) {
     if (!exact(plan, ["version", "id", "binding", "operations", "editorSnapshot", "recordIntentHash"]) || !Array.isArray(plan.operations)
       || plan.operations.length !== 1 || !same(plan, adminTemplatePhotoTreeCopySavePlan({ binding: plan.binding, operationId: plan.id,
@@ -200,7 +210,9 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   photoCreateEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore = null,
   photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null,
-  photoTreeCopyEnabled = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED, photoTreeCopyStore = null, photoTreeCopyClient = null, assertCaptureAllowed = () => {} }) {
+  photoTreeCopyEnabled = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED, photoTreeCopyStore = null, photoTreeCopyClient = null,
+  photoWholeCopyEnabled = ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED, photoWholeCopyStore = null, photoWholeCopyClient = null,
+  assertWholeCopyAdmission = null, assertCaptureAllowed = () => {} }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
   const key = id => { if (!validTemplateOperationId(id)) throw paused(); return prefix + id; };
@@ -211,6 +223,34 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     return clone(value);
   };
   const guard = before => { if (!same(context(), before)) throw paused(); };
+  // Denial only: a retained V10 reserves BOTH source and target namespaces.
+  // Neither another base nor a generic adopted-stop exclusion releases it.
+  // Full inventory/absence authority still belongs to the explicit adapter.
+  const assertNoWholeCopyPlan = () => {
+    for (let index = 0; index < storage.length; index++) {
+      const name = storage.key(index);
+      if (!name?.startsWith("bike-packing-admin-save-plans-v1:")) continue;
+      const saved = JSON.parse(storage.getItem(name)), plan = saved?.plan;
+      if (plan?.version !== 10) continue;
+      validatePlan(plan);
+      const source = plan.operations[0].body.source;
+      if (plan.binding.actorId === binding.actorId && plan.binding.environment === binding.environment
+        && (same(plan.binding, binding) || source.listId === binding.listId && source.itemKey === binding.itemKey)) throw paused();
+    }
+  };
+  // Trusted application code must check the complete retained inventory,
+  // unchanged raw source and absent target (or this exact own pending target).
+  // A default no-op, boolean-shaped proof or asynchronous guard is no authority.
+  const wholeAdmission = (plan, record, captureLease, check) => {
+    check();
+    const source = plan.operations[0].body.source;
+    assertAdminTemplateCaptureLease(captureLease, [binding, { ...binding, listId: source.listId, itemKey: source.itemKey }]);
+    if (typeof assertWholeCopyAdmission !== "function") throw paused();
+    const allowed = assertWholeCopyAdmission({ plan: clone(plan), record: clone(record), captureLease, guard: check });
+    if (allowed?.then) { Promise.resolve(allowed).catch(() => {}); throw paused(); }
+    if (allowed !== true) throw paused();
+    check();
+  };
   const lock = (id, task) => { if (!locks?.request) throw paused(); return locks.request(key(id), task); };
   const persist = (saved, initial) => {
     guard(initial); const encoded = canonicalTemplateJson(saved); storage.setItem(key(saved.plan.id), encoded);
@@ -239,7 +279,65 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       await assertAdminTemplatePhotoTreeCopyPlanRecord(saved.plan, photoTreeCopyStore, () => guard(initial)); guard(initial);
       if (storage.getItem(key(id)) !== raw) throw paused();
     }
+    if (saved.plan.version === 10) {
+      if (saved.cancelRequested) throw paused();
+      await assertAdminTemplatePhotoWholeCopyPlanRecord(saved.plan, photoWholeCopyStore, () => guard(initial)); guard(initial);
+      if (storage.getItem(key(id)) !== raw) throw paused();
+    }
     return saved;
+  };
+  const executeWhole = async (saved, cancel, initial, captureLease) => {
+    const plan = saved.plan, intent = plan.operations[0], retained = storage.getItem(key(plan.id));
+    if (retained === null || !same(JSON.parse(retained), saved)) throw paused();
+    const check = () => { guard(initial); if (storage.getItem(key(plan.id)) !== retained) throw paused(); };
+    const record = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, photoWholeCopyStore, check); check();
+    const current = () => {
+      check();
+      if (photoWholeCopyEnabled === true) wholeAdmission(plan, record, captureLease, check);
+    };
+    current();
+    if (cancel || saved.cancelRequested || await shouldCancel?.(plan.id)) throw paused(); current();
+    if (!photoWholeCopyClient || !same(photoWholeCopyClient.binding, binding)) throw paused();
+    const proof = async () => {
+      const readback = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, photoWholeCopyStore, current); current();
+      if (!same(record, readback)) throw paused();
+    };
+    const known = async () => {
+      if (typeof photoWholeCopyClient.read !== "function") throw paused();
+      const value = await photoWholeCopyClient.read(intent.id); current();
+      const row = value ? clone(value) : null; await proof(); current();
+      if (!row) return null;
+      const validated = await validateAdminTemplatePhotoWholeCopyJournal(row); current();
+      if (!same(validated.journal.intent, intent) || row.recordIntentHash !== plan.recordIntentHash
+        || !same(validated.manifests, record.stages)) throw paused();
+      const readback = await photoWholeCopyClient.read(intent.id); current();
+      if (!readback || !same(readback, row)) throw paused();
+      await proof(); current();
+      return row;
+    };
+    let readback, receipt;
+    if (photoWholeCopyEnabled !== true) {
+      readback = await known(); current(); if (!readback) throw paused();
+      if (!readback.receipt) {
+        if (typeof photoWholeCopyClient.inspect !== "function") throw paused();
+        await photoWholeCopyClient.inspect(intent.id); current(); readback = await known(); current();
+      }
+      receipt = readback?.receipt;
+    } else {
+      if (typeof photoWholeCopyClient.capture !== "function" || typeof photoWholeCopyClient.run !== "function") throw paused();
+      await photoWholeCopyClient.capture({ operationId: intent.id, kind: intent.kind, listId: intent.listId, itemKey: intent.itemKey, body: intent.body });
+      current(); await proof(); current();
+      if (await shouldCancel?.(plan.id)) throw paused(); current();
+      const before = await known(); current(); if (!before || before.cancelRequested === true) throw paused();
+      receipt = clone(await photoWholeCopyClient.run(intent.id)); current();
+      readback = await known(); current();
+      if (!readback || !same(readback.receipt, receipt)) throw paused();
+    }
+    if (!receipt || !["committed", "rejected"].includes(receipt.operation.state)) throw paused();
+    await proof(); current();
+    // Receipt fact only; no target application, source mutation, cancellation,
+    // stage retirement or reuse of allocations follows from registry execution.
+    return { state: receipt.operation.state, receipts: [clone(receipt)] };
   };
   const executeTree = async (saved, cancel, initial, captureLease) => {
     const plan = saved.plan, intent = plan.operations[0], source = intent.body.photoCopy.source;
@@ -321,6 +419,8 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     if (enabled !== true) throw paused(); const initial = context();
     return lock(id, async () => {
       let saved = await read(id); guard(initial); if (!saved) throw paused();
+      if (saved.plan.version === 10) return executeWhole(saved, cancel, initial, captureLease);
+      assertNoWholeCopyPlan();
       if (saved.plan.version === 9) return executeTree(saved, cancel, initial, captureLease);
       if ((cancel || await shouldCancel?.(id)) && !saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, initial);
       let ordered = saved.cancelRequested ? [...saved.plan.operations].reverse() : saved.plan.operations;
@@ -385,11 +485,11 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     if (enabled !== true || typeof assertCaptureAllowed !== "function") throw paused(); const initial = context();
     const plan = makePlan({ ...input, binding }); // Freeze before hashing or acquiring a cross-tab lock.
     const bindings = [plan.binding];
-    if ([8, 9].includes(plan.version)) {
-      const source = plan.operations[0].body.photoCopy.source;
+    if ([8, 9, 10].includes(plan.version)) {
+      const source = plan.version === 10 ? plan.operations[0].body.source : plan.operations[0].body.photoCopy.source;
       bindings.push({ actorId: plan.binding.actorId, environment: plan.binding.environment, listId: source.listId, itemKey: source.itemKey });
     }
-    if (plan.version === 9 && captureLease === undefined) throw paused();
+    if ([9, 10].includes(plan.version) && captureLease === undefined) throw paused();
     const underLease = async lease => {
       const captureGuard = () => { guard(initial); assertAdminTemplateCaptureLease(lease, bindings); };
       captureGuard();
@@ -402,6 +502,11 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       if (plan.version === 9) {
         await assertAdminTemplatePhotoTreeCopyPlanRecord(plan, photoTreeCopyStore, captureGuard); captureGuard();
       }
+      let wholeRecord;
+      if (plan.version === 10) {
+        wholeRecord = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, photoWholeCopyStore, captureGuard); captureGuard();
+        wholeAdmission(plan, wholeRecord, lease, captureGuard);
+      }
       if ([3, 4].includes(plan.version) && await adminTemplateCopyPayloadDigest(plan.sourceSnapshot) !== plan.operations[0].body.source.payloadDigest) throw paused();
       captureGuard();
       const saved = { version: 1, plan, digest: await hash(plan), cancelRequested: false }; captureGuard();
@@ -409,20 +514,24 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
         captureGuard();
         const existing = await read(plan.id); captureGuard();
         if (existing && !same(existing.plan, plan)) throw paused();
+        if (plan.version !== 10) assertNoWholeCopyPlan();
         // The caller checks the other durable journals even for an exact
         // retained plan with its own feature OFF. This hook cannot mutate the
         // frozen action, and a lease alone never grants capture authority.
         const allowed = await assertCaptureAllowed({ plan: clone(plan), captureLease: lease, guard: captureGuard }); captureGuard();
         if (allowed === false) throw paused();
+        if (plan.version === 10) wholeAdmission(plan, wholeRecord, lease, captureGuard);
         if (existing) {
-          if (plan.version === 9) {
+          if ([9, 10].includes(plan.version)) {
             const retained = await read(plan.id); captureGuard(); if (!same(retained, existing)) throw paused();
+            if (plan.version === 10) wholeAdmission(plan, wholeRecord, lease, captureGuard);
           }
           return clone(existing);
         }
         if (plan.version === 7 && photoCreateEnabled !== true) throw paused();
         if (plan.version === 8 && photoCopyEnabled !== true) throw paused();
         if (plan.version === 9 && photoTreeCopyEnabled !== true) throw paused();
+        if (plan.version === 10 && photoWholeCopyEnabled !== true) throw paused();
         // Only the caller's validated adopted-stop resolution may exclude a
         // retained action. A cancellation marker alone proves no adoption.
         const excluded = getExcludedPlans ? await getExcludedPlans() : []; captureGuard();
@@ -439,6 +548,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
         for (const id of ids) {
           const other = await read(id); captureGuard();
           if (!other) continue;
+          if (other.plan.version === 10 || plan.version === 10) throw paused();
           // V9 has no adopted-stop exclusion protocol. Existing V8 exclusion
           // IDs cannot release a retained tree, in either capture direction.
           if (other.plan.version === 9 && same(other.plan.operations[0].body.base, base)) throw paused();
@@ -447,10 +557,16 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           if (!excluded.includes(id) && ([7, 8].includes(plan.version) || [7, 8].includes(other.plan.version)) && same(other.plan.operations[0].body.base, base)) throw paused();
           // A generic successor cannot bypass an unsettled photo selection by
           // pointing at its UUID. A reconciled editor uses its numeric receipt.
-          if ([6, 7, 8, 9].includes(other.plan.version) && base?.operationId === other.plan.operations.at(-1).id) throw paused();
+          if ([6, 7, 8, 9, 10].includes(other.plan.version) && base?.operationId === other.plan.operations.at(-1).id) throw paused();
         }
         if (plan.version === 8) { await assertAdminTemplatePhotoCopyPlanRecord(plan, photoCopyStore, captureGuard); captureGuard(); }
         if (plan.version === 9) { await assertAdminTemplatePhotoTreeCopyPlanRecord(plan, photoTreeCopyStore, captureGuard); captureGuard(); }
+        if (plan.version === 10) {
+          const currentRecord = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, photoWholeCopyStore, captureGuard); captureGuard();
+          if (!same(currentRecord, wholeRecord)) throw paused();
+          wholeAdmission(plan, wholeRecord, lease, captureGuard);
+        }
+        if (plan.version !== 10) assertNoWholeCopyPlan();
         captureGuard();
         return clone(persist(saved, initial));
       });
@@ -474,6 +590,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     capturePhotoCreate: (input, options) => capturePlan(input, adminTemplatePhotoCreateSavePlan, options),
     capturePhotoCopy: (input, options) => capturePlan(input, adminTemplatePhotoCopySavePlan, options),
     capturePhotoTreeCopy: (input, options) => capturePlan(input, adminTemplatePhotoTreeCopySavePlan, options),
+    capturePhotoWholeCopy: (input, options) => capturePlan(input, adminTemplatePhotoWholeCopySavePlan, options),
     async read(id) { const initial = context(), saved = await read(id); guard(initial); return clone(saved); },
     async list() {
       const initial = context(), ids = [];
