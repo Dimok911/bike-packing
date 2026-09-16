@@ -1,3 +1,4 @@
+import { PERSONAL_ITEM_RENAME_ENABLED, PERSONAL_ITEM_RENAME_CAPABILITY, validPersonalItemRename, validPersonalItemRenameResult } from "./personal-item-rename.js";
 import { personalJournalStorage } from "../storage/personal-journal-runtime.js";
 import { createConfirmedDelivery } from "../protocol/confirmed-delivery.js";
 import { canonicalOperationJson, matchesOperationIdentity } from "../protocol/operation-identity.js";
@@ -67,6 +68,8 @@ const receiptIdentity = value => ({ id: value?.id, namespace: value?.environment
 
 export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
+  const rename = /^\/bike-packing\/lists\/([^/]+)\/items\/rename$/.exec(path);
+  if (rename && method === "POST") return { kind: "item.rename", listId: decodeURIComponent(rename[1]) };
   const archive = /^\/bike-packing\/lists\/([^/]+)\/import$/.exec(path);
   if (archive && method === "POST") return { kind: "list.import", listId: decodeURIComponent(archive[1]) };
   const restore = /^\/bike-packing\/lists\/([^/]+)\/restore$/.exec(path);
@@ -98,6 +101,7 @@ export function validateListReceipt(data, expected) {
       && proof.operationId === expected.operationId && proof.noBusinessEffects === true && proof.operationCannotApply === true;
   }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
+  if (expected.kind === "item.rename") return validPersonalItemRenameResult(result, expected);
   if (Object.hasOwn(expected.body || {}, "shareLink") && (expected.kind !== "list.update" || !verifyPersonalShareLinkResult(result, expected))) return false;
   if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
@@ -194,6 +198,7 @@ function relatedCausalOperationIds(writes, { actorId, listId, operationId, body 
 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
+  itemRenameEnabled = PERSONAL_ITEM_RENAME_ENABLED,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   legacyPhotoPreservationEnabled = PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED,
   operationPreparationEnabled = PERSONAL_LIST_OPERATION_PREPARATION_ENABLED,
@@ -307,8 +312,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
     await journal.confirm(entry, proof, receiptIdentity(op));
     return data;
   };
-  const dispatch = entry => {
+  const dispatch = async entry => {
     const saved = entry.recovery;
+    if (saved.kind === "item.rename") {
+      const initial = { ...getContext() };
+      if (!itemRenameEnabled || !validPersonalItemRename(saved.body)) throw paused(entry.id);
+      const capabilities = await read("/bike-packing/capabilities");
+      if (!contextMatches(initial) || !capabilities.capabilities?.includes(PERSONAL_ITEM_RENAME_CAPABILITY))
+        throw paused(entry.id, "Сервер ещё не поддерживает компактное переименование. Действие сохранено.");
+    }
     if (saved.cancellationOnly === true) throw paused(entry.id, "Для этого номера сохранена отмена. Исходное действие не отправлено заново.");
     return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
       kind: saved.kind, listId: saved.listId, body: saved.body });
@@ -362,7 +374,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
     supports(path, method) {
       const route = listOperationRoute(path, method);
       return !readOnly && enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled)
-        && (route.kind !== "list.migrate" || migrationEnabled);
+        && (route.kind !== "list.migrate" || migrationEnabled) && (route.kind !== "item.rename" || itemRenameEnabled);
     },
     supportsCancellation(path, method) { return cancellationEnabled && this.supports(path, method); },
     // An explicit cancellation fences the ORIGINAL immutable intent. It never
@@ -898,6 +910,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
             throw paused(requestedId, "Сохранение списка со старыми фотографиями ещё не поддерживается этим сервером. Действие оставлено на устройстве.");
           }
           if (Object.hasOwn(body, "shareLink") && !capabilities.capabilities?.includes(PERSONAL_SHARE_LINK_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает сохранённое создание ссылки.");
+          if (route.kind === "item.rename" && !capabilities.capabilities?.includes(PERSONAL_ITEM_RENAME_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает компактное переименование.");
           if (route.kind === "list.migrate" && !capabilities.capabilities?.includes(PERSONAL_LIST_MIGRATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подготовку старого списка. Запрос не отправлен.");
           if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает подтверждение фотодействий. Запрос не отправлен.");

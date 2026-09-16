@@ -30,7 +30,8 @@ $selectedTests = @(
   'list receipts: gated CRUD, four entity kinds, exact replay, rejection, ownership and cascade-safe receipt',
   'list operation faults: real commit ACK lost, inner commit then crash, terminal rollback and late dead worker',
   'paired frontend durable queue uses the real API and MySQL for seven kinds and lost-ACK recovery',
-  'assembled state projection reconciles business fields and preserves receipt bytes after lost ACK'
+  'assembled state projection reconciles business fields and preserves receipt bytes after lost ACK',
+  'compact item rename: dual format, independent edits, receipt recovery and conflicts'
 )
 $smokePath = Join-Path $apiRoot 'test/integration/mysql-api-smoke.test.js'
 $smokeSource = [IO.File]::ReadAllText($smokePath)

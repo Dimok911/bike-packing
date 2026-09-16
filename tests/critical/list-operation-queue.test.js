@@ -1,3 +1,4 @@
+import { personalItemRenameRequest } from "../../src/sync/personal-item-rename.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -57,13 +58,36 @@ function fixture() {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
     return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
       photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, containerContextEnabled: state.containerContextEnabled, manufacturerSourceEnabled: state.manufacturerSourceEnabled,
-      migrationEnabled: state.migrationEnabled, shareLinkEnabled: state.shareLinkEnabled,
+      itemRenameEnabled: state.itemRenameEnabled, migrationEnabled: state.migrationEnabled, shareLinkEnabled: state.shareLinkEnabled,
       legacyPhotoPreservationEnabled: state.legacyPhotoPreservationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
     posts: () => calls.filter(call => call.options.method === "POST") };
 }
+
+test("compact rename uses a small exact receipt after lost ACK and stays gated", async () => {
+  const input = personalItemRenameRequest({ listId: "list-a", operationId: crypto.randomUUID(), itemId: "item",
+    expectedName: "Old", name: "New", baseStateRevision: 1 });
+  const f = fixture();
+  await assert.rejects(f.queue.run(input)); assert.equal(f.calls.length, 0);
+  f.state.itemRenameEnabled = true;
+  await assert.rejects(f.make().queue.run(input)); assert.equal(f.posts().length, 0);
+  assert.equal(f.make().transport.writes.length, 0);
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalItemRenameV1"];
+  f.state.revision = 2;
+  f.state.payload = { ok: true, stateRevision: 2, upserted: ["item"], deleted: [], conflicts: [], skipped: [],
+    rename: { version: 1, itemId: "item", previousName: "Old", name: "New" } };
+  f.state.loseResponse = true;
+  assert.equal((await f.make().queue.run(input)).rename.name, "New");
+  assert.equal(f.posts().length, 1);
+  const wire = JSON.parse(f.posts()[0].options.body);
+  assert.equal(wire.kind, "item.rename"); assert.equal(Object.hasOwn(wire.body, "payload"), false);
+  assert.ok(f.posts()[0].options.body.length < 600);
+  assert.equal((await f.make().queue.run(input)).rename.name, "New"); assert.equal(f.posts().length, 1);
+  f.receipts.get(input.operationId).result.payload.rename.name = "Forged";
+  await assert.rejects(f.make().queue.run(input), { isOperationReceiptError: true });
+});
 
 test("share receipt survives lost response and reload; own gate and capability prevent claims", async () => {
   const f = fixture(), payload = { items: {}, containers: {}, layouts: {}, locations: [], categories: [] };
