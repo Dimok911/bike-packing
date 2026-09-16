@@ -62,7 +62,7 @@ function destination(value, method, options) {
     assert.ok([
       /^\/letters-vniipo\/api\/bike-packing\/(?:capabilities|authorization|lists|public-templates|public-shared-layouts|public-lists)$/,
       /^\/letters-vniipo\/api\/bike-packing\/admin\/template-records$/,
-      /^\/letters-vniipo\/api\/bike-packing\/public-template-payloads\/(?:demo-state(?:%3[Aa](?:ru|en))?|shared-layout%3[Aa][a-f0-9-]{36})$/,
+      /^\/letters-vniipo\/api\/bike-packing\/public-template-payloads\/(?:demo-state(?:%3[Aa](?:ru|en))?|shared-layout%3[Aa][A-Za-z0-9_-]+)$/,
       /^\/letters-vniipo\/api\/bike-packing\/admin\/template-operations\/[a-f0-9-]{36}$/,
       /^\/letters-vniipo\/api\/bike-packing\/admin\/template-photo-assets\/whole-copy\/[a-f0-9-]{36}$/,
       /^\/letters-vniipo\/api\/bike-packing\/lists\/[^/]+(?:\/(?:state|freshness|changes|snapshots|photos\/[^/]+\/(?:file|thumb)))?$/,
@@ -154,8 +154,9 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
   bundleOffDirectory = path.join(frontendDirectory, "test-results/admin-template-photo-whole-copy-browser-off-build") }) {
   assert.equal(apiPath, bike); assert.equal(session.cookieName, "personal_tags_session");
   const sourceRoute = process.env.BIKE_PACKING_WHOLE_BROWSER_SOURCE || "template-draft";
-  assert.ok(["template-draft", "public-demo"].includes(sourceRoute));
-  if (sourceRoute === "public-demo") artifactDirectory = path.join(artifactDirectory, "public-demo");
+  assert.ok(["template-draft", "public-demo", "public-shared"].includes(sourceRoute));
+  const publicSource = sourceRoute !== "template-draft";
+  if (publicSource) artifactDirectory = path.join(artifactDirectory, sourceRoute);
   const options = { apiBaseUrl: loopback(apiBaseUrl, "API"), authBaseUrl: loopback(authBaseUrl, "auth") };
   for (const directory of [bundleOnDirectory, bundleOffDirectory]) await fs.access(path.join(directory, "index.html"));
   await fs.mkdir(artifactDirectory, { recursive: true });
@@ -176,7 +177,7 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
         const activate = selector => engine === "mobile-webkit" ? page.locator(selector).tap() : page.locator(selector).click();
         const checkpoint = async phase => {
           let observations;
-          if (phase === "bootstrap" && sourceRoute === "public-demo")
+          if (phase === "bootstrap" && publicSource)
             await expect(async () => { observations = await observe(page, seed, requests); }).toPass({ timeout: 10_000, intervals: [100, 250, 500] });
           else observations = await observe(page, seed, requests);
           await assertCheckpoint({ engine, caseName, phase, observations });
@@ -201,7 +202,7 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             const target = destination(request.url(), request.method(), options), raw = request.postDataBuffer();
             const row = { method: request.method(), path: target.pathname, body: raw?.length ? JSON.parse(raw.toString("utf8")) : null, status: null };
             requests.push(row);
-            if (sourceRoute === "public-demo" && row.method === "POST" && row.path === stagePath)
+            if (publicSource && row.method === "POST" && row.path === stagePath)
               row.sourcePickerAtStage = await page.locator("#layoutCopyFrom").inputValue();
             if (hideParent && row.method === "GET" && row.path === parentPath + "/" + faultId) {
               row.dropped = "parent read hidden until cold recovery"; await route.abort("failed"); return;
@@ -242,12 +243,14 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
           await start();
         };
         try {
-          await start({ prepareSource: sourceRoute !== "public-demo" }); const before = await checkpoint("bootstrap");
+          await start({ prepareSource: !publicSource }); const before = await checkpoint("bootstrap");
           const sourceId = before.state.source?.layout.id, title = `Полная копия ${engine} ${caseName}`;
           await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
           await page.locator("#layoutCreateMode").selectOption("template-copy");
-          const sourceChoice = sourceRoute === "public-demo" ? "demo:ru:" + encodeURIComponent(seed.source.listId) : "template-draft:" + sourceId;
-          if (sourceRoute === "public-demo") {
+          if (sourceRoute === "public-shared") assert.ok(seed.source.itemKey.startsWith("shared-layout:"));
+          const sourceChoice = sourceRoute === "public-shared" ? "shared:" + seed.source.itemKey.slice("shared-layout:".length)
+            : sourceRoute === "public-demo" ? "demo:ru:" + encodeURIComponent(seed.source.listId) : "template-draft:" + sourceId;
+          if (publicSource) {
             assert.notEqual(before.state.full.layouts[before.state.full.activeLayoutId]?.adminCausalSource?.binding.listId, seed.source.listId, "Public source must activate through Add, not test setup");
             await expect(page.locator(`#layoutCopyFrom option[value="${sourceChoice}"]`)).toHaveCount(1);
           }
@@ -255,7 +258,7 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
           await page.locator("#layoutName").fill(title); await page.locator("#layoutName").blur(); await activate("#saveLayoutBtn");
           if (caseName === "positive") {
             await waitAccepted(page, 1); await expect(page.locator("#layoutDialog")).toBeHidden();
-            if (sourceRoute === "public-demo") assert.equal(stages(requests)[0]?.sourcePickerAtStage, sourceChoice, "Source activation render must preserve the selected public demo");
+            if (publicSource) assert.equal(stages(requests)[0]?.sourcePickerAtStage, sourceChoice, "Source activation render must preserve the selected published source");
             const accepted = await checkpoint("accepted"), owner = Object.values(accepted.state.target.items).find(item => item.photos?.length);
             assert.ok(owner, "A copied item with a real photograph is required");
             await activate('.tab[data-view="items"]'); await activate(`#itemsView [data-list-item-id="${owner.id}"] .item-title`);
