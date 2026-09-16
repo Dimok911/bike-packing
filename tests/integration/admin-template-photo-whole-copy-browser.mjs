@@ -263,7 +263,8 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             await checkpoint("ordinary-save"); await cold(false);
             const after = await checkpoint("cold"); assert.equal(after.state.target.items[owner.id].name, name);
           } else if (caseName === "lost-ack") {
-            await expect.poll(() => wholeSaves(requests).filter(row => row.dropped).length).toBe(1);
+            // Native WebKit on Windows can take over a minute to hash and stage all real photo files.
+            await expect.poll(() => wholeSaves(requests).filter(row => row.dropped).length, { timeout: 180_000 }).toBe(1);
             await checkpoint("lost-ack"); await cold(true);
             if (await page.evaluate(prefix => Object.keys(localStorage).filter(key => key.startsWith(prefix)).length, acceptedPrefix) === 0) {
               await recovery(page, activate);
