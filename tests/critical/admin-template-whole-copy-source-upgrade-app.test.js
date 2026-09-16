@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wholeAppRunnerFixture } from "../fixtures/admin-template-photo-whole-copy-runner-fixture.js";
 import { prepareAdminTemplateWholeCopySourceUpgrade } from "../../src/public/admin-template-whole-copy-source-upgrade.js";
+import { assertAdminTemplatePhotoView } from "../../src/sync/admin-template-photo-view.js";
 
 async function fixture({ switchContext = false } = {}) {
   const f = await wholeAppRunnerFixture(), layout = f.state.layouts[f.layoutId], dispatched = [];
@@ -49,17 +50,38 @@ test("actual unchanged existing-public-source upgrade persists real proof before
   assert.deepEqual(f.state.items, items); assert.deepEqual(f.state.containers, containers); assert.equal(f.server.calls.length, 0);
 });
 
-test("actual canonical snapshot keeps a proved public whole-copy source on its public route only with whole-copy enabled", async () => {
+test("actual public snapshot serializes through its exact owner map without temporarily changing live IDs", async () => {
   const f = await wholeAppRunnerFixture(), layout = f.state.layouts[f.layoutId];
   layout.templatePublished = true; layout.adminCausalSource.visibility = "public";
   layout.adminCausalSource.canonicalPayload = structuredClone(f.record.action.body.photoCopy.sourcePayload);
   const before = structuredClone(f.state);
-  assert.equal(f.build({ names: ["adminTemplateCanonicalEditorSnapshot"] }).adminTemplateCanonicalEditorSnapshot(f.layoutId), null);
+  const result = f.build({ names: ["adminTemplateCanonicalEditorSnapshot", "adminTemplateEditorSnapshot"],
+    deps: { assertAdminTemplatePhotoView } }).adminTemplateEditorSnapshot(f.layoutId);
+  assert.ok(result.payload);
+  for (const owner of layout.adminCausalSource.photoOwnerMap.owners) {
+    assert.equal(result.payload[owner.type][owner.serverId].id, owner.serverId);
+    assert.equal(result.payload[owner.type][owner.serverId].name, f.state[owner.type][owner.localId].name);
+    assert.deepEqual(result.payload[owner.type][owner.serverId].photos, layout.adminCausalSource.canonicalPayload[owner.type][owner.serverId].photos);
+  }
   assert.deepEqual(f.state, before);
   f.flags.whole = false;
   assert.throws(() => f.build({ names: ["adminTemplateCanonicalEditorSnapshot"] }).adminTemplateCanonicalEditorSnapshot(f.layoutId),
     /Изменённые записи не связаны с исходным шаблоном/);
   assert.deepEqual(f.state, before);
+});
+
+test("actual public snapshot preserves ordinary pending name edits without granting copy or write authority", async () => {
+  const f = await wholeAppRunnerFixture(), layout = f.state.layouts[f.layoutId];
+  layout.templatePublished = true; layout.adminCausalSource.visibility = "public";
+  layout.adminCausalSource.canonicalPayload = structuredClone(f.record.action.body.photoCopy.sourcePayload);
+  const owner = layout.adminCausalSource.photoOwnerMap.owners.find(owner => owner.type === "items");
+  f.state.items[owner.localId].name = "Ordinary unsaved public item name"; layout.name = "Ordinary unsaved template title";
+  const before = structuredClone(f.state);
+  const result = f.build({ names: ["adminTemplateCanonicalEditorSnapshot", "adminTemplateEditorSnapshot"],
+    deps: { assertAdminTemplatePhotoView } }).adminTemplateEditorSnapshot(f.layoutId);
+  assert.equal(result.payload.items[owner.serverId].name, "Ordinary unsaved public item name");
+  assert.equal(result.metadata.title, "Ordinary unsaved template title");
+  assert.deepEqual(f.state, before); assert.equal(f.server.calls.length, 0);
 });
 
 test("actual canonical snapshot still validates a private editor with whole-copy enabled", async () => {
