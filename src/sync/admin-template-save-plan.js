@@ -16,7 +16,7 @@ import { validateAdminTemplatePhotoTreeCopyStageReceipt, validateAdminTemplatePh
 export { adminTemplatePhotoTreeCopySavePlan } from "./admin-template-photo-tree-copy-save-plan.js";
 import { adminTemplatePhotoWholeCopySavePlan, assertAdminTemplatePhotoWholeCopyPlanRecord } from "./admin-template-photo-whole-copy-save-plan.js";
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./admin-template-photo-whole-copy-protocol.js";
-import { validateAdminTemplatePhotoWholeCopyJournal } from "./admin-template-photo-whole-copy-parent-fence.js";
+import { validateAdminTemplatePhotoWholeCopyJournal, readAdminTemplatePhotoWholeCopyParentFence } from "./admin-template-photo-whole-copy-parent-fence.js";
 export { adminTemplatePhotoWholeCopySavePlan } from "./admin-template-photo-whole-copy-save-plan.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./admin-template-capture-lease.js";
 
@@ -212,7 +212,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null,
   photoTreeCopyEnabled = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED, photoTreeCopyStore = null, photoTreeCopyClient = null,
   photoWholeCopyEnabled = ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED, photoWholeCopyStore = null, photoWholeCopyClient = null,
-  assertWholeCopyAdmission = null, readWholeCopyAcceptance = null, assertCaptureAllowed = () => {} }) {
+  assertWholeCopyAdmission = null, readWholeCopyAcceptance = null, readWholeCopyCancellation = null, assertCaptureAllowed = () => {} }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
   const key = id => { if (!validTemplateOperationId(id)) throw paused(); return prefix + id; };
@@ -223,8 +223,9 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     return clone(value);
   };
   const guard = before => { if (!same(context(), before)) throw paused(); };
-  // A retained V10 reserves source and target until the trusted application
-  // proves durable, typed acceptance. Generic UUID exclusions grant no release.
+  // A retained V10 reserves source and target until typed acceptance. A proved
+  // parent cancellation releases its source only; generic UUID exclusions and
+  // cancelled target reuse never grant permission.
   const assertNoWholeCopyPlan = async (successor, check) => {
     const scan = () => {
       const found = [];
@@ -255,12 +256,26 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     };
     for (const [name, raw] of retained) {
       const saved = JSON.parse(raw), plan = saved.plan, base = successor.operations[0].body.base;
-      if (successor.version === 10 || typeof readWholeCopyAcceptance !== "function"
+      if (successor.version === 10
         || !exact(base, ["stateRevision"]) || !Number.isSafeInteger(base.stateRevision) || base.stateRevision < 1
         || !exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || saved.cancelRequested !== false
         || name !== "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(plan.binding)) + ":" + plan.id
         || canonicalTemplateJson(saved) !== raw) throw paused();
       const digest = await hash(plan); current(); if (digest !== saved.digest) throw paused();
+      if (!same(plan.binding, binding) && typeof readWholeCopyCancellation === "function") {
+        const stopped = await readWholeCopyCancellation({ binding: clone(plan.binding), operationId: plan.id, guard: retainedGuard }); current();
+        if (stopped) {
+          if (!exact(stopped, ["plan", "record", "journal", "certificate", "assertCurrent"]) || typeof stopped.assertCurrent !== "function") throw paused();
+          guards.push(stopped.assertCurrent.bind(stopped)); current();
+          const value = clone({ plan: stopped.plan, record: stopped.record, journal: stopped.journal, certificate: stopped.certificate });
+          if (!same(value.plan, plan) || base.stateRevision < plan.operations[0].body.source.base.stateRevision) throw paused();
+          const record = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, { binding: plan.binding, read: async () => clone(value.record) }, current); current();
+          if (!same(value.journal.intent, plan.operations[0]) || value.journal.recordIntentHash !== record.intentHash) throw paused();
+          await readAdminTemplatePhotoWholeCopyParentFence({ certificate: value.certificate, parentJournal: value.journal }); current();
+          continue;
+        }
+      }
+      if (typeof readWholeCopyAcceptance !== "function") throw paused();
       const proof = await readWholeCopyAcceptance({ binding: clone(plan.binding), operationId: plan.id, guard: retainedGuard }); current();
       if (!exact(proof, ["plan", "record", "journal", "receipt", "stageReceipts", "targetSnapshot", "acceptance", "assertCurrent"])
         || typeof proof.assertCurrent !== "function") throw paused();
@@ -270,7 +285,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       guards.push(proofGuard.bind(proof)); current();
       if (!same(value.plan, plan) || value.record?.intentHash !== plan.recordIntentHash
         || !same(value.receipt, value.journal?.receipt) || !same(value.stageReceipts, value.journal?.stageReceipts)
-        || value.receipt?.operation?.state !== "committed" || value.journal?.cancelRequested === true
+        || value.receipt?.operation?.state !== "committed"
         || !exact(value.targetSnapshot, ["layoutId", "ownerMap", "beforeState", "metadata"])
         || !exact(value.acceptance, ["version", "kind", "binding", "operationId", "layoutId", "scopeKey", "mirrorKey",
           "recordIntentHash", "planDigest", "terminalJournalDigest", "targetSnapshotDigest"])) throw paused();

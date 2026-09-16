@@ -4,6 +4,9 @@ import { wholeCopyClientFixture, copy, hash } from "./admin-template-photo-whole
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { createAdminTemplatePhotoWholeCopyActionStore, readAdminTemplatePhotoWholeCopyActorInventory } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
 import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyRecoveryRunner } from "../../src/public/admin-template-photo-whole-copy-recovery-runner.js";
+import { readAdminTemplatePhotoWholeCopyCancelled } from "../../src/public/admin-template-photo-whole-copy-cancelled.js";
+import { prepareAdminTemplatePhotoWholeCopyParentFence, adminTemplatePhotoWholeCopyParentKeys } from "../../src/sync/admin-template-photo-whole-copy-parent-fence.js";
 import { adminTemplatePhotoWholeCopyJournal } from "../../src/sync/admin-template-photo-whole-copy-parent-fence.js";
 import { createAdminTemplatePhotoWholeCopyAdmission } from "../../src/sync/admin-template-photo-whole-copy-admission.js";
 import { adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot } from "../../src/sync/admin-template-photo-whole-copy-save-plan.js";
@@ -57,6 +60,13 @@ export async function wholeAppRunnerFixture() {
     getPublishedEditLayoutId: () => modeState.adminPublishedEditLayoutId, currentViewScope: () => f.current.generation,
     location: { pathname: "/experiment/", search: "", hash: "" } });
   const context = contextParts.adminTemplateOperationContext, transport = f.make({ locks }).transport;
+  const originalFence = transport.fenceWholeCopyParent;
+  transport.fenceWholeCopyParent = async proof => {
+    await originalFence(proof);
+    const certificate = await prepareAdminTemplatePhotoWholeCopyParentFence({ ...proof, mode: transport.mode }); proof.assertCurrent();
+    f.storage.setItem(adminTemplatePhotoWholeCopyParentKeys(f.binding, f.id).certificate, canonicalTemplateJson(certificate)); proof.assertCurrent();
+    return certificate;
+  };
   const flags = { whole: true, copy: true, create: true, append: true, admin: true };
   const administrativePhotoWholeCopyAttempts = new WeakMap();
   const build = (extra = {}) => {
@@ -74,8 +84,16 @@ export async function wholeAppRunnerFixture() {
       createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore(storeOptions(options)),
       readAdminTemplatePhotoWholeCopyActorInventory: options => readAdminTemplatePhotoWholeCopyActorInventory(storeOptions(options)),
       createAdminTemplatePhotoWholeCopyClient: options => {
+        if (options.withCancellationAdmission) {
+          const enter = options.withCancellationAdmission;
+          options = { ...options, withCancellationAdmission: (proof, task) => enter(proof, async scope => {
+            scopes.push(scope); f.admission.active = true;
+            try { return await task(scope); } finally { f.admission.active = false; }
+          }) };
+        }
         const client = createAdminTemplatePhotoWholeCopyClient({ ...options, storage: f.storage, locks, fetchImpl: f.fetchImpl }); clients.push(client); return client;
       },
+      createAdminTemplatePhotoWholeCopyRecoveryRunner, readAdminTemplatePhotoWholeCopyCancelled,
       createAdminTemplatePhotoTreeCopyActionStore: options => createAdminTemplatePhotoTreeCopyActionStore(storeOptions(options)),
       createAdminTemplatePhotoTreeCopyClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks, fetchImpl: f.fetchImpl }),
       createAdminTemplateSavePlans: options => createAdminTemplateSavePlans({ ...options, storage: f.storage, locks }),
@@ -105,12 +123,13 @@ export async function wholeAppRunnerFixture() {
     const names = ["adminTemplatePhotoWholeCopyInventory", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted",
       "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor", "withAdminTemplatePhotoWholeCopyDispatchInventory",
       "withAdminTemplatePhotoWholeCopyCaptureInventory", "withAdminTemplatePhotoWholeCopyInventoryScope",
-      "withAdminTemplatePhotoWholeCopyApplyInventory", "readAdminTemplatePhotoWholeCopyAccepted",
+      "withAdminTemplatePhotoWholeCopyApplyInventory", "readAdminTemplatePhotoWholeCopyAccepted", "readAdminTemplatePhotoWholeCopyStopped",
       "adminTemplatePhotoWholeCopyFormEnabled", "captureAdminTemplatePhotoWholeCopyForm",
       "prepareAndCaptureAdminTemplatePhotoWholeCopyForm",
       "applyAdminTemplatePhotoWholeCopyFormResult",
       "findAdminTemplatePhotoWholeCopyFormRecord", "resumeAdminTemplatePhotoWholeCopyCapture",
       "resumeAdminTemplatePhotoWholeCopyForm",
+      "adminTemplatePhotoWholeCopyRecoveryRunner",
       "prepareAdminTemplatePhotoWholeCopyRecovery", "createCausalAdminTemplateWholeCopy",
       "withAdminTemplatePhotoWholeCopyNamespaceScope", "runAdminTemplatePhotoWholeCopyPlan", ...(extra.names || [])];
     for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);

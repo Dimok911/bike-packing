@@ -216,6 +216,8 @@ import { createAdminTemplatePhotoTreeCopyAdmission } from "./src/sync/admin-temp
 import { prepareAdminTemplatePhotoTreeCopyNamespaces } from "./src/public/admin-template-photo-tree-copy-namespaces.js";
 import { createAdminTemplatePhotoWholeCopyActionStore, readAdminTemplatePhotoWholeCopyActorInventory } from "./src/sync/admin-template-photo-whole-copy-action-store.js";
 import { createAdminTemplatePhotoWholeCopyClient } from "./src/sync/admin-template-photo-whole-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyRecoveryRunner } from "./src/public/admin-template-photo-whole-copy-recovery-runner.js";
+import { readAdminTemplatePhotoWholeCopyCancelled } from "./src/public/admin-template-photo-whole-copy-cancelled.js";
 import { adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot } from "./src/sync/admin-template-photo-whole-copy-save-plan.js";
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./src/sync/admin-template-photo-whole-copy-protocol.js";
 import { adminTemplatePhotoWholeCopyJournal } from "./src/sync/admin-template-photo-whole-copy-parent-fence.js";
@@ -11454,6 +11456,11 @@ async function readAdminTemplatePhotoWholeCopyAccepted(binding, layoutId, operat
     getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, guard);
   guard(); return accepted;
 }
+async function readAdminTemplatePhotoWholeCopyStopped(binding, layoutId, operationId, guard, preparing = true) {
+  const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
+  const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
+  return readAdminTemplatePhotoWholeCopyCancelled({ binding, operationId, store, getContext, storage: localStorage }, guard);
+}
 async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
   return withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, "dispatch");
 }
@@ -11493,7 +11500,7 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
   const targetPrefixes = prefixes.filter(name => name.includes(encodeURIComponent(canonicalTemplateJson(binding))));
   prefixes.push("bike-packing-admin-order-v1:" + encodeURIComponent(binding.actorId) + ":");
   let active = true, snapshot = null, sawJournal = false, validatedJournalRaw = null, sawPlan = false, expectedPlanRaw = null;
-  const acceptedWhole = new Map();
+  const acceptedWhole = new Map(), stoppedWhole = new Map();
   const inventoryBytes = () => {
     if (!storage || !Number.isSafeInteger(storage.length) || storage.length < 0) pause();
     const entries = [], names = new Set();
@@ -11533,12 +11540,13 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
     // the typed client still revalidates all mutable receipts before dispatch.
     if (raw !== validatedJournalRaw) {
       const row = adminTemplatePhotoWholeCopyJournal(JSON.parse(raw));
-      if (canonicalTemplateJson(row) !== raw || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash || row.cancelRequested === true) pause();
+      if (canonicalTemplateJson(row) !== raw || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash
+        || row.cancelRequested === true && !(phase === "apply" && row.receipt?.operation.state === "committed")) pause();
       if (phase === "capture" && (row.dispatched || row.receipt !== null || row.stageReceipts.some(Boolean))) pause();
       validatedJournalRaw = raw;
     }
   };
-  const guard = () => { rawGuard(); for (const accepted of acceptedWhole.values()) accepted.assertCurrent(); };
+  const guard = () => { rawGuard(); for (const accepted of [...acceptedWhole.values(), ...stoppedWhole.values()]) accepted.assertCurrent(); };
   try {
     guard(); snapshot = inventoryBytes();
     if (phase === "capture") {
@@ -11563,6 +11571,11 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
       const origin = retained.action.body.source;
       if (allocated(retained).some(id => ownAllocations.has(id))) pause();
       if (sides.some(side => same(side.binding, retained.binding) || side.binding.listId === origin.listId && side.binding.itemKey === origin.itemKey)) {
+        const stopped = await readAdminTemplatePhotoWholeCopyStopped(retained.binding, record.snapshot.source.layoutId,
+          retained.action.operationId, rawGuard, true); guard();
+        if (stopped && same(stopped.record, retained) && !sides.some(side => same(side.binding, retained.binding))) {
+          stoppedWhole.set(retained.action.operationId, stopped); guard(); continue;
+        }
         const accepted = await readAdminTemplatePhotoWholeCopyAccepted(retained.binding, record.snapshot.source.layoutId,
           retained.action.operationId, rawGuard, true); guard();
         if (!accepted || !same(accepted.record, retained)) pause();
@@ -11779,7 +11792,8 @@ async function findAdminTemplatePhotoWholeCopyFormRecord(layoutId, operationId =
     const pending = [];
     for (const record of selected) {
       const accepted = await readAdminTemplatePhotoWholeCopyAccepted(record.binding, layoutId, record.action.operationId, guard, true); guard();
-      if (!accepted) pending.push(record);
+      const stopped = !accepted && await readAdminTemplatePhotoWholeCopyStopped(record.binding, layoutId, record.action.operationId, guard, true); guard();
+      if (!accepted && !stopped) pending.push(record);
     }
     selected = pending;
   }
@@ -11807,6 +11821,13 @@ async function resumeAdminTemplatePhotoWholeCopyForm(layoutId, operationId) {
   const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
   const client = createAdminTemplatePhotoWholeCopyClient({ binding, getContext, store, transport: experimentTransport, enabled: false });
   let journal = await client.read(operationId); guard();
+  if (journal?.cancelRequested) {
+    // Automatic continuation may only inspect the original stop. Repeating a
+    // cancellation POST requires the explicit recovery-dialog action below.
+    const facts = await adminTemplatePhotoWholeCopyRecoveryRunner(binding, layoutId).inspect(operationId); guard();
+    if (facts.receipt?.operation.state === "committed") return applyAdminTemplatePhotoWholeCopyFormResult(facts);
+    return { state: !facts.receipt ? "stopping" : facts.receipt.result.payload.code === "operation_cancelled" ? "stopped" : "rejected", operationId };
+  }
   if (!saved || !journal) {
     // The exact record was found before allocating anything. Completing a
     // partial unsent capture still requires every write feature to be enabled.
@@ -11827,6 +11848,14 @@ async function resumeAdminTemplatePhotoWholeCopyForm(layoutId, operationId) {
   } else throw Error("Копирование ещё не подтверждено или остановлено. Исходная операция сохранена для сверки.");
   return applyAdminTemplatePhotoWholeCopyFormResult(result);
 }
+function adminTemplatePhotoWholeCopyRecoveryRunner(binding, layoutId) {
+  const getContext = () => adminTemplateOperationContext(binding, layoutId);
+  const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
+  return createAdminTemplatePhotoWholeCopyRecoveryRunner({ binding, layoutId, getContext, store,
+    plans: adminTemplatePlansFor(binding, layoutId, true), storage: localStorage, locks: navigator.locks,
+    createClient: options => createAdminTemplatePhotoWholeCopyClient({ ...options, transport: experimentTransport,
+      enabled: false, adminEnabled: adminTemplateUiEnabled(), appendEnabled: false, createEnabled: false, copyEnabled: false }) });
+}
 async function prepareAdminTemplatePhotoWholeCopyRecovery(layoutId) {
   const record = await findAdminTemplatePhotoWholeCopyFormRecord(layoutId); if (!record) return null;
   const binding = record.binding, id = record.action.operationId;
@@ -11834,19 +11863,34 @@ async function prepareAdminTemplatePhotoWholeCopyRecovery(layoutId) {
   const guard = () => { if (!getContext().admin || canonicalTemplateJson(getContext()) !== initial) throw Error("Контекст восстановления копии изменился."); };
   const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
   const client = createAdminTemplatePhotoWholeCopyClient({ binding, getContext, store, transport: experimentTransport, enabled: false });
-  let applied = false;
+  const runner = adminTemplatePhotoWholeCopyRecoveryRunner(binding, layoutId);
+  let applied = false, latest = null, inspected = false;
+  const describe = journal => {
+    const receipt = journal?.receipt, committed = receipt?.operation.state === "committed", stopping = journal?.cancelRequested === true;
+    const cancelled = receipt?.operation.state === "rejected" && receipt.result.payload.code === "operation_cancelled";
+    return { recoveryKind: "photo-whole-copy", id,
+      operations: [{ id, kind: "template.copy", state: receipt?.operation.state || (journal?.dispatched ? "unknown" : "queued"), cancelled }],
+      stopRequested: stopping, stopCoversHead: stopping, stopped: cancelled, committedCount: committed ? 1 : 0, applied,
+      canResume: !applied && (committed || !receipt && (stopping ? adminTemplateUiEnabled() : adminTemplatePhotoWholeCopyFormEnabled())),
+      canStop: Boolean(journal) && !receipt && !stopping && adminTemplateUiEnabled(), canCompare: false };
+  };
   const inspect = async refresh => {
     guard(); let journal = await client.read(id); guard();
     if (refresh && journal) { await client.inspect(id); guard(); journal = await client.read(id); guard(); }
-    const receipt = journal?.receipt, committed = receipt?.operation.state === "committed";
-    return { recoveryKind: "photo-whole-copy", id,
-      operations: [{ id, kind: "template.copy", state: receipt?.operation.state || (journal?.dispatched ? "unknown" : "queued"), cancelled: false }],
-      stopRequested: journal?.cancelRequested === true, stopCoversHead: false, stopped: false,
-      committedCount: committed ? 1 : 0, applied,
-      canResume: !applied && (committed || !receipt && adminTemplatePhotoWholeCopyFormEnabled()), canStop: false, canCompare: false };
+    latest = journal; inspected = true; return describe(journal);
   };
-  return { inspect, resume: async () => {
-    guard(); await resumeAdminTemplatePhotoWholeCopyForm(layoutId, id); guard(); applied = true; render(); return inspect(false);
+  return { inspect, stop: async () => {
+    guard(); if (!latest) throw Error("Сначала проверьте сохранённую копию.");
+    const facts = await runner.cancel(id); guard(); latest = facts.journal; return describe(latest);
+  }, resume: async () => {
+    guard(); if (!inspected) throw Error("Сначала проверьте сохранённую копию.");
+    const journal = await client.read(id); guard();
+    if (journal?.receipt?.operation.state === "rejected") { latest = journal; return describe(journal); }
+    if (journal?.cancelRequested && !journal.receipt) {
+      const facts = await runner.cancel(id); guard(); latest = facts.journal; return describe(latest);
+    }
+    const result = await resumeAdminTemplatePhotoWholeCopyForm(layoutId, id); guard();
+    applied = Boolean(result?.layoutId); if (applied) render(); return inspect(false);
   } };
 }
 async function createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
@@ -11873,6 +11917,7 @@ async function createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, {
     const result = await runAdminTemplatePhotoWholeCopyPlan({ binding: captured.plan.binding, layoutId, operationId: captured.plan.id });
     applied = await applyAdminTemplatePhotoWholeCopyFormResult(result);
   }
+  if (!applied?.layoutId) throw Error("Копирование остановлено или ожидает подтверждения остановки. Исходная операция сохранена для сверки.");
   activateAdminPublishedLayout(applied.layoutId); render(); return applied.layoutId;
 }
 async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
@@ -11898,7 +11943,7 @@ async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
     const saved = await adminTemplatePlansFor(binding, layoutId, true).read(plan.id); guard();
     const journal = await client.read(plan.id); guard();
     if (!saved || saved.cancelRequested || canonicalTemplateJson(saved.plan) !== canonicalTemplateJson(plan)
-      || !journal || journal.cancelRequested || canonicalTemplateJson(journal.receipt) !== canonicalTemplateJson(receipt)
+      || !journal || canonicalTemplateJson(journal.receipt) !== canonicalTemplateJson(receipt)
       || canonicalTemplateJson(journal.stageReceipts) !== canonicalTemplateJson(stageReceipts)
       || journal.recordIntentHash !== record.intentHash || receipt?.operation.state !== "committed") {
       throw Error("Сохранённое подтверждение копии не совпадает с выбранным результатом.");
@@ -12746,6 +12791,13 @@ async function assertAdminTemplateCopyCaptureAllowed(binding, layoutId,
     const source = record.action.body.source;
     const isTarget = canonicalTemplateJson(record.binding) === canonicalTemplateJson(binding);
     if (!isTarget && !(source.listId === binding.listId && source.itemKey === binding.itemKey)) continue;
+    if (!isTarget && operationId !== record.action.operationId && Number.isSafeInteger(body.base?.stateRevision)
+      && body.base.stateRevision >= source.base.stateRevision && !body.base?.operationId) {
+      const stopped = await readAdminTemplatePhotoWholeCopyStopped(record.binding, layoutId, record.action.operationId, contextGuard, true); check();
+      if (stopped && canonicalTemplateJson(stopped.record) === canonicalTemplateJson(record)) {
+        acceptedProofs.push(stopped); check(); continue;
+      }
+    }
     const accepted = await readAdminTemplatePhotoWholeCopyAccepted(record.binding, layoutId, record.action.operationId, contextGuard, true); check();
     if (!accepted || canonicalTemplateJson(accepted.record) !== canonicalTemplateJson(record) || operationId === record.action.operationId
       || !Number.isSafeInteger(body.base?.stateRevision) || body.base.stateRevision < (isTarget ? 1 : source.base.stateRevision)
@@ -13971,6 +14023,8 @@ function adminTemplatePlansFor(binding, layoutId, preparing = false) {
     photoWholeCopyStore, photoWholeCopyClient, photoWholeCopyEnabled: false,
     readWholeCopyAcceptance: ({ binding: owner, operationId, guard }) =>
       readAdminTemplatePhotoWholeCopyAccepted(owner, layoutId, operationId, guard, true),
+    readWholeCopyCancellation: ({ binding: owner, operationId, guard }) =>
+      readAdminTemplatePhotoWholeCopyStopped(owner, layoutId, operationId, guard, true),
     assertCaptureAllowed: ({ plan, captureLease, guard }) => assertAdminTemplateCopyCaptureAllowed(binding, layoutId,
       { operationId: plan.id, body: plan.operations[0].body, recordIntentHash: [8, 9].includes(plan.version) ? plan.recordIntentHash : null,
         captureLease, guard }, preparing),
