@@ -240,7 +240,8 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
         const cold = async off => {
           await page.close(); hideParent = false; bundle = off ? bundleOffDirectory : bundleOnDirectory;
           if (off && setWholeEnabled) await setWholeEnabled(false);
-          await start();
+          // Let startup restore the retained public editor before any test-driven switch.
+          await start({ prepareSource: !publicSource });
         };
         try {
           await start({ prepareSource: !publicSource });
