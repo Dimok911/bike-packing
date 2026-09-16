@@ -250,7 +250,8 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             const personalLayoutId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
             await openTemplate(page, seed.source, session);
             const editorId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
-            await page.locator("#layoutSelect").selectOption(personalLayoutId);
+            // Fixture setup must not create a personal list-preference operation.
+            await page.evaluate(id => __adminUiTest.openPrivate(id), personalLayoutId);
             await page.evaluate(id => {
               // Reproduce the retained pre-v1628 editor seen in the user report.
               // Server payload, files, IDs and business fields remain untouched.
