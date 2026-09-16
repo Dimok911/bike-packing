@@ -67,6 +67,11 @@ export default defineConfig(({ mode }) => ({
     if (["admin-photo-create", "admin-photo-copy", "admin-photo-copy-off", "admin-photo-tree-copy"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-create-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED = true");
     if (["admin-photo-copy", "admin-photo-tree-copy"].includes(mode) && source.endsWith("/src/sync/admin-template-photo-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_COPY_ENABLED = true");
     if (mode === "admin-photo-tree-copy" && source.endsWith("/src/sync/admin-template-photo-tree-copy-protocol.js")) return code.replace("ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED = false", "ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED = true");
+    if (wholeMode && source.endsWith("/app.js")) {
+      const anchor = "function reportAdminTemplateSaveError(error) {";
+      if (!code.includes(anchor)) throw Error("Whole copy admin diagnostic anchor changed");
+      code = code.replace(anchor, anchor + " globalThis.__adminUiLastError = { message: error.message, code: error.code, stack: error.stack, cause: String(error.cause?.stack || error.cause || \"\") };");
+    }
     if (mode === "personal-import" && source.endsWith("/app.js")) {
       code = code.replace('return outbox.capture({ snapshot, body, operationId });', 'globalThis.__adminUiCaptureCalls ||= []; globalThis.__adminUiCaptureCalls.push({ stack: new Error().stack, scope: currentViewScope(), activeLayoutId: state.activeLayoutId }); return outbox.capture({ snapshot, body, operationId });');
       code = code.replace('function reportAdminTemplateSaveError(error) {', 'function reportAdminTemplateSaveError(error) { globalThis.__adminUiLastError = String(error.adminCopyGuard || "") + String(error.message) + String(error.stack || error);')
