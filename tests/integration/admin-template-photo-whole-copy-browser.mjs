@@ -248,16 +248,22 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
             assert.ok(publicSource, "Legacy editor regression requires a published source");
             const personalLayoutId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
             await openTemplate(page, seed.source, session);
-            const editorId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
+            const retained = await page.evaluate(() => {
+              const state = __adminUiTest.state(), layout = state.layouts[state.activeLayoutId];
+              return { id: layout.id, arrangement: structuredClone(layout.arrangement) };
+            });
             await page.locator("#layoutSelect").selectOption(personalLayoutId);
-            await page.evaluate(id => {
+            await page.evaluate(({ id, arrangement }) => {
               // Reproduce the retained pre-v1628 editor seen in the user report.
               // Server payload, files, IDs and business fields remain untouched.
               const layout = __adminUiTest.state().layouts[id];
+              // Seed an unchanged retained editor, including unknown source fields.
+              // Switching away captures a fresh arrangement and drops fixture-only fields.
+              layout.arrangement = arrangement;
               layout.arrangement.itemQuantityMigrationVersion = 3;
               delete layout.adminCausalSource.canonicalPayload;
               delete layout.adminCausalSource.photoOwnerMap;
-            }, editorId);
+            }, retained);
           }
           const before = await checkpoint("bootstrap");
           const sourceId = before.state.source?.layout.id, title = `Полная копия ${engine} ${caseName}`;
