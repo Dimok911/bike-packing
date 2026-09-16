@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderFilterControls } from "../../src/ui/filter-controls.js";
+import { publicLayoutChoiceValue } from "../../src/state/layout-manage.js";
 
 function copyPickerRenderFixture() {
   const control = () => ({ value: "", classList: { toggle() {} }, setAttribute() {},
@@ -13,14 +14,34 @@ function copyPickerRenderFixture() {
   refs.layoutCopyFrom.options = [["demo:template-300", "Шаблон 300"]];
   const state = { layouts: { personal: { id: "personal", name: "Укладка 2026" },
     source: { id: "source", name: "Шаблон 300", adminDemo: true } } };
-  const render = () => renderFilterControls({ refs, state, canUsePrivateState: () => true,
+  const render = (overrides = {}) => renderFilterControls({ refs, state, canUsePrivateState: () => true,
     getActiveEditableLayoutId: () => "source", publicLayoutChoiceForLayout: () => "demo:template-300",
     fillSelect(select, entries, selected) {
       select.options = entries;
       select.value = entries.some(row => row[0] === selected) ? selected : entries[0]?.[0] || "";
-    } });
-  return { refs, render };
+    }, ...overrides });
+  return { refs, state, render };
 }
+
+test("CRITICAL inactive causal drafts remain selectable without duplicating the published editor", () => {
+  const f = copyPickerRenderFixture();
+  f.state.layouts.draft = { id: "draft", name: "Копия", adminSharedSourceId: "copy", adminTemplateCopy: true,
+    templatePublished: false, adminCausalSource: {} };
+  f.state.layouts.published = { id: "published", name: "Шаблон", adminSharedSourceId: "published", adminCausalSource: {} };
+  const options = { canViewAdminPublishedCatalog: () => true, canEditPublishedTemplatesNow: () => true,
+    getActiveEditableLayoutId: () => "personal", publicLayoutChoiceForLayout: publicLayoutChoiceValue,
+    adminPublicLayoutOptions: () => [["shared:published", "Шаблон", "shared"]],
+    activeAdminDraftOptionLabel: layout => layout?.adminCausalSource ? (layout.templatePublished === false ? "Черновик: Копия" : "Шаблон") : "" };
+  f.render(options);
+  assert.equal(f.refs.layoutSelect.value, "personal");
+  assert.deepEqual(f.refs.layoutSelect.options.filter(row => row[0] === "template-draft:draft"),
+    [["template-draft:draft", "Черновик: Копия", "shared", false]]);
+  assert.equal(f.refs.layoutSelect.options.filter(row => row[0] === "shared:published").length, 1);
+  f.render({ ...options, canViewAdminPublishedCatalog: () => false });
+  assert.ok(!f.refs.layoutSelect.options.some(row => row[0].startsWith("template-draft:")));
+  f.render({ ...options, canEditPublishedTemplatesNow: () => false, canEditLocalUnpublishedAdminTemplate: layout => layout.id === "draft" });
+  assert.equal(f.refs.layoutSelect.options.find(row => row[0] === "template-draft:draft")[3], false);
+});
 
 test("CRITICAL template copy form keeps its chosen public source through source activation and background render", () => {
   const f = copyPickerRenderFixture(), options = f.refs.layoutCopyFrom.options;

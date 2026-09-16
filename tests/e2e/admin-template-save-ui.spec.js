@@ -344,6 +344,33 @@ async function fixture(page, context, { published = false, shared = false, hydra
   } else await openEditor(page);
   return state;
 }
+test("inactive template draft is labelled in both selectors and opens from the main selector", async ({ page, context }) => {
+  const server = await fixture(page, context, { shared: true });
+  const id = await page.evaluate(() => {
+    const layout = Object.values(__adminUiTest.state().layouts).find(row => row.adminCausalSource);
+    layout.adminTemplateCopy = true;
+    layout.templatePublished = false;
+    __adminUiTest.setOrderCatalog({ demo: [], shared: [] });
+    return layout.id;
+  });
+  await page.locator("#layoutSelect").selectOption("layout-a");
+  await expect(page.locator("#layoutSelect")).toHaveValue("layout-a");
+  const draftChoice = "template-draft:" + id;
+  await expect(page.locator("#layoutSelect option").filter({ hasText: "Черновик" })).toContainText("Проверяемый шаблон");
+  await page.locator("#layoutSelect").selectOption(draftChoice);
+  await expect(page.locator("#layoutSelect")).toHaveValue(draftChoice);
+  await expect.poll(() => page.evaluate(() => __adminUiTest.state().activeLayoutId)).toBe(id);
+  await expect(page.locator("body")).toContainText("Насос шаблона");
+  await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
+  await page.locator("#layoutCreateMode").selectOption("template-copy");
+  await expect(page.locator("#layoutCopyFrom option").filter({ hasText: "Черновик" })).toContainText("Проверяемый шаблон");
+  await page.locator("#layoutCopyFrom").selectOption(draftChoice);
+  await page.locator("#layoutName").fill("Другая копия");
+  await expect(page.locator("#layoutCopyFrom")).toHaveValue(draftChoice);
+  expect(server.posts).toEqual([]);
+  expect(server.errors).toEqual([]);
+});
+
 test("offline catalog storage is inspected only while settings are visible", async ({ page, context }) => {
   await page.addInitScript(() => {
     const open = CacheStorage.prototype.open;

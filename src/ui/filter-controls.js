@@ -218,6 +218,19 @@ export function renderFilterControls({
         publicOptionAccess.disabled
       ])
     ];
+  if (showAdminCatalog) {
+    const choices = new Set(publicOptions.map(([value]) => value));
+    for (const layout of Object.values(state.layouts || {})) {
+      if (!layout.adminCausalSource) continue;
+      const value = publicLayoutChoiceForLayout(layout);
+      const label = activeAdminDraftOptionLabel(layout);
+      if (!value || !label || choices.has(value)) continue;
+      const editable = canEditPublishedTemplatesNow() || canEditLocalUnpublishedAdminTemplate(layout);
+      publicOptions.push([value, readonlyPublicTemplateOptionLabel(label, { readonly: !editable }),
+        layout.adminDemo ? "demo" : "shared", !editable]);
+      choices.add(value);
+    }
+  }
   const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
   const selectedDraftEditable = Boolean(
     activeLayout && canEditLocalUnpublishedAdminTemplate(activeLayout)

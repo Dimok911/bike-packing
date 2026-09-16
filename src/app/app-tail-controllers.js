@@ -7039,8 +7039,11 @@ function layoutCreateCopySourceOptions({ templates = false, includeTemplates = f
     const choices = new Set(publicOptions.map(([value]) => value));
     for (const layout of Object.values(state.layouts)) {
       if (!layout.adminCausalSource || !isAdminEditablePublishedLayout(layout.id)) continue;
-      const value = "template-draft:" + layout.id;
-      if (!choices.has(value)) { choices.add(value); publicOptions.push([value, copyPickerLayoutLabel(layout), "public"]); }
+      const value = publicLayoutChoiceForLayout(layout);
+      if (value && !choices.has(value)) {
+        choices.add(value);
+        publicOptions.push([value, activeAdminDraftOptionLabel(layout), layout.adminDemo ? "demo" : "shared"]);
+      }
     }
   }
   return getLayoutCreateCopySourceOptions({
