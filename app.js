@@ -219,7 +219,10 @@ import { adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceE
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./src/sync/admin-template-photo-whole-copy-protocol.js";
 import { adminTemplatePhotoWholeCopyJournal } from "./src/sync/admin-template-photo-whole-copy-parent-fence.js";
 import { createAdminTemplatePhotoWholeCopyAdmission } from "./src/sync/admin-template-photo-whole-copy-admission.js";
-import { prepareAdminTemplatePhotoWholeCopyNamespaces } from "./src/public/admin-template-photo-whole-copy-namespaces.js";
+import { prepareAdminTemplatePhotoWholeCopyNamespaces, prepareAdminTemplatePhotoWholeCopyCaptureNamespaces } from "./src/public/admin-template-photo-whole-copy-namespaces.js";
+import { allocateAdminTemplatePhotoWholeCopySelection } from "./src/public/admin-template-photo-whole-copy-selection.js";
+import { prepareAdminTemplatePhotoWholeCopyForm } from "./src/public/admin-template-photo-whole-copy-flow.js";
+import { applyAdminTemplatePhotoWholeCopyResult } from "./src/public/admin-template-photo-whole-copy-apply.js";
 import { prepareAdminTemplatePhotoTreeCopyRecord } from "./src/sync/admin-template-photo-tree-copy-record.js";
 import { allocateAdminTemplatePhotoTreeCopySelection } from "./src/public/admin-template-photo-tree-copy-selection.js";
 import { prepareAdminTemplatePhotoTreeCopyForm } from "./src/public/admin-template-photo-tree-copy-flow.js";
@@ -11225,13 +11228,18 @@ async function adminTemplatePhotoWholeCopyInventory(binding, layoutId, preparing
   return { records, journals };
 }
 async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
-  // This scope admits an ALREADY retained V10 only. The target does not exist
-  // in the editor; even a historical target action conflicts with its allocation.
-  // No capture, adoption, cancellation or allocation retirement is authorized.
+  return withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, "dispatch");
+}
+async function withAdminTemplatePhotoWholeCopyCaptureInventory(proof, task) {
+  return withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, "capture");
+}
+async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase) {
+  // Capture admits only the own exact record/plan and unsent journal appearing.
+  // Dispatch requires durable pointers. Neither phase creates a target editor.
   const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
   const pause = () => { throw Object.assign(Error("Источник, новая копия и сохранённые действия требуют сверки."),
     { code: "admin-template-photo-whole-copy-inventory-paused", isAdminTemplateBlocked: true }); };
-  if (typeof proof?.assertCurrent !== "function" || typeof task !== "function") pause();
+  if (!["capture", "dispatch"].includes(phase) || typeof proof?.assertCurrent !== "function" || typeof task !== "function") pause();
   const record = clone(proof.record), bindings = clone(proof.bindings), captureLease = proof.captureLease;
   const operationId = record.action.operationId, binding = record.binding, source = record.action.body.source;
   const expectedPlan = adminTemplatePhotoWholeCopySavePlan({ binding, operationId, body: record.action.body,
@@ -11253,14 +11261,14 @@ async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
     .map(name => prefix(name, owner)));
   const targetPrefixes = prefixes.filter(name => name.includes(encodeURIComponent(canonicalTemplateJson(binding))));
   prefixes.push("bike-packing-admin-order-v1:" + encodeURIComponent(binding.actorId) + ":");
-  let active = true, snapshot = null, sawJournal = false, validatedJournalRaw = null;
+  let active = true, snapshot = null, sawJournal = false, validatedJournalRaw = null, sawPlan = false, expectedPlanRaw = null;
   const inventoryBytes = () => {
     if (!storage || !Number.isSafeInteger(storage.length) || storage.length < 0) pause();
     const entries = [], names = new Set();
     for (let index = 0; index < storage.length; index++) {
       const key = storage.key(index); if (typeof key !== "string" || names.has(key)) pause(); names.add(key);
       if (key !== ownPlanKey && key !== ownJournalKey && targetPrefixes.some(value => key.startsWith(value))) pause();
-      if (key === ownJournalKey || !prefixes.some(value => key.startsWith(value))) continue;
+      if (key === ownJournalKey || phase === "capture" && key === ownPlanKey || !prefixes.some(value => key.startsWith(value))) continue;
       const raw = storage.getItem(key); if (typeof raw !== "string") pause(); entries.push([key, raw]);
     }
     return canonicalTemplateJson(entries.sort(([a], [b]) => a < b ? -1 : 1));
@@ -11276,6 +11284,11 @@ async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
       if (!current.admin || current.scope !== "admin-template" || !current.generation || !same(current, contexts[index])) pause();
     }
     if (snapshot !== null && inventoryBytes() !== snapshot) pause();
+    if (phase === "capture" && expectedPlanRaw !== null) {
+      const planRaw = storage.getItem(ownPlanKey);
+      if (planRaw === null) { if (sawPlan) pause(); }
+      else { if (planRaw !== expectedPlanRaw) pause(); sawPlan = true; }
+    }
     const raw = storage.getItem(ownJournalKey);
     if (raw === null) { if (sawJournal) pause(); return; }
     sawJournal = true;
@@ -11286,12 +11299,16 @@ async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
     if (raw !== validatedJournalRaw) {
       const row = adminTemplatePhotoWholeCopyJournal(JSON.parse(raw));
       if (canonicalTemplateJson(row) !== raw || !same(row.intent, intent) || row.recordIntentHash !== record.intentHash || row.cancelRequested === true) pause();
+      if (phase === "capture" && (row.dispatched || row.receipt !== null || row.stageReceipts.some(Boolean))) pause();
       validatedJournalRaw = raw;
     }
   };
   try {
     guard(); snapshot = inventoryBytes();
-    if (typeof storage.getItem(ownPlanKey) !== "string") pause();
+    if (phase === "capture") {
+      const digest = await adminTemplateCopyPayloadDigest(expectedPlan); guard();
+      expectedPlanRaw = canonicalTemplateJson({ version: 1, plan: expectedPlan, digest, cancelRequested: false }); guard();
+    } else if (typeof storage.getItem(ownPlanKey) !== "string") pause();
     // A target may not yet exist, so discovery must start from the actor rather
     // than visible layouts. Decode foreign-target whole records before comparing.
     const actorRecords = await readAdminTemplatePhotoWholeCopyActorInventory({ actorId: binding.actorId, environment: binding.environment,
@@ -11370,8 +11387,9 @@ async function withAdminTemplatePhotoWholeCopyDispatchInventory(proof, task) {
       for (const row of orders) other(row.intent);
       for (const accepted of acceptedTrees.values()) { accepted.assertCurrent(); guard(); }
     }
-    if (!ownPlan || !ownRecord) pause();
-    const scope = Object.freeze({ kind: "admin-template-photo-whole-copy-inventory-v1",
+    if (phase === "dispatch" && (!ownPlan || !ownRecord)) pause();
+    if (ownPlan && !ownRecord || sawJournal && (!ownPlan || !ownRecord)) pause();
+    const scope = Object.freeze({ kind: phase === "dispatch" ? "admin-template-photo-whole-copy-inventory-v1" : "admin-template-photo-whole-copy-capture-inventory-v1",
       bindings: Object.freeze(bindings.map(value => Object.freeze(value))), recordIntentHash: record.intentHash, assertCurrent: guard });
     const result = await task(scope); guard(); return result;
   } finally { active = false; }
@@ -11393,6 +11411,163 @@ async function withAdminTemplatePhotoWholeCopyNamespaceScope(proof, task) {
       bindings: proof.bindings, recordIntentHash: plan.recordIntentHash, assertCurrent }));
     assertCurrent(); return result;
   } finally { active = false; }
+}
+function adminTemplatePhotoWholeCopyFormEnabled() {
+  return ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED && ADMIN_TEMPLATE_PHOTO_COPY_ENABLED
+    && ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED && ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED && adminTemplateUiEnabled();
+}
+const administrativePhotoWholeCopyAttempts = new WeakMap();
+async function prepareAndCaptureAdminTemplatePhotoWholeCopyForm(input, { isCurrent }) {
+  const pause = () => { throw Error("Выбор полной копии изменился. Продолжите сохранённое действие или откройте форму заново."); };
+  if (!input || typeof input !== "object" || typeof isCurrent !== "function" || isCurrent() !== true
+    || !adminTemplatePhotoWholeCopyFormEnabled()) pause();
+  let attempt = administrativePhotoWholeCopyAttempts.get(input);
+  if (!attempt) {
+    if (Object.keys(input).length !== 3 || !Object.hasOwn(input, "sourceLayoutId")
+      || !Object.hasOwn(input, "targetKind") || !Object.hasOwn(input, "metadata")) pause();
+    const layoutId = input.sourceLayoutId, layout = state.layouts[layoutId], observed = layout?.adminCausalSource;
+    // The confirmed raw payload is installed when this editor is hydrated.
+    // Never fetch a newer baseline after a selection has already been made.
+    if (!observed?.canonicalPayload || !adminTemplateOperationContext(observed.binding, layoutId).admin) pause();
+    const source = { layoutId, ownerMap: clone(observed.photoOwnerMap), beforeState: adminTemplatePhotoNamespace(state, layoutId),
+      metadata: { title: String(layout.name || "").trim(), description: String(layout.note || "").trim(),
+        language: normalizeUiLanguage(layout.language || uiLanguage) } };
+    const selection = allocateAdminTemplatePhotoWholeCopySelection({ source, sourcePayload: observed.canonicalPayload,
+      targetKind: input.targetKind, metadata: input.metadata,
+      occupiedIds: [...new Set(["layouts", "items", "containers"].flatMap(type => Object.keys(state[type])))] });
+    attempt = { selection, input: canonicalTemplateJson(input), record: null, pending: null };
+    administrativePhotoWholeCopyAttempts.set(input, attempt);
+  }
+  if (canonicalTemplateJson(input) !== attempt.input) pause();
+  // Coalesce rapid clicks on the same form. A failed attempt retains its chosen
+  // IDs and typed record; retry only finishes the missing durable writes.
+  if (attempt.pending) return clone(await attempt.pending);
+  const guard = () => {
+    if (isCurrent() !== true || canonicalTemplateJson(input) !== attempt.input || !adminTemplatePhotoWholeCopyFormEnabled()) pause();
+  };
+  const work = async () => {
+    guard();
+    if (!attempt.record) attempt.record = await prepareAdminTemplatePhotoWholeCopyForm(attempt.selection);
+    guard();
+    const plan = await captureAdminTemplatePhotoWholeCopyForm(attempt.record, () => { guard(); return true; }); guard();
+    return { plan, record: clone(attempt.record) };
+  };
+  attempt.pending = work();
+  try { return clone(await attempt.pending); }
+  finally { attempt.pending = null; }
+}
+async function captureAdminTemplatePhotoWholeCopyForm(input, isCurrent) {
+  const record = clone(input), { binding, snapshot } = record, layoutId = snapshot.source.layoutId;
+  const bindings = [snapshot.source.ownerMap.binding, binding];
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
+  let active = true;
+  const guard = () => {
+    if (!active || typeof isCurrent !== "function" || isCurrent() !== true || !adminTemplatePhotoWholeCopyFormEnabled()
+      || canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId)) !== initial) {
+      throw Error("Выбор копии, исходная укладка или аккаунт изменились. Сохранённый выбор оставлен для восстановления.");
+    }
+  };
+  try {
+    guard();
+    return await withAdminTemplateCapture({ bindings, locks: navigator.locks }, async captureLease => {
+      const getContext = () => { guard(); return adminTemplateOperationContext(binding, layoutId); };
+      const namespaces = await prepareAdminTemplatePhotoWholeCopyCaptureNamespaces({ record, getState: () => state, getContext }, guard); guard();
+      const current = () => { guard(); namespaces.assertCurrent(); assertAdminTemplateCaptureLease(captureLease, bindings); };
+      const proof = { record, bindings, captureLease, assertCurrent: current };
+      return withAdminTemplatePhotoWholeCopyCaptureInventory(proof, async scope => {
+        const checked = () => { current(); scope.assertCurrent(); };
+        const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, enabled: true,
+          getContext: () => { checked(); return getContext(); } });
+        const persisted = await store.capture({ action: record.action, snapshot }); checked();
+        if (canonicalTemplateJson(persisted) !== canonicalTemplateJson(record)) throw Error("Исходный выбор копии изменился.");
+        const inventory = () => withAdminTemplatePhotoWholeCopyCaptureInventory(proof, value => value.assertCurrent());
+        await inventory(); checked();
+        const client = createAdminTemplatePhotoWholeCopyClient({ binding, store, getContext: () => { checked(); return getContext(); },
+          transport: experimentTransport, enabled: true, adminEnabled: true, appendEnabled: true, createEnabled: true, copyEnabled: true });
+        const expected = adminTemplatePhotoWholeCopySavePlan({ binding, operationId: record.action.operationId, body: record.action.body,
+          sourceEditorSnapshot: adminTemplatePhotoWholeCopySourceEditorSnapshot(record), recordIntentHash: record.intentHash });
+        const plans = createAdminTemplateSavePlans({ binding, getContext: () => { checked(); return getContext(); }, enabled: true,
+          client: adminTemplateClient(binding, layoutId), photoWholeCopyEnabled: true, photoWholeCopyStore: store, photoWholeCopyClient: client,
+          assertCaptureAllowed: async ({ guard: check }) => { check(); await inventory(); checked(); check(); return true; },
+          assertWholeCopyAdmission: ({ plan, record: retained, captureLease: lease, guard: check }) => {
+            check(); checked();
+            if (lease !== captureLease || canonicalTemplateJson(plan) !== canonicalTemplateJson(expected)
+              || canonicalTemplateJson(retained) !== canonicalTemplateJson(record)) return false;
+            return true;
+          } });
+        await plans.capturePhotoWholeCopy({ operationId: record.action.operationId, body: record.action.body,
+          sourceEditorSnapshot: expected.sourceEditorSnapshot, recordIntentHash: record.intentHash }, { captureLease }); checked();
+        await inventory(); checked(); await client.capture(record.action); checked();
+        // Nothing enters the live editor, and no HTTP write starts here. Final
+        // dispatch admission proves all three durable pointers exist together.
+        return withAdminTemplatePhotoWholeCopyDispatchInventory(proof, async finalScope => {
+          finalScope.assertCurrent(); const readback = await store.read(record.action.operationId); checked(); finalScope.assertCurrent();
+          if (canonicalTemplateJson(readback) !== canonicalTemplateJson(record)) throw Error("Сохранённую копию нужно сверить.");
+          return clone(expected);
+        });
+      });
+    });
+  } finally { active = false; }
+}
+async function findAdminTemplatePhotoWholeCopyFormRecord(layoutId, operationId = null) {
+  const binding = state.layouts[layoutId]?.adminCausalSource?.binding;
+  if (!binding || operationId !== null && !validTemplateOperationId(operationId)) throw Error("Откройте исходный шаблон сохранённой копии.");
+  const getContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(getContext());
+  const guard = () => {
+    if (getContext().admin !== true || canonicalTemplateJson(getContext()) !== initial) throw Error("Контекст восстановления копии изменился.");
+  };
+  guard();
+  // Discovery starts at the actor: a failed first capture can have a typed
+  // record but neither plan nor journal nor a target layout in the editor.
+  const inventory = await readAdminTemplatePhotoWholeCopyActorInventory({ actorId: binding.actorId, environment: binding.environment, getContext }); guard();
+  const selected = inventory.records.filter(record => record.snapshot.source.layoutId === layoutId
+    && record.action.body.source.listId === binding.listId && record.action.body.source.itemKey === binding.itemKey
+    && (operationId === null || record.action.operationId === operationId));
+  if (selected.length > 1) throw Error("Найдено несколько сохранённых копий. Выберите исходную операцию для восстановления.");
+  if (operationId !== null && selected.length !== 1) throw Error("Сохранённая копия не найдена. Новая операция не создавалась.");
+  return selected.length ? clone(selected[0]) : null;
+}
+async function resumeAdminTemplatePhotoWholeCopyCapture(layoutId, operationId, isCurrent) {
+  if (typeof isCurrent !== "function" || isCurrent() !== true) throw Error("Выбор восстановления изменился.");
+  const record = await findAdminTemplatePhotoWholeCopyFormRecord(layoutId, operationId);
+  if (isCurrent() !== true) throw Error("Выбор восстановления изменился.");
+  // Complete only an unsent capture. A journal with dispatch/receipts requires
+  // the separate original-ID runner, never a fresh allocation or recapture.
+  const plan = await captureAdminTemplatePhotoWholeCopyForm(record, isCurrent);
+  return { plan, record };
+}
+async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
+  const { plan, record, receipt, stageReceipts } = clone(input), binding = plan.binding, layoutId = record.snapshot.source.layoutId;
+  const bindings = [record.snapshot.source.ownerMap.binding, binding], getContext = () => adminTemplateOperationContext(binding, layoutId);
+  const initial = canonicalTemplateJson(getContext());
+  const planKey = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":" + plan.id;
+  const journalKey = "bike-packing-admin-photo-whole-copy-commands-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":" + plan.id;
+  const rawPlan = localStorage.getItem(planKey), rawJournal = localStorage.getItem(journalKey);
+  const ownIds = new Set([plan.id, ...record.stages.map(stage => stage.operationId)]);
+  const guard = () => {
+    if (getContext().admin !== true || canonicalTemplateJson(getContext()) !== initial || rawPlan === null || rawJournal === null
+      || localStorage.getItem(planKey) !== rawPlan || localStorage.getItem(journalKey) !== rawJournal
+      || experimentTransport.writes.some(entry => ownIds.has(entry.id) && !entry.confirmed)) {
+      throw Error("Подтверждение полной копии требует сверки. Исходная команда сохранена.");
+    }
+  };
+  guard();
+  return withAdminTemplateCapture({ bindings, locks: navigator.locks }, async captureLease => {
+    guard();
+    const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
+    const client = createAdminTemplatePhotoWholeCopyClient({ binding, getContext, store, transport: experimentTransport, enabled: false });
+    const saved = await adminTemplatePlansFor(binding, layoutId, true).read(plan.id); guard();
+    const journal = await client.read(plan.id); guard();
+    if (!saved || saved.cancelRequested || canonicalTemplateJson(saved.plan) !== canonicalTemplateJson(plan)
+      || !journal || journal.cancelRequested || canonicalTemplateJson(journal.receipt) !== canonicalTemplateJson(receipt)
+      || canonicalTemplateJson(journal.stageReceipts) !== canonicalTemplateJson(stageReceipts)
+      || journal.recordIntentHash !== record.intentHash || receipt?.operation.state !== "committed") {
+      throw Error("Сохранённое подтверждение копии не совпадает с выбранным результатом.");
+    }
+    return withAdminTemplatePhotoWholeCopyDispatchInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
+      applyAdminTemplatePhotoWholeCopyResult({ plan, store, receipt, stageReceipts, captureLease, getState: () => state, getContext,
+        getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
+  });
 }
 async function runAdminTemplatePhotoWholeCopyPlan(input) {
   // The source remains selected; no target placeholder is fabricated before

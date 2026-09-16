@@ -64,6 +64,11 @@ They do not exercise the user form, a native browser, the real database or phone
 
 ## Next integration boundary
 
+The capture and first target-only application below are now implemented by
+`whole-copy-form-capture-2026-09-16.md`. Durable acceptance, already-applied cold
+recovery and the visible form route remain outstanding; see that checkpoint
+for the current boundary. The following paragraph records the earlier plan.
+
 Capture a fixed whole-copy selection from the existing form while the confirmed
 source is selected. Add an explicit capture-phase inventory transition: durable
 record and V10 plan may appear, but no target editor placeholder or unrelated

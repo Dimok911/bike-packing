@@ -1,6 +1,7 @@
 import { canonicalTemplateJson as canonical } from "../sync/admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "../sync/admin-template-photo-record.js";
-import { assertAdminTemplatePhotoWholeCopyPlanRecord } from "../sync/admin-template-photo-whole-copy-save-plan.js";
+import { assertAdminTemplatePhotoWholeCopyPlanRecord, adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot } from "../sync/admin-template-photo-whole-copy-save-plan.js";
+import { prepareAdminTemplatePhotoWholeCopyRecord } from "../sync/admin-template-photo-whole-copy-record.js";
 
 const collections = ["layouts", "items", "containers"];
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
@@ -119,6 +120,26 @@ function assertAbsent(state, reserved) {
 // cleanState is an INITIAL snapshot; never replace live state with it after an
 // await. Later target-only apply must preserve fresh unrelated state separately.
 export async function prepareAdminTemplatePhotoWholeCopyNamespaces(input, guard) {
+  return prepareNamespaces(input, guard, assertAdminTemplatePhotoWholeCopyPlanRecord);
+}
+
+// Pre-capture proof: no durable record is claimed to exist. Re-derive the frozen
+// selection independently, then use exactly the same live namespace checks.
+// This grants no dispatch authority; the application must persist and reread it.
+export async function prepareAdminTemplatePhotoWholeCopyCaptureNamespaces(input, guard) {
+  if (!exact(input, ["record", "getState", "getContext"])) paused("dependencies");
+  const record = clone(input.record);
+  const plan = adminTemplatePhotoWholeCopySavePlan({ binding: record.binding, operationId: record.action.operationId,
+    body: record.action.body, sourceEditorSnapshot: adminTemplatePhotoWholeCopySourceEditorSnapshot(record), recordIntentHash: record.intentHash });
+  const readSelection = async (_plan, _store, current) => {
+    current();
+    const checked = await prepareAdminTemplatePhotoWholeCopyRecord({ binding: record.binding, action: record.action, snapshot: record.snapshot });
+    current(); if (!same(checked, record)) paused("record-changed"); return checked;
+  };
+  return prepareNamespaces({ plan, store: { binding: record.binding }, getState: input.getState, getContext: input.getContext }, guard, readSelection);
+}
+
+async function prepareNamespaces(input, guard, readRecord) {
   if (!exact(input, ["plan", "store", "getState", "getContext"]) || typeof guard !== "function"
     || typeof input.getState !== "function" || typeof input.getContext !== "function") paused("dependencies");
   const { store, getState, getContext } = input, plan = clone(input.plan), binding = adminTemplatePhotoActionBinding(plan.binding);
@@ -152,7 +173,7 @@ export async function prepareAdminTemplatePhotoWholeCopyNamespaces(input, guard)
     selectedGuard?.(); guarded();
   };
   assertCurrent();
-  const record = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, store, assertCurrent); assertCurrent();
+  const record = await readRecord(plan, store, assertCurrent); assertCurrent();
   const source = record.snapshot.source, reserved = allocations(plan, record), sourceNamespace = clone(namespace(initial, source.layoutId));
   if (!same(sourceNamespace, source.beforeState)) paused("source");
   // An initial collision cannot be repaired during the proof and then restored
@@ -167,7 +188,7 @@ export async function prepareAdminTemplatePhotoWholeCopyNamespaces(input, guard)
     assertAbsent(live, reserved);
   };
   assertCurrent();
-  const current = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, store, assertCurrent); assertCurrent();
+  const current = await readRecord(plan, store, assertCurrent); assertCurrent();
   if (!same(current, record)) paused("record-changed");
   return Object.freeze({ ...freeze({ sourceLayoutId: source.layoutId, targetLayoutId: record.snapshot.target.layoutId,
     recordIntentHash: record.intentHash, sourceNamespace, cleanState: initial }), assertCurrent });
