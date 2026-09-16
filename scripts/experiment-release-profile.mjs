@@ -11,6 +11,7 @@ export const EXPERIMENT_RELEASE_CAPABILITIES = Object.freeze([
   "personalLegacyPhotoPreservationV1", "personalListOperationPreparationV1", "personalItemRenameV1",
   "adminTemplatePhotoEditV1", "adminTemplateCopyV1", "adminTemplateSourceSaveV1", "adminTemplatePersonalSourceSaveV1",
   "adminTemplatePendingSourceV1", "adminTemplatePendingPersonalSourceV1",
+  "adminTemplatePhotoCreateV1", "adminTemplatePhotoCopyV1", "adminTemplatePhotoWholeCopyV1",
 ]);
 export const EXPERIMENT_RELEASE_GATES = Object.freeze({
   "src/sync/experiment-transport.js": ["EU_TRANSPORT_RELEASE_ENABLED"],
@@ -34,6 +35,9 @@ export const EXPERIMENT_RELEASE_GATES = Object.freeze({
   "src/sync/admin-template-protocol.js": ["ADMIN_TEMPLATE_OPERATIONS_ENABLED"],
   "src/sync/admin-template-photo-append-protocol.js": ["ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED"],
   "src/sync/admin-template-photo-edit-protocol.js": ["ADMIN_TEMPLATE_PHOTO_EDIT_ENABLED"],
+  "src/sync/admin-template-photo-create-protocol.js": ["ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED"],
+  "src/sync/admin-template-photo-copy-protocol.js": ["ADMIN_TEMPLATE_PHOTO_COPY_ENABLED"],
+  "src/sync/admin-template-photo-whole-copy-protocol.js": ["ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED"],
 });
 
 export function experimentReleasePlugin(root) {

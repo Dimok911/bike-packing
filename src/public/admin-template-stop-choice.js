@@ -15,7 +15,7 @@ const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest
 // A decision belongs to one terminal chain. Its new save is a separate action
 // against the version explicitly compared, never a retry rebased by a reload.
 export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, getContext, getSource, snapshot, client, plans, recovery,
-  projectServer = null,
+  projectServer = null, photoCopyClient = null,
   storage = globalThis.localStorage, locks = globalThis.navigator?.locks, uuid = () => crypto.randomUUID(),
   enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
@@ -47,6 +47,8 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
   };
   const localUnavailableReason = async opened => {
     const saved = await plans.read(priorPlanId); unchanged(opened);
+    if (saved?.plan.version === 8) return "Исходный шаблон, получатель и сохранённое копирование остаются для сверки. Сейчас можно открыть серверный вариант; остановленная копия автоматически не переносится.";
+    if (saved?.plan.version === 7) return "Новая запись и её файлы остаются сохранёнными для сверки. Откройте серверный вариант перед новым выбором; остановленный пакет автоматически не переносится.";
     return saved?.plan.version === 6
       ? "После остановки удаления или перестановки фото местный вариант остаётся сохранённым для сверки. Сейчас можно открыть серверный вариант и повторно выбрать изменения в его форме."
       : null;
@@ -97,8 +99,18 @@ export function createAdminTemplateStopChoice({ binding, layoutId, priorPlanId, 
       const row = records.find(row => row.plan.id === entry.id);
       if (!row || row.digest !== entry.digest) throw paused();
       for (const intent of row.plan.operations) {
-        const saved = await client.read(intent.id); guard();
+        const copyPlan = row.plan.version === 8, selected = copyPlan ? photoCopyClient : client;
+        const proveCopyPlan = async () => {
+          if (!photoCopyClient || !same(photoCopyClient.binding, binding)) throw paused();
+          const current = await plans.read(row.plan.id); guard();
+          if (!current || current.digest !== row.digest || !same(current.plan, row.plan)
+            || !same(photoCopyClient.binding, binding)) throw paused();
+        };
+        if (copyPlan) await proveCopyPlan();
+        const saved = await selected.read(intent.id); guard();
+        if (copyPlan) await proveCopyPlan();
         if (!same(saved?.intent, intent) || !["committed", "rejected"].includes(saved?.receipt?.operation.state)
+          || copyPlan && saved.recordIntentHash !== row.plan.recordIntentHash
           || saved.receipt.operation.state === "committed" && saved.receipt.result.payload.stateRevision > server.stateRevision) throw paused();
       }
     }

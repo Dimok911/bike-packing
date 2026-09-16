@@ -5,7 +5,7 @@ import { createExperimentTransport, EXPERIMENT_FRONTEND_ORIGIN } from "../../src
 
 export const sha = value => createHash("sha256").update(value).digest("hex");
 export const copy = value => JSON.parse(JSON.stringify(value));
-export async function adminPhotoStagingFixture() {
+export async function adminPhotoStagingFixture({ replace = false } = {}) {
   const binding = { actorId: "administrator", environment: "bike-packing-experiment", listId: "public-demo-state", itemKey: "demo-state" };
   const current = { ...binding, scope: "admin-template", admin: true, generation: "editor-1" };
   const bytes = "complete original bytes", file = new Blob([bytes], { type: "image/jpeg" });
@@ -18,6 +18,11 @@ export async function adminPhotoStagingFixture() {
       layouts: { l: { id: "l", name: "Template" } }, activeLayoutId: "l" },
     photoAppend: { version: 1, assets: [{ assetId: stage.operationId, assetDigest, entityType: stage.entityType, entityId: stage.entityId, photoId: stage.photoId }] } };
   const action = { operationId: stage.templateOperationId, kind: "template.save", listId: binding.listId, itemKey: binding.itemKey, body };
+  if (replace) {
+    body.payload.items[stage.entityId].photos = [{ id: "old-photo", photoId: "old-photo", listId: binding.listId, status: "synced",
+      url: "https://example.test/old/file", thumbUrl: "https://example.test/old/thumb", fileName: "Old.png", unknown: { preserved: [2, 1, 3] } }];
+    body.photoAppend = { ...body.photoAppend, version: 2, photoIds: [stage.photoId] };
+  }
   const record = { binding, action, stage, file, thumb: null, intentHash: sha(JSON.stringify(action)), fileMetadata: stage.file, thumbMetadata: null };
   const data = { ok: true, assetState: "ready", receipt: { version: 1, manifest: copy(stage), assetDigest, ownerId: "another-template-owner", baseEntityRevision: 2,
     stored: { file: { hash: stage.file.hash, size: file.size, type: file.type, fileName: stage.file.fileName, width: null, height: null },
@@ -26,6 +31,7 @@ export async function adminPhotoStagingFixture() {
     setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
   const locks = { request: async (_key, task) => task() }, claims = new Map(), calls = [];
   const controls = { known: null, lost: false, unknown: false, capabilities: ["adminTemplateCausalOperationsV1", "adminTemplatePhotoAppendV1"], afterRead: null, afterPost: null };
+  if (replace) controls.capabilities.push("adminTemplatePhotoReplaceV1");
   const store = { binding, read: async () => ({ ...record, files: [{ stage, file, thumb: null }] }),
     readStage: async () => { controls.afterRead?.(); return record; },
     claimStage: async (actionOperationId, stageOperationId) => {
@@ -50,7 +56,7 @@ export async function adminPhotoStagingFixture() {
   const make = options => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN, hostname: "experiment.vniipo-help.ru" },
       selection: "direct", locks, storage });
-    return { transport, client: createAdminTemplatePhotoStaging({ store, transport, locks, getContext: () => current, fetchImpl, enabled: true, ...options }) };
+    return { transport, client: createAdminTemplatePhotoStaging({ store, transport, locks, getContext: () => current, fetchImpl, enabled: true, replaceEnabled: replace, ...options }) };
   };
   return { binding, current, stage, body, record, data, controls, storage, values, claims, calls, make, store, locks, fetchImpl,
     posts: () => calls.filter(call => call.options.method === "POST") };

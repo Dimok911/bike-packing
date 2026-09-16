@@ -2,7 +2,23 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
   getLanguage = () => "ru", documentRef = document }) {
   let dialog, status, resume, stop, check, compare, close, busy = false, work, info;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
+  const tree = value => ["photo-tree-copy", "photo-whole-copy"].includes(value?.recoveryKind);
+  const committed = value => value?.operations.length > 0 && value.operations.every(row => row.state === "committed");
+  const treeStopped = value => tree(value) && !committed(value) && (value.stopped || value.operations.some(row => row.cancelled));
   const message = value => {
+    if (tree(value)) {
+      if (committed(value)) return value.applied
+        ? text("Копия подтверждена сервером и применена к укладке.", "The copy is confirmed by the server and applied to the layout.")
+        : text("Сервер уже создал копию. Примените подтверждённый результат к укладке.", "The server already created the copy. Apply the confirmed result to the layout.");
+      if (treeStopped(value)) return text("Копирование остановлено. Исходные данные и записи сохранены. Автоматического нового сохранения нет.",
+        "Copying has stopped. The original data and records are retained. No new save is started automatically.");
+      if (value.stopRequested) return text("Решение об остановке копирования сохранено. Ожидается подтверждение сервера; исходные данные и записи сохранены.",
+        "The request to stop copying is saved. Server confirmation is still needed; the original data and records are retained.");
+      if (value.operations.some(row => row.state === "rejected")) return text("Сервер отклонил копирование. Исходные данные и записи сохранены. Автоматического нового сохранения нет.",
+        "The server rejected the copy. The original data and records are retained. No new save is started automatically.");
+      if (value.operations.some(row => row.state === "unknown")) return text("Результат сохранённого копирования пока не подтверждён. Проверьте результат; исходные данные и записи сохранены.",
+        "The recorded copy is not yet confirmed. Check the result; the original data and records are retained.");
+    }
     if (value.stopped) return text("Отправка остановлена. Местный черновик сохранён. Перед новым сохранением нужна сверка с сервером.",
       "Sending has stopped. The local draft is retained. Compare it with the server before saving again.");
     if (value.stopRequested) return text("Решение об остановке сохранено. Нужно получить подтверждение по оставшимся действиям.",
@@ -17,18 +33,30 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
     return text("Изменения записаны на устройстве и ожидают отправки.", "Changes are saved on this device and are waiting to be sent.");
   };
   const buttons = () => {
+    const isTree = tree(info), treeCommitted = isTree && committed(info), treeFinished = isTree && (treeStopped(info) || treeCommitted && info.applied);
     check.disabled = busy || !work;
-    resume.disabled = busy || !work || info?.stopped || !info?.operations.length;
-    stop.disabled = busy || !work || info?.stopped || !info?.operations.length || info?.stopRequested && info?.stopCoversHead;
+    resume.disabled = busy || !work || (isTree ? info.canResume !== true || treeFinished : info?.stopped || !info?.operations.length);
+    stop.disabled = busy || !work || (isTree ? info.canStop !== true || treeFinished || treeCommitted
+      : info?.stopped || !info?.operations.length || info?.stopRequested && info?.stopCoversHead);
     close.disabled = busy;
-    compare.disabled = busy || !work || !info?.stopped;
-    compare.hidden = !info?.stopped;
-    resume.textContent = info?.stopRequested ? text("Продолжить остановку", "Continue stopping") : text("Продолжить отправку", "Continue sending");
+    const canCompare = !isTree && info?.stopped && info.canCompare !== false && typeof work?.compare === "function";
+    compare.disabled = busy || !canCompare;
+    compare.hidden = !canCompare;
+    resume.textContent = treeCommitted && !info.applied ? text("Применить результат", "Apply result")
+      : info?.stopRequested ? text("Продолжить остановку", "Continue stopping") : text("Продолжить отправку", "Continue sending");
   };
   const run = async (action, pendingText) => {
     if (busy) return; busy = true; status.textContent = pendingText; buttons();
     try { info = await action(); status.textContent = message(info); }
-    catch (error) { status.textContent = error.message; }
+    catch (error) {
+      if (tree(info) && typeof work?.inspect === "function") {
+        // A failed network request may follow a durable stop marker. The tree
+        // adapter's inspect(false) is a local read, never another dispatch.
+        try { const retained = await work.inspect(false); if (tree(retained)) info = retained; }
+        catch { /* Keep the original error if the local record is unreadable. */ }
+      }
+      status.textContent = error.message;
+    }
     finally { busy = false; buttons(); }
   };
   const create = () => {
@@ -45,9 +73,12 @@ export function createAdminTemplateRecoveryDialog({ prepare, confirmStop, openMo
     resume = button("adminResume", ""); stop = button("adminStop", text("Остановить отправку", "Stop sending"));
     close = button("adminRecoveryClose", text("Закрыть", "Close"));
     compare = button("adminCompare", text("Сверить с сервером", "Compare with server"));
-    compare.addEventListener("click", () => run(() => work.compare(), text("Готовлю сверку с сервером…", "Preparing the comparison…")));
+    compare.addEventListener("click", () => {
+      if (!compare.disabled && !compare.hidden && typeof work?.compare === "function") return run(() => work.compare(), text("Готовлю сверку с сервером…", "Preparing the comparison…"));
+    });
     check.addEventListener("click", () => run(() => work.inspect(true), text("Проверяю результат…", "Checking the result…")));
-    resume.addEventListener("click", () => run(() => work.resume(), info?.stopRequested
+    resume.addEventListener("click", () => run(() => work.resume(), tree(info) && committed(info) && !info.applied
+      ? text("Применяю подтверждённую копию…", "Applying the confirmed copy…") : info?.stopRequested
       ? text("Проверяю остановку отправки…", "Checking the stop request…") : text("Продолжаю сохранённую отправку…", "Continuing the saved request…")));
     stop.addEventListener("click", () => run(async () => await confirmStop() ? work.stop() : info,
       text("Подтверждение остановки…", "Confirm stopping…")));

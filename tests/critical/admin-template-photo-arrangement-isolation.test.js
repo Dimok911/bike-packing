@@ -6,8 +6,34 @@ import {
   solidifyTemplateDraftLayout as solidifyTemplateDraftLayoutForState
 } from "../../src/state/layout-draft-solidify.js";
 import { snapshotContainerTreeFromLiveState } from "../../src/state/container-tree-snapshot.js";
+import { normalizeLayoutArrangement, layoutItemQuantityMigrationRecovered } from "../../src/state/layout-normalize.js";
 
 const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+
+for (const quantity of [1, 5]) test(`rendering an old server editor preserves explicit placement quantity ${quantity} without a local migration marker`, () => {
+  const { state } = fixture(), layout = state.layouts.causal;
+  layout.updatedAt = "2024-01-01T00:00:00Z";
+  state.items["causal-item"].quantity = 7;
+  layout.arrangement.itemQuantities["causal-item"] = quantity;
+  delete layout.arrangement.itemQuantityMigrationVersion;
+  const before = structuredClone(layout);
+  normalizeLayoutArrangement(layout, state);
+  normalizeLayoutArrangement(layout, state);
+  assert.deepEqual(layout, before);
+  assert.equal(layoutItemQuantityMigrationRecovered(state), false);
+});
+
+test("legacy local quantity repair still runs for layouts without a server editor", () => {
+  const { state } = fixture(), layout = state.layouts.legacy;
+  layout.updatedAt = "2024-01-01T00:00:00Z";
+  state.items["legacy-item"].quantity = 7;
+  layout.arrangement.itemQuantities["legacy-item"] = 1;
+  delete layout.arrangement.itemQuantityMigrationVersion;
+  normalizeLayoutArrangement(layout, state);
+  assert.equal(layout.arrangement.itemQuantities["legacy-item"], 7);
+  assert.equal(layout.arrangement.itemQuantityMigrationVersion, 3);
+  assert.equal(layoutItemQuantityMigrationRecovered(state), true);
+});
 const names = ["adminTemplatePhotoMechanismEnabled", "hasOwnedAdminTemplatePhotoEditor", "solidifyTemplateDraftLayout", "solidifyManagedTemplateDrafts"];
 const source = names.map(name => {
   const match = app.match(new RegExp("function " + name + "\\([^]*?\\n\\}"));

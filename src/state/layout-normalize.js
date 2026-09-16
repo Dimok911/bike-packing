@@ -211,7 +211,11 @@ export function normalizeLayoutArrangement(layout, targetState) {
   arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object"
     ? arrangement.itemQuantities
     : {};
-  const recoverBrokenCapturedQuantities = shouldRecoverBrokenCapturedQuantities(layout, arrangement, items);
+  // These editors already carry the server's explicit placement quantities.
+  // Rendering must neither reinterpret them as a legacy local capture nor add
+  // a migration marker: either change invalidates the exact server snapshot.
+  const preserveServerQuantities = Boolean(layout.adminCausalSource);
+  const recoverBrokenCapturedQuantities = !preserveServerQuantities && shouldRecoverBrokenCapturedQuantities(layout, arrangement, items);
   Object.keys(arrangement.itemQuantities).forEach((itemId) => {
     if (!arrangement.items[itemId]) delete arrangement.itemQuantities[itemId];
   });
@@ -227,7 +231,7 @@ export function normalizeLayoutArrangement(layout, targetState) {
   if (recoverBrokenCapturedQuantities) {
     layoutQuantityMigrationRecoveredStates.add(targetState);
   }
-  if (hasLegacyMultiQuantity(arrangement, items)) {
+  if (!preserveServerQuantities && hasLegacyMultiQuantity(arrangement, items)) {
     arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
   }
   if (!hadStoredArrangement) repairBareLayoutRootArrangement(layout, targetState);

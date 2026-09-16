@@ -6,6 +6,7 @@ import { adminTemplateSavePlan } from "../../src/sync/admin-template-save-plan.j
 import { pendingAdminTemplateCopySource } from "../../src/sync/admin-template-copy-source.js";
 import { adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
+import { ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED } from "../../src/sync/admin-template-photo-create-protocol.js";
 import { stripAdminTemplateEditorMetadata, createAdminTemplateSaveFlow } from "../../src/public/admin-template-causal-save-flow.js";
 import { personalBusinessPayload } from "../../src/sync/personal-business-payload.js";
 import { personalPendingPublicUpdateSource, personalPublicPhotoResultReference } from "../../src/sync/personal-pending-public-update.js";
@@ -56,13 +57,13 @@ async function harness() {
     admin: view.scope === "admin", generation: canonicalTemplateJson([view.generation, state.activeLayoutId]) });
   const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   const actualApply = new Function("state", "applyLayoutArrangementToState", "normalizeLayoutArrangement",
-    "migrateContainerOrder", "repairContainerMembershipFromItemLinks",
+    "migrateContainerOrder", "repairContainerMembershipFromItemLinks", "ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED",
     `let applyingLayoutArrangement = false;\n${app.match(/function applyLayoutArrangement\([^]*?\n\}/)[0]}\nreturn applyLayoutArrangement;`)(
-    state, applyLayoutArrangementToState, normalizeLayoutArrangement, migrateContainerOrder, repairContainerMembershipFromItemLinks);
+    state, applyLayoutArrangementToState, normalizeLayoutArrangement, migrateContainerOrder, repairContainerMembershipFromItemLinks, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED);
   let returningFrom;
   const deps = { readPersonalLocalValue: key => storageValues.get(key) ?? null,
     async persistRequiredPersonalMirror(key, value) { localStorage.setItem(key, value); return true; }, PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT_ENABLED: true, canOpenAdminPublishedEdit: () => controls.enabled,
-    state, clone: structuredClone, canonicalTemplateJson, personalSaveContext, personalBusinessPayload,
+    state, clone: structuredClone, canonicalTemplateJson, personalSaveContext, personalBusinessPayload, ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED,
     serializeState: () => structuredClone(controls.privatePayload), personalPhotoRecoverySource: source,
     currentUser, localStorageScopeKey: f.binding.scopeKey, currentPackingListId: f.binding.listId,
     personalPendingImportSource: () => typeof controls.pendingImport === "function" ? controls.pendingImport() : controls.pendingImport,
@@ -88,10 +89,11 @@ async function harness() {
     // activation/persistence or ordinary return must fail this regression.
     activateAdminPublishedLayout: privateFence, switchActiveLayout: privateFence, persistStateSnapshot: privateFence,
     personalSaveRecovery: { assertRunning: privateFence }, saveState: privateFence,
-    createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true,
+    createAdminTemplateSaveFlow, adminTemplateUiEnabled: () => true, resumeAdminTemplatePhotoTreeCopyForm: async () => null,
+    applyAdminTemplateConfirmedPhotoCopyResult: () => assert.fail("Ordinary pending admin source must not apply a photo-copy result"),
     adminTemplateRecoveryFor: () => ({ resumeStop: async () => null }),
     adminTemplateStopChoiceFor: () => ({ resume: async () => null }), administrativeSaveCoordinator: null };
-  const helpers = ["restoreAdminPublishedLayoutContext", "applyAdminTemplateConfirmedPhotoResult", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
+  const helpers = ["restoreAdminPublishedLayoutContext", "applyAdminTemplateConfirmedPhotoResult", "persistAdminTemplateCoordinatorState", "adminTemplateSaveCoordinator", "resumePersonalCopyAdminSource"]
     .map(name => app.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0]).join("\n");
   const actual = new Function(...Object.keys(deps), `${helpers}\nreturn { run: resumePersonalCopyAdminSource, coordinator: adminTemplateSaveCoordinator };`)(...Object.values(deps));
   return { run: () => actual.run(source), coordinator: actual.coordinator, source, state, currentUser, view, controls, calls, f, plan,

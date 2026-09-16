@@ -1,7 +1,10 @@
 import { canonicalAccessJson as canonical, validAccessOperationId as uuid } from "./personal-access-protocol.js";
+import { assertAdminTemplatePhotoEditPayload } from "./admin-template-photo-edit-protocol.js";
 
 export const ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED = false;
 export const TEMPLATE_PHOTO_APPEND_CAPABILITY = "adminTemplatePhotoAppendV1";
+export const ADMIN_TEMPLATE_PHOTO_REPLACE_ENABLED = false;
+export const TEMPLATE_PHOTO_REPLACE_CAPABILITY = "adminTemplatePhotoReplaceV1";
 const environment = "bike-packing-experiment";
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -51,14 +54,16 @@ export async function adminTemplatePhotoStageDigest(input) {
   return digest(manifest);
 }
 
-// This first package only appends to one existing owner. The immutable payload
-// still carries every old raw reference; no stage callback rewrites that body.
+// Both versions retain every old raw reference in the immutable body. V1 only
+// appends; V2 separately selects the final order while adding at least one file.
 // The ordinary template validator and server must additionally validate fields,
 // administrator rights, confirmed private target and the exact source revision.
 export function adminTemplatePhotoAppend(body, operationId) {
   const append = body?.photoAppend;
+  const replacing = append?.version === 2;
   if (!uuid(operationId) || body?.version !== 1 || !exact(body.base, ["stateRevision"]) || !revision(body.base.stateRevision)
-    || Object.hasOwn(body, "source") || !exact(append, ["version", "assets"]) || append.version !== 1
+    || Object.hasOwn(body, "source") || !exact(append, ["version", "assets", ...(replacing ? ["photoIds"] : [])]) || ![1, 2].includes(append.version)
+    || replacing && Object.hasOwn(body, "photoEdit")
     || !Array.isArray(append.assets) || !append.assets.length || append.assets.length > 50
     || !plain(body.payload?.items) || !plain(body.payload?.containers)) fail();
   canonical(body);
@@ -79,7 +84,51 @@ export function adminTemplatePhotoAppend(body, operationId) {
     if (!plain(row) || Object.hasOwn(row, "photos") && !Array.isArray(row.photos)) fail();
     if ((row.photos || []).some(photo => photos.has(photo?.id ?? photo?.photoId))) fail();
   }
+  if (replacing) replacementSelection(body.payload, append);
   return freeze(clone(append));
+}
+
+function rawPhotoId(photo) {
+  if (!plain(photo) || !entityId(photo.id ?? photo.photoId)
+    || Object.hasOwn(photo, "id") && Object.hasOwn(photo, "photoId") && photo.id !== photo.photoId) fail();
+  return photo.id ?? photo.photoId;
+}
+
+function replacementSelection(payload, append) {
+  if (!Array.isArray(append.photoIds) || append.photoIds.some(value => !entityId(value))
+    || new Set(append.photoIds).size !== append.photoIds.length) fail();
+  const allOldIds = new Set();
+  for (const type of ["items", "containers"]) for (const [key, row] of Object.entries(payload[type])) {
+    if (!entityId(key) || row.id !== key) fail();
+    for (const photo of row.photos || []) {
+      const id = rawPhotoId(photo); if (allOldIds.has(id)) fail(); allOldIds.add(id);
+    }
+  }
+  const first = append.assets[0], type = first.entityType === "item" ? "items" : "containers";
+  const old = (payload[type][first.entityId].photos || []).map(rawPhotoId), oldIds = new Set(old);
+  const addedIds = new Set(append.assets.map(asset => asset.photoId));
+  if (!old.length || [...addedIds].some(id => !append.photoIds.includes(id) || allOldIds.has(id))
+    || append.photoIds.some(id => !oldIds.has(id) && !addedIds.has(id))
+    // An old prefix followed only by new files is the original V1 operation.
+    // Moving an old photo also includes inserting a new primary/interleaved one.
+    || !old.some((id, index) => append.photoIds[index] !== id)) fail();
+  return { entityType: first.entityType, entityId: first.entityId, photoIds: [...append.photoIds],
+    removedPhotoIds: old.filter(id => !append.photoIds.includes(id)) };
+}
+
+export function adminTemplatePhotoReplaceSelection(body, operationId) {
+  const append = adminTemplatePhotoAppend(body, operationId);
+  if (append.version !== 2) fail();
+  return freeze(clone(replacementSelection(body.payload, append)));
+}
+
+// Call after validating the operation grammar. Selected form fields may differ;
+// the complete raw source, including every original photo array, stays exact.
+export function assertAdminTemplatePhotoReplacePayload(sourcePayload, payload, append) {
+  if (!exact(append, ["version", "assets", "photoIds"]) || append.version !== 2 || !Array.isArray(append.assets) || !append.assets.length) fail();
+  const owner = append.assets[0];
+  try { return assertAdminTemplatePhotoEditPayload(sourcePayload, payload, { entityType: owner.entityType, entityId: owner.entityId }); }
+  catch { fail(); }
 }
 
 const dimension = value => value === null || revision(value);
@@ -116,11 +165,36 @@ function photoRoute(value, listId, id, variant) {
   } catch { return false; }
 }
 
+function addedReference(added, asset, intent) {
+  const photo = added?.photo;
+  if (!exact(added, ["assetId", "assetDigest", "entityType", "entityId", "photo"])
+    || ["assetId", "assetDigest", "entityType", "entityId"].some(key => added[key] !== asset[key])
+    || !exact(photo, ["id", "photoId", "assetId", "listId", "status", "url", "thumbUrl", "fileName", "type", "size", "width", "height"])
+    || photo.id !== asset.photoId || photo.photoId !== asset.photoId || photo.assetId !== asset.assetId || photo.listId !== intent.listId
+    || photo.status !== "synced" || !dimension(photo.width) || !dimension(photo.height)
+    || !photoRoute(photo.url, intent.listId, asset.photoId, "file") || !photoRoute(photo.thumbUrl, intent.listId, asset.photoId, "thumb")) fail();
+  fileMetadata({ hash: asset.assetDigest, size: photo.size, type: photo.type, fileName: photo.fileName }, true);
+  return photo;
+}
+
+// This is a deterministic projection, not stage authority. Callers separately
+// verify every stage receipt, owner, original byte hash and current permission.
+export function adminTemplatePhotoReplacePayload(intent, added) {
+  const append = adminTemplatePhotoAppend(intent.body, intent.id ?? intent.operationId);
+  if (intent.kind !== "template.save" || append.version !== 2 || !Array.isArray(added) || added.length !== append.assets.length) fail();
+  const selection = replacementSelection(intent.body.payload, append), payload = clone(intent.body.payload);
+  const type = selection.entityType === "item" ? "items" : "containers", owner = payload[type][selection.entityId];
+  const references = new Map(owner.photos.map(photo => [rawPhotoId(photo), photo]));
+  append.assets.forEach((asset, index) => references.set(asset.photoId, clone(addedReference(added[index], asset, intent))));
+  owner.photos = selection.photoIds.map(id => references.get(id));
+  return payload;
+}
+
 export function validateAdminTemplatePhotoAppendResultStructure(result, intent) {
   try {
     const append = adminTemplatePhotoAppend(intent.body, intent.id ?? intent.operationId);
-    if (intent.kind !== "template.save" || !exact(result, ["version", "ownerId", "added", "confirmedPayload", "confirmedPayloadDigest"])
-      || result.version !== 1 || !text(result.ownerId, 36) || !Array.isArray(result.added) || result.added.length !== append.assets.length
+    if (intent.kind !== "template.save" || !exact(result, ["version", "ownerId", "added", "confirmedPayload", "confirmedPayloadDigest", ...(append.version === 2 ? ["photoIds", "removedPhotoIds"] : [])])
+      || result.version !== append.version || !text(result.ownerId, 36) || !Array.isArray(result.added) || result.added.length !== append.assets.length
       || !hash(result.confirmedPayloadDigest) || !plain(result.confirmedPayload)
       || new TextEncoder().encode(canonical(result)).byteLength > 4 * 1024 * 1024) return false;
     const byOwner = new Map();
@@ -134,6 +208,11 @@ export function validateAdminTemplatePhotoAppendResultStructure(result, intent) 
         || !photoRoute(photo.url, intent.listId, asset.photoId, "file") || !photoRoute(photo.thumbUrl, intent.listId, asset.photoId, "thumb")) return false;
       fileMetadata({ hash: asset.assetDigest, size: photo.size, type: photo.type, fileName: photo.fileName }, true);
       const key = canonical([asset.entityType, asset.entityId]); byOwner.set(key, [...(byOwner.get(key) || []), photo]);
+    }
+    if (append.version === 2) {
+      const selection = replacementSelection(intent.body.payload, append);
+      return same(result.photoIds, selection.photoIds) && same(result.removedPhotoIds, selection.removedPhotoIds)
+        && same(result.confirmedPayload, adminTemplatePhotoReplacePayload(intent, result.added));
     }
     for (const [collection, type] of [["items", "item"], ["containers", "container"]]) {
       const before = intent.body.payload[collection], after = result.confirmedPayload[collection];
@@ -193,6 +272,7 @@ export async function validateAdminTemplatePhotoAppendResult(input, expected) {
       const key = canonical([asset.entityType, asset.entityId]);
       addedByOwner.set(key, [...(addedByOwner.get(key) || []), photo]);
     }
+    if (append.version === 2) return same(result.confirmedPayload, adminTemplatePhotoReplacePayload(intent, result.added));
     for (const [collection, type] of [["items", "item"], ["containers", "container"]]) {
       const before = intent.body.payload[collection], after = result.confirmedPayload[collection];
       if (!plain(after) || !same(Object.keys(before).sort(), Object.keys(after).sort())) return false;

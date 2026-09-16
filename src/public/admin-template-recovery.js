@@ -30,7 +30,7 @@ export function adminTemplatePlanChain(head, records) {
   visit(head); return ordered;
 }
 
-export function createAdminTemplateRecovery({ binding, getContext, plans, client,
+export function createAdminTemplateRecovery({ binding, getContext, plans, client, photoCopyClient = null,
   storage = globalThis.localStorage, locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-stop-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -64,12 +64,31 @@ export function createAdminTemplateRecovery({ binding, getContext, plans, client
     }
     return null;
   };
+  const proveCopyPlan = async (row, initial) => {
+    if (!photoCopyClient || !same(photoCopyClient.binding, binding)) throw paused();
+    // plans.read fully decodes the retained copy record and both before snapshots.
+    // Repeating it after every client await prevents adopting a vanished/replaced proof.
+    const current = await plans.read(row.plan.id); guard(initial);
+    if (!current || current.digest !== row.digest || !same(current.plan, row.plan)
+      || !same(photoCopyClient.binding, binding)) throw paused();
+  };
   const inspect = async (id, { refresh = false } = {}) => {
     const initial = context(), rows = await chain(id, initial), stop = await retainedChoice(rows, initial), operations = [];
     for (const row of rows) for (const intent of row.plan.operations) {
-      let saved = await client.read(intent.id); guard(initial);
-      if (saved && !same(saved.intent, intent)) throw paused();
-      if (refresh && saved) { await client.inspect(intent.id); guard(initial); saved = await client.read(intent.id); guard(initial); }
+      const copyPlan = row.plan.version === 8, selected = copyPlan ? photoCopyClient : client;
+      const readOperation = async () => {
+        if (copyPlan) await proveCopyPlan(row, initial);
+        const saved = await selected.read(intent.id); guard(initial);
+        if (copyPlan) await proveCopyPlan(row, initial);
+        if (saved && (!same(saved.intent, intent) || copyPlan && saved.recordIntentHash !== row.plan.recordIntentHash)) throw paused();
+        return saved;
+      };
+      let saved = await readOperation();
+      if (refresh && saved) {
+        await selected.inspect(intent.id); guard(initial);
+        if (copyPlan) await proveCopyPlan(row, initial);
+        saved = await readOperation();
+      }
       operations.push({ id: intent.id, kind: intent.kind,
         state: saved?.receipt?.operation.state || (saved?.dispatched ? "unknown" : "queued"),
         cancelled: saved?.receipt?.result?.payload?.code === "operation_cancelled" });

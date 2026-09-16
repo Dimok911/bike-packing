@@ -52,6 +52,119 @@ function editFixture(type = "item") {
 function deleteFirst(f) {
   f.view.draft.deletedPhotos.push(f.view.draft.photos.shift()); f.view.signature = "existing-photo-deleted";
 }
+function replacementFixture(type = "item") {
+  const f = fixture(); f.controls.replaceEnabled = true;
+  f.options.isReplaceEnabled = () => f.controls.replaceEnabled;
+  f.options.submitEdit = () => assert.fail("replacement must preserve its captured files instead of entering fileless submission");
+  for (const photo of f.source.photos) Object.assign(photo, { photoId: photo.id, listId: f.context.listId,
+    url: `https://example.test/lists/${f.context.listId}/photos/${photo.id}/file`, assetId: `original-${photo.id}` });
+  f.view.draft.photos = structuredClone(f.source.photos);
+  if (type === "container") { delete f.form.fields.quantity; Object.assign(f.form.fields, { volume: 25, nestable: true }); }
+  return f;
+}
+
+test("replacement item/container Save freezes a new primary, interleaving and deleted-old selection with exact original references and bytes", async () => {
+  for (const type of ["item", "container"]) for (const selection of ["new-primary", "replace-first", "reorder-old"]) {
+    const f = replacementFixture(type), original = structuredClone(f.source);
+    const controller = createAdminTemplatePhotoFormController(f.options), added = await prepareSelected(f, controller, type, 2);
+    const [oldA, oldB] = f.view.draft.photos;
+    if (selection === "new-primary") f.view.draft.photos = [added[1], oldA, added[0], oldB];
+    if (selection === "replace-first") { f.view.draft.photos = [oldB, added[1], added[0]]; f.view.draft.deletedPhotos = [oldA]; }
+    if (selection === "reorder-old") f.view.draft.photos = [oldB, oldA, added[0], added[1]];
+    f.view.signature = `replacement-${selection}`;
+    const selected = structuredClone(f.view.draft);
+    assert.equal(controller.save(type), true); assert.equal(controller.save(type), true);
+    assert.equal(f.captured.length, 1); assert.equal(f.view.dialog.open, true);
+    const { input, callbacks } = f.captured[0];
+    assert.equal(input.replace, true); assert.equal(input.entityType, type); assert.deepEqual(input.fields, f.form.fields);
+    assert.deepEqual(input.photos, selected.photos); assert.deepEqual(input.deletedPhotos, selected.deletedPhotos);
+    assert.deepEqual(input.files.map(part => part.id), selected.photos.filter(photo => photo.status === "pending").map(photo => photo.id));
+    for (const part of input.files) {
+      assert.equal(part.blob, f.cache.find(entry => entry.record.id === part.id).record.blob);
+      assert.equal(part.fullBlobVerified, true); assert.equal(await part.blob.text(), "Exact original selected image");
+    }
+    for (const value of [input, input.photos, input.deletedPhotos, input.fields, ...input.photos, ...input.deletedPhotos]) {
+      assert.equal(Object.isFrozen(value), true);
+    }
+    assert.equal(callbacks.isCurrent(), true); assert.deepEqual(f.source, original);
+    f.pending.resolve(); await tick();
+    assert.equal(f.view.dialog.open, false); assert.deepEqual(f.events.slice(-2), ["durable", "drain"]);
+    assert.deepEqual(f.source, original, "live references remain owned by the durable submitter");
+  }
+});
+
+test("replacement capture quota failure retries the same frozen mixed selection, callbacks and original file handles", async () => {
+  const f = replacementFixture(), first = deferred(); let reads = 0;
+  f.options.readForm = () => { reads++; return f.form; };
+  f.options.submit = (input, callbacks) => {
+    f.captured.push({ input, callbacks });
+    if (f.captured.length === 1) return first.promise;
+    callbacks.onDurable({ operationId: "same-retained-replacement" }); return Promise.resolve();
+  };
+  const controller = createAdminTemplatePhotoFormController(f.options), [added] = await prepareSelected(f, controller);
+  const removed = f.view.draft.photos[0], kept = f.view.draft.photos[1];
+  f.view.draft.photos = [added, kept]; f.view.draft.deletedPhotos = [removed]; f.view.signature = "replacement-quota";
+  controller.save("item"); controller.save("item"); assert.equal(f.captured.length, 1);
+  const original = f.captured[0]; first.reject(new DOMException("Capture storage is full", "QuotaExceededError")); await tick();
+  assert.equal(f.view.dialog.open, true); assert.equal(f.view.saveButton.disabled, false); assert.equal(controller.busy("item"), false);
+  assert.equal(controller.recoveryCopy("item"), original.input); assert.equal(original.input.replace, true);
+  controller.save("item"); await tick();
+  assert.equal(reads, 1); assert.equal(f.cache.length, 1); assert.equal(f.captured.length, 2);
+  assert.equal(f.captured[1].input, original.input); assert.equal(f.captured[1].callbacks, original.callbacks);
+  assert.equal(f.captured[1].input.files[0].blob, original.input.files[0].blob);
+  assert.deepEqual(original.input.photos.map(photo => photo.id), [added.id, kept.id]);
+  assert.equal(f.view.dialog.open, false); assert.equal(f.events.filter(event => event === "durable").length, 1);
+});
+
+test("cancelling a replacement form invalidates pending deletion confirmation and cannot reuse its selected files in a reopened form", async () => {
+  const f = replacementFixture("container"), original = structuredClone(f.source);
+  const controller = createAdminTemplatePhotoFormController(f.options), [added] = await prepareSelected(f, controller, "container");
+  const confirmation = controller.mutationGuard("container"); assert.equal(confirmation(), true);
+  f.view.dialog.open = false;
+  assert.equal(confirmation(), false); assert.equal(controller.save("container"), true); assert.equal(f.captured.length, 0);
+  f.view.token = {}; f.view.dialog = { open: true }; f.view.draft = { photos: structuredClone(f.source.photos), deletedPhotos: [] };
+  f.view.signature = "reopened-form";
+  assert.equal(controller.save("container"), false);
+  f.view.draft.photos.unshift(added); f.view.signature = "attempted-old-form-file-reuse";
+  assert.equal(controller.save("container"), true); assert.equal(f.captured.length, 0); assert.equal(f.view.dialog.open, true);
+  assert.deepEqual(f.source, original); assert.equal(f.events.includes("durable"), false);
+});
+
+test("replacement flag OFF retains mixed photos without append/edit fallback and OFF after Save prevents stale durability", async () => {
+  for (const phase of ["before-save", "after-save"]) {
+    const f = replacementFixture(); f.options.isEditEnabled = () => true;
+    const controller = createAdminTemplatePhotoFormController(f.options), [added] = await prepareSelected(f, controller);
+    f.view.draft.photos = [added, ...f.view.draft.photos.slice(0, 2)]; f.view.signature = "replacement-gate";
+    const original = structuredClone(f.view.draft);
+    if (phase === "before-save") f.controls.replaceEnabled = false;
+    assert.equal(controller.save("item"), true);
+    if (phase === "before-save") {
+      assert.equal(f.captured.length, 0); assert.equal(controller.recoveryCopy("item"), null);
+      f.controls.replaceEnabled = true; controller.save("item");
+    } else {
+      f.controls.replaceEnabled = false;
+      assert.equal(f.captured[0].callbacks.isCurrent(), false);
+      assert.throws(() => f.captured[0].callbacks.onDurable({}), { code: "admin-template-photo-form" });
+    }
+    assert.equal(f.captured.length, 1); assert.equal(f.captured[0].input.replace, true);
+    assert.deepEqual(f.view.draft, original); assert.equal(f.view.dialog.open, true);
+    assert.equal(f.events.includes("durable"), false);
+  }
+});
+
+test("enabled replacement rejects changed retained/deleted references and missing old-photo accounting before submission", async () => {
+  for (const damage of ["kept-metadata", "deleted-metadata", "missing-deletion", "duplicate-old"]) {
+    const f = replacementFixture(), controller = createAdminTemplatePhotoFormController(f.options);
+    const [added] = await prepareSelected(f, controller), [oldA, oldB] = f.view.draft.photos;
+    f.view.draft.photos = [added, oldB]; f.view.draft.deletedPhotos = [oldA]; f.view.signature = "replacement-guard";
+    if (damage === "kept-metadata") oldB.metadata.credit = "Tampered survivor";
+    if (damage === "deleted-metadata") oldA.metadata.credit = "Tampered deletion";
+    if (damage === "missing-deletion") f.view.draft.deletedPhotos = [];
+    if (damage === "duplicate-old") f.view.draft.photos.push(structuredClone(oldB));
+    assert.equal(controller.save("item"), true, damage); assert.equal(f.captured.length, 0, damage);
+    assert.equal(f.view.dialog.open, true); assert.equal(controller.busy("item"), false);
+  }
+});
 
 test("real item/container image preparation retains cache callback bytes and Save owns one immutable submit before closing", async () => {
   for (const type of ["item", "container"]) {

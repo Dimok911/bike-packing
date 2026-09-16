@@ -84,10 +84,18 @@ function validateIntent({ binding, action, snapshot, files }) {
     if (!same(value(rawBefore), value(rawAfter)) && !same(value(rawAfter), value(state[type][owner.localId]))) invalid();
   }
   const selected = photos(state[type][owner.localId]), old = photos(sourcePayload[type][owner.serverId]);
-  if (selected.length !== old.length + files.length) invalid();
+  const replacement = append.version === 2;
+  const previousOwner = source.photoView?.owners?.find(row => row.type === type && row.localId === owner.localId);
+  if (replacement) {
+    if (!Object.hasOwn(snapshot, "beforeState") || !previousOwner || !same(selected.map(photo => photo?.id), append.photoIds)) invalid();
+    const oldViews = new Map(previousOwner.viewPhotos.map(photo => [photo.id, photo]));
+    const newIds = new Set(append.assets.map(asset => asset.photoId));
+    if (selected.some(photo => !newIds.has(photo?.id) && (!oldViews.has(photo?.id) || !same(photo, oldViews.get(photo.id))))) invalid();
+  } else if (selected.length !== old.length + files.length) invalid();
   for (const [index, part] of files.entries()) {
     if (!exact(part, ["stage"]) && !exact(part, ["stage", "file", "thumb"])) invalid();
-    const stage = adminTemplatePhotoStageManifest(part.stage), asset = append.assets[index], photo = selected[old.length + index];
+    const stage = adminTemplatePhotoStageManifest(part.stage), asset = append.assets[index];
+    const photo = replacement ? selected.find(value => value?.id === asset.photoId) : selected[old.length + index];
     if (Object.keys(binding).some(key => stage[key] !== binding[key]) || stage.templateOperationId !== action.operationId
       || stage.baseStateRevision !== revision || stage.operationId !== asset.assetId || stage.entityType !== asset.entityType
       || stage.entityId !== asset.entityId || stage.photoId !== asset.photoId || !plain(photo)
@@ -96,13 +104,15 @@ function validateIntent({ binding, action, snapshot, files }) {
       || Object.hasOwn(photo, "listId") && photo.listId !== "" && photo.listId !== binding.listId
       || photo.fileName !== stage.file.fileName || photo.type !== stage.file.type || photo.size !== stage.file.size
       || ["_copyToCurrentList", "copyToCurrentList", "publicCopySourceId", "sharedSourceId"].some(key => photo[key])) invalid();
+    if (replacement && Object.keys(photo).some(key => !["id", "localId", "photoId", "listId", "status", "url", "thumbUrl", "fileName",
+      "type", "size", "width", "height", "createdAt", "updatedAt", "error"].includes(key))) invalid();
     if (Object.hasOwn(part, "file")) {
       if (!exact(part.file, ["hash", "size", "type"]) || !same(part.file, { hash: stage.file.hash, size: stage.file.size, type: stage.file.type })
         || !same(part.thumb, stage.thumb)) invalid();
     }
   }
   const unchanged = clone(state);
-  unchanged[type][owner.localId].photos = selected.slice(0, old.length);
+  unchanged[type][owner.localId].photos = replacement ? clone(previousOwner.viewPhotos) : selected.slice(0, old.length);
   if (Object.hasOwn(snapshot, "beforeState")) {
     const before = snapshot.beforeState;
     assertAdminTemplatePhotoOwnerMap({ binding, layoutId, stateRevision: revision, map: ownerMap, state: before, sourcePayload });

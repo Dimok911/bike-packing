@@ -2,6 +2,15 @@ import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { createRequestJournalBodies, serializeRequestJournalEntry } from "../storage/request-journal-bodies.js";
 import { API_BASE, EXPERIMENT_API_BASE } from "../config/constants.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../config/api-contract.js";
+import { canonicalTemplateJson } from "./admin-template-protocol.js";
+import { COPY_PARENT_FENCE_PREFIX, adminTemplatePhotoCopyParentKeys, prepareAdminTemplatePhotoCopyParentFence,
+  readAdminTemplatePhotoCopyParentFence, matchesAdminTemplatePhotoCopyParentFenceStage } from "./admin-template-photo-copy-parent-fence.js";
+import { TREE_COPY_PARENT_FENCE_PREFIX, adminTemplatePhotoTreeCopyParentKeys, prepareAdminTemplatePhotoTreeCopyParentFence,
+  readAdminTemplatePhotoTreeCopyParentFence, matchesAdminTemplatePhotoTreeCopyParentFenceStage } from "./admin-template-photo-tree-copy-parent-fence.js";
+import { WHOLE_COPY_PARENT_FENCE_PREFIX, WHOLE_COPY_PARENT_PROTOCOL, WHOLE_COPY_STAGE_PROTOCOL, WHOLE_COPY_STAGE_PATH,
+  adminTemplatePhotoWholeCopyParentKeys, prepareAdminTemplatePhotoWholeCopyParentFence, readAdminTemplatePhotoWholeCopyParentFence,
+  matchesAdminTemplatePhotoWholeCopyParentFenceStage, adminTemplatePhotoWholeCopyJournal,
+  validateAdminTemplatePhotoWholeCopyJournal } from "./admin-template-photo-whole-copy-parent-fence.js";
 
 export const EXPERIMENT_FRONTEND_ORIGIN = "https://experiment.vniipo-help.ru";
 export const EU_EXPERIMENT_API_BASE = "https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api";
@@ -182,10 +191,47 @@ export function createExperimentTransport({
   let readiness = null;
   let ready = mode === "direct" && !automatic;
   let journal = [];
+  let verifiedParentFences = new Map(), fenceRevision = 0;
+  const fenceBytesCurrent = value => {
+    try { return storage.getItem(value.certificateKey) === value.certificateText && storage.getItem(value.commandKey) === value.commandText
+      && storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${value.stageId}`) === value.stageText; } catch { return false; }
+  };
+  const parentFenced = id => { const proof = verifiedParentFences.get(id); return Boolean(proof && fenceBytesCurrent(proof)); };
+  const refreshParentFences = async () => {
+    if (!experiment || !storage) return;
+    const revision = ++fenceRevision, verified = new Map(), keys = [];
+    try { for (let index = 0; index < storage.length; index++) { const key = storage.key(index);
+      if (key?.startsWith(COPY_PARENT_FENCE_PREFIX) || key?.startsWith(TREE_COPY_PARENT_FENCE_PREFIX)
+        || key?.startsWith(WHOLE_COPY_PARENT_FENCE_PREFIX)) keys.push(key); } }
+    catch { verifiedParentFences.clear(); return; }
+    for (const certificateKey of keys) try {
+      const tree = certificateKey.startsWith(TREE_COPY_PARENT_FENCE_PREFIX), whole = certificateKey.startsWith(WHOLE_COPY_PARENT_FENCE_PREFIX);
+      const parentKeys = whole ? adminTemplatePhotoWholeCopyParentKeys : tree ? adminTemplatePhotoTreeCopyParentKeys : adminTemplatePhotoCopyParentKeys;
+      const readFence = whole ? readAdminTemplatePhotoWholeCopyParentFence : tree ? readAdminTemplatePhotoTreeCopyParentFence : readAdminTemplatePhotoCopyParentFence;
+      const matchesStage = whole ? matchesAdminTemplatePhotoWholeCopyParentFenceStage : tree ? matchesAdminTemplatePhotoTreeCopyParentFenceStage : matchesAdminTemplatePhotoCopyParentFenceStage;
+      const certificateText = storage.getItem(certificateKey), certificate = JSON.parse(certificateText);
+      const expectedKeys = parentKeys(certificate.binding, certificate.operationId);
+      if (expectedKeys.certificate !== certificateKey || canonicalTemplateJson(certificate) !== certificateText) continue;
+      const commandKey = expectedKeys.command, commandText = storage.getItem(commandKey), parentJournal = JSON.parse(commandText);
+      if (canonicalTemplateJson(parentJournal) !== commandText) continue;
+      const proof = await readFence({ certificate, parentJournal });
+      if (storage.getItem(certificateKey) !== certificateText || storage.getItem(commandKey) !== commandText) continue;
+      for (const { assetId: stageId } of proof.assets) {
+        const stageText = storage.getItem(`${AMBIGUOUS_WRITE_KEY}:${stageId}`); if (!stageText) continue;
+        const entry = JSON.parse(stageText);
+        if (entry.id !== stageId || !matchesStage(proof, entry)) continue;
+        const cached = { certificateKey, certificateText, commandKey, commandText, stageId, stageText };
+        if (fenceBytesCurrent(cached)) verified.set(stageId, cached);
+      }
+    } catch { /* Missing/corrupt proof retains the original pending barrier. */ }
+    if (revision === fenceRevision) verifiedParentFences = verified;
+  };
   const ownActiveWrites = new Set();
+  const durableEntry = ({ parentFenced: _parentFenced, blocksWrites: _blocksWrites, ...entry }) => entry;
   const refreshJournal = () => {
     journal = experiment ? pendingExperimentWrites(storage).map((entry) => ({
       ...(journalBodies ? journalBodies.hydrate(entry) : entry), uncertain: !entry.confirmed && (entry.uncertain || !ownActiveWrites.has(entry.id)),
+      parentFenced: !entry.confirmed && parentFenced(entry.id), blocksWrites: !entry.confirmed && !parentFenced(entry.id),
     })) : [];
   };
   refreshJournal();
@@ -197,7 +243,7 @@ export function createExperimentTransport({
   };
   const pendingRoute = () => {
     refreshJournal();
-    const pending = journal.filter(entry => !entry.confirmed);
+    const pending = journal.filter(entry => entry.blocksWrites);
     if (!pending.length) return null;
     const modes = new Set(pending.map(entry => entry.mode));
     if (modes.size !== 1 || !["direct", "eu"].includes([...modes][0])) {
@@ -224,7 +270,10 @@ export function createExperimentTransport({
     if (appeared && appeared !== chosen) throw Object.assign(transportError("Pending writes require a different route; automatic switching was stopped"), { isAmbiguousMutation: true });
     mode = chosen;
   };
-  const prepare = () => {
+  const prepare = async () => {
+    // A cold certificate is never a trusted boolean. Verify its complete
+    // parent/intent before both the direct ready shortcut and route selection.
+    await refreshParentFences();
     if (ready) return Promise.resolve();
     if (!readiness) readiness = (automatic ? chooseAutomatically() : verifyEu()).then(() => {
       ready = true;
@@ -241,8 +290,46 @@ export function createExperimentTransport({
     if (!ready) throw transportError("API transport is not verified");
     return `${mode === "eu" ? EU_EXPERIMENT_API_BASE : canonical}${path}`;
   };
+  const wholeCopyAdmission = (path, method, recovery, cancellation) => {
+    if (isReadOnlyRequest(path, method)) return null;
+    const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
+    const stage = recovery?.protocol === WHOLE_COPY_STAGE_PROTOCOL, parent = recovery?.protocol === WHOLE_COPY_PARENT_PROTOCOL;
+    let keys;
+    try {
+      if (recovery) keys = adminTemplatePhotoWholeCopyParentKeys(Object.fromEntries(
+        ["environment", "actorId", "listId", "itemKey"].map(key => [key, recovery[key]])), stage ? recovery.actionOperationId : recovery.operationId);
+    } catch { /* Other transport protocols keep their own admission. */ }
+    const text = keys && storage?.getItem(keys.command);
+    if (!stage && !parent && cancellation?.stageProtocol !== WHOLE_COPY_STAGE_PROTOCOL
+      && path.split("?")[0] !== WHOLE_COPY_STAGE_PATH && text == null) return null;
+    if (!experiment || method !== "POST" || !keys || typeof text !== "string"
+      || new TextEncoder().encode(text).byteLength > 12 * 1024 * 1024) throw transportError("Whole-copy journal is missing");
+    const saved = adminTemplatePhotoWholeCopyJournal(JSON.parse(text));
+    if (canonicalTemplateJson(saved) !== text) throw transportError("Whole-copy journal changed");
+    const { intent, recordIntentHash, payloadDigest } = saved;
+    const binding = Object.fromEntries(["environment", "actorId", "listId", "itemKey"].map(key => [key, intent[key]]));
+    const assets = intent.body.photoCopy.owners.flatMap(owner => owner.photos).map(({ assetId, assetDigest }) => ({ assetId, assetDigest }));
+    const index = assets.findIndex(asset => asset.assetId === recovery?.operationId), commandPath = "/bike-packing/admin/template-operations";
+    const cancel = path === `${commandPath}/${intent.id}/cancel`;
+    if (saved.receipt !== null) throw transportError("Whole-copy already has a terminal receipt");
+    if (stage) {
+      if (path !== WHOLE_COPY_STAGE_PATH || index < 0 || cancellation !== null || saved.cancelRequested || saved.dispatched || saved.stageReceipts[index] !== null
+        || !same(recovery, { type: "admin-template-photo-stage", protocol: WHOLE_COPY_STAGE_PROTOCOL, ...binding,
+          operationId: assets[index].assetId, actionOperationId: intent.id, assetDigest: assets[index].assetDigest, intentHash: recordIntentHash })) {
+        throw transportError("Whole-copy stage binding changed");
+      }
+    } else if (!parent || !same(recovery, { type: "admin-template", protocol: WHOLE_COPY_PARENT_PROTOCOL, ...binding,
+      operationId: intent.id, kind: "template.copy", payloadDigest, recordIntentHash }) || !(path === commandPath || cancel)
+      || (cancel ? saved.cancelRequested !== true || !same(cancellation, {
+        operationId: intent.id, payloadDigest, assets, stageProtocol: WHOLE_COPY_STAGE_PROTOCOL, recordIntentHash })
+        : cancellation !== null || saved.cancelRequested || saved.stageReceipts.some(value => value?.assetState !== "ready"))) {
+      throw transportError("Whole-copy parent binding changed");
+    }
+    return { commandKey: keys.command, commandText: text, saved, binding, assets, stage, index, cancel };
+  };
   const assertWritable = (path, method, recovery = null, cancellation = null) => {
     validateApiPath(path);
+    const whole = wholeCopyAdmission(path, method, recovery, cancellation);
     refreshJournal();
     const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
     const accessMetadata = value => value?.type === "access" && value.protocol === "access-v1"
@@ -306,9 +393,19 @@ export function createExperimentTransport({
       && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
     const uuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
     const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+    const createPhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
+      && cancellation.stageProtocol === "admin-template-photo-create-stage-v2" && hash(cancellation.recordIntentHash);
+    const copyPhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
+      && cancellation.stageProtocol === "admin-template-photo-copy-stage-v1" && hash(cancellation.recordIntentHash)
+      && exact(recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "kind", "payloadDigest", "recordIntentHash"])
+      && recovery.recordIntentHash === cancellation.recordIntentHash;
+    const treePhotoCancellation = exact(cancellation, ["operationId", "payloadDigest", "assets", "stageProtocol", "recordIntentHash"])
+      && cancellation.stageProtocol === "admin-template-photo-tree-copy-stage-v2" && hash(cancellation.recordIntentHash)
+      && exact(recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "kind", "payloadDigest", "recordIntentHash"])
+      && recovery.recordIntentHash === cancellation.recordIntentHash;
     const adminPhotoCancellation = admin && recovery.kind === "template.save"
       && path === `/bike-packing/admin/template-operations/${recovery.operationId}/cancel`
-      && exact(cancellation, ["operationId", "payloadDigest", "assets"])
+      && (exact(cancellation, ["operationId", "payloadDigest", "assets"]) || createPhotoCancellation || copyPhotoCancellation || treePhotoCancellation)
       && cancellation.operationId === recovery.operationId && cancellation.payloadDigest === recovery.payloadDigest
       && Array.isArray(cancellation.assets) && cancellation.assets.length > 0 && cancellation.assets.length <= 50
       && Object.keys(cancellation.assets).length === cancellation.assets.length
@@ -316,31 +413,55 @@ export function createExperimentTransport({
         && asset.assetId !== recovery.operationId && hash(asset.assetDigest))
       && new Set(cancellation.assets.map(asset => asset.assetId)).size === cancellation.assets.length;
     const ownCancelledAdminStage = entry => adminPhotoCancellation && entry.mode === mode && entry.method === "POST"
-      && entry.path === "/bike-packing/admin/template-photo-assets"
+      && entry.path === (treePhotoCancellation ? "/bike-packing/admin/template-photo-assets/tree-copy"
+        : copyPhotoCancellation ? "/bike-packing/admin/template-photo-assets/copy" : "/bike-packing/admin/template-photo-assets")
       && exact(entry.recovery, ["type", "protocol", "environment", "actorId", "listId", "itemKey", "operationId", "actionOperationId", "assetDigest", "intentHash"])
-      && entry.recovery.type === "admin-template-photo-stage" && entry.recovery.protocol === "admin-template-photo-stage-v1"
+      && entry.recovery.type === "admin-template-photo-stage"
+      && entry.recovery.protocol === (createPhotoCancellation || copyPhotoCancellation || treePhotoCancellation ? cancellation.stageProtocol : "admin-template-photo-stage-v1")
+      && (!(createPhotoCancellation || copyPhotoCancellation || treePhotoCancellation) || entry.recovery.intentHash === cancellation.recordIntentHash)
       && ["environment", "actorId", "listId", "itemKey"].every(key => entry.recovery[key] === recovery[key])
       && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id && hash(entry.recovery.intentHash)
       && cancellation.assets.some(asset => asset.assetId === entry.id && asset.assetDigest === entry.recovery.assetDigest);
-    if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
+    // Whole V3 has no broad V1 peer exemption. Only cancellation of its exact
+    // frozen parent can cross its own still-unknown parent or stage entries.
+    const ownCancelledWhole = entry => whole?.cancel && (matchesAdminTemplatePhotoWholeCopyParentFenceStage({ mode, binding: whole.binding,
+      operationId: whole.saved.intent.id, assets: whole.assets, recordIntentHash: whole.saved.recordIntentHash }, durableEntry(entry))
+      || entry.id === whole.saved.intent.id && entry.mode === mode && entry.method === "POST"
+        && ["/bike-packing/admin/template-operations", path].includes(entry.path)
+        && canonicalTemplateJson(entry.recovery) === canonicalTemplateJson(recovery));
+    if (journal.some((entry) => entry.uncertain && entry.blocksWrites && !(causal && entry.recovery?.type === "list"
       && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)
-      && !ownCancelledStage(entry) && !ownCancelledAdminStage(entry)
+      && !ownCancelledStage(entry) && !ownCancelledAdminStage(entry) && !ownCancelledWhole(entry)
       && !ownAccess(entry) && !accessPeer(entry) && !ownAdmin(entry) && !adminPeer(entry)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;
     }
+    return whole;
   };
   const beginWrite = async (path, method = "GET", body = null, recovery = null, cancellation = null) => {
     if (automatic && !ready) throw transportError("API transport is not verified; write was not sent");
-    assertWritable(path, method, recovery, cancellation);
+    const whole = assertWritable(path, method, recovery, cancellation);
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
+    if (whole) {
+      // Detach caller-owned admission metadata before the first digest await.
+      recovery = JSON.parse(canonicalTemplateJson(recovery)); cancellation = JSON.parse(canonicalTemplateJson(cancellation));
+      const requestedBody = body === null ? null : canonicalTemplateJson(typeof body === "string" ? JSON.parse(body) : body);
+      const { manifests } = await validateAdminTemplatePhotoWholeCopyJournal(whole.saved);
+      if (!whole.stage && !whole.cancel && !whole.saved.dispatched) throw transportError("Whole-copy dispatch was not retained");
+      const intent = whole.saved.intent, expectedBody = whole.stage ? { manifest: manifests[whole.index] }
+        : { expectedActorId: intent.actorId, environment: intent.environment, operationId: intent.id,
+          kind: "template.copy", listId: intent.listId, itemKey: intent.itemKey, body: intent.body };
+      if (requestedBody !== null && requestedBody !== canonicalTemplateJson(expectedBody)
+        || storage.getItem(whole.commandKey) !== whole.commandText) throw transportError("Whole-copy dispatch changed");
+    }
     const identity = await photoWriteIdentity(path, method, body);
     return locks.request(EXPERIMENT_WRITE_LOCK, async () => {
       // Atomic across tabs, including direct and EU. The lock spans the optional
       // IndexedDB commit too; no business request runs in this critical section.
       assertWritable(path, method, recovery, cancellation);
+      if (whole && storage.getItem(whole.commandKey) !== whole.commandText) throw transportError("Whole-copy journal changed before dispatch");
       if (identity && journal.some((entry) => entry.identity === identity)) {
         const error = transportError("Photo operation was already sent; reconcile before replay");
         error.isAmbiguousMutation = true;
@@ -371,6 +492,93 @@ export function createExperimentTransport({
       return id;
     });
   };
+  const fenceCopyParent = async ({ intent, recordIntentHash, receipt, assertCurrent } = {}) => {
+    if (!experiment || !storage || !locks?.request || typeof assertCurrent !== "function") throw transportError("Cannot retain parent cancellation proof");
+    assertCurrent();
+    const certificate = await prepareAdminTemplatePhotoCopyParentFence({ intent, recordIntentHash, receipt, mode }); assertCurrent();
+    const keys = adminTemplatePhotoCopyParentKeys(certificate.binding, certificate.operationId), commandText = storage.getItem(keys.command);
+    const encoded = canonicalTemplateJson(certificate), prior = storage.getItem(keys.certificate), parentJournal = JSON.parse(commandText);
+    if (canonicalTemplateJson(parentJournal) !== commandText || prior !== null && prior !== encoded) throw transportError("Parent cancellation proof changed");
+    await readAdminTemplatePhotoCopyParentFence({ certificate, parentJournal }); assertCurrent();
+    const stages = certificate.assets.map(({ assetId }) => {
+      const key = `${AMBIGUOUS_WRITE_KEY}:${assetId}`, text = storage.getItem(key), entry = text === null ? null : JSON.parse(text);
+      if (entry && !entry.confirmed && (entry.id !== assetId || !matchesAdminTemplatePhotoCopyParentFenceStage(certificate, entry))) throw transportError("Stage cancellation binding changed");
+      return { key, text };
+    });
+    await locks.request(EXPERIMENT_WRITE_LOCK, () => {
+      assertCurrent();
+      if (storage.getItem(keys.command) !== commandText || storage.getItem(keys.certificate) !== prior
+        || stages.some(({ key, text }) => storage.getItem(key) !== text)) throw transportError("Parent cancellation proof changed");
+      if (prior === null) storage.setItem(keys.certificate, encoded);
+      if (storage.getItem(keys.certificate) !== encoded) throw transportError("Cannot read back parent cancellation proof");
+      assertCurrent();
+    });
+    await refreshParentFences(); assertCurrent();
+    return certificate;
+  };
+  const fenceTreeCopyParent = async ({ intent, recordIntentHash, receipt, assertCurrent } = {}) => {
+    if (!experiment || !storage || !locks?.request || typeof assertCurrent !== "function") throw transportError("Cannot retain tree parent cancellation proof");
+    const guard = () => {
+      const value = assertCurrent();
+      if (value && typeof value.then === "function") {
+        Promise.resolve(value).catch(() => {}); throw transportError("Tree cancellation guard must be synchronous");
+      }
+    };
+    guard();
+    const certificate = await prepareAdminTemplatePhotoTreeCopyParentFence({ intent, recordIntentHash, receipt, mode }); guard();
+    const keys = adminTemplatePhotoTreeCopyParentKeys(certificate.binding, certificate.operationId), commandText = storage.getItem(keys.command);
+    const encoded = canonicalTemplateJson(certificate), prior = storage.getItem(keys.certificate), parentJournal = JSON.parse(commandText); guard();
+    if (canonicalTemplateJson(parentJournal) !== commandText || prior !== null && prior !== encoded) throw transportError("Tree parent cancellation proof changed");
+    await readAdminTemplatePhotoTreeCopyParentFence({ certificate, parentJournal }); guard();
+    const stages = certificate.assets.map(({ assetId }) => {
+      const key = `${AMBIGUOUS_WRITE_KEY}:${assetId}`, text = storage.getItem(key), entry = text === null ? null : JSON.parse(text);
+      if (entry && !entry.confirmed && (entry.id !== assetId || !matchesAdminTemplatePhotoTreeCopyParentFenceStage(certificate, entry))) throw transportError("Tree stage cancellation binding changed");
+      return { key, text };
+    }); guard();
+    await locks.request(EXPERIMENT_WRITE_LOCK, () => {
+      guard();
+      if (storage.getItem(keys.command) !== commandText || storage.getItem(keys.certificate) !== prior
+        || stages.some(({ key, text }) => storage.getItem(key) !== text)) throw transportError("Tree parent cancellation proof changed");
+      guard();
+      if (prior === null) storage.setItem(keys.certificate, encoded);
+      if (storage.getItem(keys.certificate) !== encoded) throw transportError("Cannot read back tree parent cancellation proof");
+      guard();
+    });
+    await refreshParentFences(); guard();
+    return certificate;
+  };
+  const fenceWholeCopyParent = async ({ intent, recordIntentHash, receipt, assertCurrent } = {}) => {
+    if (!experiment || !storage || !locks?.request || typeof assertCurrent !== "function") throw transportError("Cannot retain whole-copy parent cancellation proof");
+    const guard = () => {
+      const value = assertCurrent();
+      if (value === false) throw transportError("Whole-copy cancellation scope was withdrawn");
+      if (value && typeof value.then === "function") {
+        Promise.resolve(value).catch(() => {}); throw transportError("Whole-copy cancellation guard must be synchronous");
+      }
+    };
+    guard();
+    const certificate = await prepareAdminTemplatePhotoWholeCopyParentFence({ intent, recordIntentHash, receipt, mode }); guard();
+    const keys = adminTemplatePhotoWholeCopyParentKeys(certificate.binding, certificate.operationId), commandText = storage.getItem(keys.command);
+    const encoded = canonicalTemplateJson(certificate), prior = storage.getItem(keys.certificate), parentJournal = JSON.parse(commandText); guard();
+    if (canonicalTemplateJson(parentJournal) !== commandText || prior !== null && prior !== encoded) throw transportError("Whole-copy parent cancellation proof changed");
+    await readAdminTemplatePhotoWholeCopyParentFence({ certificate, parentJournal }); guard();
+    const stages = certificate.assets.map(({ assetId }) => {
+      const key = `${AMBIGUOUS_WRITE_KEY}:${assetId}`, text = storage.getItem(key), entry = text === null ? null : JSON.parse(text);
+      if (entry && !entry.confirmed && (entry.id !== assetId || !matchesAdminTemplatePhotoWholeCopyParentFenceStage(certificate, entry))) throw transportError("Whole-copy stage cancellation binding changed");
+      return { key, text };
+    }); guard();
+    await locks.request(EXPERIMENT_WRITE_LOCK, () => {
+      guard();
+      if (storage.getItem(keys.command) !== commandText || storage.getItem(keys.certificate) !== prior
+        || stages.some(({ key, text }) => storage.getItem(key) !== text)) throw transportError("Whole-copy parent cancellation proof changed");
+      guard();
+      if (prior === null) storage.setItem(keys.certificate, encoded);
+      if (storage.getItem(keys.certificate) !== encoded) throw transportError("Cannot read back whole-copy parent cancellation proof");
+      guard();
+    });
+    await refreshParentFences(); guard();
+    return certificate;
+  };
   const confirmWrite = (id, { committed = true, receipt = null } = {}) => {
     if (!id) return;
     refreshJournal();
@@ -381,7 +589,7 @@ export function createExperimentTransport({
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
       if (committed && (entry?.identity || ["list", "photo-stage", "access", "admin-template", "admin-template-photo-stage"].includes(entry?.recovery?.type))) {
-        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry({ ...entry, confirmed: true, uncertain: false,
+        setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry({ ...durableEntry(entry), confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
@@ -397,7 +605,7 @@ export function createExperimentTransport({
       const entry = journal.find((entry) => entry.id === id);
       ownActiveWrites.delete(id);
       if (entry) entry.uncertain = true;
-      try { if (entry) setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry(entry)); } catch { /* Intent already persisted. */ }
+      try { if (entry) setRequiredStorageItem(storage, `${AMBIGUOUS_WRITE_KEY}:${id}`, serializeRequestJournalEntry(durableEntry(entry))); } catch { /* Intent already persisted. */ }
       error.isAmbiguousMutation = true;
       error.uncertainWriteId = id;
     } else confirmWrite(id, { committed: false });
@@ -440,7 +648,7 @@ export function createExperimentTransport({
   return Object.freeze({
     get mode() { return mode; },
     get ready() { return ready; },
-    selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
+    selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl, fenceCopyParent, fenceTreeCopyParent, fenceWholeCopyParent,
     async prepareJournal() {
       if (!experiment) return;
       if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
@@ -465,7 +673,7 @@ export function createExperimentTransport({
         refreshJournal();
         });
     },
-    get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain) || null; },
+    get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain && entry.blocksWrites) || null; },
     get writes() { refreshJournal(); return journal.map((entry) => ({ ...entry })); },
     async fetchPhoto(source, options = {}) {
       const target = await photoUrl(source);

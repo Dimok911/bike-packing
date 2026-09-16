@@ -6,20 +6,22 @@ import { adminTemplateIntent, canonicalTemplateJson } from "../../src/sync/admin
 import { AMBIGUOUS_WRITE_KEY } from "../../src/sync/experiment-transport.js";
 import { adminPhotoStagingFixture as fixture, copy, sha } from "../fixtures/admin-template-photo-staging-fixture.js";
 
-async function clientFixture() {
-  const f = await fixture(), operationId = f.stage.templateOperationId, stageId = f.stage.operationId;
+async function clientFixture({ replace = false } = {}) {
+  const f = await fixture({ replace }), operationId = f.stage.templateOperationId, stageId = f.stage.operationId;
   const intent = adminTemplateIntent({ ...f.binding, operationId, kind: "template.save", body: f.body });
   const { id, ...input } = intent;
   const photo = { id: f.stage.photoId, photoId: f.stage.photoId, assetId: stageId, listId: f.binding.listId, status: "synced",
     url: `https://example.test/bike-packing/lists/${f.binding.listId}/photos/${f.stage.photoId}/file`,
     thumbUrl: `https://example.test/bike-packing/lists/${f.binding.listId}/photos/${f.stage.photoId}/thumb`,
     ...Object.fromEntries(["fileName", "type", "size", "width", "height"].map(key => [key, f.data.receipt.stored.file[key]])) };
-  const confirmedPayload = copy(f.body.payload); confirmedPayload.items[f.stage.entityId].photos.push(photo);
+  const confirmedPayload = copy(f.body.payload);
+  if (replace) confirmedPayload.items[f.stage.entityId].photos = [photo]; else confirmedPayload.items[f.stage.entityId].photos.push(photo);
   const { photoId: _photoId, ...asset } = f.body.photoAppend.assets[0];
   const receipt = { operation: { ...Object.fromEntries(["environment", "actorId", "listId", "itemKey", "kind"].map(key => [key, intent[key]])),
     id, payloadDigest: sha(canonicalTemplateJson(input)), state: "committed" }, result: { status: 200, payload: {
     ok: true, listId: f.binding.listId, itemKey: f.binding.itemKey, stateRevision: 4, visibility: "private", indexes: [],
-    photoAppend: { version: 1, ownerId: f.data.receipt.ownerId, added: [{ ...asset, photo }], confirmedPayload,
+    photoAppend: { version: replace ? 2 : 1, ownerId: f.data.receipt.ownerId, added: [{ ...asset, photo }],
+      ...(replace ? { photoIds: [photo.id], removedPhotoIds: ["old-photo"] } : {}), confirmedPayload,
       confirmedPayloadDigest: sha(canonicalTemplateJson(confirmedPayload)) } } } };
   const server = { saved: null, posts: [], paths: [], loseAck: false, hidden: false, corrupt: false };
   const fetchImpl = async (url, options = {}) => {
@@ -41,7 +43,7 @@ async function clientFixture() {
   const make = options => {
     const { client: staging, transport } = f.make();
     return { transport, client: createAdminTemplateClient({ binding: f.binding, getContext: () => f.current, storage: f.storage,
-      locks: f.locks, transport, fetchImpl, enabled: true, photoAppendEnabled: true, photoStore: f.store, photoStaging: staging, ...options }) };
+      locks: f.locks, transport, fetchImpl, enabled: true, photoAppendEnabled: true, photoReplaceEnabled: replace, photoStore: f.store, photoStaging: staging, ...options }) };
   };
   return { ...f, makeClient: make, receipt, server, operationId, stageId };
 }
@@ -61,6 +63,54 @@ test("lost final save ACK recovers the same complete receipt without another sta
   const { client } = f.makeClient(); await client.capture(f.record.action);
   assert.deepEqual(await client.run(f.operationId), f.receipt);
   assert.equal(f.server.posts.length, 1); assert.equal(f.posts().length, 1);
+});
+
+test("replacement save verifies removed/final IDs and full stage proof, then survives lost ACK and cold OFF reads", async () => {
+  const f = await clientFixture({ replace: true }); f.server.loseAck = true;
+  const { client } = f.makeClient(); await client.capture(f.record.action);
+  assert.deepEqual(await client.run(f.operationId), f.receipt);
+  const cold = f.makeClient({ photoAppendEnabled: false, photoReplaceEnabled: false, photoStore: null, photoStaging: null }).client;
+  assert.deepEqual((await cold.read(f.operationId)).receipt, f.receipt);
+  assert.deepEqual((await cold.capture(f.record.action)).intent.body, f.body);
+  assert.deepEqual(await cold.run(f.operationId), f.receipt);
+  assert.equal(f.posts().length, 1); assert.equal(f.server.posts.length, 1);
+});
+
+test("replacement requires both gates and capabilities before any file or business POST", async () => {
+  for (const mode of ["append-off", "replace-off", "append-capability", "replace-capability"]) {
+    const f = await clientFixture({ replace: true }), active = f.makeClient().client;
+    await active.capture(f.record.action);
+    const options = mode === "append-off" ? { photoAppendEnabled: false } : mode === "replace-off" ? { photoReplaceEnabled: false } : {};
+    if (mode.endsWith("capability")) f.controls.capabilities = f.controls.capabilities.filter(value => value !== (mode === "append-capability" ? "adminTemplatePhotoAppendV1" : "adminTemplatePhotoReplaceV1"));
+    await assert.rejects(f.makeClient(options).client.run(f.operationId));
+    assert.equal(f.posts().length, 0); assert.equal(f.server.posts.length, 0);
+  }
+  const f = await clientFixture({ replace: true });
+  await assert.rejects(f.makeClient({ photoReplaceEnabled: false }).client.capture(f.record.action));
+  assert.equal(await f.makeClient().client.read(f.operationId), null);
+});
+
+test("captured replacement can be reattached and cancelled with both file gates OFF without staging", async () => {
+  const f = await clientFixture({ replace: true }); await f.makeClient().client.capture(f.record.action);
+  const cold = f.makeClient({ photoAppendEnabled: false, photoReplaceEnabled: false, photoStore: null, photoStaging: null }).client;
+  await cold.capture(f.record.action);
+  const cancelled = await cold.cancel(f.operationId);
+  assert.equal(cancelled.result.payload.code, "operation_cancelled");
+  assert.equal(f.posts().length, 0); assert.equal(f.server.posts.length, 1);
+  assert.equal(f.server.paths[0].endsWith(`/${f.operationId}/cancel`), true);
+});
+
+test("changed replacement terminal removed IDs never acknowledge a business receipt", async () => {
+  for (const mode of ["removed", "final", "digest"]) {
+    const f = await clientFixture({ replace: true }), { client, transport } = f.makeClient();
+    await client.capture(f.record.action);
+    if (mode === "removed") f.receipt.result.payload.photoAppend.removedPhotoIds = [];
+    if (mode === "final") f.receipt.result.payload.photoAppend.photoIds = ["old-photo"];
+    if (mode === "digest") f.receipt.result.payload.photoAppend.confirmedPayloadDigest = sha("wrong");
+    await assert.rejects(client.run(f.operationId));
+    assert.equal((await client.read(f.operationId)).receipt, null);
+    assert.notEqual(transport.writes.find(row => row.id === f.operationId)?.confirmed, true);
+  }
 });
 
 test("missing durable files, OFF and unavailable stage block the administrative save before its POST", async () => {
