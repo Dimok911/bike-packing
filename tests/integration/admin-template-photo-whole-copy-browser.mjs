@@ -243,7 +243,23 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
           await start();
         };
         try {
-          await start({ prepareSource: !publicSource }); const before = await checkpoint("bootstrap");
+          await start({ prepareSource: !publicSource });
+          if (process.env.BIKE_PACKING_WHOLE_BROWSER_LEGACY_EDITOR === "1") {
+            assert.ok(publicSource, "Legacy editor regression requires a published source");
+            const personalLayoutId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
+            await openTemplate(page, seed.source, session);
+            const editorId = await page.evaluate(() => __adminUiTest.state().activeLayoutId);
+            await page.locator("#layoutSelect").selectOption(personalLayoutId);
+            await page.evaluate(id => {
+              // Reproduce the retained pre-v1628 editor seen in the user report.
+              // Server payload, files, IDs and business fields remain untouched.
+              const layout = __adminUiTest.state().layouts[id];
+              layout.arrangement.itemQuantityMigrationVersion = 3;
+              delete layout.adminCausalSource.canonicalPayload;
+              delete layout.adminCausalSource.photoOwnerMap;
+            }, editorId);
+          }
+          const before = await checkpoint("bootstrap");
           const sourceId = before.state.source?.layout.id, title = `Полная копия ${engine} ${caseName}`;
           await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
           await page.locator("#layoutCreateMode").selectOption("template-copy");

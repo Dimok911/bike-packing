@@ -7,6 +7,7 @@ import { assertAdminTemplatePhotoView } from "./admin-template-photo-view.js";
 import { recoverPersonalAdminDrafts } from "./personal-admin-draft-recovery.js";
 import { normalizeItemPhotos } from "../state/item-photos.js";
 import { adminTemplatePhotoWholeCopySourceArrangement } from "./admin-template-photo-whole-copy-source.js";
+import { LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION } from "../state/layout-arrangement.js";
 
 const kind = "admin-template-photo-copy", types = ["items", "containers"], collections = ["layouts", ...types];
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
@@ -79,7 +80,15 @@ function assertEditor({ binding, revision, payload, side, allowPublicSource = fa
   arrangement.containers = Object.fromEntries(Object.entries(arrangement.containers).map(([key, row]) => [local("containers", key), { ...row, ...links(row) }]));
   arrangement.items = Object.fromEntries(Object.entries(arrangement.items).map(([key, value]) => [local("items", key), local("containers", value)]));
   for (const field of ["itemQuantities", "packedItems"]) arrangement[field] = Object.fromEntries(Object.entries(arrangement[field]).map(([key, value]) => [local("items", key), value]));
-  if (!same(actualLayout.arrangement, arrangement) || !same(before.packedItems, arrangement.packedItems)
+  const actualArrangement = { ...actualLayout.arrangement };
+  // Opening an old layout stamps the editor with the current quantity format.
+  // That local stamp is not a user edit. Compare every quantity and placement
+  // below, and keep the raw server payload and retained editor snapshot intact.
+  if (allowPublicSource === true && !Object.hasOwn(arrangement, "itemQuantityMigrationVersion")
+    && actualArrangement.itemQuantityMigrationVersion === LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION) {
+    delete actualArrangement.itemQuantityMigrationVersion;
+  }
+  if (!same(actualArrangement, arrangement) || !same(before.packedItems, arrangement.packedItems)
     || !same(before.locations, payload.locations || []) || !same(before.categories, payload.categories || [])) invalid();
   const copied = typeof payload.activeLayoutId === "string" && payload.activeLayoutId.startsWith("layout-")
     && validTemplateOperationId(payload.activeLayoutId.slice(7)) ? payload.activeLayoutId : null;
@@ -109,6 +118,7 @@ function assertEditor({ binding, revision, payload, side, allowPublicSource = fa
     rootContainerIds: rawLayout.rootContainerIds.map(key => local("containers", key)), arrangement };
   if (copied) expected.sharedSourceId = copied;
   const actual = clone(actualLayout), demo = binding.listId.startsWith("public-demo-state");
+  actual.arrangement = actualArrangement;
   const localMetadata = { adminDemo: value => value === demo, adminDemoLanguage: value => demo && value === metadata.language,
     adminDemoListId: value => demo && value === binding.listId, adminSharedSourceId: value => !demo && value === binding.listId.slice("public-shared-layout-".length),
     adminTemplateCopy: value => value === Boolean(copied), publicCatalogLayoutId: value => value === layoutId,

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wholeRecordInput } from "../fixtures/admin-template-photo-whole-copy-record-fixture.js";
 import { prepareAdminTemplateWholeCopySourceUpgrade as upgrade } from "../../src/public/admin-template-whole-copy-source-upgrade.js";
+import { LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION } from "../../src/state/layout-arrangement.js";
+import { prepareAdminTemplatePhotoWholeCopyRecord } from "../../src/sync/admin-template-photo-whole-copy-record.js";
 
 async function fixture() {
   const record = await wholeRecordInput(), side = record.snapshot.source, layout = side.beforeState.layouts[side.layoutId];
@@ -21,6 +23,32 @@ test("old public editor gains whole-copy proof without replacing its rows or raw
   assert.equal(result.photoOwnerMap.owners.length,
     Object.keys(input.prepared.payload.items).length + Object.keys(input.prepared.payload.containers).length);
   assert.deepEqual(result.photoView, input.beforeState.layouts[input.layoutId].adminCausalSource.photoView);
+});
+
+test("legacy public editor quantity migration marker is not a business conflict during upgrade or cold copy validation", async () => {
+  const input = await fixture();
+  const arrangement = input.beforeState.layouts[input.layoutId].arrangement;
+  assert.equal(Object.hasOwn(Object.values(input.prepared.payload.layouts)[0].arrangement, "itemQuantityMigrationVersion"), false);
+  arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
+  const before = structuredClone(input);
+  const result = upgrade(input);
+  assert.deepEqual(input, before);
+  assert.deepEqual(result.canonicalPayload, input.prepared.payload);
+  for (const mutate of [a => { a.itemQuantityMigrationVersion = 999; },
+    a => { a.itemQuantities[Object.keys(a.itemQuantities)[0]]++; },
+    a => { a.rootContainerIds.reverse(); },
+    a => { a.unknownMigrationMarker = true; }]) {
+    const changed = structuredClone(input); mutate(changed.beforeState.layouts[input.layoutId].arrangement);
+    assert.throws(() => upgrade(changed));
+  }
+  const record = await wholeRecordInput({ sourceVisibility: "public" });
+  const local = record.snapshot.source.beforeState.layouts[record.snapshot.source.layoutId];
+  local.arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
+  const raw = structuredClone(record.action.body.photoCopy.sourcePayload);
+  const prepared = await prepareAdminTemplatePhotoWholeCopyRecord(record);
+  assert.deepEqual(prepared.action.body.photoCopy.sourcePayload, raw);
+  assert.equal(prepared.snapshot.source.beforeState.layouts[local.id].arrangement.itemQuantityMigrationVersion,
+    LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION);
 });
 
 test("old public editor upgrade refuses unsaved fields, ambiguous IDs, stale source and pending work", async () => {
