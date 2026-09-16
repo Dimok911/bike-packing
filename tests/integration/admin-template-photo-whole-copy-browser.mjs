@@ -175,7 +175,10 @@ export async function runAdminTemplatePhotoWholeCopyBrowserAcceptance({ t, front
         const requests = [], errors = [];
         const activate = selector => engine === "mobile-webkit" ? page.locator(selector).tap() : page.locator(selector).click();
         const checkpoint = async phase => {
-          const observations = await observe(page, seed, requests);
+          let observations;
+          if (phase === "bootstrap" && sourceRoute === "public-demo")
+            await expect(async () => { observations = await observe(page, seed, requests); }).toPass({ timeout: 10_000, intervals: [100, 250, 500] });
+          else observations = await observe(page, seed, requests);
           await assertCheckpoint({ engine, caseName, phase, observations });
           console.info(`[whole browser ${engine}/${caseName}] ${phase}`); caseTest.diagnostic(phase); return observations;
         };
