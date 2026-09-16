@@ -13949,12 +13949,12 @@ async function finishCausalAdminTemplateOrder(work) {
 function adminTemplateCanonicalEditorSnapshot(layoutId) {
   const layout = state.layouts[layoutId], source = layout?.adminCausalSource, raw = source?.canonicalPayload, map = source?.photoOwnerMap;
   if (!ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED || !raw || !map) return null;
-  // Whole-copy retains a public source as read-only evidence. Opening that
-  // source must keep its existing public snapshot path, not enter the private
-  // editor writer merely because the new copy proof now includes raw data.
-  if (source.visibility === "public" && adminTemplatePhotoWholeCopyFormEnabled()) return null;
   const fail = () => { throw Error("Изменённые записи не связаны с исходным шаблоном. Черновик сохранён для сверки."); };
-  if (source.visibility !== "private" || !source.exists || map.layoutId !== layoutId
+  // A public copy source now also has an exact owner map. Serialize its view
+  // without the legacy exporter's temporary remapping of live state. This is
+  // a detached snapshot, not permission to publish or change source files.
+  if (!(source.visibility === "private" || source.visibility === "public" && adminTemplatePhotoWholeCopyFormEnabled())
+    || !source.exists || map.layoutId !== layoutId
     || canonicalTemplateJson(map.binding) !== canonicalTemplateJson(source.binding) || Object.keys(raw.layouts).length !== 1) fail();
   const mappings = { items: {}, containers: {} }, seen = new Set(), rawIds = new Set(Object.keys(raw.layouts));
   for (const owner of map.owners) {
