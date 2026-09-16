@@ -13765,8 +13765,15 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
     const prepared = await adminTemplateClient(observed.binding, layoutId, true).prepare(); guard();
     const upgraded = prepareAdminTemplateWholeCopySourceUpgrade({ beforeState: JSON.parse(before), layoutId, prepared });
     guard(); sourceLayout.adminCausalSource = upgraded;
+    const upgradedNamespace = canonicalTemplateJson(adminTemplatePhotoNamespace(state, layoutId));
     try {
       if (await persistStateSnapshot(state, { recordAction: false }) === false) throw Error("Не удалось сохранить подготовку копии на устройстве.");
+      if (state.layouts[layoutId] !== sourceLayout || sourceLayout.adminCausalSource !== upgraded
+        || validateSelection?.() === false || adminTemplateSaveCoordinator().hasPendingCapture(layoutId)
+        || canonicalTemplateJson(adminTemplateOperationContext(observed.binding, layoutId, true)) !== initial
+        || canonicalTemplateJson(adminTemplatePhotoNamespace(state, layoutId)) !== upgradedNamespace) {
+        throw Error("Контекст копирования изменился. Подготовка сохранена; откройте копирование заново.");
+      }
     } catch (error) {
       if (sourceLayout.adminCausalSource === upgraded) sourceLayout.adminCausalSource = observed;
       throw error;
