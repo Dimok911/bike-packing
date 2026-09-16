@@ -48,3 +48,26 @@ test("actual unchanged existing-public-source upgrade persists real proof before
   assert.ok(f.layout.adminCausalSource.photoOwnerMap); assert.ok(f.layout.adminCausalSource.canonicalPayload);
   assert.deepEqual(f.state.items, items); assert.deepEqual(f.state.containers, containers); assert.equal(f.server.calls.length, 0);
 });
+
+test("actual canonical snapshot keeps a proved public whole-copy source on its public route only with whole-copy enabled", async () => {
+  const f = await wholeAppRunnerFixture(), layout = f.state.layouts[f.layoutId];
+  layout.templatePublished = true; layout.adminCausalSource.visibility = "public";
+  layout.adminCausalSource.canonicalPayload = structuredClone(f.record.action.body.photoCopy.sourcePayload);
+  const before = structuredClone(f.state);
+  assert.equal(f.build({ names: ["adminTemplateCanonicalEditorSnapshot"] }).adminTemplateCanonicalEditorSnapshot(f.layoutId), null);
+  assert.deepEqual(f.state, before);
+  f.flags.whole = false;
+  assert.throws(() => f.build({ names: ["adminTemplateCanonicalEditorSnapshot"] }).adminTemplateCanonicalEditorSnapshot(f.layoutId),
+    /Изменённые записи не связаны с исходным шаблоном/);
+  assert.deepEqual(f.state, before);
+});
+
+test("actual canonical snapshot still validates a private editor with whole-copy enabled", async () => {
+  const f = await wholeAppRunnerFixture(), layout = f.state.layouts[f.layoutId];
+  layout.adminCausalSource.canonicalPayload = structuredClone(f.record.action.body.photoCopy.sourcePayload);
+  layout.adminCausalSource.photoOwnerMap.layoutId = "foreign-editor";
+  const before = structuredClone(f.state);
+  assert.throws(() => f.build({ names: ["adminTemplateCanonicalEditorSnapshot"] }).adminTemplateCanonicalEditorSnapshot(f.layoutId),
+    /Изменённые записи не связаны с исходным шаблоном/);
+  assert.deepEqual(f.state, before);
+});
