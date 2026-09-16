@@ -6,6 +6,8 @@ import { adminPhotoCopyRecordInput } from "../fixtures/admin-template-photo-copy
 import { adminPhotoRecordFixture } from "../fixtures/admin-template-photo-record-fixture.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyActionStore } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoCopyClient } from "../../src/sync/admin-template-photo-copy-client.js";
 import { createAdminTemplatePhotoActionStore } from "../../src/sync/admin-template-photo-action-store.js";
@@ -68,6 +70,8 @@ async function fixture({ actualStopFactories = false } = {}) {
     adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot, assertAdminTemplateCaptureLease,
     createAdminTemplatePhotoTreeCopyActionStore: wrap("tree-store", createAdminTemplatePhotoTreeCopyActionStore),
     createAdminTemplatePhotoTreeCopyClient: wrap("tree-client", createAdminTemplatePhotoTreeCopyClient),
+    createAdminTemplatePhotoWholeCopyActionStore: wrap("whole-store", createAdminTemplatePhotoWholeCopyActionStore),
+    createAdminTemplatePhotoWholeCopyClient: wrap("whole-client", createAdminTemplatePhotoWholeCopyClient),
     createAdminTemplateSavePlans: wrap("plans", createAdminTemplateSavePlans), experimentTransport: transport,
     adminTemplateOperationContext: actualContext,
     adminTemplateClient: (binding, layoutId, preparing = false) => ordinary(binding, layoutId, preparing),

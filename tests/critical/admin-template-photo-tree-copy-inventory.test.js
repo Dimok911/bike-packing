@@ -5,6 +5,8 @@ import { treeCopyClientFixture, copy, hash, commandPrefix } from "../fixtures/ad
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyActionStore } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
@@ -30,6 +32,8 @@ async function fixture() {
       return { ...real, async read(id) { const record = await real.read(id); controls.afterTreeRead?.(); return record; } };
     },
     createAdminTemplatePhotoTreeCopyClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks: f.locks, fetchImpl: f.fetchImpl }),
+    createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
+    createAdminTemplatePhotoWholeCopyClient: options => createAdminTemplatePhotoWholeCopyClient({ ...options, storage: f.storage, locks: f.locks, fetchImpl: f.fetchImpl }),
     experimentTransport: f.make().transport,
     createAdminTemplateSavePlans: options => createAdminTemplateSavePlans({ ...options, storage: f.storage, locks: f.locks }),
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,

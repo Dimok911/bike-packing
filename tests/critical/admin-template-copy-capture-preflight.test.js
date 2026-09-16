@@ -5,6 +5,8 @@ import { adminPhotoCopyClientFixture, copy, hash } from "../fixtures/admin-templ
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyActionStore } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
 import { createAdminTemplateSavePlans } from "../../src/sync/admin-template-save-plan.js";
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "../../src/sync/admin-template-capture-lease.js";
@@ -28,6 +30,8 @@ async function fixture() {
     createAdminTemplatePhotoCopyActionStore: options => { factories.push(options); return createAdminTemplatePhotoCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }); },
     createAdminTemplatePhotoTreeCopyActionStore: options => createAdminTemplatePhotoTreeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
     createAdminTemplatePhotoTreeCopyClient: options => createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks: f.locks }),
+    createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore({ ...options, indexedDB: f.idb.indexedDB }),
+    createAdminTemplatePhotoWholeCopyClient: options => createAdminTemplatePhotoWholeCopyClient({ ...options, storage: f.storage, locks: f.locks, fetchImpl: f.fetchImpl }),
     experimentTransport: f.make().transport,
     adminTemplateUiEnabled: () => true, adminTemplatePhotoStore: () => null,
     adminTemplateClient: () => ({ capture() { assert.fail("Preflight must not dispatch"); } }),

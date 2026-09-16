@@ -25,7 +25,13 @@ cannot capture a new command, stage, parent POST or cancellation. A missing or
 unknown receipt remains paused. The common administrative registry gate retains
 its existing outer behavior.
 
-## Required application adapter (not implemented)
+## Required application adapter
+
+The retained-plan application runner and its concrete dispatch inventory and
+namespace adapters are now implemented in `app.js`; see
+`whole-copy-app-admission-2026-09-16.md`. Initial form capture and target apply
+are still missing. The requirements below describe this boundary and remain
+binding for that next integration; a default permissive adapter is not supplied.
 
 An explicit `assertWholeCopyAdmission` dependency is mandatory for capture and
 gate-ON run, alongside a genuine outer source+target capture lease. The guard
@@ -74,8 +80,7 @@ phone behavior. No full transport suite or GitHub Actions run was started.
 
 ## Remaining work
 
-Implement that complete source/absent-target inventory adapter, connect the
-existing whole-copy form, apply/mirror the independently confirmed target, and
+Connect initial capture to the existing whole-copy form, apply/mirror the independently confirmed target, and
 provide cold recovery/acceptance before browser or phone release. Reuse the
 existing source, stages and fixed operation IDs through lost acknowledgements.
 Do not turn the source snapshot into a fabricated empty target baseline.
