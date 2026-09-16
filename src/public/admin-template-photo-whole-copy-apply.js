@@ -36,9 +36,10 @@ function merge(state, target) {
 // The exact target and typed acceptance are persisted before live changes;
 // no command, stage or claim is retired. Cold live adoption remains separate.
 export async function applyAdminTemplatePhotoWholeCopyResult(input, externalGuard) {
-  if (!exact(input, ["plan", "store", "receipt", "stageReceipts", "captureLease", "getState", "getContext", "getMirrorContext"])
+  if (!exact(input, ["plan", "store", "receipt", "stageReceipts", "captureLease", "getState", "getContext", "getMirrorContext", ...(Object.hasOwn(input, "persistMirror") ? ["persistMirror"] : [])])
+    || Object.hasOwn(input, "persistMirror") && typeof input.persistMirror !== "function"
     || [externalGuard, input.getState, input.getContext, input.getMirrorContext].some(fn => typeof fn !== "function")) pause("dependencies");
-  const { store, captureLease, getState, getContext, getMirrorContext } = input;
+  const { store, captureLease, getState, getContext, getMirrorContext, persistMirror } = input;
   const { plan, receipt, stageReceipts } = copy({ plan: input.plan, receipt: input.receipt, stageReceipts: input.stageReceipts });
   const binding = adminTemplatePhotoActionBinding(plan.binding), source = plan.operations?.[0]?.body?.source;
   const sourceBinding = adminTemplatePhotoActionBinding({ ...binding, listId: source?.listId, itemKey: source?.itemKey });
@@ -89,7 +90,8 @@ export async function applyAdminTemplatePhotoWholeCopyResult(input, externalGuar
   const nextMirror = merge(absentMirror, target), encoded = JSON.stringify(nextMirror);
   mirrorGuard(); merge(live, target); current();
   if (!alreadyMirrored) {
-    storage.setItem(key, encoded);
+    if (persistMirror) { await persistMirror(key, encoded); current(); }
+    else storage.setItem(key, encoded);
     if (storage.getItem(key) !== encoded) pause("mirror-readback");
   }
   current();

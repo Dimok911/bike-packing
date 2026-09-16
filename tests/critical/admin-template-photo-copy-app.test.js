@@ -23,13 +23,15 @@ async function fixture(entityType = "item") {
   state.layouts.personal = { id: "personal", name: "Private", rootContainerIds: [] };
   state.items.private = { id: "private", name: "Private unsaved", opaque: { selected: [7, 2] } };
   f.values.set("mirror", JSON.stringify(state)); f.values.set("private-form", "kept");
-  const controls = { afterRead: null }, store = { binding: f.binding, async read(id) { const value = await f.store.read(id); controls.afterRead?.(); return value; } };
+  const controls = { afterRead: null, asyncMirror: false, writes: 0 }, store = { binding: f.binding, async read(id) { const value = await f.store.read(id); controls.afterRead?.(); return value; } };
   const plan = adminTemplatePhotoCopySavePlan({ binding: f.binding, operationId: f.id, body: f.record.action.body,
     editorSnapshot: adminTemplatePhotoCopyEditorSnapshot(f.record), recordIntentHash: f.record.intentHash });
-  const api = actual(app, ["persistAdminTemplatePhotoMirror", "applyAdminTemplatePhotoCopyPending", "applyAdminTemplatePhotoCreateArrangement", "applyAdminTemplateConfirmedPhotoCopyResult"], {
+  const api = actual(app, ["persistRequiredPersonalMirror", "persistAdminTemplatePhotoMirror", "applyAdminTemplatePhotoCopyPending", "applyAdminTemplatePhotoCreateArrangement", "applyAdminTemplateConfirmedPhotoCopyResult"], {
     state, canonicalTemplateJson, clone: copy, adminTemplatePhotoNamespace, adminTemplatePhotoEditorSnapshot, adminTemplatePhotoCopyEditorSnapshot,
     assertAdminTemplatePhotoCopyPlanRecord, adminTemplatePhotoCopyStore: () => store, adminTemplateOperationContext: () => f.current,
     projectAdminTemplateServerVariant, preserveAdminTemplatePhotoCopyOwnerIds, applyAdminTemplateServerVariant,
+    readPersonalLocalValue: key => f.storage.getItem(key), ownsPersonalMirror: () => controls.asyncMirror,
+    writePersonalMirror: async (key, raw) => { controls.writes++; await Promise.resolve(); f.storage.setItem(key, raw); },
     scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorage: f.storage, localStorageScopeKey: `id:${f.binding.actorId}`, render() {} });
   const pending = () => api.applyAdminTemplatePhotoCopyPending(f.record);
   const finish = () => {
@@ -53,7 +55,7 @@ async function fixture(entityType = "item") {
 }
 for (const type of ["item", "container"]) test(`${type}: actual V8 apply retains preallocated and existing IDs, source, private drafts and full raw receipt`, async () => {
   const f = await fixture(type), beforeSource = adminTemplatePhotoNamespace(f.state, f.source.layoutId), beforePrivate = copy(f.state.items.private);
-  f.pending();
+  await f.pending();
   const mirror = JSON.parse(f.values.get("mirror")); mirror.items.private.note = "New private edit from another tab"; f.values.set("mirror", JSON.stringify(mirror));
   assert.equal(await f.finish(), true);
   const result = f.state.layouts[f.target.layoutId], owner = f.record.snapshot.copiedOwner;
@@ -67,19 +69,30 @@ for (const type of ["item", "container"]) test(`${type}: actual V8 apply retains
   assert.deepEqual(await f.store.read(f.id), f.record);
 });
 test("actual confirmed copy quota preserves pending namespace and exact record for cold retry", async () => {
-  const f = await fixture(); f.pending(); const before = copy(f.state), mirror = f.values.get("mirror");
+  const f = await fixture(); await f.pending(); const before = copy(f.state), mirror = f.values.get("mirror");
   const previous = f.storage.setItem; f.storage.setItem = (key, value) => { if (key === "mirror") throw Error("Quota"); previous(key, value); };
   await assert.rejects(f.finish(), /Quota/); assert.deepEqual(f.state, before); assert.equal(f.values.get("mirror"), mirror);
   assert.deepEqual(await f.store.read(f.id), f.record);
   f.storage.setItem = previous; assert.equal(await f.finish(), true);
 });
+test("async owned-mirror rejection rolls back copy pending state while retaining the immutable action", async () => {
+  const f = await fixture(), before = copy(f.state), mirror = f.values.get("mirror"); f.controls.asyncMirror = true;
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, raw) => { if (key === "mirror") throw Error("Async mirror quota"); return write(key, raw); };
+  await assert.rejects(f.pending(), /Async mirror quota/);
+  assert.equal(f.controls.writes, 1); assert.deepEqual(f.state, before); assert.equal(f.values.get("mirror"), mirror);
+  assert.deepEqual(await f.store.read(f.id), f.record); assert.equal(f.server.calls.length, 0);
+  f.storage.setItem = write; await f.pending(); assert.equal(f.controls.writes, 2);
+  assert.equal(JSON.parse(f.values.get("mirror")).layouts[f.target.layoutId].adminCausalSource.photoCopyPending, f.id);
+});
+
 test("actual confirmed copy refuses foreign ID collisions and edits appearing during record validation", async () => {
   for (const kind of ["layouts", "items", "containers"]) {
-    const f = await fixture(); f.pending(); const id = f.record.snapshot.copiedOwner.localId;
+    const f = await fixture(); await f.pending(); const id = f.record.snapshot.copiedOwner.localId;
     f.state[kind][id] = { id, name: "Unrelated" }; const before = copy(f.state);
     await assert.rejects(f.finish()); assert.deepEqual(f.state, before);
   }
-  const f = await fixture(); f.pending();
+  const f = await fixture(); await f.pending();
   f.controls.afterRead = () => { f.state.layouts[f.target.layoutId].name = "Changed after await"; };
   await assert.rejects(f.finish(), /Получатель изменился/); assert.equal(f.state.layouts[f.target.layoutId].name, "Changed after await");
   assert.equal(f.state.items[f.record.snapshot.copiedOwner.localId], undefined);

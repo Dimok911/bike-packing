@@ -26,7 +26,7 @@ function fixture(name, commit) {
       containerPickerDialog: { close: () => effects.push("close") } },
     preparePersonalPlacementAction: () => commit, preparePersonalLayoutDeletionAction: () => commit,
     getPublishedEditLayoutId: () => "layout", getLayoutRootTargetLayoutId: () => "layout",
-    warnLockedLayoutMutation: () => false, adminTemplateUiEnabled: () => false,
+    warnLockedLayoutMutation: () => false, adminTemplateUiEnabled: () => false, adminTemplatePhotoCreateFormEnabled: () => false,
     requireUsageCapacity: () => true, canDeleteActiveLayout: () => true,
     capturePackingScroll: () => {}, nowIso: () => "now", createEntityId: () => "group",
     localText: en => en, getLayoutItemIdSet: () => new Set(),

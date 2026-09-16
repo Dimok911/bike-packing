@@ -4,8 +4,12 @@ import { treeCopyClientFixture, copy, hash } from "./admin-template-photo-tree-c
 import { canonicalTemplateJson, validTemplateOperationId } from "../../src/sync/admin-template-protocol.js";
 import { createAdminTemplatePhotoTreeCopyActionStore } from "../../src/sync/admin-template-photo-tree-copy-action-store.js";
 import { createAdminTemplatePhotoTreeCopyClient } from "../../src/sync/admin-template-photo-tree-copy-client.js";
-import { createAdminTemplatePhotoWholeCopyActionStore } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
+import { createAdminTemplatePhotoWholeCopyActionStore, readAdminTemplatePhotoWholeCopyActorInventory } from "../../src/sync/admin-template-photo-whole-copy-action-store.js";
 import { createAdminTemplatePhotoWholeCopyClient } from "../../src/sync/admin-template-photo-whole-copy-client.js";
+import { createAdminTemplatePhotoWholeCopyRecoveryRunner } from "../../src/public/admin-template-photo-whole-copy-recovery-runner.js";
+import { readAdminTemplatePhotoWholeCopyCancelled } from "../../src/public/admin-template-photo-whole-copy-cancelled.js";
+import * as wholeAcceptance from "../../src/public/admin-template-photo-whole-copy-acceptance.js";
+import { wholePhotoIndexedDBFixture } from "./admin-template-photo-whole-copy-idb-fixture.js";
 import { createAdminTemplatePhotoTreeCopyAdmission } from "../../src/sync/admin-template-photo-tree-copy-admission.js";
 import { createAdminTemplatePhotoCopyActionStore } from "../../src/sync/admin-template-photo-copy-action-store.js";
 import { createAdminTemplatePhotoCopyClient } from "../../src/sync/admin-template-photo-copy-client.js";
@@ -46,20 +50,26 @@ export async function treeAppRunnerFixture(options = {}) {
     location: { pathname: "/experiment/", search: "", hash: "" } });
   const context = contextParts.adminTemplateOperationContext, transport = f.make({ locks }).transport;
   const flags = { tree: true, copy: true, create: true, append: true, admin: true };
+  // Whole-copy actor discovery opens a separate database with getAllKeys.
+  // Use its transaction model rather than replacing inventory with an empty array.
+  const wholeIdb = wholePhotoIndexedDBFixture();
   const build = (extra = {}) => {
     const storeOptions = options => ({ ...options, indexedDB: f.idb.indexedDB });
     const get = (binding, id, preparing) => () => context(binding, id, preparing);
     const upload = (binding, id, preparing) => createAdminTemplatePhotoActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const copyStore = (binding, id, preparing) => createAdminTemplatePhotoCopyActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const deps = { state, globalThis: { localStorage: f.storage }, localStorage: f.storage,
+      adminTemplatePhotoMirrorStorage: f.storage,
       scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
-      ...treeAcceptance, canonicalTemplateJson, validTemplateOperationId,
+      ...treeAcceptance, ...wholeAcceptance, readAdminTemplatePhotoWholeCopyCancelled,
+      createAdminTemplatePhotoWholeCopyRecoveryRunner, canonicalTemplateJson, validTemplateOperationId, clone: copy,
       adminTemplatePhotoTreeCopySavePlan, adminTemplatePhotoTreeCopyEditorSnapshot, assertAdminTemplateCaptureLease,
       adminTemplateOperationContext: context, adminTemplateUiEnabled: () => flags.admin,
       ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED: flags.tree, ADMIN_TEMPLATE_PHOTO_COPY_ENABLED: flags.copy,
       ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: flags.create, ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED: flags.append,
       createAdminTemplatePhotoTreeCopyActionStore: options => createAdminTemplatePhotoTreeCopyActionStore(storeOptions(options)),
-      createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore(storeOptions(options)),
+      createAdminTemplatePhotoWholeCopyActionStore: options => createAdminTemplatePhotoWholeCopyActionStore({ ...options, indexedDB: wholeIdb.indexedDB }),
+      readAdminTemplatePhotoWholeCopyActorInventory: options => readAdminTemplatePhotoWholeCopyActorInventory({ ...options, indexedDB: wholeIdb.indexedDB }),
       createAdminTemplatePhotoWholeCopyClient: options => createAdminTemplatePhotoWholeCopyClient({ ...options, storage: f.storage, locks, fetchImpl: f.fetchImpl }),
       createAdminTemplatePhotoTreeCopyClient: options => {
         const client = createAdminTemplatePhotoTreeCopyClient({ ...options, storage: f.storage, locks, fetchImpl: f.fetchImpl }); clients.push(client); return client;
@@ -86,6 +96,8 @@ export async function treeAppRunnerFixture(options = {}) {
       assertAdminTemplateCopyCaptureAllowed: () => assert.fail("Runner cannot capture a new plan"),
       readAdminTemplateOrderInventory: options => readAdminTemplateOrderInventory({ ...options, storage: f.storage }) };
     const names = ["adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted", "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor",
+      "readAdminTemplatePhotoWholeCopyAccepted", "readAdminTemplatePhotoWholeCopyStopped", "findAdminTemplatePhotoWholeCopyFormRecord",
+      "prepareAdminTemplatePhotoWholeCopyRecovery", "adminTemplatePhotoWholeCopyRecoveryRunner",
       "withAdminTemplatePhotoTreeCopyInventoryScope", "withAdminTemplatePhotoTreeCopyDispatchInventory", "withAdminTemplatePhotoTreeCopyNamespaceScope", "runAdminTemplatePhotoTreeCopyPlan", ...(extra.names || [])];
     for (const name of Object.keys(extra.replace || {})) assert.ok(names.includes(name), `Unknown boundary: ${name}`);
     return actual(names.filter(name => !Object.hasOwn(extra.replace || {}, name)), { ...deps, ...extra.deps, ...extra.replace });

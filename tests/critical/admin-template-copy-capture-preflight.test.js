@@ -28,7 +28,7 @@ async function fixture() {
   const wholeIdb = wholePhotoIndexedDBFixture();
   const layoutId = f.record.snapshot.target.layoutId, state = copy(f.record.snapshot.target.beforeState);
   const deps = { canonicalTemplateJson, validTemplateOperationId, assertAdminTemplateCaptureLease,
-    readAdminTemplatePhotoWholeCopyAcceptance, localStorage: f.storage, scopedLocalStorageKey: () => "private-mirror",
+    readAdminTemplatePhotoWholeCopyAcceptance, localStorage: f.storage, adminTemplatePhotoMirrorStorage: f.storage, scopedLocalStorageKey: () => "private-mirror",
     STORAGE_KEY: "private-mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
     readAdminTemplatePhotoWholeCopyActorInventory: options => readAdminTemplatePhotoWholeCopyActorInventory({ ...options, indexedDB: wholeIdb.indexedDB }),
     createAdminTemplateSavePlans: options => createAdminTemplateSavePlans({ ...options, storage: f.storage, locks: f.locks }),

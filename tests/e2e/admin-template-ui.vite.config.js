@@ -1,9 +1,13 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+import { experimentReleasePlugin } from "../../scripts/experiment-release-profile.mjs";
 
 // Isolated test bundle only. Default build and source gates stay OFF.
 export default defineConfig(({ mode }) => ({
   base: "./",
-  plugins: [{ name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
+  plugins: [...(["admin-photo-whole-copy", "admin-photo-whole-copy-off"].includes(mode)
+    ? [experimentReleasePlugin(fileURLToPath(new URL("../../", import.meta.url)))] : []),
+    { name: "isolated-admin-template-ui", enforce: "pre", transform(code, id) {
     const wholeMode = ["admin-photo-whole-copy", "admin-photo-whole-copy-off"].includes(mode);
     const source = id.replaceAll("\\", "/").split("?")[0];
     if (wholeMode && source.endsWith("/src/app/app-tail-controllers.js")) {
@@ -71,11 +75,12 @@ export default defineConfig(({ mode }) => ({
     if (mode === "personal-import" && source.includes("/src/sync/")) {
       code = code.replace(/(PERSONAL_ADMIN_TEMPLATE_IMPORT|PERSONAL_PENDING_ADMIN_TEMPLATE_IMPORT|PERSONAL_PUBLIC_IMPORT|PERSONAL_PUBLIC_ENTITY_COPY|PERSONAL_SAVE_OUTBOX|LIST_OPERATION_QUEUE|PERSONAL_PHOTO_ACTIONS|PERSONAL_PHOTO_BATCH_STORAGE|PERSONAL_PHOTO_OUTBOX|PERSONAL_PHOTO_BATCH_OUTBOX|PERSONAL_PHOTO_PUBLICATION_QUEUE|PERSONAL_PHOTO_STAGING|PERSONAL_PHOTO_BATCH_STAGING|PERSONAL_PHOTO_FORM|PERSONAL_PHOTO_FORM_UI)_ENABLED = false/g, "$1_ENABLED = true");
     }
-    if (wholeMode && /\/src\/sync\/admin-template-photo-(?:append|create|copy|whole-copy)-protocol\.js$/.test(source)) return code.replace(/(ADMIN_TEMPLATE_PHOTO_(?:APPEND|CREATE|COPY|WHOLE_COPY)_ENABLED) = (?:false|true)/g, `$1 = ${mode === "admin-photo-whole-copy"}`);
+    if (mode === "admin-photo-whole-copy-off" && source.endsWith("/src/sync/admin-template-photo-whole-copy-protocol.js"))
+      return code.replace(/(ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED) = globalThis\.location\?\.origin === "https:\/\/experiment\.vniipo-help\.ru"/, "$1 = false");
     if (source.endsWith("/src/sync/admin-template-protocol.js")) return code.replace("ADMIN_TEMPLATE_OPERATIONS_ENABLED = false", "ADMIN_TEMPLATE_OPERATIONS_ENABLED = true");
     if (source.endsWith("/app.js")) return code + "\nwindow.__adminUiTest={setOrderCatalog:({demo,shared})=>{serverConfirmedDemoTemplates=demo;serverConfirmedSharedLayouts=shared;renderFilters();},openDemo:openAdminDemoLayout,openShared:openSharedLayoutForAdmin,snapshot:adminTemplateEditorSnapshot,openPrepared:openCausalAdminTemplate,refreshDrafts:refreshAdminTemplateDrafts,openItem:openItemDialog,openContainer:openRootContainerDialog,save:savePublishedLayoutRecord,privatePayload:()=>serializeState({forSync:true}),privateMeta:()=>syncMeta,openPrivate:id=>switchActiveLayout(id,{remember:false}),state:()=>state,user:()=>currentUser,scope:()=>currentViewScope()};\n"
       + (wholeMode || ["admin-photo-tree-copy", "admin-photo-tree-copy-off"].includes(mode)
-        ? "Object.assign(window.__adminUiTest,{operationContext:adminTemplateOperationContext,mirrorContext:()=>({key:scopedLocalStorageKey(STORAGE_KEY),scopeKey:localStorageScopeKey}),privateLoadContext:()=>({listId:currentPackingListId,initialRemoteLoadPending})});\n" : "");
+        ? "Object.assign(window.__adminUiTest,{operationContext:adminTemplateOperationContext,mirrorContext:()=>{const key=scopedLocalStorageKey(STORAGE_KEY);return {key,scopeKey:localStorageScopeKey,raw:typeof readPersonalLocalValue==='function'?readPersonalLocalValue(key):localStorage.getItem(key),indexedDB:typeof ownsPersonalMirror==='function'&&ownsPersonalMirror(key)}},privateLoadContext:()=>({listId:currentPackingListId,initialRemoteLoadPending})});\n" : "");
     return code;
   } }],
   build: { outDir: mode === "admin-photo-whole-copy" ? "test-results/admin-template-photo-whole-copy-browser-on-build" : mode === "admin-photo-whole-copy-off" ? "test-results/admin-template-photo-whole-copy-browser-off-build" : mode === "personal-import" ? "test-results/admin-personal-import-ui-build"

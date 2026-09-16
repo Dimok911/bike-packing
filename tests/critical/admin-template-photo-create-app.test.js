@@ -25,19 +25,24 @@ async function fixture(type = "item") {
   const state = clone(input.snapshot.beforeState), foreign = { id: "foreign", publicCatalogLayoutId: "other-admin", name: "Other draft", photos: [{ opaque: "keep" }] };
   state.items.private = { id: "private", name: "Personal unsaved", opaque: { retained: [2, 1] } };
   state.items.foreign = foreign; state.layouts["other-admin"] = { id: "other-admin", note: "unrelated" };
-  const values = new Map([["mirror", JSON.stringify(state)], ["private-form", "unrelated chosen form"]]), controls = { quota: false };
+  const values = new Map([["mirror", JSON.stringify(state)], ["private-form", "unrelated chosen form"]]), controls = { quota: false, asyncMirror: false, writes: 0, notifications: 0 };
   const deps = { state, canonicalTemplateJson, clone, adminTemplatePhotoNamespace, adminTemplatePhotoEditorSnapshot,
     STORAGE_KEY: "mirror", localStorageScopeKey: `id:${record.binding.actorId}`, scopedLocalStorageKey: key => key,
     localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => {
-      if (controls.quota) throw new DOMException("Full", "QuotaExceededError"); values.set(key, value); } }, updateSyncUi() {} };
-  const api = actual(app, ["assertAdminTemplatePhotoCreateIds", "persistAdminTemplatePhotoMirror", "applyAdminTemplatePhotoCreateCandidate", "applyAdminTemplatePhotoCreateArrangement"], deps);
+      if (controls.quota) throw new DOMException("Full", "QuotaExceededError"); values.set(key, value); } }, updateSyncUi() { controls.notifications++; } };
+  // This fixture covers the retained synchronous localStorage mirror. Native
+  // IndexedDB mirror persistence is covered separately by async storage tests.
+  deps.readPersonalLocalValue = key => deps.localStorage.getItem(key);
+  deps.ownsPersonalMirror = () => controls.asyncMirror;
+  deps.writePersonalMirror = async (key, raw) => { controls.writes++; await Promise.resolve(); deps.localStorage.setItem(key, raw); };
+  const api = actual(app, ["assertAdminTemplatePhotoCreateIds", "persistRequiredPersonalMirror", "persistAdminTemplatePhotoMirror", "applyAdminTemplatePhotoCreateCandidate", "applyAdminTemplatePhotoCreateArrangement"], deps);
   return { input, record, state, values, controls, api };
 }
 
 test("actual new item/bag candidate applies complete arrangement and edit metadata while preserving private and foreign drafts", async () => {
   for (const type of ["item", "container"]) {
     const f = await fixture(type), beforePrivate = clone(f.state.items.private), beforeForeign = clone(f.state.items.foreign);
-    const layoutId = f.record.snapshot.layoutId; f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
+    const layoutId = f.record.snapshot.layoutId; await f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
     assert.deepEqual(f.state.layouts[layoutId].arrangement, f.record.snapshot.state.layouts[layoutId].arrangement);
     assert.deepEqual(f.state.layouts[layoutId].rootContainerIds, f.record.snapshot.state.layouts[layoutId].rootContainerIds);
     assert.equal(f.state.layouts[layoutId].updatedAt, f.record.snapshot.state.layouts[layoutId].updatedAt);
@@ -45,7 +50,7 @@ test("actual new item/bag candidate applies complete arrangement and edit metada
     assert.deepEqual(f.state.items.private, beforePrivate); assert.deepEqual(f.state.items.foreign, beforeForeign);
     assert.equal(f.values.get("private-form"), "unrelated chosen form");
     const mirror = JSON.parse(f.values.get("mirror")); assert.deepEqual(mirror.items.private, beforePrivate); assert.deepEqual(mirror.items.foreign, beforeForeign);
-    f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
+    await f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
     assert.equal(Object.values(f.state[type === "item" ? "items" : "containers"]).filter(row => row.id === f.record.snapshot.createdOwner.localId).length, 1);
   }
 });
@@ -54,16 +59,16 @@ test("actual candidate refuses global local-ID collisions before changing live s
   for (const kind of ["layouts", "items", "containers"]) {
     const f = await fixture(), id = f.record.snapshot.createdOwner.localId;
     f.state[kind][id] = { id, name: "Unrelated owner" }; const before = clone(f.state), mirror = f.values.get("mirror");
-    assert.throws(() => f.api.applyAdminTemplatePhotoCreateCandidate(f.record), /идентификатор/i);
+    await assert.rejects(f.api.applyAdminTemplatePhotoCreateCandidate(f.record), /идентификатор/i);
     assert.deepEqual(f.state, before); assert.equal(f.values.get("mirror"), mirror);
   }
 });
 
 test("actual mirror quota rolls back visible candidate while retaining the immutable create record and unrelated journals", async () => {
   const f = await fixture("container"), before = clone(f.state), record = clone(f.record.snapshot), values = new Map(f.values);
-  f.controls.quota = true; assert.throws(() => f.api.applyAdminTemplatePhotoCreateCandidate(f.record), { name: "QuotaExceededError" });
+  f.controls.quota = true; await assert.rejects(f.api.applyAdminTemplatePhotoCreateCandidate(f.record), { name: "QuotaExceededError" });
   assert.deepEqual(f.state, before); assert.deepEqual(f.values, values); assert.deepEqual(f.record.snapshot, record);
-  f.controls.quota = false; f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
+  f.controls.quota = false; await f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
   assert.ok(f.state.containers[f.record.snapshot.createdOwner.localId]);
 });
 
@@ -71,8 +76,19 @@ test("another tab's changed selected namespace refuses receipt application witho
   const f = await fixture(), mirror = JSON.parse(f.values.get("mirror")), id = f.input.snapshot.ownerMap.owners.find(row => row.type === "items").localId;
   mirror.items[id].name = "New edit in another tab"; f.values.set("mirror", JSON.stringify(mirror));
   const before = clone(f.state), encoded = f.values.get("mirror");
-  assert.throws(() => f.api.applyAdminTemplatePhotoCreateCandidate(f.record), /другой вкладке/);
+  await assert.rejects(f.api.applyAdminTemplatePhotoCreateCandidate(f.record), /другой вкладке/);
   assert.deepEqual(f.state, before); assert.equal(f.values.get("mirror"), encoded);
+});
+
+test("async owned-mirror rejection rolls back a new photo candidate and never announces durable success", async () => {
+  const f = await fixture(), before = clone(f.state), mirror = f.values.get("mirror");
+  f.controls.asyncMirror = true; f.controls.quota = true;
+  await assert.rejects(f.api.applyAdminTemplatePhotoCreateCandidate(f.record), { name: "QuotaExceededError" });
+  assert.equal(f.controls.writes, 1); assert.equal(f.controls.notifications, 0);
+  assert.deepEqual(f.state, before); assert.equal(f.values.get("mirror"), mirror);
+  f.controls.quota = false; await f.api.applyAdminTemplatePhotoCreateCandidate(f.record);
+  assert.equal(f.controls.writes, 2); assert.equal(f.controls.notifications, 1);
+  assert.equal(JSON.parse(f.values.get("mirror")).layouts[f.record.snapshot.layoutId].adminCausalSource.photoCreatePending, f.record.action.operationId);
 });
 
 test("actual canonical display application preserves full arrangement, opaque order fields and unrelated owner links", async () => {
@@ -148,7 +164,7 @@ test("actual confirmed ordinary persist refreshes the same owner IDs and raw bas
       ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: true, normalizeUiLanguage: value => value, uiLanguage: "ru",
       persistStateSnapshot: value => { if (failure === "false") return false; if (failure === "throw") throw new DOMException("Quota", "QuotaExceededError"); stored = clone(value); return true; }
     });
-    assert.equal(api.persistAdminTemplateCoordinatorState(), !failure);
+    assert.equal(await api.persistAdminTemplateCoordinatorState(), !failure);
     if (failure) { assert.equal(layout.adminCausalSource, source); assert.deepEqual(f.state, before); assert.equal(stored, undefined); }
     else {
       assert.equal(layout.adminCausalSource.photoOwnerMap.stateRevision, source.base.stateRevision);

@@ -75,6 +75,9 @@ export async function wholeAppRunnerFixture() {
     const upload = (binding, id, preparing) => createAdminTemplatePhotoActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const copyStore = (binding, id, preparing) => createAdminTemplatePhotoCopyActionStore({ binding, getContext: get(binding, id, preparing), indexedDB: f.idb.indexedDB, enabled: false });
     const deps = { state, globalThis: { localStorage: f.storage }, localStorage: f.storage,
+      adminTemplatePhotoMirrorStorage: f.storage,
+      readPersonalLocalValue: key => f.storage.getItem(key), ownsPersonalMirror: () => false,
+      writePersonalMirror: () => assert.fail("This fixture uses the retained localStorage mirror"),
       scopedLocalStorageKey: () => "mirror", STORAGE_KEY: "mirror", localStorageScopeKey: `id:${f.binding.actorId}`,
       ...treeAcceptance, ...wholeAcceptance, canonicalTemplateJson, validTemplateOperationId, clone: copy, adminTemplatePhotoWholeCopyJournal,
       adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot, assertAdminTemplateCaptureLease,
@@ -120,7 +123,7 @@ export async function wholeAppRunnerFixture() {
       adminTemplateRecoveryFor: () => ({ requiresCancellation: () => assert.fail("Runner must not use generic cancellation") }),
       assertAdminTemplateCopyCaptureAllowed: () => assert.fail("Runner cannot capture a new plan"),
       readAdminTemplateOrderInventory: options => readAdminTemplateOrderInventory({ ...options, storage: f.storage }) };
-    const names = ["adminTemplatePhotoWholeCopyInventory", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted",
+    const names = ["persistRequiredPersonalMirror", "adminTemplatePhotoWholeCopyInventory", "adminTemplatePhotoTreeCopyInventory", "readAdminTemplatePhotoTreeCopyAccepted",
       "adminTemplatePhotoExcludedPlans", "adminTemplatePlansFor", "withAdminTemplatePhotoWholeCopyDispatchInventory",
       "withAdminTemplatePhotoWholeCopyCaptureInventory", "withAdminTemplatePhotoWholeCopyInventoryScope",
       "withAdminTemplatePhotoWholeCopyApplyInventory", "readAdminTemplatePhotoWholeCopyAccepted", "readAdminTemplatePhotoWholeCopyStopped",

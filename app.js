@@ -11248,7 +11248,7 @@ function assertAdminTemplatePhotoCreateIds(record, { pending = false } = {}) {
     throw Error("Сохранённый пакет принадлежит другому действию шаблона.");
   }
 }
-function applyAdminTemplatePhotoCreateCandidate(record) {
+async function applyAdminTemplatePhotoCreateCandidate(record) {
   const { snapshot, action } = record, layoutId = snapshot.layoutId, layout = state.layouts[layoutId], observed = layout?.adminCausalSource;
   const expectedNamespace = adminTemplatePhotoNamespace(state, layoutId);
   const current = canonicalTemplateJson(adminTemplatePhotoEditorSnapshot(state, layoutId, snapshot.metadata));
@@ -11268,7 +11268,7 @@ function applyAdminTemplatePhotoCreateCandidate(record) {
       base: { operationId: action.operationId }, photoCreatePending: action.operationId };
     layout.templateDraftSyncPending = true;
     if (state.activeLayoutId === layoutId) state.packedItems = clone(snapshot.state.packedItems);
-    persistAdminTemplatePhotoMirror(layoutId, [expectedNamespace, adminTemplatePhotoNamespace(state, layoutId)]);
+    await persistAdminTemplatePhotoMirror(layoutId, [expectedNamespace, adminTemplatePhotoNamespace(state, layoutId)]);
   } catch (error) {
     for (const kind of ["items", "containers"]) {
       for (const id of Object.keys(snapshot.state[kind])) {
@@ -11346,7 +11346,7 @@ async function captureAdminTemplatePhotoCreateForm(input, { isCurrent, onDurable
     await plans.capturePhotoCreate({ operationId: attempt.operationId, body: record.action.body,
       editorSnapshot: adminTemplatePhotoCreateEditorSnapshot(record), recordIntentHash: record.intentHash }, { captureLease }); guard();
     await adminTemplateClient(binding, layoutId).capture(record.action); guard();
-    onDurable(record); durable = true; guard(); applyAdminTemplatePhotoCreateCandidate(record); captureComplete();
+    onDurable(record); durable = true; guard(); await applyAdminTemplatePhotoCreateCandidate(record); captureComplete();
     const result = await adminTemplateSaveCoordinator().flush(layoutId);
     if (result.state !== "committed" || !result.applied) throw Error("Новая запись сохранена на устройстве. Подтверждение ещё ожидается.");
     return result;
@@ -11379,7 +11379,7 @@ async function resumeAdminTemplatePhotoCreateForm(layout, captureLease) {
   await adminTemplatePlansFor(binding, layout.id).capturePhotoCreate({ operationId: record.action.operationId, body: record.action.body,
     editorSnapshot: adminTemplatePhotoCreateEditorSnapshot(record), recordIntentHash: record.intentHash }, { captureLease }); guard();
   await adminTemplateClient(binding, layout.id).capture(record.action); guard();
-  applyAdminTemplatePhotoCreateCandidate(record);
+  await applyAdminTemplatePhotoCreateCandidate(record);
 }
 function adminTemplatePhotoFormContext(type, entityId) {
   const owner = state[type === "item" ? "items" : "containers"]?.[entityId];
@@ -11449,11 +11449,21 @@ async function adminTemplatePhotoWholeCopyInventory(binding, layoutId, preparing
   const journals = await client.list(); guard();
   return { records, journals };
 }
+// The acceptance marker is small and synchronous; the account mirror is read
+// through its current repository and written through an explicit async API.
+// Never emulate an async Storage.setItem for the large mirror.
+const adminTemplatePhotoMirrorStorage = Object.freeze({
+  getItem: key => readPersonalLocalValue(key),
+  setItem(key, raw) {
+    if (ownsPersonalMirror(key)) throw Error("Зеркало данных требует подтверждённой асинхронной записи.");
+    localStorage.setItem(key, raw);
+  }
+});
 async function readAdminTemplatePhotoWholeCopyAccepted(binding, layoutId, operationId, guard, preparing = true) {
   const getContext = () => adminTemplateOperationContext(binding, layoutId, preparing);
   const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
   const accepted = await readAdminTemplatePhotoWholeCopyAcceptance({ binding, operationId, store, getContext,
-    getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, guard);
+    getMirrorContext: () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, guard);
   guard(); return accepted;
 }
 async function readAdminTemplatePhotoWholeCopyStopped(binding, layoutId, operationId, guard, preparing = true) {
@@ -11949,7 +11959,7 @@ async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
       throw Error("Сохранённое подтверждение копии не совпадает с выбранным результатом.");
     }
     const commonGuard = () => { guard(); assertAdminTemplateCaptureLease(captureLease, bindings); };
-    const getMirrorContext = () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey });
+    const getMirrorContext = () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey });
     const accepted = await readAdminTemplatePhotoWholeCopyAcceptance({ binding, operationId: plan.id, store, getContext, getMirrorContext }, commonGuard);
     commonGuard();
     if (accepted) {
@@ -11979,8 +11989,8 @@ async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
       return { state: "already-applied", operationId: plan.id, layoutId: targetId, acceptance: clone(acceptance.acceptance) };
     }
     return withAdminTemplatePhotoWholeCopyApplyInventory({ record, bindings, captureLease, assertCurrent: guard }, scope =>
-      applyAdminTemplatePhotoWholeCopyResult({ plan, store, receipt, stageReceipts, captureLease, getState: () => state, getContext,
-        getMirrorContext: () => ({ storage: localStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
+      applyAdminTemplatePhotoWholeCopyResult({ plan, store, receipt, stageReceipts, captureLease, getState: () => state, getContext, persistMirror: persistRequiredPersonalMirror,
+        getMirrorContext: () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
   });
 }
 async function runAdminTemplatePhotoWholeCopyPlan(input) {
@@ -12652,7 +12662,7 @@ async function assertAdminTemplatePhotoCopySideAvailable(side, { operationId, bo
   if (orders.some(row => canonicalTemplateJson(row.intent.body.base) === canonicalTemplateJson(source.base)
     || source.base.operationId === row.intent.id)) throw Error("Сначала завершите сохранённый порядок шаблонов.");
 }
-function applyAdminTemplatePhotoCopyPending(record) {
+async function applyAdminTemplatePhotoCopyPending(record) {
   const layoutId = record.snapshot.target.layoutId, layout = state.layouts[layoutId], previous = layout?.adminCausalSource;
   const expected = adminTemplatePhotoNamespace(state, layoutId), actual = adminTemplatePhotoEditorSnapshot(state, layoutId, record.snapshot.target.metadata);
   if (!previous || canonicalTemplateJson(previous.binding) !== canonicalTemplateJson(record.binding)
@@ -12666,7 +12676,7 @@ function applyAdminTemplatePhotoCopyPending(record) {
     layout.adminCausalSource = { ...clone(record.snapshot.target.beforeState.layouts[layoutId].adminCausalSource),
       planId: record.action.operationId, base: { operationId: record.action.operationId }, photoCopyPending: record.action.operationId };
     layout.templateDraftSyncPending = true;
-    persistAdminTemplatePhotoMirror(layoutId, [expected, adminTemplatePhotoNamespace(state, layoutId)]);
+    await persistAdminTemplatePhotoMirror(layoutId, [expected, adminTemplatePhotoNamespace(state, layoutId)]);
   } catch (error) {
     layout.adminCausalSource = previous;
     if (flag === undefined) delete layout.templateDraftSyncPending; else layout.templateDraftSyncPending = flag;
@@ -12703,7 +12713,7 @@ async function resumeAdminTemplatePhotoCopyForm(layout) {
       editorSnapshot: adminTemplatePhotoCopyEditorSnapshot(record), recordIntentHash: record.intentHash }, { captureLease }); guard();
     const client = adminTemplatePhotoCopyClient(binding, layout.id), journal = await client.read(record.action.operationId); guard();
     if (!journal) { if (!ADMIN_TEMPLATE_PHOTO_COPY_ENABLED) throw Error("Сохранённая копия требует сверки журнала."); await client.capture(record.action); guard(); }
-    applyAdminTemplatePhotoCopyPending(record);
+    await applyAdminTemplatePhotoCopyPending(record);
   });
 }
 async function submitAdminTemplatePhotoCopyForm(input, { isCurrent, onDurable }) {
@@ -12766,7 +12776,7 @@ async function submitAdminTemplatePhotoCopyForm(input, { isCurrent, onDurable })
     await adminTemplatePlansFor(attempt.binding, targetId).capturePhotoCopy({ operationId: record.action.operationId, body: record.action.body,
       editorSnapshot: adminTemplatePhotoCopyEditorSnapshot(record), recordIntentHash: record.intentHash }, { captureLease }); guard();
     await adminTemplatePhotoCopyClient(attempt.binding, targetId).capture(record.action); guard();
-    applyAdminTemplatePhotoCopyPending(record); captured = true; onDurable(record);
+    await applyAdminTemplatePhotoCopyPending(record); captured = true; onDurable(record);
   });
   if (!captured) throw Error("Подтверждение записи копии ещё ожидается.");
   const result = await adminTemplateSaveCoordinator().flush(targetId);

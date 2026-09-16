@@ -33,6 +33,33 @@ const noServerEffects = f => {
   assert.deepEqual(f.server.calls, []); assert.equal(f.idb.rows("stage-dispatches").size, 0);
 };
 
+test("async mirror confirmation precedes acceptance and live application; rejected IDB write is retryable", async () => {
+  const f = await fixture(), before = copy(f.state), original = f.values.get(f.key);
+  f.input.persistMirror = async () => { throw new DOMException("IDB full", "QuotaExceededError"); };
+  await assert.rejects(f.run(), { name: "QuotaExceededError" });
+  assert.deepEqual(f.state, before); assert.equal(f.values.get(f.key), original);
+  assert.equal(f.values.has(f.acceptanceKey), false);
+  let entered, finish;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { finish = resolve; });
+  f.input.persistMirror = async (key, raw) => { entered(); await gate; f.values.set(key, raw); };
+  const pending = f.run(); await waiting;
+  assert.deepEqual(f.state, before); assert.equal(f.values.has(f.acceptanceKey), false);
+  finish(); const result = await pending;
+  assert.equal(result.state, "applied"); assert.ok(f.values.has(f.acceptanceKey));
+  assert.ok(f.state.layouts[f.record.snapshot.target.layoutId]); noServerEffects(f);
+});
+
+test("editor changes during an async mirror write retain the target in storage without accepting over the changed editor", async () => {
+  const f = await fixture(), targetId = f.record.snapshot.target.layoutId;
+  f.input.persistMirror = async (key, raw) => {
+    await Promise.resolve(); f.values.set(key, raw); f.current.generation = "changed while persisting";
+  };
+  await assert.rejects(f.run());
+  assert.ok(f.mirror().layouts[targetId]); assert.equal(f.state.layouts[targetId], undefined);
+  assert.equal(f.values.has(f.acceptanceKey), false); noServerEffects(f);
+});
+
 test("whole copy applies the verified target only after persistence, preserving fresh unrelated live and mirror values", async () => {
   const f = await fixture(), before = copy(f.state), sourceId = f.record.snapshot.source.layoutId;
   const mirror = f.mirror(); mirror.items.private.quantity = 19; mirror.preferences.filter = "other tab";
