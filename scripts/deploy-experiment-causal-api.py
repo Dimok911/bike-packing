@@ -161,6 +161,18 @@ try {
     if (!/^bike_packing_[a-z_]+$/.test(table)) throw Error('Unexpected schema table');
     await db.query('SELECT 1 FROM `' + table + '` LIMIT 0');
   }
+  // Whole-copy reserves IDs across older photo and access journals even when
+  // their write capabilities are disabled. A healthy API alone cannot prove
+  // these dependencies exist in the deployed database.
+  if (process.argv[3] === 'whole-copy') {
+    for (const [table, columns] of [
+      ['bike_packing_access_operations', 'list_id, operation_id'],
+      ['bike_packing_access_revocations', 'list_id, grant_operation_id'],
+      ['bike_packing_access_invitation_tokens', 'grant_operation_id'],
+      ['bike_packing_photo_operations', 'list_id, operation_id, photo_id'],
+      ['bike_packing_list_shares', 'list_id, grant_operation_id'],
+    ]) await db.query('SELECT ' + columns + ' FROM ' + table + ' LIMIT 0');
+  }
   await db.beginTransaction();
   await db.query('SELECT 1 FROM bike_packing_photos LIMIT 0');
   await assertTemplatePhotoTombstoneSchema(db);
@@ -168,7 +180,8 @@ try {
   console.log('STAGED_SERVICE_USER_SCHEMA_VERIFIED');
 } finally { await db.end(); }
 '''
-    run(["node", "--input-type=module", "-", json.dumps(manifest["requiredTables"])], cwd=release, input=schema_probe.encode())
+    schema_mode = "whole-copy" if "adminTemplatePhotoWholeCopyV1" in manifest["requiredCapabilities"] else ""
+    run(["node", "--input-type=module", "-", json.dumps(manifest["requiredTables"]), schema_mode], cwd=release, input=schema_probe.encode())
     run(["node", "--check", "server.mjs"], cwd=release)
     env = os.environ.copy()
     env.update({"PERSONAL_TAGS_SERVER_PORT": "4318", "PERSONAL_TAGS_SERVER_HOST": "127.0.0.1", "VNIIPO_SERVICE_MODE": "bike-packing"})
