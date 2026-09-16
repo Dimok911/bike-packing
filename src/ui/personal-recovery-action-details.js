@@ -1,5 +1,6 @@
 import { personalPlacementIntent } from "../sync/personal-placement-mutation.js";
 import { buildHistoryStateDiff } from "./history-diff.js";
+import { validPersonalItemRename } from "../sync/personal-item-rename.js";
 
 const plain = value => value && typeof value === "object" && !Array.isArray(value);
 const revision = value => Number.isSafeInteger(value) && value > 0;
@@ -89,6 +90,11 @@ export function describePersonalRecoveryActions(records, { language = "ru", conf
     const operationId = text(record?.action?.operationId);
     const unavailable = { operationId, title: t("Saved layout change", "Сохранённое изменение укладки"),
       lines: [t("Detailed description is not available in this record.", "Подробное описание в этой записи отсутствует.")], detailUnavailable: true };
+    if (record?.action?.kind === "item.rename") {
+      const body = record.action.body;
+      return validPersonalItemRename(body) ? { operationId, title: t("Rename an item", "Переименовать вещь"),
+        lines: [`${short(body.expectedName)} → ${short(body.name)}`], detailUnavailable: false } : unavailable;
+    }
     if (record?.action?.kind !== "list.update" || !plain(record.action.body?.payload)) return unavailable;
     const body = record.action.body, base = savedBase(record, byId);
     try {

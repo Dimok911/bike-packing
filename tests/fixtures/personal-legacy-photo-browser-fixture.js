@@ -393,6 +393,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method();
     if (url.href.startsWith(api + "/")) {
+      if (f.apiOffline) return route.abort("internetdisconnected");
       if (method === "OPTIONS") return route.fulfill({ status: 204, headers });
       const endpoint = url.pathname.split("/letters-vniipo/api")[1];
       const call = { method, path: endpoint, body: request.postDataJSON(), revision: f.revision };
@@ -493,7 +494,40 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
         const action = request.postDataJSON(); f.posts.push(structuredClone(action));
         f.captured.push(await nativeLegacyPhotoOutbox(page));
         assert.equal(action.environment, "bike-packing-experiment"); assert.equal(action.expectedActorId, legacyPhotoBinding.actorId);
-        assert.equal(action.listId, legacyPhotoBinding.listId); assert.equal(action.kind, "list.update");
+        assert.equal(action.listId, legacyPhotoBinding.listId);
+        assert.ok(["list.update", "item.rename"].includes(action.kind));
+        const compactRename = action.kind === "item.rename";
+        let nextPayload = action.body.payload;
+        if (compactRename) {
+          // Independent synthetic endpoint contract, intentionally not the
+          // application's validator/projector: only this item's name and form
+          // metadata may change, with an exact current-name precondition.
+          assert.ok(Buffer.byteLength(JSON.stringify(action.body), "utf8") <= 4096);
+          assert.equal(action.body.version, 1);
+          assert.ok(Object.keys(action.body).every(key => ["version", "itemId", "expectedName", "name", "baseStateRevision", "causal",
+            "clientDeviceId", "clientDeviceName", "clientUpdatedAt", "changeGroupId", "affectedLayoutIds", "changeScope", "itemMeta"].includes(key)));
+          assert.equal(Object.hasOwn(action.body, "payload"), false);
+          assert.match(action.body.itemId, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/);
+          assert.ok(!["__proto__", "prototype", "constructor"].includes(action.body.itemId));
+          assert.ok(Number.isSafeInteger(action.body.baseStateRevision) && action.body.baseStateRevision > 0);
+          assert.equal(typeof action.body.expectedName, "string");
+          assert.ok(action.body.expectedName.length <= 255);
+          const item = f.payload.items[action.body.itemId];
+          assert.ok(item && item.id === action.body.itemId);
+          assert.equal(action.body.expectedName, item.name);
+          assert.equal(typeof action.body.name, "string");
+          assert.ok(action.body.name.length > 0 && action.body.name.length <= 255);
+          assert.equal(action.body.name.trim(), action.body.name);
+          nextPayload = structuredClone(f.payload);
+          nextPayload.items[action.body.itemId].name = action.body.name;
+          if (action.body.itemMeta) {
+            assert.deepEqual(Object.keys(action.body.itemMeta).sort(), ["updatedAt", "updatedByDeviceId", "updatedByDeviceName"]);
+            for (const value of Object.values(action.body.itemMeta)) assert.ok(typeof value === "string" && value.length <= 255);
+            assert.match(action.body.itemMeta.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/);
+            assert.ok(Number.isFinite(Date.parse(action.body.itemMeta.updatedAt)));
+            Object.assign(nextPayload.items[action.body.itemId], action.body.itemMeta);
+          }
+        }
         const recoveryRebase = ordinaryRebase && !action.body.userPlacement;
         const recoveryNoop = ordinaryRecovery && !ordinaryRebase && !action.body.userPlacement;
         if (ordinaryRecovery) assert.equal(f.ordinaryOriginals.has(action.operationId), false, "original phone action must never be executed by recovery");
@@ -528,7 +562,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
           f.noopPosts.push(structuredClone(action));
         } else if (validateBusinessIntent) {
           validateBusinessIntent(action.body);
-        } else {
+        } else if (!compactRename) {
           assert.ok(["link-root", "remove-container"].includes(action.body.userPlacement?.action), "unexpected business intent");
           if (ordinaryRecovery) assert.equal(f.noopPosts.length, 1, "ordinary editing cannot resume before the server-choice CAS");
         }
@@ -542,7 +576,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
             "neither the immutable chain base nor the newly confirmed numeric base");
           assert.deepEqual(action.body.causal.dependsOn, [{ operationId: parentId, listId: legacyPhotoBinding.listId }]);
         } else assert.equal(action.body.baseStateRevision, f.revision);
-        f.preserveRows(f.payload, action.body.payload);
+        f.preserveRows(f.payload, nextPayload);
         if (f.legacyOwnerDenied || !f.ownerAllowed) { call.status = 403; call.code = "personal_owner_only";
           return route.fulfill({ status: 403, headers, json: { ok: false, code: call.code } }); }
         if (sharedOwnerUpgrade && !parentId) {
@@ -551,7 +585,7 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
             && entry.receiptState === "waiting"), "durable waiting was not independently read before replay");
         }
         if (f.failWrites) return route.fulfill({ status: 503, headers, json: { ok: false, code: "isolated_unavailable" } });
-        f.payload = structuredClone(action.body.payload);
+        f.payload = structuredClone(nextPayload);
         if (mixedLegacyRoutes) for (const collection of ["containers","items"]) {
           for (const [id, owner] of Object.entries(f.initial[collection])) if (owner.photos?.length) {
             f.payload[collection][id].photos = structuredClone(owner.photos);
@@ -561,8 +595,12 @@ export async function setupPersonalLegacyPhotoBrowser(page, context, {
         const binding = { environment: action.environment, actorId: action.expectedActorId, listId: action.listId, kind: action.kind, body: action.body };
         data = { ok: true, operation: { id: action.operationId, ...binding, state: "committed",
           payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex") },
-          result: { status: 200, payload: { ok: true, stateRevision: f.revision, list: list() } } };
+          result: { status: 200, payload: { ok: true, stateRevision: f.revision, list: list(),
+            ...(compactRename ? { rename: { version: 1, itemId: action.body.itemId, previousName: action.body.expectedName,
+              name: action.body.name, ...(action.body.itemMeta ? { itemMeta: structuredClone(action.body.itemMeta) } : {}) },
+              upserted: [action.body.itemId], conflicts: [], skipped: [], deleted: [] } : {}) } } };
         f.receipts.set(action.operationId, structuredClone(data));
+        await f.afterCommit?.(structuredClone(action));
         if (f.loseAck) { f.dropped = true; f.hideReceipts = true; return route.abort("failed"); }
       } else if (endpoint.startsWith("/bike-packing/list-operations/") && method === "GET") {
         const id = endpoint.split("/").at(-1); f.receiptReads.push(id);

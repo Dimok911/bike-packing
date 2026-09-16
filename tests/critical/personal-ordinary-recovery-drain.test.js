@@ -48,6 +48,25 @@ test("explicit server choice archives before recovery and applies only its durab
   assert.deepEqual(f.calls, ["drain", "remote", "choice", "archive", "recover", "apply", "drain"]);
 });
 
+test("compact rename review compares the decoded immutable head and leaves its command unchanged", async () => {
+  const f = fixture(); f.choice = "later";
+  const saved = { action: { operationId: "compact-head", kind: "item.rename", body: {
+    version: 1, itemId: "item", expectedName: "Before", name: "After", baseStateRevision: 1582 } },
+    compactState: { payload: { items: { item: { id: "item", name: "After", weight: 10 } }, containers: {}, layouts: {} } } };
+  f.records = [saved];
+  f.remote.payload = { items: { item: { id: "item", name: "Server", weight: 10 } }, containers: {}, layouts: {} };
+  f.options.outbox.ordinaryRecoveryReview = () => ({ records: f.records, confirmedOperationIds: [], headOperationId: "compact-head" });
+  const before = structuredClone(saved);
+  f.onChoice = details => {
+    assert.deepEqual(details.comparison.local, saved.compactState.payload);
+    assert.deepEqual(details.comparison.remote, f.remote.payload);
+    details.comparison.local.items.item.name = "Dialog mutation";
+  };
+  await assert.rejects(run(f.options), /Выбор отложен/);
+  assert.deepEqual(saved, before);
+  assert.equal(f.calls.includes("archive"), false);
+});
+
 test("dialog can report failed preparation and still export originals without cancelling", async () => {
   const f = fixture(); f.quota = true; f.choice = "later";
   f.onChoice = details => {

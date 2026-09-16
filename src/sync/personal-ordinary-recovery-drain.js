@@ -1,4 +1,5 @@
 import { canonicalListOperationJson as canonical } from "./list-operation-queue.js";
+import { compactPersonalPayload } from "./personal-compact-record.js";
 
 const paused = message => Object.assign(new Error(message), { isOperationReceiptError: true, code: "ordinary-recovery-pending" });
 
@@ -53,8 +54,9 @@ export async function drainPersonalSaveWithOrdinaryRecovery({ enabled = false, o
     // supplies the saved side. This comparison is display-only and cannot
     // authorize a merge, cancellation or replacement of either version.
     const saved = review.records.find(record => record.action?.operationId === review.headOperationId);
-    const comparison = saved?.action.kind === "list.update" && saved.action.body?.payload && remote.payload
-      ? JSON.parse(canonical({ local: saved.action.body.payload, remote: remote.payload, serverRevision: remote.stateRevision })) : null;
+    const savedPayload = ["list.update", "item.rename"].includes(saved?.action.kind) ? compactPersonalPayload(saved) : null;
+    const comparison = savedPayload && remote.payload
+      ? JSON.parse(canonical({ local: savedPayload, remote: remote.payload, serverRevision: remote.stateRevision })) : null;
     const choice = await chooseServer({ actionCount: outbox.ordinaryRecoveryState().actionCount,
       records: review.records, confirmedOperationIds: review.confirmedOperationIds,
       comparison,

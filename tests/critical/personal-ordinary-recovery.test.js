@@ -41,7 +41,7 @@ for (const stage of ["archive", "successor", "completion"]) test(`recovery evict
   assert.equal(result.action.operationId, archive.successorOperationId);
   assert.equal(f.cancels.length, original.length);
 });
-function fixture({ count = 1, enabled = true, changeInput = () => {} } = {}) {
+function fixture({ count = 1, enabled = true, compact = false, changeInput = () => {} } = {}) {
   const values = new Map();
   const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
     getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
@@ -52,7 +52,7 @@ function fixture({ count = 1, enabled = true, changeInput = () => {} } = {}) {
     thumbUrl: "https://api.vniipo-help.ru/letters-vniipo/api/bike-packing/lists/list-a/photos/photo-a/thumb" };
   const payload = { items: {}, containers: { bag: { id: "bag", name: "Local bag", photos: [photo] },
     oldCopy: { id: "oldCopy", name: "Old shared photo", photos: [clone(photo)] } }, layouts: { layout: { id: "layout", containerIds: ["bag"] } } };
-  const make = (on = enabled) => createPersonalSaveOutbox({ storage, ...binding, ordinaryRecoveryEnabled: on });
+  const make = (on = enabled) => createPersonalSaveOutbox({ storage, ...binding, ordinaryRecoveryEnabled: on, compactCaptureEnabled: compact });
   const outbox = make(), records = [];
   for (let n = 0; n < count; n++) {
     const body = { payload: clone(payload), baseStateRevision: 1582, stateRevision: 1582, force: false, forceOverwrite: false,
@@ -65,9 +65,9 @@ function fixture({ count = 1, enabled = true, changeInput = () => {} } = {}) {
   const remote = { id: binding.listId, ownerId: binding.actorId, stateRevision: 1585, payload: serverPayload, updatedAt: "server-time", deleted: false };
   const f = { values, storage, binding, context, make, outbox, records, remote, cancels: [], reads: 0 };
   f.proof = (request, state = "rejected") => ({ historicalOnly: true, operation: { id: request.operationId,
-    environment: binding.environment, actorId: binding.actorId, kind: "list.update", listId: binding.listId, state,
+    environment: binding.environment, actorId: binding.actorId, kind: request.path.endsWith("/items/rename") ? "item.rename" : "list.update", listId: binding.listId, state,
     payloadDigest: createHash("sha256").update(canonicalListOperationJson({ environment: binding.environment,
-      actorId: binding.actorId, kind: "list.update", listId: binding.listId, body: JSON.parse(request.body) })).digest("hex") },
+      actorId: binding.actorId, kind: request.path.endsWith("/items/rename") ? "item.rename" : "list.update", listId: binding.listId, body: JSON.parse(request.body) })).digest("hex") },
     ...(state === "committed" ? { resultStatus: 200, stateRevision: 1584 } : { resultStatus: 409, rejectionCode: "operation_cancelled",
       cancellation: { version: 1, operationId: request.operationId, noBusinessEffects: true, operationCannotApply: true } }) });
   f.options = { getContext: () => f.context, readRemote: async () => { f.reads++; return clone(f.remote); },
@@ -78,6 +78,81 @@ function fixture({ count = 1, enabled = true, changeInput = () => {} } = {}) {
   f.store = () => createPersonalOrdinaryRecoveryStore({ storage, binding });
   return f;
 }
+
+function compactFixture() {
+  const f = fixture({ count: 0, compact: true });
+  const base = clone(f.remote.payload);
+  base.items.item = { id: "item", name: "Original item", weight: 123, photos: [] };
+  f.remote.payload = clone(base); f.remote.payload.items.item.name = "Server item";
+  f.outbox.adoptRemoteBaseline({ snapshot: { ...clone(base), localUi: "packing" }, payload: base, stateRevision: 1582 });
+  let snapshot = { ...clone(base), localUi: "packing" };
+  f.rename = name => {
+    snapshot = clone(snapshot); snapshot.items.item.name = name;
+    const itemMeta = { updatedAt: "2026-09-16T12:34:56.789Z", updatedByDeviceId: "device", updatedByDeviceName: "Device" };
+    Object.assign(snapshot.items.item, itemMeta);
+    const candidatePayload = clone(snapshot); delete candidatePayload.localUi;
+    const record = f.outbox.captureItemRename({ itemId: "item", name, itemMeta, snapshot, payload: candidatePayload });
+    f.records.push(record); return record;
+  };
+  return f;
+}
+
+test("compact keep-server archive preserves exact v4 commands and cold resume after a lost cancellation ACK", async () => {
+  const f = compactFixture(); f.rename("First local name"); f.rename("Second local name");
+  const originals = [...f.values], archive = f.prepare();
+  assert.ok(archive.entries.every(entry => JSON.parse(entry.value).version === 4));
+  assert.equal(archive.snapshot.items.item.name, "Second local name");
+  assert.equal(archive.snapshot.localUi, "packing");
+  let lost = false;
+  f.options.queue.cancelExact = async request => {
+    f.cancels.push(clone(request));
+    if (!lost && f.cancels.length === 2) { lost = true; throw Error("Lost compact cancellation ACK"); }
+    const proof = f.proof(request); proof.operation.body = JSON.parse(request.body); return proof;
+  };
+  await assert.rejects(f.recover(), /Lost compact cancellation ACK/);
+  assert.equal(f.reads, 0);
+  f.outbox = f.make();
+  assert.deepEqual(f.store().read().pending.archive, archive);
+  const result = await f.recover();
+  assert.deepEqual(result.action.body.payload, f.remote.payload);
+  assert.equal(result.snapshot.localUi, "packing");
+  assert.deepEqual(f.cancels.slice(2).map(request => JSON.parse(request.body)), f.records.map(record => record.action.body));
+  assert.ok(f.cancels.every(request => request.path.endsWith("/items/rename")));
+  for (const [key, raw] of originals) assert.equal(f.values.get(key), raw);
+  assert.equal(f.make().ordinaryRecoveryState().pending, false);
+  assert.equal(f.outbox.releaseArchivedOrdinaryEntries({ getContext: () => f.context }).removed, 3);
+  assert.deepEqual(f.make().recover(), result);
+  assert.deepEqual(f.store().read().archives[0].archive, archive);
+  assert.deepEqual(JSON.parse(f.store().read().archives[0].completion.recordRaw).reconciliation.settled.map(proof => proof.operation.body),
+    f.records.map(record => record.action.body));
+});
+
+test("compact recovery archive retains checkpoint source after an ancestor has already been retired", async () => {
+  const f = compactFixture(), first = f.rename("First"); const confirmed = f.rename("Confirmed");
+  f.outbox.markApplied({ operationId: confirmed.action.operationId, stateRevision: 1584 });
+  f.outbox.compact();
+  assert.equal([...f.values.keys()].some(key => key.endsWith(first.action.operationId)), false);
+  const pending = f.rename("Pending"), archive = f.prepare();
+  assert.deepEqual(archive.operationIds, [confirmed.action.operationId, pending.action.operationId]);
+  assert.ok(archive.entries.some(entry => JSON.parse(entry.value).compactSource));
+  assert.equal(archive.snapshot.items.item.name, "Pending");
+  const proof = f.proof;
+  f.options.queue.cancelExact = async request => proof(request, request.operationId === confirmed.action.operationId ? "committed" : "rejected");
+  f.outbox = f.make();
+  const result = await f.recover();
+  f.outbox.releaseArchivedOrdinaryEntries({ getContext: () => f.context });
+  assert.deepEqual(f.make().recover(), result);
+  assert.deepEqual(f.store().read().archives[0].archive, archive);
+  f.outbox.markApplied({ operationId: result.action.operationId, stateRevision: 1586 });
+  f.outbox.compact();
+  assert.equal(f.make().hasPending(), false);
+  assert.deepEqual(f.store().read().archives[0].archive, archive, "archive decodes from its own retired source after live checkpoints change");
+  const key = [...f.values.keys()].find(key => key.includes(":archive:"));
+  const broken = JSON.parse(f.values.get(key));
+  broken.entries = broken.entries.filter(entry => !JSON.parse(entry.value).compactSource);
+  f.values.set(key, JSON.stringify(broken));
+  assert.throws(() => f.store().read(), paused);
+});
 
 test("server recovery is OFF by default; reading a draft cannot authorize cancellation", async () => {
   assert.equal(PERSONAL_ORDINARY_RECOVERY_ENABLED, false);

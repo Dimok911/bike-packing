@@ -1,6 +1,8 @@
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
-import { readStablePersonalEntries } from "./personal-save-checkpoints.js";
+import { readStablePersonalEntries, readPersonalCheckpoints } from "./personal-save-checkpoints.js";
+import { decodeCompactPersonalRecord } from "./personal-compact-record.js";
+import { validPersonalItemRename } from "./personal-item-rename.js";
 export const PERSONAL_ORDINARY_RECOVERY_ENABLED = false;
 const environment = "bike-packing-experiment";
 const prefix = "bike-packing-personal-ordinary-recovery-v1:";
@@ -33,11 +35,26 @@ const bindingOf = value => {
   return binding;
 };
 const outboxPrefix = binding => `bike-packing-personal-save-v1:${encodeURIComponent(JSON.stringify(binding))}:`;
-const archivedRecords = archive => new Map(archive.operationIds.map(id => {
-  const entry = archive.entries.find(entry => entry.key === outboxPrefix(archive.binding) + id);
-  if (!entry) fail(); const record = JSON.parse(entry.value);
-  return [id, record];
-}));
+const archivedRecords = archive => {
+  const prefix = outboxPrefix(archive.binding), entries = new Map(archive.entries.map(entry => [entry.key, entry.value]));
+  const { anchor } = readPersonalCheckpoints(entries, prefix), decoded = new Map(), decoding = new Set();
+  const resolve = id => {
+    if (decoded.has(id)) return decoded.get(id);
+    if (decoding.has(id) || anchor?.retired.includes(id)) fail();
+    const raw = entries.get(prefix + id); if (typeof raw !== "string") fail();
+    decoding.add(id);
+    let record = JSON.parse(raw);
+    const compact = record.version === 4;
+    if (record.version === 4) record = decodeCompactPersonalRecord(record, resolve, anchor);
+    else if (record.version === 2) record = { ...record, version: 1,
+      snapshot: decodePersonalSnapshot(record.action?.body?.payload, record.snapshotPatch) };
+    if (record.version !== 1 || record.action?.operationId !== id || !same(bindingOf(record.action), archive.binding)
+      || !(record.action.kind === "list.update" || compact && record.action.kind === "item.rename" && record.compactState
+        && validPersonalItemRename(record.action.body))) fail();
+    decoding.delete(id); decoded.set(id, record); return record;
+  };
+  return new Map(archive.operationIds.map(id => [id, resolve(id)]));
+};
 
 // A completion previously duplicated the entire successor (including its base
 // and historical proof bodies). Retain the exact values as a patch against the
@@ -98,9 +115,10 @@ export function validPersonalOrdinaryRecoveryDecision(record, records, archive) 
     const originals = archivedRecords(archive);
     return proofs.every((proof, index) => {
       const id = archive.operationIds[index], original = records.get(id)?.action, operation = proof?.operation;
-      return original?.kind === "list.update" && same(bindingOf(original), archive.binding)
+      return ["list.update", "item.rename"].includes(original?.kind) && same(bindingOf(original), archive.binding)
         && same(original, originals.get(id)?.action)
         && proof.historicalOnly === true && operation?.id === id && operation.kind === original.kind
+        && (!Object.hasOwn(operation, "body") || same(operation.body, original.body))
         && same(bindingOf({ ...operation, scopeKey: archive.binding.scopeKey }), archive.binding)
         && /^[a-f0-9]{64}$/.test(operation.payloadDigest || "")
         && (operation.state === "committed" ? proof.resultStatus >= 200 && proof.resultStatus < 300
@@ -118,12 +136,9 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
     const archive = JSON.parse(raw);
     if (archive?.version === 2) {
       if (Object.hasOwn(archive, "snapshot") || !Array.isArray(archive.entries)) fail();
-      const entry = archive.entries.find(row => row.key === outboxPrefix(binding) + archive.headOperationId);
-      if (!entry || typeof entry.value !== "string") fail();
-      const head = JSON.parse(entry.value);
-      if (head.version === 2) archive.snapshot = decodePersonalSnapshot(head.action?.body?.payload, head.snapshotPatch);
-      else if (head.version === 1 && plain(head.snapshot)) archive.snapshot = clone(head.snapshot);
-      else fail();
+      const head = archivedRecords(archive).get(archive.headOperationId);
+      if (!plain(head?.snapshot)) fail();
+      archive.snapshot = clone(head.snapshot);
       archive.version = 1; // Public recovery-copy shape remains unchanged.
     }
     if (archive?.version !== 1 || archive.format !== "bike-packing-personal-ordinary-recovery-v1" || !same(archive.binding, binding)
@@ -135,7 +150,7 @@ export function createPersonalOrdinaryRecoveryStore({ storage, binding: rawBindi
       || !Array.isArray(archive.entries) || !plain(archive.snapshot)
       || archive.entries.some(entry => typeof entry.key !== "string" || !entry.key.startsWith(outboxPrefix(binding)) || typeof entry.value !== "string")
       || new Set(archive.entries.map(entry => entry.key)).size !== archive.entries.length) fail();
-    for (const [id, record] of archivedRecords(archive)) if (record.action?.operationId !== id || record.action.kind !== "list.update"
+    for (const [id, record] of archivedRecords(archive)) if (record.action?.operationId !== id || !["list.update", "item.rename"].includes(record.action.kind)
       || !same(bindingOf(record.action), binding)) fail();
     return archive;
   };

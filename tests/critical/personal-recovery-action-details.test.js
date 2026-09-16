@@ -4,6 +4,21 @@ import { describePersonalRecoveryActions as describe, explainPersonalRecoveryRea
 import { personalPlacementIntent, preparePersonalPlacementMutation } from "../../src/sync/personal-placement-mutation.js";
 
 const clone = value => structuredClone(value);
+test("compact rename describes exact saved names in both languages without requiring full payload", () => {
+  const saved = { action: { operationId: "saved-rename", kind: "item.rename", body: {
+    version: 1, itemId: "item", expectedName: "Палатка", name: "Лёгкая палатка", baseStateRevision: 9 } } };
+  const before = clone(saved);
+  for (const language of ["ru", "en"]) {
+    const result = describe([saved], { language })[0];
+    assert.equal(result.detailUnavailable, false);
+    assert.equal(result.title, language === "ru" ? "Переименовать вещь" : "Rename an item");
+    assert.deepEqual(result.lines, ["Палатка → Лёгкая палатка"]);
+    assert.deepEqual(describe([saved], { language, confirmedOperationIds: ["saved-rename"] }), []);
+  }
+  assert.deepEqual(saved, before);
+  saved.action.body.name = " ";
+  assert.equal(describe([saved])[0].detailUnavailable, true);
+});
 const payload = () => ({ items: { item: { id: "item", name: "Палатка", weight: 100 }, second: { id: "second", name: "Тент" } },
   containers: { bag: { id: "bag", name: "Рамная сумка", itemIds: [], childIds: [], photos: [] },
     target: { id: "target", name: "Подседельная сумка", itemIds: [], childIds: [], photos: [] } },

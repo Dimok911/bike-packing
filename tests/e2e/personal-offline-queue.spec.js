@@ -6,18 +6,24 @@ import { setupPersonalLegacyPhotoBrowser, readyLegacyPhotoBrowser, legacyPhotoPa
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
-test("large ordinary rename survives offline reload and sends once after reconnect", async ({ page, context }) => {
+test("large-list compact rename survives offline reload and sends once after reconnect", async ({ page, context }) => {
   test.setTimeout(90000);
   const payload = legacyPhotoPayload(), itemId = "offline-queue-item";
+  // Use an existing location so submitting the form only changes the name.
   payload.items[itemId] = { id: itemId, name: "Зарядное устройство", weight: 130, quantity: 1,
-    containerId: "placed-bag", location: "Дом", category: "", categories: [], color: "", photos: [], note: "x".repeat(395000) };
+    containerId: "placed-bag", location: "Велосипед", category: "", categories: [], color: "", photos: [], note: "x".repeat(395000) };
   payload.containers["placed-bag"].itemIds = [itemId];
   const arrangement = payload.layouts[legacyLayoutId].arrangement;
   arrangement.items[itemId] = "placed-bag"; arrangement.itemQuantities[itemId] = 1;
   arrangement.containers["placed-bag"].itemIds = [itemId];
   arrangement.containers["placed-bag"].order = [{ type: "item", id: itemId }];
   const f = await setupPersonalLegacyPhotoBrowser(page, context, { initialPayload: payload,
-    validateBusinessIntent: body => expect(body.payload.items[itemId].name).toBe("Зарядное устройство офлайн") });
+    validateBusinessIntent: body => {
+      expect(body.name).toBe("Зарядное устройство офлайн");
+      expect(body.itemId).toBe(itemId);
+      expect(Object.hasOwn(body, "payload")).toBe(false);
+      expect(Buffer.byteLength(JSON.stringify(body), "utf8")).toBeLessThanOrEqual(4096);
+    } });
   const constrainStorage = () => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value) {
@@ -44,9 +50,11 @@ test("large ordinary rename survives offline reload and sends once after reconne
   await page.locator("#itemName").blur();
   await page.locator("#saveItemBtn").click();
   await expect(page.locator("#itemDialog")).not.toBeVisible();
-  await expect.poll(async () => (await nativeLegacyPhotoOutbox(page)).record?.action.body.payload.items[itemId]?.name)
+  await expect.poll(async () => (await nativeLegacyPhotoOutbox(page)).record?.action.body.name)
     .toBe("Зарядное устройство офлайн");
   const captured = await nativeLegacyPhotoOutbox(page), id = captured.record.action.operationId;
+  expect(captured.record.action.kind).toBe("item.rename");
+  expect(captured.records).toHaveLength(1);
   expect(captured.pending).toBe(true); expect(f.posts).toHaveLength(0);
   const refs = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")));
   expect(refs.some(([, raw]) => JSON.parse(raw).personalJournalReference === 1)).toBe(true);
@@ -64,6 +72,9 @@ test("large ordinary rename survives offline reload and sends once after reconne
   await expect.poll(() => f.posts.length, { timeout: 30000 }).toBe(1);
   await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "synced", { timeout: 30000 });
   expect(f.posts[0].operationId).toBe(id);
+  expect(f.posts[0].kind).toBe("item.rename");
+  expect(f.payload.items[itemId]).toEqual({ ...payload.items[itemId], name: "Зарядное устройство офлайн", ...f.posts[0].body.itemMeta });
+  expect(f.payload.containers).toEqual(payload.containers);
   expect(f.payload.items[itemId].name).toBe("Зарядное устройство офлайн");
   await page.waitForLoadState("networkidle"); await page.reload(); await readyLegacyPhotoBrowser(page);
   expect((await nativeLegacyPhotoOutbox(page)).pending).toBe(false); expect(f.posts).toHaveLength(1);

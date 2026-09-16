@@ -1,5 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { hasLegacyPersonalPhotos, isOrdinaryLegacyPersonalUpdate, preservesConfirmedPersonalPhotoChain } from "./personal-confirmed-photos.js";
+import { validPersonalItemRename } from "./personal-item-rename.js";
+const recordPayload = record => record?.compactState?.payload ?? record?.action?.body?.payload;
 
 export { hasLegacyPersonalPhotos, isPreservedLegacyPersonalPhoto, isOrdinaryLegacyPersonalUpdate } from "./personal-confirmed-photos.js";
 export const PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED = false;
@@ -38,7 +40,7 @@ export async function preparePersonalLegacyPhotoPreservation({ records, operatio
     if (parentId && !byId.has(parentId)) throw blocked();
     record = parentId ? byId.get(parentId) : null;
   }
-  if (![...active.flatMap(record => [record.mergeBase?.payload, record.action.body?.payload]), confirmedBoundary?.payload]
+  if (![...active.flatMap(record => [record.mergeBase?.payload, recordPayload(record)]), confirmedBoundary?.payload]
     .some(hasLegacyPersonalPhotos)) return null;
   const available = Array.isArray(capabilities) ? capabilities : capabilities?.capabilities;
   if (!enabled || !available?.includes(PERSONAL_LEGACY_PHOTO_PRESERVATION_CAPABILITY)) throw blocked();
@@ -47,7 +49,7 @@ export async function preparePersonalLegacyPhotoPreservation({ records, operatio
   if (initialContext.environment !== environment || !initialContext.actorId || !initialContext.generation
     || initialContext.scope !== "personal" || initialContext.scopeKey !== `id:${initialContext.actorId}`
     || initialContext.listId !== listId) throw blocked();
-  if (active.some(({ action }) => action.kind !== "list.update" || !isOrdinaryLegacyPersonalUpdate(action.body)
+  if (active.some(({ action }) => !(action.kind === "item.rename" ? validPersonalItemRename(action.body) : action.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(action.body))
     || ["environment", "actorId", "scopeKey"].some(key => Object.hasOwn(action, key) && action[key] !== initialContext[key]))) throw blocked();
   const recordsJson = canonicalListOperationJson(snapshot), contextJson = canonicalListOperationJson(initialContext);
   let stale = false;

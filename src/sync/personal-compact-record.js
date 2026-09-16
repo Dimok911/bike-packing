@@ -1,9 +1,11 @@
 import { validPersonalItemRename } from "./personal-item-rename.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
+import { personalBusinessPayloadMatchesConfirmed } from "./personal-confirmed-business-equality.js";
 
 // Storage and delivery have separate gates. The reader remains available with
 // the writer OFF so a rollback cannot hide already saved device actions.
 export const PERSONAL_COMPACT_CAPTURE_ENABLED = false;
+export const PERSONAL_COMPACT_DELIVERY_ENABLED = false;
 const clone = value => JSON.parse(JSON.stringify(value));
 const plain = value => value && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value > 0;
@@ -20,6 +22,7 @@ export function applyPersonalItemRename(payload, body) {
   if (!plain(item) || item.id !== body.itemId || item.name !== body.expectedName) fail();
   const result = clone(payload);
   result.items[body.itemId].name = body.name;
+  if (body.itemMeta) Object.assign(result.items[body.itemId], body.itemMeta);
   return result;
 }
 
@@ -29,7 +32,6 @@ export function encodeCompactPersonalRecord({ action, source, sourcePayload, sna
   // A command cannot conceal a second business mutation in its local snapshot.
   // Callers supply their normal UI snapshot separately from this payload.
   const snapshotPatch = encodePersonalSnapshot(payload, snapshot);
-  if (snapshotPatch.length) fail(); // UI metadata is not part of this first seam.
   return { version: 4, action: clone(action), source: clone(source), snapshotPatch };
 }
 
@@ -41,7 +43,7 @@ export function decodeCompactPersonalRecord(raw, resolve, checkpoint = null) {
     !["version", "action", "source", "snapshotPatch"].includes(key))) fail();
   const action = raw.action, source = raw.source;
   if (action?.kind !== "item.rename" || !uuid(action.operationId) || !validPersonalItemRename(action.body)
-    || !plain(source) || !Array.isArray(raw.snapshotPatch) || raw.snapshotPatch.length) fail();
+    || !plain(source) || !Array.isArray(raw.snapshotPatch)) fail();
   const hasReference = Object.hasOwn(source, "operationId");
   if (Object.keys(source).some(key => ![hasReference ? "operationId" : "payload", "stateRevision"].includes(key))
     || Object.hasOwn(source, "stateRevision") && (!revision(source.stateRevision)
@@ -75,4 +77,20 @@ export function decodeCompactPersonalRecord(raw, resolve, checkpoint = null) {
 export function retainCompactPersonalSource(checkpoint, record) {
   if (record?.compactState?.source) checkpoint.compactSource = clone(record.compactState.source);
   return checkpoint;
+}
+
+// Detect one rename in the business representation produced by the existing
+// form. Unrelated edits and file changes fall back to the existing full action.
+export function personalCompactRenameCandidate({ base, payload, listId, stateRevision }) {
+  if (!plain(base?.items) || !plain(payload?.items) || !revision(stateRevision)) return null;
+  const changed = Object.keys(payload.items).filter(id => base.items[id] && base.items[id].name !== payload.items[id].name);
+  if (changed.length !== 1) return null;
+  const itemId = changed[0], item = payload.items[itemId];
+  const itemMeta = Object.fromEntries(["updatedAt", "updatedByDeviceId", "updatedByDeviceName"].filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]));
+  const body = { version: 1, itemId, expectedName: base.items[itemId].name, name: item.name, baseStateRevision: stateRevision,
+    ...(Object.keys(itemMeta).length ? { itemMeta } : {}) };
+  if (!validPersonalItemRename(body)) return null;
+  const projected = applyPersonalItemRename(base, body);
+  return personalBusinessPayloadMatchesConfirmed({ confirmedPayload: projected, candidatePayload: payload, listId, allowLegacy: true })
+    ? { itemId, name: body.name, ...(body.itemMeta ? { itemMeta: body.itemMeta } : {}) } : null;
 }

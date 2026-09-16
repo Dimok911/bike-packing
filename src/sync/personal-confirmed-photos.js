@@ -2,6 +2,8 @@ import { causalPhotoReferenceForSync } from "../state/causal-photo-reference.js"
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { preparePersonalDeletionBatch } from "./personal-deletion-intent.js";
 import { assertPersonalPhotoHistoryRestore } from "./personal-history-restore.js";
+import { validPersonalItemRename } from "./personal-item-rename.js";
+const ordinaryRecordPayload = record => record?.compactState?.payload ?? record?.action?.body?.payload;
 
 export const PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false;
 
@@ -134,21 +136,23 @@ export function preservesConfirmedPersonalPhotoChain({ records, operationId, lis
     while (record) {
       const { action } = record, parentId = action.body.causal?.baseOperationId;
       if (action.operationId === confirmedBoundary?.operationId) return action.listId === listId;
-      if (visited.has(action.operationId) || !["list.update", ...(allowHistoryRestore ? ["list.restore"] : [])].includes(action.kind) || action.listId !== listId) return false;
+      if (visited.has(action.operationId) || !["list.update", "item.rename", ...(allowHistoryRestore ? ["list.restore"] : [])].includes(action.kind) || action.listId !== listId) return false;
+      if (action.kind === "item.rename" && (!record.compactState || !validPersonalItemRename(action.body))) return false;
       visited.add(action.operationId);
       const parent = parentId ? byId.get(parentId) : null;
       if (parentId && !parent) return false;
       const boundaryParent = confirmedBoundary && parentId === confirmedBoundary.operationId;
-      const parentPayload = boundaryParent ? confirmedBoundary.payload : parent?.action.body.payload;
+      const parentPayload = boundaryParent ? confirmedBoundary.payload : ordinaryRecordPayload(parent);
       const initial = initialBase?.operationId === action.operationId ? initialBase : null;
       if (initial && (record.mergeBase || parentId || action.body.baseStateRevision !== initial.stateRevision)) return false;
       const base = record.mergeBase?.payload || parentPayload || initial?.payload;
       if (record.mergeBase && parent && canonicalListOperationJson(base) !== canonicalListOperationJson(parentPayload)) return false;
       if (boundaryParent && (!historicalBoundary || record.mergeBase) && record.mergeBase?.stateRevision !== confirmedBoundary.stateRevision) return false;
-      if (allowLegacy && (hasLegacyPersonalPhotos(base) || hasLegacyPersonalPhotos(action.body.payload))
-        && (action.kind !== "list.update" || !isOrdinaryLegacyPersonalUpdate(action.body))) return false;
+      const payload = ordinaryRecordPayload(record);
+      if (allowLegacy && (hasLegacyPersonalPhotos(base) || hasLegacyPersonalPhotos(payload))
+        && !(action.kind === "item.rename" ? validPersonalItemRename(action.body) : action.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(action.body))) return false;
       if (action.kind === "list.restore") assertPersonalPhotoHistoryRestore({ body: action.body, base, listId });
-      else if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId,
+      else if (!preservesConfirmedPersonalPhotos(base, payload, listId,
         { userDeletion: allowOwnerDeletion ? action.body.userDeletion : null, allowLegacy })) return false;
       record = parent;
     }

@@ -6,6 +6,8 @@ export async function drainPersonalSaveWithReconciliation({ outbox, queue, getCo
   readRemote, makeSnapshot, makeBaselineMeta, resolveConflicts, resolveRejectedRestore, resolveRejectedShare, onReconciled, onAdopted, onConfirmed,
   prepareBeforeDrain = null, beforeDrain = () => {}, maxReconciliations = 2 }) {
   for (let attempt = 0; ; attempt++) {
+    const startedContext = { ...getContext() }, startedHead = outbox.recover?.();
+    try {
     // Read-only preparation may obtain a missing server baseline. The final
     // synchronous guard still binds that evidence to the current editor and
     // immutable queue, including after a newly reconciled successor.
@@ -14,8 +16,29 @@ export async function drainPersonalSaveWithReconciliation({ outbox, queue, getCo
     // freshly merged successor must not inherit permission from its old body.
     const checked = beforeDrain();
     if (checked?.then) throw Error("Dispatch preflight must be synchronous");
-    try { return await outbox.drain({ queue, getContext, onConfirmed }); }
+    return await outbox.drain({ queue, getContext, onConfirmed: async (data, head) => {
+      if (head.action.kind !== "item.rename") return onConfirmed?.(data, head);
+      // A rename receipt confirms one item, not the rest of the catalog. An
+      // independent server edit may have committed before this command. Store
+      // the exact receipt and fresh owned state together before displaying it.
+      if (typeof onAdopted !== "function") throw Error("Current-state adoption callback is required");
+      const initial = canonical(getContext());
+      const record = await outbox.reconcile({ queue, getContext, readRemote, makeSnapshot, makeBaselineMeta, adoptCommittedOnly: true });
+      if (canonical(getContext()) !== initial) throw Object.assign(Error("Редактор изменился. Подтверждение будет проверено с новой очередью."),
+        { code: "context", isOperationReceiptError: true, isPersonalSaveBlocked: true });
+      return onAdopted(record);
+    } }); }
     catch (error) {
+      const current = getContext(), latest = outbox.recover?.();
+      if (startedHead && latest?.action.generation > startedHead.action.generation
+        && ["environment", "actorId", "scope", "scopeKey", "listId"].every(key => current?.[key] === startedContext[key])
+        && outbox.list().some(record => record.action.operationId === startedHead.action.operationId)
+        && !["storage", "quota", "ordinary-recovery-storage"].includes(error.code)) {
+        // The pending command keeps its UUID and receipt. The next serialized
+        // drain settles it before its successor; this is not a conflict choice.
+        throw Object.assign(Error("Сохранено следующее изменение. Проверяю очередь по порядку…"),
+          { code: "personal-save-superseded", isPersonalSaveBlocked: true, isOperationReceiptError: true });
+      }
       if (attempt >= maxReconciliations || !error.isOperationReceiptError || error.isPersonalSaveBlocked) throw error;
       const initial = canonical(getContext());
       const record = await outbox.reconcile({ queue, getContext, readRemote, makeSnapshot, makeBaselineMeta, resolveConflicts, resolveRejectedRestore, resolveRejectedShare });

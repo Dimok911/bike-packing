@@ -1,6 +1,8 @@
 import { writeJournalValue, afterJournalWrite } from "../storage/durable-journal-write.js";
-import { PERSONAL_COMPACT_CAPTURE_ENABLED, encodeCompactPersonalRecord, decodeCompactPersonalRecord,
-  applyPersonalItemRename, retainCompactPersonalSource } from "./personal-compact-record.js";
+import { PERSONAL_COMPACT_CAPTURE_ENABLED, PERSONAL_COMPACT_DELIVERY_ENABLED, encodeCompactPersonalRecord, decodeCompactPersonalRecord,
+  applyPersonalItemRename, retainCompactPersonalSource, personalCompactRenameCandidate } from "./personal-compact-record.js";
+import { personalBusinessPayloadMatchesConfirmed } from "./personal-confirmed-business-equality.js";
+import { validPersonalItemRename } from "./personal-item-rename.js";
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate, personalServerPhotoResultReference } from "./personal-pending-server-update.js";
 import { PERSONAL_SHARE_LINK_ENABLED, assertPersonalShareLinkBody } from "./personal-share-link.js";
@@ -98,7 +100,8 @@ const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 const validId = value => typeof value === "string" && value.length > 0 && value.length <= 191
   && value === value.trim() && !["__proto__", "prototype", "constructor"].includes(value);
 const revisionConflict = proof => proof?.operation.state === "rejected" && proof.resultStatus === 409
-  && ["conflict", "stale_state_revision"].includes(proof.rejectionCode);
+  && (["conflict", "stale_state_revision"].includes(proof.rejectionCode)
+    || proof.operation.kind === "item.rename" && ["rename_item_changed", "rename_item_missing"].includes(proof.rejectionCode));
 const revisionConflictChain = (action, records, outcomes) => {
   const visited = new Set();
   while (action && !visited.has(action.operationId)) {
@@ -134,6 +137,7 @@ import { PERSONAL_SERVER_PHOTO_FORM_ENABLED, PERSONAL_SERVER_NEW_OWNER_FORM_ENAB
 
 export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   compactCaptureEnabled = PERSONAL_COMPACT_CAPTURE_ENABLED,
+  compactDeliveryEnabled = PERSONAL_COMPACT_DELIVERY_ENABLED,
   environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED,
   shareLinkEnabled = PERSONAL_SHARE_LINK_ENABLED,
   photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
@@ -448,10 +452,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     };
     return visit(payload) && preservesConfirmedPersonalPhotos(payload, payload, listId, { allowLegacy: true });
   };
-  const ordinaryRecords = records => records.size > 0 && [...records.values()].every(record => record?.action.kind === "list.update"
-    && !record.photoState && isOrdinaryLegacyPersonalUpdate(record.action.body)
+  const ordinaryRecords = records => records.size > 0 && [...records.values()].every(record =>
+    (record?.action.kind === "item.rename" ? validPersonalItemRename(record.action.body) && record.compactState
+      : record?.action.kind === "list.update" && isOrdinaryLegacyPersonalUpdate(record.action.body))
+    && !record.photoState
     && (!Object.hasOwn(record.action.body, "fullReplace") || record.action.body.fullReplace === false)
-    && ordinaryPayload(record.action.body.payload));
+    && ordinaryPayload(personalRecordPayload(record)));
   const entryCopy = entries => [...entries].map(([key, value]) => ({ key, value })).sort((a, b) => a.key.localeCompare(b.key));
   const assertArchiveRecords = (archive, current, successorRaw = null) => {
     const entries = new Map(current.entries);
@@ -865,7 +871,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         return clone(record);
       } catch (error) { error.unconfirmedMemoryDraft = input.snapshot; throw error; }
     },
-    captureItemRename({ itemId, name, snapshot, operationId = crypto.randomUUID() }, { assertCurrent = () => {} } = {}) {
+    captureItemRename({ itemId, name, itemMeta, metadata = {}, snapshot, payload: candidatePayload = snapshot, operationId = crypto.randomUUID() }, { assertCurrent = () => {} } = {}) {
       assertNoOrdinaryRecovery(); assertCurrent();
       if (!compactCaptureEnabled) throw blocked("compact-capture-disabled", "Компактная запись ещё не включена.");
       const current = assertObserved(), { head, anchor, applied, records } = current;
@@ -886,13 +892,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         causal.baseOperationId = head.action.operationId;
         causal.dependsOn.push({ operationId: head.action.operationId, listId });
       }
-      const body = { version: 1, itemId, expectedName: item.name, name, baseStateRevision: stateRevision, causal };
+      const meta = Object.fromEntries(["clientDeviceId", "clientDeviceName", "clientUpdatedAt", "changeGroupId", "affectedLayoutIds", "changeScope"]
+        .filter(key => Object.hasOwn(metadata, key)).map(key => [key, metadata[key]]));
+      const body = { version: 1, itemId, expectedName: item.name, name, baseStateRevision: stateRevision, causal,
+        ...meta, ...(itemMeta ? { itemMeta } : {}) };
       let candidate;
       try { candidate = applyPersonalItemRename(payload, body); }
       catch { throw blocked("compact-input", "Не подтверждены имя вещи или исходная версия для переименования."); }
-      // The caller passes a business snapshot for this first storage seam.
-      // Form metadata and local UI projection are connected in the next step.
-      if (!same(snapshot, candidate)) throw blocked("compact-input", "Вместе с именем изменились другие данные. Нужен обычный путь сохранения.");
+      if (!personalBusinessPayloadMatchesConfirmed({ confirmedPayload: candidate, candidatePayload, listId, allowLegacy: true })) throw blocked("compact-input", "Вместе с именем изменились другие данные. Нужен обычный путь сохранения.");
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}), kind: "item.rename", body };
       const source = head && !baseline ? { operationId: head.action.operationId,
@@ -1031,6 +1038,28 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (create && head) throw blocked("create", "Повторное создание списка запрещено.");
       if (!head && !create && (!Number.isSafeInteger(input.body.baseStateRevision) || input.body.baseStateRevision < 1)) {
         throw blocked("revision", "Перед первым сохранением нужна подтверждённая версия списка.");
+      }
+      if (compactCaptureEnabled && !create && !restore && !archiveImport && !migration && !localReconciliation
+        && !pendingForm && !pendingImport && !pendingCopy && !sharing && isOrdinaryLegacyPersonalUpdate(input.body)
+        && !input.body.userPlacement && !input.body.force && !input.body.forceOverwrite && !input.body.fullReplace
+        && (!head || ["list.update", "item.rename"].includes(head.action.kind) && !head.photoState && !head.reconciliation && !head.localReconciliation)) {
+        const candidate = personalCompactRenameCandidate({ base: baseline?.payload || personalRecordPayload(head) || initialMergeBase?.payload,
+          payload: input.body.payload, listId, stateRevision: baseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision
+            || head?.action.body.baseStateRevision || initialMergeBase?.stateRevision });
+        if (candidate) {
+          const meta = Object.fromEntries(["clientDeviceId", "clientDeviceName", "clientUpdatedAt", "changeGroupId", "affectedLayoutIds", "changeScope"]
+            .filter(key => Object.hasOwn(input.body, key)).map(key => [key, input.body[key]]));
+          const source = baseline?.payload || personalRecordPayload(head) || initialMergeBase?.payload;
+          const causal = { dependsOn: [], reads: [] };
+          if (head && !baseline) { causal.baseOperationId = head.action.operationId; causal.dependsOn.push({ operationId: head.action.operationId, listId }); }
+          const compactBody = { version: 1, ...candidate, expectedName: source.items[candidate.itemId].name,
+            baseStateRevision: baseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision
+              || head?.action.body.baseStateRevision || initialMergeBase?.stateRevision, causal, ...meta };
+          // A large affected-layout manifest still has the established full
+          // save path; exceeding the command budget must not strand the form.
+          if (validPersonalItemRename(compactBody)) return this.captureItemRename({ ...candidate, snapshot: input.snapshot,
+            payload: input.body.payload, metadata: input.body, operationId }, { assertCurrent: assertCaptureContext });
+        }
       }
       const causal = { dependsOn: [], reads: [] };
       if (baseline) {
@@ -1275,14 +1304,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (choice !== "keep-server") throw blocked("reconciliation-cancelled", "Выбор отложен. Восстановление и последующие локальные изменения сохранены, сервер не перезаписан.");
         decision = { version: 1, type: restoreRecord.action.kind === "list.import" ? "keep-server-after-rejected-import" : "keep-server-after-rejected-restore", restoreOperationId: rejectedRestore.operation.id, stateRevision: remote.stateRevision };
         plan = { payload: remote.payload, conflicts: [] };
-      } else plan = planRebase({ base, local: head.action.body.payload, remote });
+      } else plan = planRebase({ base, local: personalRecordPayload(head), remote });
       if (!plan.blocked && plan.conflicts?.length && typeof resolveConflicts === "function") {
         // The dialog gets copies, never mutable authority over the frozen
         // comparison or journal. A changed editor/account invalidates a choice.
         const choices = await resolveConflicts(clone(plan.conflicts), { stateRevision: remote.stateRevision });
         assertCurrent();
         if (choices === "cancel" || choices == null) throw blocked("reconciliation-cancelled", "Выбор отложен. Обе версии сохранены; сервер не перезаписан.");
-        plan = planRebase({ base, local: head.action.body.payload, remote, choices });
+        plan = planRebase({ base, local: personalRecordPayload(head), remote, choices });
       }
       if (plan.blocked || plan.conflicts?.length) {
         throw Object.assign(blocked("reconciliation-conflict", plan.conflicts?.length
@@ -1314,6 +1343,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       delete action.body.userItemCopyPlacement;
       delete action.body.userDictionary;
       delete action.body.userPlacement;
+      if (head.action.kind === "item.rename") for (const key of ["version", "itemId", "expectedName", "name", "itemMeta"]) delete action.body[key];
       delete action.body.historyRestore;
       delete action.body.archiveImport;
       delete action.body.guestImport; delete action.body.publicImport; delete action.body.serverImport;
@@ -1492,10 +1522,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     async drain({ queue, getContext, photoStore, photoStaging, onConfirmed = () => {} }) {
       assertNoOrdinaryRecovery();
       const { records, head } = assertObserved();
-      // This storage increment is deliberately not a new network rollout.
-      // Photo preflight, conflict recovery and UI confirmation still need the
-      // compact projection before the mixed chain may leave this device.
-      if ([...records.values()].some(record => record.action.kind === "item.rename")) {
+      if (!compactDeliveryEnabled && [...records.values()].some(record => record.action.kind === "item.rename")) {
         throw blocked("compact-delivery-disabled", "Отправка компактной очереди ещё не включена. Действия сохранены на устройстве.");
       }
       if (!head) return null;

@@ -821,7 +821,7 @@ import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-re
 import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-recovery-check.js";
 import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
   personalPhotoRecoveryCancellationHead } from "./src/sync/personal-photo-recovery-cancel.js";
-import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "./src/sync/personal-photo-outbox-record.js";
+import { PERSONAL_PHOTO_OUTBOX_ENABLED, personalRecordPayload } from "./src/sync/personal-photo-outbox-record.js";
 import { personalPhotoFormGatesEnabled } from "./src/sync/personal-photo-form-gates.js";
 import { createPersonalPhotoFormSession } from "./src/sync/personal-photo-form-session.js";
 import { drainPersonalPhotoForm } from "./src/sync/personal-photo-form-drain.js";
@@ -9755,7 +9755,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         if (!legacyPhotoProof.check()) throw Error("Версия списка изменилась во время проверки старых фотографий. Очередь сохранена.");
         return;
       }
-      if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(record.action.body.payload)))
+      if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(personalRecordPayload(record))))
         && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
           confirmedBoundary: outbox.confirmedBoundary(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
@@ -9789,7 +9789,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     const prepareBeforeDrain = async () => {
       legacyPhotoProof = null;
       const records = outbox.list(), confirmedBoundary = outbox.confirmedBoundary();
-      if (!records.some(record => hasLegacyPersonalPhotos(record.action.body.payload))
+      if (!records.some(record => hasLegacyPersonalPhotos(personalRecordPayload(record)))
         && !hasLegacyPersonalPhotos(confirmedBoundary?.payload)) return;
       const initial = personalSaveContext();
       const capabilities = await apiFetch("/bike-packing/capabilities", { silentErrors: true });
@@ -9799,7 +9799,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         getRecords: () => outbox.list(), getContext, readRemote, confirmedBoundary,
         enabled: PERSONAL_LEGACY_PHOTO_PRESERVATION_ENABLED, capabilities: capabilities?.capabilities,
         inspectExact: action => queue.inspect({ operationId: action.operationId,
-          path: `/bike-packing/lists/${encodeURIComponent(action.listId)}`, method: "PUT", body: JSON.stringify(action.body) })
+          path: `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "item.rename" ? "/items/rename" : ""}`,
+          method: action.kind === "item.rename" ? "POST" : "PUT", body: JSON.stringify(action.body) })
       });
     };
     const applyReconciled = record => {
@@ -9878,7 +9879,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       async onConfirmed(data, record) {
       personalSaveRecovery.assertRunning();
       const initial = clone(personalSaveContext());
-      await persistPersonalConfirmedMirrors(state, record.action.body.payload);
+      await persistPersonalConfirmedMirrors(state, personalRecordPayload(record));
       if (!sameJson(initial, personalSaveContext())) throw Object.assign(Error("Редактор изменился во время записи подтверждения."),
         { code: "context", isPersonalSaveBlocked: true, isOperationReceiptError: true });
       const writeRequired = (key, value) => {
@@ -9906,7 +9907,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;
-    if (["photo-form-superseded", "photo-recovery-superseded"].includes(error.code)) {
+    if (["photo-form-superseded", "photo-recovery-superseded", "personal-save-superseded"].includes(error.code)) {
       scheduleRemoteSave();
       return;
     }
