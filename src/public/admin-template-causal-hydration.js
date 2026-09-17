@@ -1,6 +1,7 @@
 import { canonicalTemplateJson } from "../sync/admin-template-protocol.js";
 import { adminTemplateEditorSource } from "./admin-template-causal-save-flow.js";
 import { activeAdminTemplateDraftRecords, findLocalAdminTemplateDraft } from "./admin-template-draft-sync.js";
+import { archivedCausalAdminTemplateDrafts } from "./admin-template-catalog-disposition.js";
 
 const paused = () => Object.assign(Error("Загрузка черновиков остановлена: контекст редактирования изменился."), { isAdminTemplateBlocked: true });
 
@@ -8,12 +9,17 @@ const paused = () => Object.assign(Error("Загрузка черновиков 
 // exact data, revision and current authority used to open a new editor. Existing
 // local drafts are never rebased or replaced by a background catalog refresh.
 export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts, getBinding, readCatalog, normalizeRecords,
-  readTemplate, materialize, canMaterialize = async () => true, rememberSource = null, acceptRecords = () => {}, persist = () => {} }) {
+  readTemplate, materialize, canMaterialize = async () => true, rememberSource = null, acceptRecords = () => {},
+  acceptArchivedDrafts = null, persist = () => {} }) {
   const initial = canonicalTemplateJson(getContext());
   if (getContext()?.admin !== true) throw paused();
   const guard = () => { if (canonicalTemplateJson(getContext()) !== initial) throw paused(); };
   const catalog = await readCatalog(); guard();
-  const records = normalizeRecords(catalog?.lists); acceptRecords(records);
+  const records = normalizeRecords(catalog?.lists); acceptRecords(records); guard();
+  const archivedDrafts = archivedCausalAdminTemplateDrafts(getLayouts(), records, getBinding);
+  // Replace the runtime overlay, including with an empty array after a later
+  // active catalog read. Never write an archive marker into the editor payload.
+  acceptArchivedDrafts?.(archivedDrafts); guard();
   let restored = 0, migrationPending = 0;
   for (const record of activeAdminTemplateDraftRecords(records)) {
     guard(); const binding = getBinding(record);
@@ -46,5 +52,5 @@ export async function hydrateCausalAdminTemplateDrafts({ getContext, getLayouts,
     await rememberSource?.(layout, prepared); guard();
     await persist(); guard(); restored++;
   }
-  return { records, restored, migrationPending };
+  return { records, restored, migrationPending, ...(acceptArchivedDrafts ? { archivedDrafts } : {}) };
 }

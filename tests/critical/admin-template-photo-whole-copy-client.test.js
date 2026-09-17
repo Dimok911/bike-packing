@@ -13,6 +13,30 @@ const seed = (f, state = "ready") => f.stages.forEach(stage => f.server.stages.s
 const off = f => f.make({ enabled: false, adminEnabled: false, appendEnabled: false, createEnabled: false, copyEnabled: false,
   withDispatchAdmission: null, withCancellationAdmission: null }).client;
 
+test("progress counts confirmed photos after lost ACK; a broken observer cannot interrupt copying", async () => {
+  const f = await fixture(), updates = [];
+  f.controls.loseStage = true;
+  const client = f.make({ onProgress(value) { updates.push(value); throw Error("UI closed"); } }).client;
+  await client.capture(f.record.action);
+  assert.deepEqual(await client.run(f.id), f.receipt);
+  assert.deepEqual(updates, [
+    ...Array.from({ length: 6 }, (_, completed) => ({ phase: "photos", completed, total: 5 })),
+    { phase: "confirming", completed: 5, total: 5 }
+  ]);
+  assert.equal(f.server.stagePosts.length, 5);
+  assert.equal(f.server.parentPosts.length, 1);
+});
+
+test("unknown stage never advances visible progress or reports parent confirmation", async () => {
+  const f = await fixture(), updates = [];
+  f.controls.unknownStage = true;
+  const client = f.make({ onProgress: value => updates.push(value) }).client;
+  await client.capture(f.record.action);
+  await assert.rejects(client.run(f.id));
+  assert.deepEqual(updates, [{ phase: "photos", completed: 0, total: 5 }]);
+  assert.equal(f.server.parentPosts.length, 0);
+});
+
 test("five typed V3 stages and one absent-target template.copy retain original IDs through lost ACK and cold OFF reads", async () => {
   const f = await fixture(); f.controls.loseStage = true; f.controls.loseParent = true;
   const client = f.make().client; const journal = await client.capture(f.record.action);

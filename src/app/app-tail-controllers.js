@@ -19,6 +19,7 @@ import { createPersonalPhotoFormController } from "../ui/personal-photo-form-con
 import { createAdminTemplatePhotoCreateFormController } from "../ui/admin-template-photo-create-form-controller.js";
 import { createAdminTemplatePhotoFormController } from "../ui/admin-template-photo-form-controller.js";
 import { createAdminTemplatePhotoCopyController } from "../ui/admin-template-photo-copy-controller.js";
+import { createTemplateCopyFeedback } from "../ui/template-copy-feedback.js";
 import {
   isLayoutNotesCollapsed,
   LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
@@ -7155,9 +7156,9 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
   return id;
 }
 
-async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
+async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind = "", validateSelection = null, onProgress = null } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
-  if (adminTemplateUiEnabled()) return createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind, validateSelection });
+  if (adminTemplateUiEnabled()) return createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind, validateSelection, ...(onProgress ? { onProgress } : {}) });
   const language = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
   const createdId = await createTemplateCopyFromSource(sourceLayout, requestedName, {
     language,
@@ -7194,6 +7195,10 @@ function openLayoutDialog({ copyTargetFlow = false } = {}) {
   if (refs.layoutTemplateLanguage) fillSelect(refs.layoutTemplateLanguage, languageSelectEntries(), normalizeUiLanguage(uiLanguage));
   updateLayoutCopyVisibility();
   if (shouldSuggestActiveTemplateCopy) updateLayoutCreateNameSuggestion({ force: true });
+  if (!templateCopyCreationPending) {
+    refs.layoutDialog.querySelector('[data-template-copy-status]')?.remove();
+    refs.layoutDialog.querySelector('[data-template-copy-recovery]')?.remove();
+  }
   openModalDialog(refs.layoutDialog);
 }
 
@@ -7338,11 +7343,13 @@ async function saveNewLayout(event) {
   if (shouldCopyTemplate) {
     if (templateCopyCreationPending) return;
     templateCopyCreationPending = true; refs.saveLayoutBtn.disabled = true;
+    const feedback = createTemplateCopyFeedback({ dialog: refs.layoutDialog, button: refs.saveLayoutBtn,
+      text: (ru, en) => localText(en, ru) });
     try {
       const sourceChoice = refs.layoutCopyFrom.value;
       const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
       if (!sourceLayout) {
-        showToast(localText("Template source not found.", "Источник шаблона не найден."), "error"); return;
+        throw Error(localText("Template source not found.", "Источник шаблона не найден."));
       }
       const sourceKind = templateCopySourceKindFromChoice(sourceChoice, {
         isDemoLayoutChoice,
@@ -7351,15 +7358,18 @@ async function saveNewLayout(event) {
       });
       const validateSelection = () => refs.layoutDialog.open && refs.layoutCreateMode.value === mode
         && refs.layoutCopyFrom.value === sourceChoice && refs.layoutName.value.trim() === requestedName;
-      if (!validateSelection()) return;
-      const createdId = await createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind, validateSelection });
-      if (!createdId) return;
+      if (!validateSelection()) throw Error(localText("The copy selection changed.", "Выбор копии изменился."));
+      const createdId = await createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind, validateSelection, onProgress: feedback.progress });
+      if (!createdId) throw Error(localText("Copy not completed. Check the saved action.", "Копирование не завершено. Проверьте сохранённое действие."));
+      feedback.complete();
       refs.layoutDialog.close();
       switchView("packing");
       showToast(t("template.draftCreated"), "success");
     } catch (error) {
+      feedback.error(error);
       showToast(localText(`Could not copy the template: ${error.message}`, `Не удалось скопировать шаблон: ${error.message}`), "error");
     } finally {
+      feedback.finish();
       templateCopyCreationPending = false; refs.saveLayoutBtn.disabled = false;
     }
     return;

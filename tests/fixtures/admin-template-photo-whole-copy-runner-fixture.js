@@ -105,7 +105,8 @@ export async function wholeAppRunnerFixture() {
       administrativePhotoWholeCopyAttempts, allocateAdminTemplatePhotoWholeCopySelection, prepareAdminTemplatePhotoWholeCopyForm,
       adminTemplatePhotoNamespace, uiLanguage: "en", normalizeUiLanguage,
       applyAdminTemplatePhotoWholeCopyResult,
-      render: () => {}, activateAdminPublishedLayout: id => { modeState.adminPublishedEditLayoutId = id; state.activeLayoutId = id; },
+      render: () => {}, localText: (en, ru) => ru, showToast: () => {},
+      activateAdminPublishedLayout: id => { modeState.adminPublishedEditLayoutId = id; state.activeLayoutId = id; return true; },
       createAdminTemplatePhotoWholeCopyAdmission: options => {
         const enter = name => (proof, task) => options[name](proof, scope => { scopes.push(scope); return task(scope); });
         const real = createAdminTemplatePhotoWholeCopyAdmission({ ...options, locks, withInventory: enter("withInventory"), withNamespaces: enter("withNamespaces") });

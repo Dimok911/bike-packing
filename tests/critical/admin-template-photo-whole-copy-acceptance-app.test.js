@@ -23,6 +23,27 @@ test("existing copy entry routes confirmed catalogs with photos to the gated who
   assert.equal(f.server.calls.length, 0);
 });
 
+test("failed copy offers its retained source recovery without dispatching a second copy", async () => {
+  const f = await wholeAppRunnerFixture(), source = f.state.layouts[f.source.layoutId], calls = [];
+  source.adminCausalSource.canonicalPayload = copy(f.record.action.body.photoCopy.sourcePayload);
+  const failure = Error("Lost response"), user = { id: f.current.actorId };
+  const app = f.build({ names: ["createCausalAdminTemplateCopy"], deps: {
+    currentUser: user, canOpenAdminPublishedEdit: () => true,
+    refs: { layoutDialog: { close: () => calls.push("close") } },
+    activateAdminPublishedLayout: id => { calls.push(id); return true; },
+    showAdminTemplateRecovery: id => { calls.push(id); return "recovery"; }
+  }, replace: { createCausalAdminTemplateWholeCopy: async () => { throw failure; } } });
+  await assert.rejects(app.createCausalAdminTemplateCopy(source, "Another title", { sourceKind: "shared" }), error => error === failure);
+  assert.equal(failure.savedCopyTitle, f.record.snapshot.target.metadata.title);
+  assert.equal(await failure.recoverCopy(), "recovery");
+  assert.deepEqual(calls, ["close", source.id, source.id]);
+  user.id = "another-account";
+  await assert.rejects(failure.recoverCopy(), /Контекст копирования изменился/);
+  assert.equal(calls.length, 3);
+  assert.equal(f.server.parentPosts.length, 0);
+  assert.equal(f.server.stagePosts.length, 0);
+});
+
 test("actual whole cold recovery finishes acceptance after quota, preserves later edits and never reposts", async () => {
   const f = await wholeAppRunnerFixture(); f.values.set("mirror", JSON.stringify(f.state));
   const result = await f.run(), before = copy(f.state);
@@ -61,6 +82,9 @@ test("actual whole lost ACK resumes with gates OFF by GET and applies/accepts th
   assert.ok(f.server.calls.length > start); assert.ok(f.server.calls.slice(start).every(row => row.method === "GET"));
   assert.ok([...f.values.keys()].some(key => key.startsWith(ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ACCEPTANCE_PREFIX)));
   assert.equal(f.held.size, 0);
+  await recovery.openResult();
+  assert.equal(f.modeState.adminPublishedEditLayoutId, f.target.layoutId);
+  assert.equal(f.server.parentPosts.length, 1);
 });
 
 test("existing whole-copy form continues its retained operation and activates only the accepted target", async () => {
@@ -68,7 +92,12 @@ test("existing whole-copy form continues its retained operation and activates on
   const app = f.build(), source = f.state.layouts[f.source.layoutId], title = f.record.snapshot.target.metadata.title;
   await assert.rejects(app.createCausalAdminTemplateWholeCopy(source, "Different selection", { sourceKind: "shared" }));
   assert.equal(f.server.parentPosts.length, 0);
-  const id = await app.createCausalAdminTemplateWholeCopy(source, title, { sourceKind: "shared", validateSelection: () => true });
+  let formOpen = true;
+  const progress = [];
+  const id = await app.createCausalAdminTemplateWholeCopy(source, title, { sourceKind: "shared", validateSelection: () => formOpen,
+    onProgress(value) { progress.push(value); formOpen = false; } });
+  assert.equal(formOpen, false);
+  assert.equal(progress.at(-1).phase, "confirming");
   assert.equal(id, f.target.layoutId); assert.equal(f.modeState.adminPublishedEditLayoutId, id);
   assert.equal(f.server.parentPosts.length, 1); assert.equal(f.idb.rows().size, 1);
   assert.ok([...f.values.keys()].some(key => key.startsWith(ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ACCEPTANCE_PREFIX)));

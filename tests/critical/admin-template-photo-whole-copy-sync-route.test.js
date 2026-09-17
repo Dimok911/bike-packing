@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wholeAppRunnerFixture } from "../fixtures/admin-template-photo-whole-copy-runner-fixture.js";
 
-async function fixture({ empty = false, afterDiscovery = null } = {}) {
+async function fixture({ empty = false, afterDiscovery = null, archived = false } = {}) {
   const f = await wholeAppRunnerFixture(), dialogs = [], fallback = [];
+  const archiveCalls = [];
   f.values.delete(f.planKey); if (empty) f.idb.rows().clear();
   for (const name of ["whole", "copy", "create", "append"]) f.flags[name] = false;
   assert.equal(f.state.layouts[f.layoutId].adminCausalSource.planId, null);
@@ -15,6 +16,9 @@ async function fixture({ empty = false, afterDiscovery = null } = {}) {
     "preferredCurrentLayoutRef", "refreshActiveReadOnlyPublicTemplate", "savePublishedLayoutRecord", "saveRemoteState",
     "saveSyncMeta", "uploadPendingPhotos"].map(name => [name, forbidden(name)]));
   Object.assign(deps, {
+    archivedAdminDraft: () => archived ? { layoutId: f.layoutId } : null,
+    refreshAdminTemplateDrafts: async () => archiveCalls.push("refresh"),
+    archivedAdminDraftMessage: () => "Deleted on server",
     modeState: f.modeState, currentUser: { id: f.current.actorId }, administrativeSaveCoordinator: null,
     getPublishedEditLayoutId: () => f.modeState.adminPublishedEditLayoutId,
     isAdminPublicEditScope: () => f.current.scope === "admin-template", canOpenAdminPublishedEdit: () => f.current.admin,
@@ -22,7 +26,8 @@ async function fixture({ empty = false, afterDiscovery = null } = {}) {
     personalSavePilotEnabled: () => false, isReadOnlyBikePackingContext: () => false,
     activeDemoTemplateListId: "", appUnlocked: true, publishedLayoutSaveLayoutId: "", publishedLayoutSaveTimer: null,
     syncMeta: {}, syncTimer: null, DEMO_SHARED_LAYOUT_ID: "unused", nowIso: () => "2026-09-16T12:00:00Z",
-    showToast: forbidden("toast"), updateSyncUi: forbidden("status"),
+    showToast: archived ? text => archiveCalls.push(text) : forbidden("toast"),
+    updateSyncUi: archived ? text => archiveCalls.push(text) : forbidden("status"),
     showAdminTemplateRecovery: async layoutId => { dialogs.push(layoutId); return { recovery: layoutId }; },
     runSyncNowFlow: async (args, options) => {
       assert.equal(args.runtime.state, f.state); fallback.push({ force: Boolean(options.force) }); return "normal-sync";
@@ -33,8 +38,17 @@ async function fixture({ empty = false, afterDiscovery = null } = {}) {
     ...(afterDiscovery ? { replace: { findAdminTemplatePhotoWholeCopyFormRecord: async (...args) => {
       const record = await actualFind(...args); afterDiscovery(f, record); return record;
     } } } : {}) });
-  return { ...f, api, dialogs, fallback };
+  return { ...f, api, dialogs, fallback, archiveCalls };
 }
+
+test("sync on an explicitly archived draft refreshes the verdict without sending or erasing local data", async () => {
+  const f = await fixture({ archived: true }), before = structuredClone(f.state), rows = structuredClone([...f.idb.rows()]);
+  await f.api.runSyncNow({ force: true });
+  assert.deepEqual(f.archiveCalls, ["refresh", "Deleted on server", "Deleted on server"]);
+  assert.deepEqual(f.state, before); assert.deepEqual([...f.idb.rows()], rows);
+  assert.deepEqual(f.dialogs, []); assert.deepEqual(f.fallback, []);
+  assert.equal(f.server.calls.length, 0);
+});
 
 test("actual forced Sync discovers record-only whole copy without planId with all photo writers OFF", async () => {
   const f = await fixture(), before = structuredClone(f.state), rows = structuredClone([...f.idb.rows()]);

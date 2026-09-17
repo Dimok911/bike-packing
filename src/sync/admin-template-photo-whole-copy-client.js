@@ -35,7 +35,12 @@ export function createAdminTemplatePhotoWholeCopyClient({ binding, getContext, s
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args), lifecycleTarget = globalThis.window, timeoutMs = 10000,
   enabled = ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED, adminEnabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   appendEnabled = ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, createEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED,
-  copyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, withDispatchAdmission = null, withCancellationAdmission = null } = {}) {
+  copyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, withDispatchAdmission = null, withCancellationAdmission = null, onProgress = null } = {}) {
+  // UI reporting must never change a durable command or prevent its receipt
+  // from being reconciled. Counts advance only after a validated stage ACK.
+  const progress = (phase, completed, total) => {
+    try { onProgress?.({ phase, completed, total }); } catch { /* UI only. */ }
+  };
   binding = Object.freeze(adminTemplatePhotoActionBinding(binding));
   if (!store || !same(store.binding, binding)) throw blocked("store-binding");
   const prefix = "bike-packing-admin-photo-whole-copy-commands-v1:" + encodeURIComponent(canonical(binding)) + ":";
@@ -294,11 +299,14 @@ export function createAdminTemplatePhotoWholeCopyClient({ binding, getContext, s
           // resends a save whose durable dispatch claim already exists.
           if (saved.dispatched || commandEntry(saved)) throw blocked("save-unknown");
           await capabilities();
+          progress("photos", 0, saved.stageReceipts.length);
           for (let index = 0; index < saved.stageReceipts.length; index++) {
             const receipt = await stage(index); guard(); if (receipt.assetState !== "ready") throw blocked("stage-unavailable");
+            progress("photos", index + 1, saved.stageReceipts.length);
           }
           if (!await validateAdminTemplatePhotoWholeCopyStages(saved.intent, saved.stageReceipts)) throw blocked("stages");
           guard();
+          progress("confirming", saved.stageReceipts.length, saved.stageReceipts.length);
           return admitted(async () => {
             await refresh(); await capabilities();
             const metadata = commandMetadata(saved); guard(); transport.assertWritable(commandPath, "POST", metadata);

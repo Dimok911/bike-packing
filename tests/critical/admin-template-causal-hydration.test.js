@@ -89,3 +89,78 @@ test("reservation read failures and context switches stop hydration without a wr
     assert.deepEqual(f.counts(), { reads: 0, materialized: 0, writes: 0 });
   }
 });
+
+test("explicit remote archive is reported without replacing or persisting local draft data", async () => {
+  const f = fixture(), overlays = [];
+  Object.assign(f.record, { historyOnly: true, visibility: "deleted" });
+  f.layouts.editor = { id: "editor", adminDemo: true, adminDemoListId: f.binding.listId,
+    templatePublished: false, name: "Unsent local edit", templateDraftSyncPending: true,
+    adminCausalSource: { binding: f.binding, base: { operationId: "unsent" }, planId: "unsent" } };
+  const before = structuredClone(f.layouts);
+  f.options.acceptArchivedDrafts = rows => overlays.push(rows);
+  const result = await f.run();
+  assert.equal(result.archivedDrafts.length, 1);
+  assert.equal(result.archivedDrafts[0].layoutId, "editor");
+  assert.deepEqual(result.archivedDrafts[0].binding, f.binding);
+  assert.deepEqual(overlays, [result.archivedDrafts]);
+  assert.deepEqual(f.layouts, before);
+  assert.deepEqual(f.counts(), { reads: 0, materialized: 0, writes: 0 });
+});
+
+test("a later active catalog replaces the archive overlay with an empty one", async () => {
+  const f = fixture(), overlays = [];
+  f.layouts.editor = { id: "editor", adminDemo: true, adminDemoListId: f.binding.listId,
+    templatePublished: false, adminCausalSource: { binding: f.binding } };
+  f.options.acceptArchivedDrafts = rows => overlays.push(rows);
+  Object.assign(f.record, { historyOnly: true, visibility: "deleted" });
+  await f.run();
+  Object.assign(f.record, { historyOnly: false, visibility: "private" });
+  assert.deepEqual((await f.run()).archivedDrafts, []);
+  assert.equal(overlays[0].length, 1); assert.deepEqual(overlays[1], []);
+  assert.deepEqual(f.counts(), { reads: 0, materialized: 0, writes: 0 });
+});
+
+test("missing or incomplete catalog evidence cannot report an archive", async () => {
+  for (const evidence of [null, { historyOnly: true, visibility: "private" }, { historyOnly: false, visibility: "deleted" }]) {
+    const f = fixture();
+    f.layouts.editor = { id: "editor", adminDemo: true, adminDemoListId: f.binding.listId,
+      templatePublished: false, adminCausalSource: { binding: f.binding } };
+    if (evidence) Object.assign(f.record, evidence);
+    else f.options.readCatalog = async () => ({ lists: [] });
+    f.options.acceptArchivedDrafts = () => {};
+    assert.deepEqual((await f.run()).archivedDrafts, []);
+    assert.equal(f.counts().writes, 0);
+  }
+});
+
+test("archive overlay requires exact actor, environment, binding and local source identity", async () => {
+  for (const change of [value => { value.adminCausalSource.binding.actorId = "other"; },
+    value => { value.adminCausalSource.binding.environment = "production"; },
+    value => { value.adminCausalSource.binding.listId = "other"; },
+    value => { value.adminCausalSource.binding.itemKey = "other"; },
+    value => { value.adminDemoListId = "other"; }, value => { delete value.adminCausalSource; }]) {
+    const f = fixture(); Object.assign(f.record, { historyOnly: true, visibility: "deleted" });
+    f.layouts.editor = { id: "editor", adminDemo: true, adminDemoListId: f.binding.listId,
+      templatePublished: false, adminCausalSource: { binding: structuredClone(f.binding) } };
+    change(f.layouts.editor); f.options.acceptArchivedDrafts = () => {};
+    assert.deepEqual((await f.run()).archivedDrafts, []);
+  }
+});
+
+test("an account change during catalog read never delivers an archive overlay", async () => {
+  const f = fixture(); let calls = 0;
+  Object.assign(f.record, { historyOnly: true, visibility: "deleted" });
+  f.options.acceptArchivedDrafts = () => calls++;
+  f.afterCatalog(() => { f.context.actorId = "other"; });
+  await assert.rejects(f.run()); assert.equal(calls, 0);
+});
+
+test("shared draft archive uses stable source id and reports every matching local editor", async () => {
+  const f = fixture(); Object.assign(f.binding, { listId: "public-shared-layout-target", itemKey: "shared-layout:target" });
+  Object.assign(f.record, { publicTemplateKind: "shared-layout", sharedId: "target", historyOnly: true, visibility: "deleted" });
+  for (const id of ["first", "second"]) f.layouts[id] = { id, adminSharedSourceId: "target", templatePublished: false,
+    adminCausalSource: { binding: f.binding } };
+  f.options.acceptArchivedDrafts = () => {};
+  assert.deepEqual((await f.run()).archivedDrafts.map(row => row.layoutId), ["first", "second"]);
+  assert.deepEqual(f.counts(), { reads: 0, materialized: 0, writes: 0 });
+});

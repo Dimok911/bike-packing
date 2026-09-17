@@ -1321,6 +1321,7 @@ import { syncMainViewScrollHost } from "./src/ui/main-view-scroll-host.js";
 import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
+let adminArchivedDraftNotice = { actorId: "", rows: [] };
 const locations = [];
 const categories = [];
 let serverConfirmedDemoTemplates = [];
@@ -3689,7 +3690,12 @@ function adminPublicLayoutOptions({ disabled = false, readonly = false, canView 
       canView,
       includeDrafts: canViewAdminPublishedCatalog()
     }), { disabled, readonly })
-  ];
+  ].map(option => {
+    const layoutId = templateDraftLayoutId(option[0]);
+    return layoutId && archivedAdminDraft(layoutId)
+      ? [option[0], localText("Deleted on server — local copy: ", "Удалён на сервере — локальная копия: ") + option[1], ...option.slice(2)]
+      : option;
+  });
 }
 
 function adminSharedTemplateOptions({
@@ -3759,6 +3765,7 @@ function localAdminTemplateCopyLayouts() {
 }
 function activeAdminDraftOptionLabel(layout) {
   if (!canViewAdminPublishedCatalog() || !isPublishedLayoutEditable(layout)) return "";
+  if (archivedAdminDraft(layout.id)) return localText("Deleted on server — local copy: ", "Удалён на сервере — локальная копия: ") + layout.name;
   const sharedSource = layout?.adminSharedSourceId ? findSharedLayout(layout.adminSharedSourceId) : null;
   return publicTemplateOptionLabel({
     prefix: t("template.prefix"),
@@ -7363,9 +7370,28 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
   throw error;
 }
 
+function archivedAdminDraft(layoutId = state.activeLayoutId) {
+  if (!currentUser || adminArchivedDraftNotice.actorId !== String(currentUser.id)) return null;
+  const layout = state.layouts?.[layoutId];
+  if (!layout?.adminCausalSource?.binding) return null;
+  return adminArchivedDraftNotice.rows.find(row => row.layoutId === layoutId
+    && canonicalTemplateJson(row.binding) === canonicalTemplateJson(layout?.adminCausalSource?.binding)) || null;
+}
+function archivedAdminDraftMessage() {
+  return localText("This template was deleted on the server. This device still has a local copy; it is not a new completed copy.",
+    "Этот шаблон удалён на сервере. На устройстве осталась локальная копия — это не результат новой попытки копирования.");
+}
+function renderAdminArchivedDraftNotice() {
+  const notice = document.getElementById("adminArchivedDraftNotice");
+  if (!notice) return;
+  notice.hidden = !archivedAdminDraft();
+  notice.textContent = archivedAdminDraftMessage() + localText(" Local data and saved actions are retained.",
+    " Местные данные и сохранённые действия оставлены для восстановления.");
+}
 function renderSyncUi(effectiveMessage = "") {
+  const archived = archivedAdminDraft();
   updateSyncUiControls({
-    saveBlocked: Boolean(personalSaveRecovery.message()),
+    saveBlocked: Boolean(personalSaveRecovery.message()) || Boolean(archived),
     adminReportsDialogController,
     manufacturerCatalogReviewDialogController,
     appUnlocked,
@@ -7386,13 +7412,14 @@ function renderSyncUi(effectiveMessage = "") {
     isOfflineRememberedSession,
     isReadOnlyStateScope,
     isReadonlyTemplateView,
-    message: effectiveMessage,
+    message: archived ? archivedAdminDraftMessage() : effectiveMessage,
     refs,
     state,
     syncMeta,
     syncPackingVisualStyleControls,
     t
   });
+  renderAdminArchivedDraftNotice();
   const notice = document.getElementById("personalRecoveryNotice");
   if (notice) {
     const sameOwner = personalOrdinaryReviewNotice
@@ -7874,6 +7901,9 @@ async function checkAuthAndLoad(options = {}) {
 }
 
 function handleWindowReturn() {
+  if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
+    refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
+  }
   if (isSharedListLinkRoute()) {
     if (currentUser) updateSyncUi();
     return;
@@ -8209,6 +8239,14 @@ async function syncNow(options = {}) {
 
 async function runSyncNow(options = {}) {
   const adminLayoutId = getPublishedEditLayoutId();
+  if (archivedAdminDraft(adminLayoutId)) {
+    await refreshAdminTemplateDrafts({ renderAfter: true });
+    if (archivedAdminDraft(adminLayoutId)) {
+      updateSyncUi(archivedAdminDraftMessage());
+      showToast(archivedAdminDraftMessage(), "warning");
+      return;
+    }
+  }
   if (options.force && adminTemplateUiEnabled() && isAdminPublicEditScope(modeState)) {
     const layout = state.layouts?.[adminLayoutId], source = layout?.adminCausalSource;
     let pending = source?.planId || administrativeSaveCoordinator?.hasPendingCapture(adminLayoutId);
@@ -9129,9 +9167,10 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
       readTemplate: binding => adminTemplateClient(binding, "", true).prepare(),
       materialize: (record, prepared) => materializeCausalAdminTemplate(targetForRecord(record), prepared),
       rememberSource: rememberAdminTemplateSourceBaseline,
+      acceptArchivedDrafts: rows => { adminArchivedDraftNotice = { actorId: String(currentUser.id), rows }; },
       acceptRecords: records => { adminTemplateHistoryRecords = records; }, persist: () => persistStateSnapshot(state, { recordAction: false }),
     });
-    if (renderAfter && result.restored) render();
+    if (renderAfter) { render(); updateSyncUi(); }
     return result.restored;
   }
   const result = await hydrateAdminTemplateDraftsFlow({
@@ -11847,7 +11886,7 @@ async function resumeAdminTemplatePhotoWholeCopyCapture(layoutId, operationId, i
   const plan = await captureAdminTemplatePhotoWholeCopyForm(record, isCurrent);
   return { plan, record };
 }
-async function resumeAdminTemplatePhotoWholeCopyForm(layoutId, operationId) {
+async function resumeAdminTemplatePhotoWholeCopyForm(layoutId, operationId, { onProgress = null } = {}) {
   const record = await findAdminTemplatePhotoWholeCopyFormRecord(layoutId, operationId), binding = record.binding;
   const getContext = () => adminTemplateOperationContext(binding, layoutId), initial = canonicalTemplateJson(getContext());
   const guard = () => {
@@ -11881,7 +11920,7 @@ async function resumeAdminTemplatePhotoWholeCopyForm(layoutId, operationId) {
   let result;
   if (journal.receipt?.operation.state === "committed") result = { plan: saved.plan, record, receipt: journal.receipt, stageReceipts: journal.stageReceipts };
   else if (!journal.receipt && adminTemplatePhotoWholeCopyFormEnabled()) {
-    result = await runAdminTemplatePhotoWholeCopyPlan({ binding, layoutId, operationId }); guard();
+    result = await runAdminTemplatePhotoWholeCopyPlan({ binding, layoutId, operationId }, { onProgress }); guard();
   } else throw Error("Копирование ещё не подтверждено или остановлено. Исходная операция сохранена для сверки.");
   return applyAdminTemplatePhotoWholeCopyFormResult(result);
 }
@@ -11901,7 +11940,7 @@ async function prepareAdminTemplatePhotoWholeCopyRecovery(layoutId) {
   const store = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
   const client = createAdminTemplatePhotoWholeCopyClient({ binding, getContext, store, transport: experimentTransport, enabled: false });
   const runner = adminTemplatePhotoWholeCopyRecoveryRunner(binding, layoutId);
-  let applied = false, latest = null, inspected = false;
+  let applied = false, appliedLayoutId = "", latest = null, inspected = false;
   const describe = journal => {
     const receipt = journal?.receipt, committed = receipt?.operation.state === "committed", stopping = journal?.cancelRequested === true;
     const cancelled = receipt?.operation.state === "rejected" && receipt.result.payload.code === "operation_cancelled";
@@ -11919,18 +11958,24 @@ async function prepareAdminTemplatePhotoWholeCopyRecovery(layoutId) {
   return { inspect, stop: async () => {
     guard(); if (!latest) throw Error("Сначала проверьте сохранённую копию.");
     const facts = await runner.cancel(id); guard(); latest = facts.journal; return describe(latest);
-  }, resume: async () => {
+  }, resume: async (onProgress = null) => {
     guard(); if (!inspected) throw Error("Сначала проверьте сохранённую копию.");
     const journal = await client.read(id); guard();
     if (journal?.receipt?.operation.state === "rejected") { latest = journal; return describe(journal); }
     if (journal?.cancelRequested && !journal.receipt) {
       const facts = await runner.cancel(id); guard(); latest = facts.journal; return describe(latest);
     }
-    const result = await resumeAdminTemplatePhotoWholeCopyForm(layoutId, id); guard();
-    applied = Boolean(result?.layoutId); if (applied) render(); return inspect(false);
+    const result = await resumeAdminTemplatePhotoWholeCopyForm(layoutId, id, { onProgress }); guard();
+    appliedLayoutId = result?.layoutId || "";
+    applied = Boolean(appliedLayoutId); if (applied) render(); return inspect(false);
+  }, openResult: async () => {
+    guard();
+    if (!applied || !appliedLayoutId) throw Error("Копирование ещё не завершено.");
+    if (!activateAdminPublishedLayout(appliedLayoutId)) throw Error("Не удалось открыть созданную копию.");
+    showToast(localText("Template copy created.", "Копия шаблона создана."), "success");
   } };
 }
-async function createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
+async function createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null, onProgress = null } = {}) {
   const layoutId = sourceLayout.id, targetKind = sourceKind || (sourceLayout.adminSharedSourceId ? "shared" : "demo");
   const title = requestedName.trim(), binding = sourceLayout.adminCausalSource?.binding;
   const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
@@ -11945,13 +11990,13 @@ async function createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, {
     if (retained.snapshot.target.metadata.title !== title || kind !== targetKind) {
       throw Error("Есть незавершённая копия этого шаблона. Сначала продолжите её в проверке сохранения.");
     }
-    applied = await resumeAdminTemplatePhotoWholeCopyForm(layoutId, retained.action.operationId);
+    applied = await resumeAdminTemplatePhotoWholeCopyForm(layoutId, retained.action.operationId, { onProgress });
   } else {
     const input = { sourceLayoutId: layoutId, targetKind, metadata: { title,
       description: String(sourceLayout.note || "").trim(), language: normalizeUiLanguage(sourceLayout.language || uiLanguage) } };
     const captured = await prepareAndCaptureAdminTemplatePhotoWholeCopyForm(input, { isCurrent });
     if (!isCurrent()) throw Error("Выбор полной копии изменился. Операция сохранена для восстановления.");
-    const result = await runAdminTemplatePhotoWholeCopyPlan({ binding: captured.plan.binding, layoutId, operationId: captured.plan.id });
+    const result = await runAdminTemplatePhotoWholeCopyPlan({ binding: captured.plan.binding, layoutId, operationId: captured.plan.id }, { onProgress });
     applied = await applyAdminTemplatePhotoWholeCopyFormResult(result);
   }
   if (!applied?.layoutId) throw Error("Копирование остановлено или ожидает подтверждения остановки. Исходная операция сохранена для сверки.");
@@ -12020,7 +12065,7 @@ async function applyAdminTemplatePhotoWholeCopyFormResult(input) {
         getMirrorContext: () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) }, scope.assertCurrent));
   });
 }
-async function runAdminTemplatePhotoWholeCopyPlan(input) {
+async function runAdminTemplatePhotoWholeCopyPlan(input, { onProgress = null } = {}) {
   // The source remains selected; no target placeholder is fabricated before
   // receipt/application. Only a retained plan is runnable, never a fresh copy.
   const chosen = clone(input), { binding, layoutId, operationId } = chosen;
@@ -12052,7 +12097,7 @@ async function runAdminTemplatePhotoWholeCopyPlan(input) {
       session.assertCurrent();
       if (session.record.snapshot.source.layoutId !== layoutId || session.record.intentHash !== original.plan.recordIntentHash) pause();
       const client = createAdminTemplatePhotoWholeCopyClient({ binding, store, transport: experimentTransport, getContext: session.getContext,
-        withDispatchAdmission: session.withDispatchAdmission, enabled: writing, adminEnabled: adminTemplateUiEnabled(),
+        withDispatchAdmission: session.withDispatchAdmission, enabled: writing, adminEnabled: adminTemplateUiEnabled(), onProgress,
         appendEnabled: ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, createEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, copyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED });
       const plans = createAdminTemplateSavePlans({ binding, getContext: session.getContext, enabled: true,
         photoWholeCopyStore: store, photoWholeCopyClient: client, photoWholeCopyEnabled: writing,
@@ -13747,7 +13792,7 @@ async function prepareCausalAdminPlacementCopy(request) {
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   }, { canLink: Boolean(linked), canMissing: Boolean(missingPrepared), missingItemCount: missingPrepared?.missingItemCount || 0 });
 }
-async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null } = {}) {
+async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "", validateSelection = null, onProgress = null } = {}) {
   if (adminTemplatePhotoWholeCopyFormEnabled() && sourceLayout?.adminCausalSource?.visibility === "public"
     && (!sourceLayout.adminCausalSource.canonicalPayload || !sourceLayout.adminCausalSource.photoOwnerMap)) {
     const observed = sourceLayout.adminCausalSource, layoutId = sourceLayout.id;
@@ -13781,7 +13826,28 @@ async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sour
   }
   if (adminTemplatePhotoWholeCopyFormEnabled() && ["items", "containers"].some(type =>
     Object.values(sourceLayout?.adminCausalSource?.canonicalPayload?.[type] || {}).some(owner => owner.photos?.length))) {
-    return createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind, validateSelection });
+    try {
+      return await createCausalAdminTemplateWholeCopy(sourceLayout, requestedName, { sourceKind, validateSelection, ...(onProgress ? { onProgress } : {}) });
+    } catch (error) {
+      // The copy belongs to its source editor, not necessarily the layout that
+      // is currently selected behind the creation form. Offer the exact saved
+      // operation's recovery here instead of referring to a coloured sync dot.
+      try {
+        const retained = await findAdminTemplatePhotoWholeCopyFormRecord(sourceLayout.id);
+        if (retained) {
+          const actorId = retained.binding.actorId;
+          error.recoverCopy = async () => {
+            if (String(currentUser?.id) !== actorId || !canOpenAdminPublishedEdit()
+              || state.layouts[sourceLayout.id] !== sourceLayout) throw Error("Контекст копирования изменился. Откройте исходный шаблон заново.");
+            refs.layoutDialog.close();
+            if (!activateAdminPublishedLayout(sourceLayout.id)) throw Error("Не удалось открыть исходный шаблон копии.");
+            return showAdminTemplateRecovery(sourceLayout.id);
+          };
+          error.savedCopyTitle = retained.snapshot.target.metadata.title;
+        }
+      } catch { /* Preserve the original failure if retained storage is unreadable. */ }
+      throw error;
+    }
   }
   const observed = clone(sourceLayout?.adminCausalSource || null), coordinator = adminTemplateSaveCoordinator();
   const pendingSource = Boolean(observed?.planId && observed.base?.operationId);
@@ -14127,7 +14193,11 @@ let administrativeRecoveryDialog = null;
 function showAdminTemplateRecovery(layoutId) {
   if (!administrativeRecoveryDialog) administrativeRecoveryDialog = createAdminTemplateRecoveryDialog({
     getLanguage: () => uiLanguage, openModalDialog, prepare: prepareAdminTemplateRecovery,
-    confirmStop: () => askConfirmDialog({ title: "Остановить отправку шаблона?", tone: "warning",
+    confirmStop: info => askConfirmDialog(info?.recoveryKind === "photo-whole-copy" ? {
+      title: "Отменить копирование шаблона?", tone: "warning",
+      text: "Проверим результат на сервере и отменим ещё не завершённое копирование. Если копия уже создана, покажем её результат. Исходный шаблон останется без изменений.",
+      okText: "Отменить копирование", cancelText: "Вернуться", hideClose: true
+    } : { title: "Остановить отправку шаблона?", tone: "warning",
       text: "Остановим ещё не принятые действия. Часть отправки могла уже завершиться на сервере. Местный черновик останется на устройстве для сверки.",
       okText: "Остановить отправку", cancelText: "Продолжать сохранение", hideClose: true }),
   });
@@ -16828,6 +16898,7 @@ function switchView(view) {
 
 function render() {
   ensureGuestPublicScope();
+  renderAdminArchivedDraftNotice();
   capturePackingScroll();
   document.body.classList.toggle("shared-layout-view", isSharedLayoutView());
   renderFilters();

@@ -184,6 +184,7 @@ export async function treeAcceptanceAppFixture({ routing = false, arrangement = 
         const work = await api.prepareAdminTemplateRecovery(id), info = await work.inspect(false);
         const shown = { id, work, info }; routes.dialogs.push(shown); return shown;
       },
+      archivedAdminDraft: () => null,
       runSyncNowFlow: async (args, options) => {
         assert.equal(args.runtime.state, f.state); routes.fallback.push({ force: Boolean(options.force) });
         return "ordinary-sync-fallback";
