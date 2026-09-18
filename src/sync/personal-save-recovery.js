@@ -4,14 +4,20 @@ const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selecti
 
 // A storage failure is a latched stop for this editor, not an invitation to
 // retry a form which may already have changed its in-memory entities.
-export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScope = () => true } = {}) {
+export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScope = () => true,
+  refreshStorage, onReadReady = () => {} } = {}) {
   let failure = null, resolving = false;
   const assertRunning = () => { if (failure) throw failure.error; };
-  const report = (error, { scopeKey, snapshot, recoverDraft, canRecoverDraft } = {}) => {
+  const report = (error, { scopeKey, snapshot, recoverDraft, canRecoverDraft, readOnly = false } = {}) => {
     if (!error?.isPersonalSaveBlocked || !blockingCodes.has(error.code)) return false;
     if (!isCurrentScope(scopeKey)) return false;
-    if (!failure) failure = { error, scopeKey, draft: null, draftAvailable: false };
-    if (failure.error !== error) return false;
+    if (!failure) failure = { error, scopeKey, draft: null, draftAvailable: false, readOnly };
+    if (failure.error !== error) {
+      if (!failure.refreshing || !failure.readOnly || failure.scopeKey !== scopeKey) return false;
+      // A real concurrent failure takes ownership before a read can unlock.
+      failure.error = error; failure.readOnly = false;
+    }
+    failure.readOnly &&= readOnly;
     snapshot ||= error.unconfirmedMemoryDraft;
     if (snapshot && !failure.draftAvailable) {
       try { failure.draft = JSON.parse(JSON.stringify(snapshot)); failure.draftAvailable = true; }
@@ -19,9 +25,25 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
     }
     if (error.code === "stale-tab" && recoverDraft && canRecoverDraft?.() && !failure.recoverDraft) failure.recoverDraft = recoverDraft;
     onBlocked(failure);
+    // Only a failed read may unlock after hydration. Mutations and memory
+    // drafts still require explicit recovery; no callback is replayed here.
+    if (readOnly && error.reason === "personal-journal-reference-not-prepared"
+      && refreshStorage && !failure.refreshing && !failure.draftAvailable) {
+      const original = failure;
+      original.refreshing = Promise.resolve().then(() => refreshStorage(scopeKey)).then(() => {
+        if (failure !== original || !original.readOnly || original.draftAvailable || !isCurrentScope(scopeKey)) return;
+        failure = null;
+        onReadReady();
+      }, cause => {
+        if (failure !== original || original.error !== error || !isCurrentScope(scopeKey)) return;
+        original.error = cause;
+        onBlocked(original);
+      });
+    }
     return true;
   };
   const run = (callback, details = {}) => {
+    if (failure?.refreshing && failure.readOnly && details.readOnly !== true) report(failure.error, details);
     assertRunning();
     const rejected = error => { report(error, details); throw error; };
     try {
@@ -54,16 +76,25 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
       } finally { resolving = false; }
     },
     outbox(factory, scopeKey) {
-      const outbox = run(factory, { scopeKey });
+      const outbox = run(factory, { scopeKey, readOnly: true });
       return Object.fromEntries(Object.entries(outbox).map(([name, value]) => [name,
         typeof value !== "function" ? value : (...args) => run(() => value.apply(outbox, args), {
-          scopeKey, snapshot: name === "capture" ? args[0]?.snapshot : undefined,
+          scopeKey, readOnly: ["recover", "recoverSnapshot", "baseline", "confirmedBase", "confirmedBoundary",
+            "hasPending", "ordinaryRecoveryReview", "ordinaryRecoveryArchives"].includes(name),
+          snapshot: name === "capture" ? args[0]?.snapshot : undefined,
           recoverDraft: name === "capture" ? options => {
             if (!outbox.canReconcileStaleCapture?.()) throw Error("No frozen common base for this draft");
             return outbox.reconcileStaleCapture(options);
           } : undefined,
           canRecoverDraft: () => outbox.canReconcileStaleCapture?.()
         })]));
+    },
+    async preparedRecoveryCopy(storage) {
+      const original = failure;
+      if (!original || !isCurrentScope(original.scopeKey)) throw Error("No blocked personal save in this scope");
+      try { await refreshStorage?.(original.scopeKey); } catch { /* Export available bytes and mark incomplete. */ }
+      if (failure !== original || !isCurrentScope(original.scopeKey)) throw Error("Recovery context changed");
+      return this.recoveryCopy(storage);
     },
     recoveryCopy(storage) {
       if (!failure) throw Error("No blocked personal save to export");

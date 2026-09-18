@@ -1,4 +1,4 @@
-import { initializePersonalJournal, personalJournalStorage, preparePersonalJournal, flushPersonalJournal } from "./src/storage/personal-journal-runtime.js";
+import { initializePersonalJournal, personalJournalStorage, refreshPersonalJournal, preparePersonalJournal, flushPersonalJournal } from "./src/storage/personal-journal-runtime.js";
 import { isExperimentHost, migrateExperimentSession, clearLegacyExperimentCookie } from "./src/sync/experiment-shared-auth.js";
 import { createPersonalPendingServerFormSession } from "./src/sync/personal-pending-server-form.js";
 import { personalPendingServerUpdateSource, isPersonalPendingServerUpdate } from "./src/sync/personal-pending-server-update.js";
@@ -1368,6 +1368,11 @@ let personalOrdinaryReviewNotice = null;
 let personalPhotoRecoveryCheck = null, personalPhotoRecoverySource = null;
 let personalPhotoFormPreparing = 0, personalPhotoFormLiveSource = null;
 const personalSaveRecovery = createPersonalSaveRecovery({
+  refreshStorage: scope => refreshPersonalJournal(scope),
+  onReadReady: () => {
+    personalSaveRecoveryDialog?.finishReadRefresh();
+    updateSyncUi();
+  },
   isCurrentScope: scopeKey => scopeKey === localStorageScopeKey && scopeKey?.startsWith("id:"),
   onBlocked: failure => {
     personalSaveRecoveryDialog?.show();
@@ -1377,7 +1382,7 @@ const personalSaveRecovery = createPersonalSaveRecovery({
 });
 const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSaveRecoveryDialog({
   getLanguage: () => uiLanguage,
-  getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(personalLocalReadView()),
+  getRecoveryCopy: () => personalSaveRecovery.preparedRecoveryCopy(personalLocalReadView()),
   ownsError: error => personalSaveRecovery.owns(error),
   canRecoverDraft: () => personalSaveRecovery.canRecoverDraft(),
   recoverDraft: () => recoverStalePersonalDraft(),
@@ -7900,7 +7905,11 @@ async function checkAuthAndLoad(options = {}) {
   return result;
 }
 
-function handleWindowReturn() {
+async function handleWindowReturn() {
+  const scope = localStorageScopeKey;
+  try { await refreshPersonalJournal(scope); }
+  catch (error) { personalSaveRecovery.report(error, { scopeKey: scope }); return; }
+  if (scope !== localStorageScopeKey) return;
   if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
     refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
   }
@@ -9429,6 +9438,9 @@ function personalPhotoRecoveryReadContext() {
 async function checkPersonalPhotoRecoveryBeforeLoad() {
   if (!personalSavePilotEnabled()) return;
   personalSaveRecovery.assertRunning();
+  const refreshScope = localStorageScopeKey;
+  await refreshPersonalJournal(refreshScope);
+  if (refreshScope !== localStorageScopeKey) return;
   const initial = personalPhotoRecoveryReadContext();
   if (!initial.actorId || !initial.listId || initial.scopeKey !== `id:${initial.actorId}` || initial.scope !== "personal") return;
   const binding = { environment: initial.environment, actorId: initial.actorId, listId: initial.listId, scopeKey: initial.scopeKey };
@@ -10671,6 +10683,9 @@ async function handleInitialListMigrationRequired(error) {
 }
 
 async function loadRemoteState(options = {}) {
+  const scope = localStorageScopeKey;
+  await refreshPersonalJournal(scope);
+  if (scope !== localStorageScopeKey) return false;
   await checkPersonalPhotoRecoveryBeforeLoad();
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
   const baselineLoadOwner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };

@@ -245,27 +245,33 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
           status.textContent = error.message || text("Восстановление остановлено. Черновик сохранён.", "Recovery paused. The draft is retained.");
         } finally { recover.disabled = false; recover.hidden = !canRecoverDraft(); }
       });
-      download.addEventListener("click", () => {
+      download.addEventListener("click", async () => {
+        if (download.disabled) return;
+        download.disabled = true;
+        status.textContent = text("Читаю сохранённую очередь…", "Reading the retained queue…");
         try {
-          const copy = getRecoveryCopy();
+          const copy = await getRecoveryCopy();
           const blob = new Blob([JSON.stringify(copy, null, 2)], { type: "application/json" });
           const url = windowRef.URL.createObjectURL(blob);
           const link = documentRef.createElement("a");
           link.href = url; link.download = "bike-packing-recovery.json";
           dialog.append(link); link.click(); link.remove();
           windowRef.setTimeout(() => windowRef.URL.revokeObjectURL(url), 30000);
-          status.textContent = text("Загрузка файла запрошена. Проверьте, что файл появился в загрузках. Редактирование остаётся приостановленным.",
+          status.textContent = copy.storageReadable === false ? text("Запрошена загрузка неполной копии: часть очереди прочитать не удалось. Не очищайте данные сайта.", "Incomplete copy download requested: some queue records could not be read. Keep site data.") : text("Загрузка файла запрошена. Проверьте, что файл появился в загрузках. Редактирование остаётся приостановленным.",
             "Download requested. Check that the file appears in downloads. Editing remains paused.");
         } catch {
           status.textContent = text("Не удалось подготовить файл. Не закрывайте вкладку: копия ещё не скачана.",
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
-        }
+        } finally { download.disabled = false; }
       });
       dialog.append(title, description, status, reason, guidance, preparations, preparedCopies, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
       renderPreparationChoices(false);
       renderPublicPreparations(false);
       documentRef.body.append(dialog);
       dialog.showModal();
+    },
+    finishReadRefresh() {
+      dialog?.close(); dialog?.remove(); dialog = undefined;
     },
     showChecking() { this.show(); renderChecking(true); },
     finishChecking() {

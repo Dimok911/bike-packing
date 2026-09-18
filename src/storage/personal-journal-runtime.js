@@ -6,6 +6,7 @@ export async function initializePersonalJournal(enabled) {
   return journal;
 }
 export const personalJournalStorage = () => journal || globalThis.localStorage;
+export const refreshPersonalJournal = scope => journal?.refreshReferences(scope) || Promise.resolve();
 export const preparePersonalJournal = () => journal?.prepare() || Promise.resolve();
 export const flushPersonalJournal = scope => journal?.flush(scope) || Promise.resolve();
 export const personalJournalDiagnostics = () => journal?.diagnostics() || { available: false };

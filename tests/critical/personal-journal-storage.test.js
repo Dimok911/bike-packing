@@ -254,3 +254,32 @@ test("scoped flush never reports another account's failed capture or performs it
   await assert.rejects(storage.flush(binding.scopeKey), error => error === oldFailure);
   await assert.rejects(storage.flush(), error => error === oldFailure, "unscoped callers retain earlier failure behavior");
 });
+
+test("read refresh hydrates new cross-tab references without writing, migration or cleanup", async () => {
+  const f = fixture(), first = await f.open(), other = await f.open();
+  await first.writeRequired(key, "new checkpoint".repeat(30000));
+  const retired = keyFor("retired"), inline = keyFor("inline");
+  await other.writeRequired(retired, "retain retired body"); other.removeItem(retired);
+  f.values.set(inline, "legacy bytes");
+  const before = structuredClone([...f.states]), markers = [...f.values];
+  f.beforeCommit = () => { throw Error("refresh must not write"); };
+  f.beforeMarker = () => { throw Error("refresh must not publish"); };
+  await other.refreshReferences(binding.scopeKey);
+  assert.equal(other.getItem(key), "new checkpoint".repeat(30000));
+  assert.deepEqual([...f.states], before); assert.deepEqual([...f.values], markers);
+});
+
+test("refresh retries a changed reference and rejects an invalid body without rewriting it", async () => {
+  const f = fixture(), first = await f.open(), other = await f.open();
+  await first.writeRequired(key, "first"); const marker = f.values.get(key);
+  await first.writeRequired(key, "second"); const next = f.values.get(key);
+  f.values.set(key, marker);
+  f.beforeRead = () => { f.values.set(key, next); f.beforeRead = null; };
+  await other.refreshReferences(binding.scopeKey);
+  assert.equal(other.getItem(key), "second");
+  const third = await f.open(); await first.writeRequired(key, "third");
+  [...f.states.values()][0].entries.find(row => row.raw === "third").raw = "bad";
+  const before = structuredClone([...f.states]), markers = [...f.values];
+  await assert.rejects(third.refreshReferences(binding.scopeKey), blocked("body-verification"));
+  assert.deepEqual([...f.states], before); assert.deepEqual([...f.values], markers);
+});

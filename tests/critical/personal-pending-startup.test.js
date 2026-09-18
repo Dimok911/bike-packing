@@ -166,6 +166,7 @@ function appFixture({ pending = true, photoFailure = null } = {}) {
   Object.assign(scope, { currentUser: { id: binding.actorId }, localStorageScopeKey: binding.scopeKey, currentPackingListId: binding.listId,
     remoteStateLoadPromise: null, modeState: {}, appUnlocked: false, initialRemoteLoadPending: true,
     recoverPendingPersonalSaveBeforeLoad: recover,
+    refreshPersonalJournal: async scopeKey => { assert.equal(scopeKey, binding.scopeKey); },
     checkPersonalPhotoRecoveryBeforeLoad: async () => { events.push("photo-check"); if (photoFailure) throw photoFailure; },
     personalSavePilotEnabled: () => true, isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false,
     isSharedListLinkRoute: () => false, personalSaveContext: () => ({ ...context(), actorId: scope.currentUser.id,
@@ -215,4 +216,18 @@ test("actual app entry does not apply old pending recovery to a newly selected a
   assert.equal(await f.load(), false);
   assert.equal(f.events.includes("startup-ready"), true, "old local data was shown only while its authenticated owner was current");
   assert.equal(f.events.at(-1), "owner-changed", "no old warning or local-state rendering occurs after the owner switch");
+});
+
+test("actual load waits for journal hydration and does not read an old account after it resolves", async () => {
+  const f = appFixture(); let release;
+  f.scope.refreshPersonalJournal = () => new Promise(resolve => { release = resolve; });
+  const pending = f.load(); assert.deepEqual(f.events, []);
+  f.scope.localStorageScopeKey = "id:other"; release();
+  assert.equal(await pending, false); assert.deepEqual(f.events, []);
+});
+
+test("actual load stops before photo and server reads if journal verification fails", async () => {
+  const f = appFixture(), error = Error("body verification failed");
+  f.scope.refreshPersonalJournal = async () => { throw error; };
+  await assert.rejects(f.load(), cause => cause === error); assert.deepEqual(f.events, []);
 });

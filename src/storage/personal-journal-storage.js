@@ -215,6 +215,27 @@ export async function createPersonalJournalStorage({ legacy = globalThis.localSt
       }
     },
     writeRequired: (key, raw, options) => writeValue(key, raw, options),
+    async refreshReferences(scopeKey) {
+      // Read-only hydration: never migrate inline values or prune retired bodies.
+      // A competing writer may advance the index while we await a binding lock.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          for (const [key, raw] of scan()) {
+            if (!belongsToScope(key, scopeKey)) continue;
+            const marker = reference(raw);
+            if (marker && !cache.has(cacheKey(key, raw))) {
+              await lock(bindingOf(key), () => loadReference(key, marker, raw));
+            }
+          }
+          for (const [key] of scan()) if (belongsToScope(key, scopeKey)) api.getItem(key);
+          return api;
+        } catch (cause) {
+          if (attempt < 2 && ["personal-journal-source-changed", "personal-journal-scan-changed",
+            "personal-journal-reference-not-prepared"].includes(cause.reason)) continue;
+          throw cause?.isPersonalSaveBlocked ? cause : failure("refresh", cause);
+        }
+      }
+    },
     async prepare() {
       try {
         for (const [key, raw] of scan()) {
