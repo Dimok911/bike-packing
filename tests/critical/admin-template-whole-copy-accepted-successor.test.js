@@ -170,3 +170,79 @@ test("mutations during nested acceptance still stop successor before persistence
     assert.equal([...f.values.keys()].some(key => key.endsWith(input.operationId)), false); assert.deepEqual(f.calls, []);
   }
 });
+
+const ownedAcceptance = f => ({ store: f.store, getContext: f.readInput.getContext, getMirrorContext: f.readInput.getMirrorContext });
+
+test("registry-owned acceptance validates fresh storage and avoids the compatibility adapter's second derivation", async t => {
+  const f = await fixture(), original = crypto.subtle.digest; let hashes = 0;
+  crypto.subtle.digest = function(...args) { hashes++; return original.apply(this, args); };
+  t.after(() => { crypto.subtle.digest = original; });
+  await f.make().capture(f.input()); const legacyHashes = hashes; hashes = 0;
+  let dependencies = 0;
+  const input = f.input(), plans = f.make({ getWholeCopyAcceptanceContext() { dependencies++; return ownedAcceptance(f); },
+    readWholeCopyAcceptance: () => assert.fail('prevalidated adapter must not run') });
+  await plans.capture(input); const ownedHashes = hashes;
+  assert.ok(dependencies >= 2, 'each separate proof obtains fresh storage dependencies');
+  assert.ok(ownedHashes < legacyHashes * 0.7, `duplicate validation returned: owned=${ownedHashes}, adapter=${legacyHashes}`);
+  assert.equal((await plans.run(input.operationId)).state, 'committed');
+  f.idb.rows().clear(); await assert.rejects(plans.capture(f.input()));
+});
+
+test("registry-owned acceptance detects forged journal or receipt data even with recomputed acceptance digests", async () => {
+  const { canonicalTemplateJson: canonical } = await import('../../src/sync/admin-template-protocol.js');
+  const { hash } = await import('../fixtures/admin-template-photo-whole-copy-acceptance-fixture.js');
+  for (const fault of ['payloadDigest', 'stage', 'receipt', 'targetDigest', 'record']) {
+    const f = await fixture(), journal = JSON.parse(f.values.get(f.journalKey)), accepted = JSON.parse(f.values.get(f.acceptanceKey));
+    if (fault === 'payloadDigest') journal.payloadDigest = '0'.repeat(64);
+    if (fault === 'stage') journal.stageReceipts[0].receipt.assetDigest = '0'.repeat(64);
+    if (fault === 'receipt') journal.receipt.result.payload.photoCopy.confirmedPayloadDigest = '0'.repeat(64);
+    if (fault === 'targetDigest') accepted.targetSnapshotDigest = '0'.repeat(64);
+    if (fault === 'record') f.idb.rows().clear();
+    const terminal = Object.fromEntries(['version','kind','intent','payloadDigest','recordIntentHash','stageReceipts','receipt'].map(key => [key,journal[key]]));
+    terminal.stageReceipts = journal.stageReceipts.map(stage => stage.receipt);
+    accepted.terminalJournalDigest = hash(terminal);
+    f.values.set(f.journalKey, canonical(journal)); f.values.set(f.acceptanceKey, canonical(accepted));
+    const input = f.input();
+    await assert.rejects(f.make({ getWholeCopyAcceptanceContext: () => ownedAcceptance(f) }).capture(input), undefined, fault);
+    assert.equal([...f.values.keys()].some(key => key.endsWith(input.operationId)), false); assert.deepEqual(f.calls, []);
+  }
+});
+
+test("registry-owned acceptance preserves inventory and context checks while awaiting the complete proof", async () => {
+  for (const fault of ['add', 'remove', 'replace', 'context', 'typed-delete']) {
+    const f = await fixture(), input = f.input(); let armed = true;
+    f.idb.controls.onCommit = ({ mode }) => {
+      if (!armed || mode !== 'readonly') return; armed = false;
+      if (fault === 'add') f.values.set(f.planKey + ':another', f.values.get(f.planKey));
+      if (fault === 'remove') f.values.delete(f.planKey);
+      if (fault === 'replace') f.values.set(f.journalKey, f.values.get(f.journalKey) + ' ');
+      if (fault === 'context') f.successorContext.generation = 'changed';
+      if (fault === 'typed-delete') f.idb.rows().clear();
+    };
+    await assert.rejects(f.make({ getWholeCopyAcceptanceContext: () => ownedAcceptance(f) }).capture(input), undefined, fault);
+    assert.equal([...f.values.keys()].some(key => key.endsWith(input.operationId)), false); assert.deepEqual(f.calls, []);
+  }
+});
+
+test("dependency adapters cannot supply authority, substitute routing or become asynchronous", async () => {
+  const f = await fixture();
+  for (const resolver of [true, () => true, () => ({ assertCurrent() {} }),
+    async () => ownedAcceptance(f), () => ({ ...ownedAcceptance(f), binding: f.binding }),
+    () => ({ ...ownedAcceptance(f), getContext: () => ({ ...f.current, actorId: 'foreign' }) })]) {
+    await assert.rejects(f.make({ getWholeCopyAcceptanceContext: resolver }).capture(f.input()));
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test("registry-owned proof still blocks stale bases, pending dependencies and revoked acceptance after client capture", async () => {
+  for (const side of ['source', 'target']) {
+    const f = await fixture(side), plans = f.make({ getWholeCopyAcceptanceContext: () => ownedAcceptance(f) });
+    const pending = f.input(); pending.base = { operationId: f.id }; await assert.rejects(plans.capture(pending));
+    const missing = f.input(); Object.assign(missing, { exists: false, visibility: null, base: null }); await assert.rejects(plans.capture(missing));
+    if (side === 'source') { const stale = f.input(); stale.base.stateRevision = 6; await assert.rejects(plans.capture(stale)); }
+    const input = f.input(); await plans.capture(input);
+    f.controlsSuccessor.afterCapture = () => f.values.delete(f.acceptanceKey);
+    await assert.rejects(plans.run(input.operationId));
+    assert.deepEqual(f.calls, [['capture', input.operationId]]);
+  }
+});

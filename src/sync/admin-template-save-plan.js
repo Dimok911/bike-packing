@@ -1,3 +1,4 @@
+import { readAdminTemplatePhotoWholeCopyAcceptance } from "../public/admin-template-photo-whole-copy-acceptance.js";
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
@@ -223,7 +224,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null,
   photoTreeCopyEnabled = ADMIN_TEMPLATE_PHOTO_TREE_COPY_ENABLED, photoTreeCopyStore = null, photoTreeCopyClient = null,
   photoWholeCopyEnabled = ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED, photoWholeCopyStore = null, photoWholeCopyClient = null,
-  assertWholeCopyAdmission = null, readWholeCopyAcceptance = null, readWholeCopyCancellation = null, assertCaptureAllowed = () => {} }) {
+  assertWholeCopyAdmission = null, getWholeCopyAcceptanceContext = null, readWholeCopyAcceptance = null, readWholeCopyCancellation = null, assertCaptureAllowed = () => {} }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
   const key = id => { if (!validTemplateOperationId(id)) throw paused(); return prefix + id; };
@@ -302,6 +303,25 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
           continue;
         }
       }
+      if (getWholeCopyAcceptanceContext !== null) {
+        // Own the complete validation here instead of asking an adapter for
+        // facts and then independently rederiving those same facts. The adapter
+        // supplies storage/context dependencies, never permission or a proof.
+        if (typeof getWholeCopyAcceptanceContext !== "function") throw paused();
+        const dependencies = getWholeCopyAcceptanceContext({ binding: clone(plan.binding), operationId: plan.id });
+        if (dependencies?.then) { Promise.resolve(dependencies).catch(() => {}); throw paused(); }
+        if (!exact(dependencies, ["store", "getContext", "getMirrorContext"])) throw paused();
+        current();
+        const proof = await readAdminTemplatePhotoWholeCopyAcceptance({ ...dependencies,
+          binding: clone(plan.binding), operationId: plan.id }, retainedGuard); current();
+        if (!proof || !same(proof.plan, plan) || proof.acceptance.planDigest !== digest) throw paused();
+        guards.push(proof.assertCurrent); current();
+        const revision = same(plan.binding, binding) ? proof.receipt.result.payload.stateRevision
+          : plan.operations[0].body.source.base.stateRevision;
+        if (!Number.isSafeInteger(revision) || base.stateRevision < revision) throw paused();
+        continue;
+      }
+      // Compatibility adapters returning data still owe independent validation.
       if (typeof readWholeCopyAcceptance !== "function") throw paused();
       const proof = await readWholeCopyAcceptance({ binding: clone(plan.binding), operationId: plan.id, guard: retainedGuard }); current();
       if (!exact(proof, ["plan", "record", "journal", "receipt", "stageReceipts", "targetSnapshot", "acceptance", "assertCurrent"])

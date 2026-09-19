@@ -164,3 +164,15 @@ test("acceptance binds the journal payload digest as well as the independently v
   f.values.set(f.acceptanceKey, canonical(accepted));
   await assert.rejects(f.read()); noNetwork(f);
 });
+
+test("acceptance compares every current context field against a detached initial snapshot", async () => {
+  const f = await wholeCopyAcceptanceFixture(); f.current.extra = { nested: { revision: 1 } }; await accept(f);
+  const proof = await f.read();
+  f.current.extra.nested.revision = 2;
+  assert.throws(proof.assertCurrent);
+  const next = await f.read();
+  f.current.extra.nested.invalid = undefined;
+  assert.throws(next.assertCurrent);
+  delete f.current.extra.nested.invalid; next.assertCurrent();
+  delete f.current.extra; assert.throws(next.assertCurrent); noNetwork(f);
+});

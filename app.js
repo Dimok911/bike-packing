@@ -14175,8 +14175,11 @@ function adminTemplatePlansFor(binding, layoutId, preparing = false) {
     photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId, preparing), photoCopyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED,
     photoTreeCopyStore, photoTreeCopyClient, photoTreeCopyEnabled: false,
     photoWholeCopyStore, photoWholeCopyClient, photoWholeCopyEnabled: false,
-    readWholeCopyAcceptance: ({ binding: owner, operationId, guard }) =>
-      readAdminTemplatePhotoWholeCopyAccepted(owner, layoutId, operationId, guard, true),
+    getWholeCopyAcceptanceContext: ({ binding: owner }) => {
+      const getContext = () => adminTemplateOperationContext(owner, layoutId, true);
+      return { store: createAdminTemplatePhotoWholeCopyActionStore({ binding: owner, getContext, enabled: false }), getContext,
+        getMirrorContext: () => ({ storage: adminTemplatePhotoMirrorStorage, key: scopedLocalStorageKey(STORAGE_KEY), scopeKey: localStorageScopeKey }) };
+    },
     readWholeCopyCancellation: ({ binding: owner, operationId, guard }) =>
       readAdminTemplatePhotoWholeCopyStopped(owner, layoutId, operationId, guard, true),
     assertCaptureAllowed: ({ plan, captureLease, guard }) => assertAdminTemplateCopyCaptureAllowed(binding, layoutId,

@@ -75,5 +75,6 @@ export async function prepareAdminTemplatePhotoWholeCopyProjectionProof(input, g
   current(guard);
   const result = targetSnapshot(proof, frozen.plan);
   current(guard);
-  return { record, payloadDigest, projection: copy({ proof, targetSnapshot: result }) };
+  // Both values were created in this call from detached inputs.
+  return { record, payloadDigest, projection: { proof, targetSnapshot: result } };
 }

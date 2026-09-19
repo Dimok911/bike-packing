@@ -45,9 +45,11 @@ function scope(input, externalGuard) {
     const value = sync(getContext);
     if (!plain(value) || value.scope !== "admin-template" || value.admin !== true || typeof value.generation !== "string" || !value.generation
       || Object.keys(binding).some(field => value[field] !== binding[field])) pause("context");
-    return copy(value);
+    return value;
   };
-  const initial = context(), mirror = sync(getMirrorContext);
+  // Detach the initial context once. Each comparison still validates the full
+  // current JSON value; no context observation is reused.
+  const initial = freeze(copy(context())), mirror = sync(getMirrorContext);
   if (!exact(mirror, ["storage", "key", "scopeKey"]) || typeof mirror.key !== "string" || !mirror.key
     || mirror.scopeKey !== `id:${binding.actorId}` || typeof mirror.storage?.getItem !== "function") pause("mirror-context");
   const { storage, key: mirrorKey, scopeKey } = mirror;
@@ -124,8 +126,10 @@ async function fullProof(s, extraGuard = () => {}) {
   const targetSnapshotDigest = await digest(projection.targetSnapshot); guard();
   const acceptance = { version: 1, kind, binding: s.binding, operationId: s.operationId, layoutId: target.layoutId,
     scopeKey: s.scopeKey, mirrorKey: s.mirrorKey, recordIntentHash: record.intentHash, planDigest, terminalJournalDigest, targetSnapshotDigest };
-  return { ...freeze(copy({ plan: saved.plan, record, journal, receipt: journal.receipt, stageReceipts: journal.stageReceipts,
-    targetSnapshot: projection.targetSnapshot, acceptance })), assertCurrent: guard };
+  // Parsed rows and derived projection are private detached values. Freeze
+  // those owned facts directly rather than serializing the complete copy again.
+  return { ...freeze({ plan: saved.plan, record, journal, receipt: journal.receipt, stageReceipts: journal.stageReceipts,
+    targetSnapshot: projection.targetSnapshot, acceptance }), assertCurrent: guard };
 }
 const readKeys = ["binding", "operationId", "store", "getContext", "getMirrorContext"];
 
