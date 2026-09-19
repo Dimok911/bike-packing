@@ -1,3 +1,5 @@
+import { migrateAdminPlanSnapshots } from "./src/storage/admin-plan-snapshot-storage.js";
+import { createPersonalDataRepository } from "./src/storage/personal-data-repository.js";
 import { initializePersonalJournal, personalJournalStorage, refreshPersonalJournal, preparePersonalJournal, flushPersonalJournal } from "./src/storage/personal-journal-runtime.js";
 import { isExperimentHost, migrateExperimentSession, clearLegacyExperimentCookie } from "./src/sync/experiment-shared-auth.js";
 import { createPersonalPendingServerFormSession } from "./src/sync/personal-pending-server-form.js";
@@ -244,7 +246,7 @@ import { adminTemplatePhotoCopyEditorSnapshot, assertAdminTemplatePhotoCopyPlanR
 import { prepareAdminTemplatePhotoCopyForm, preserveAdminTemplatePhotoCopyOwnerIds } from "./src/public/admin-template-photo-copy-flow.js";
 import { readAdminTemplateOrderInventory } from "./src/public/admin-template-order-batch.js";
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
-import { createAdminTemplateSavePlans, adminTemplateCopyPlan, adminTemplateSavePlan, adminTemplateSourceSavePlan } from "./src/sync/admin-template-save-plan.js";
+import { createAdminTemplateSavePlans, verifyAdminCommandStorageRow, adminTemplateCopyPlan, adminTemplateSavePlan, adminTemplateSourceSavePlan } from "./src/sync/admin-template-save-plan.js";
 import { pendingAdminTemplateCopySource } from "./src/sync/admin-template-copy-source.js";
 import { createAdminTemplateSourceBaseline } from "./src/sync/admin-template-source-baseline.js";
 import { adminTemplateCopyPayloadDigest } from "./src/sync/admin-template-copy-projection.js";
@@ -1346,6 +1348,11 @@ const missingDemoPublicTemplates = {};
 applyPublicTemplateLanguage();
 
 try {
+  if (experimentTransport.experiment && ADMIN_TEMPLATE_OPERATIONS_ENABLED) {
+    const repository = createPersonalDataRepository({ databaseName: "bike-packing-admin-plan-originals-v1" });
+    try { await migrateAdminPlanSnapshots({ storage: localStorage, repository, locks: navigator.locks, validate: verifyAdminCommandStorageRow }); }
+    finally { repository.close(); }
+  }
   await initializePersonalMirrors(experimentTransport.experiment && PERSONAL_SAVE_OUTBOX_ENABLED);
   await initializePersonalJournal(experimentTransport.experiment && PERSONAL_SAVE_OUTBOX_ENABLED);
 } catch (error) {
@@ -14176,7 +14183,7 @@ function adminTemplatePlansFor(binding, layoutId, preparing = false) {
   const photoWholeCopyStore = createAdminTemplatePhotoWholeCopyActionStore({ binding, getContext, enabled: false });
   const photoWholeCopyClient = createAdminTemplatePhotoWholeCopyClient({ binding, getContext, store: photoWholeCopyStore,
     transport: experimentTransport, enabled: false });
-  return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client: adminTemplateClient(binding, layoutId, preparing),
+  return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), compactStorage: experimentTransport.experiment, client: adminTemplateClient(binding, layoutId, preparing),
     photoCreateEnabled: ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore: adminTemplatePhotoStore(binding, layoutId, preparing),
     photoCopyStore: adminTemplatePhotoCopyStore(binding, layoutId, preparing),
     photoCopyClient: adminTemplatePhotoCopyClient(binding, layoutId, preparing), photoCopyEnabled: ADMIN_TEMPLATE_PHOTO_COPY_ENABLED,

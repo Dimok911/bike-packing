@@ -263,3 +263,19 @@ test("pending personal source cancellation remains final after its predecessor b
   f.state.pendingSource = false; assert.deepEqual(await f.make().client.run(action.operationId), receipt);
   assert.equal(f.posts().length, 2);
 });
+
+test("storage proof loss after beginWrite prevents POST and never becomes a cached permission", async () => {
+  const f=fixture(), base=f.make(), action=f.action(); let current=true, checks=0;
+  const transport={...base.transport,async beginWrite(...args){await base.transport.beginWrite(...args);current=false;}};
+  const client=f.make({transport}).client;await client.capture(action);
+  await assert.rejects(client.run(action.operationId,{assertStorageCurrent(){checks++;if(!current)throw Error("Snapshot changed");}}));
+  assert.ok(checks>2);assert.equal(f.posts().length,0);
+  assert.equal((await client.read(action.operationId)).receipt,null);
+});
+
+test("storage guard cannot be asynchronous, false or malformed",async()=>{
+  for(const guard of [true,()=>false,async()=>true]){
+    const f=fixture(),client=f.make().client,action=f.action();await client.capture(action);
+    await assert.rejects(client.run(action.operationId,{assertStorageCurrent:guard}));assert.equal(f.calls.length,0);
+  }
+});

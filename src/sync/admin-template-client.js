@@ -87,9 +87,15 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       || value.scope !== "admin-template" || value.admin !== true || value.listId !== binding.listId || value.itemKey !== binding.itemKey || !value.generation) throw blocked();
     return clone(value);
   };
-  const liveExecutions = new WeakMap();
+  const liveExecutions = new WeakMap(), storageGuards = new WeakMap();
   const guard = initial => {
     liveExecutions.get(initial)?.throwIfAborted();
+    const check = storageGuards.get(initial);
+    if (check) {
+      const result = check();
+      if (result?.then) { Promise.resolve(result).catch(() => {}); throw blocked(); }
+      if (result === false) throw blocked();
+    }
     if (!same(context(), initial)) throw blocked();
   };
   const withLiveDocument = async (initial, task) => {
@@ -102,7 +108,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
     try { return await task(); }
     finally {
       for (const event of events) lifecycleTarget?.removeEventListener(event, abort);
-      liveExecutions.delete(initial);
+      liveExecutions.delete(initial); storageGuards.delete(initial);
     }
   };
   const read = async id => {
@@ -192,8 +198,12 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
       && result.operation.id === saved.intent.id && result.operation.state === "unknown") return null;
     return settle(saved, result, initial);
   };
-  const execute = async (id, cancel) => {
+  const execute = async (id, cancel, { assertStorageCurrent } = {}) => {
     writable(); const initial = context();
+    if (assertStorageCurrent !== undefined) {
+      if (typeof assertStorageCurrent !== "function") throw blocked();
+      storageGuards.set(initial, assertStorageCurrent); guard(initial);
+    }
     return withLiveDocument(initial, () => withLock(id, async () => {
       guard(initial); let saved = await read(id); guard(initial);
       if (!saved) throw blocked();
@@ -326,7 +336,7 @@ export function createAdminTemplateClient({ binding, getContext, transport, stor
         return inspect(saved, initial);
       }));
     },
-    run: operationId => execute(operationId, false),
-    cancel: operationId => execute(operationId, true),
+    run: (operationId, options) => execute(operationId, false, options),
+    cancel: (operationId, options) => execute(operationId, true, options),
   });
 }

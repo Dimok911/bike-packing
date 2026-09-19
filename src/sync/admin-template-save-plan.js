@@ -1,3 +1,4 @@
+import { resolveAdminPlanStorageRow, prepareAdminPlanStorageRow, adminPlanKey } from "../storage/admin-plan-snapshot-storage.js";
 import { readAdminTemplatePhotoWholeCopyAcceptance } from "../public/admin-template-photo-whole-copy-acceptance.js";
 import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { sameProtocolJson as same } from "./protocol-json-equality.js";
@@ -218,7 +219,16 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
   return { operationId: plan.operations.at(-1).id, payload: clone(write.body.payload), metadata: clone(write.body.metadata) };
 }
 
+export async function verifyAdminCommandStorageRow(key, raw) {
+  const saved = JSON.parse(raw);
+  if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1
+    || typeof saved.cancelRequested !== "boolean" || saved.plan?.version !== 2 || adminPlanKey(saved.plan) !== key
+    || canonicalTemplateJson(saved) !== raw || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
+  return saved;
+}
+
 export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, getExcludedPlans = null, storage = globalThis.localStorage,
+  compactStorage = false,
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED,
   photoCreateEnabled = ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, photoStore = null,
   photoCopyEnabled = ADMIN_TEMPLATE_PHOTO_COPY_ENABLED, photoCopyStore = null, photoCopyClient = null,
@@ -374,20 +384,28 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
     check();
   };
   const lock = (id, task) => { if (!locks?.request) throw paused(); return locks.request(key(id), task); };
-  const persist = (saved, initial) => {
-    guard(initial); const encoded = canonicalTemplateJson(saved); setRequiredStorageItem(storage, key(saved.plan.id), encoded);
-    if (storage.getItem(key(saved.plan.id)) !== encoded) throw paused(); guard(initial); return saved;
+  const persist = async (saved, initial) => {
+    guard(initial); const encoded = canonicalTemplateJson(saved), name = key(saved.plan.id);
+    const prepared = compactStorage && saved.plan.version === 2
+      ? await prepareAdminPlanStorageRow({ storage, key: name, raw: encoded, validate: verifyAdminCommandStorageRow, assertCurrent: () => guard(initial) })
+      : { raw: encoded, assertCurrent: () => guard(initial) };
+    prepared.assertCurrent(); setRequiredStorageItem(storage, name, prepared.raw);
+    const retained = resolveAdminPlanStorageRow(storage, name);
+    if (retained.raw !== encoded) throw paused(); retained.assertCurrent(); guard(initial); return saved;
   };
+  const storageProofs = new WeakMap();
   const read = async id => {
     const initial = context();
-    const raw = storage.getItem(key(id)); if (raw === null) return null;
+    const proof = resolveAdminPlanStorageRow(storage, key(id));
+    const raw = proof.raw; if (raw === null) return null;
+    for (const dependency of proof.dependencies) { await verifyAdminCommandStorageRow(dependency.key, dependency.raw); proof.assertCurrent(); }
     const cached = verifiedCommandRows.get(raw);
     const saved = cached ? clone(cached) : JSON.parse(raw);
     if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || typeof saved.cancelRequested !== "boolean"
       || saved.plan.id !== id || !same(saved.plan.binding, binding) || !cached && saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
     if (saved.plan.version === 2) {
       guard(initial);
-      if (storage.getItem(key(id)) !== raw) throw paused();
+      proof.assertCurrent();
       guard(initial);
       if (!cached) rememberCommandRow(raw, saved);
     }
@@ -413,6 +431,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       await assertAdminTemplatePhotoWholeCopyPlanRecord(saved.plan, photoWholeCopyStore, () => guard(initial)); guard(initial);
       if (storage.getItem(key(id)) !== raw) throw paused();
     }
+    proof.assertCurrent(); storageProofs.set(saved, proof);
     return saved;
   };
   const executeWhole = async (saved, cancel, initial, captureLease) => {
@@ -550,13 +569,14 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
       let saved = await read(id); guard(initial); if (!saved) throw paused();
       if (saved.plan.version === 10) return executeWhole(saved, cancel, initial, captureLease);
       let retained = storage.getItem(key(id));
-      if (retained === null || !same(JSON.parse(retained), saved)) throw paused();
-      const successorGuard = () => { guard(initial); if (storage.getItem(key(id)) !== retained) throw paused(); };
+      if (retained === null || !same(JSON.parse(resolveAdminPlanStorageRow(storage, key(id), retained).raw), saved)) throw paused();
+      let snapshotProof = storageProofs.get(saved); snapshotProof?.assertCurrent();
+      const successorGuard = () => { guard(initial); if (storage.getItem(key(id)) !== retained) throw paused(); snapshotProof?.assertCurrent(); };
       const release = await assertNoWholeCopyPlan(saved.plan, successorGuard);
       const current = release.assertCurrent; current();
       if (saved.plan.version === 9) return executeTree(saved, cancel, initial, captureLease, current);
       if ((cancel || await shouldCancel?.(id)) && !saved.cancelRequested) {
-        current(); saved = persist({ ...saved, cancelRequested: true }, initial); retained = storage.getItem(key(id));
+        current(); saved = await persist({ ...saved, cancelRequested: true }, initial); retained = storage.getItem(key(id)); snapshotProof = resolveAdminPlanStorageRow(storage, key(id), retained);
       }
       let ordered = saved.cancelRequested ? [...saved.plan.operations].reverse() : saved.plan.operations;
       const receipts = [];
@@ -564,7 +584,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
         // A chain-wide stop can arrive while an earlier request is in flight.
         // Revisit the original IDs in reverse order before starting another effect.
         if (!saved.cancelRequested && await shouldCancel?.(id)) {
-          current(); saved = persist({ ...saved, cancelRequested: true }, initial); retained = storage.getItem(key(id));
+          current(); saved = await persist({ ...saved, cancelRequested: true }, initial); retained = storage.getItem(key(id)); snapshotProof = resolveAdminPlanStorageRow(storage, key(id), retained);
           ordered = [...saved.plan.operations].reverse(); receipts.length = 0; index = 0;
         }
         const intent = ordered[index];
@@ -606,7 +626,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
         }
         current(); await client.capture({ operationId: intent.id, kind: intent.kind, body: intent.body }); current();
         if (saved.plan.version === 7) { await assertAdminTemplatePhotoCreatePlanRecord(saved.plan, photoStore, () => guard(initial)); current(); }
-        const receipt = await client[saved.cancelRequested ? "cancel" : "run"](intent.id); current(); receipts.push(receipt);
+        const receipt = await client[saved.cancelRequested ? "cancel" : "run"](intent.id, { assertStorageCurrent: snapshotProof?.assertCurrent }); current(); receipts.push(receipt);
         if (saved.plan.version === 7) { await assertAdminTemplatePhotoCreatePlanRecord(saved.plan, photoStore, () => guard(initial)); current(); }
         if (!saved.cancelRequested && receipt.operation.state !== "committed") return { state: receipt.operation.state, receipts };
         if (receipt.operation.state === "waiting") return { state: "waiting", receipts };
@@ -708,7 +728,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
         }
         if (plan.version !== 10) { release = await assertNoWholeCopyPlan(plan, baseCaptureGuard); captureGuard(); }
         captureGuard();
-        return clone(persist(saved, initial));
+        return clone(await persist(saved, initial));
       });
       const base = plan.operations[0].body.base;
       let result;

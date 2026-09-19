@@ -140,14 +140,14 @@ async function commandRowFixture() {
   f.values.set(key, canonical(row)); return { ...f, plan, row, key, canonical, hash };
 }
 
-test("exact V2 derivation reuse still reads current bytes twice and detaches every returned value", async t => {
+test("exact V2 derivation reuse retains fresh storage proof checks and detached returned values", async t => {
   const f = await commandRowFixture(), original = crypto.subtle.digest; let digests = 0, reads = 0;
   crypto.subtle.digest = function(...args) { digests++; return original.apply(this, args); };
   t.after(() => { crypto.subtle.digest = original; });
   const plans = f.make({ storage: { getItem(key) { reads++; return f.values.get(key) ?? null; } } });
-  const first = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 2);
+  const first = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 4);
   first.plan.editorSnapshot.payload.items.a.note = "caller mutation";
-  const second = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 4);
+  const second = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 8);
   assert.equal(second.plan.editorSnapshot.payload.items.a.note, f.plan.editorSnapshot.payload.items.a.note);
   f.context.admin = false; await assert.rejects(plans.read(f.plan.id));
 });
