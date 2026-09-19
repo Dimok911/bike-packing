@@ -183,3 +183,31 @@ test("actor or generation loss fails after awaits, preserves committed storage a
   } finally { process.off("unhandledRejection", listener); }
   assert.equal(f.idb.rows().size, 1);
 });
+
+test("reused connection keeps two fresh transactions per read and releases on version change or close", async () => {
+  const f = await fixture(), native = f.idb.indexedDB.open.bind(f.idb.indexedDB), opened = [];
+  f.idb.indexedDB.open = (...args) => { const request = native(...args); opened.push(request); return request; };
+  await f.store.capture(f.value);
+  const before = f.idb.transactions.length;
+  for (let i = 0; i < 3; i++) assert.deepEqual(await f.create().read(op(f)), f.prepared);
+  assert.equal(opened.length, 1);
+  assert.equal(f.idb.transactions.length - before, 6, 'each read retains both current-value transactions');
+  opened[0].result.onversionchange();
+  assert.deepEqual(await f.store.read(op(f)), f.prepared); assert.equal(opened.length, 2);
+  opened[1].result.onclose();
+  assert.deepEqual(await f.store.read(op(f)), f.prepared); assert.equal(opened.length, 3);
+  f.context.generation = 'new-context';
+  let changed = false;
+  f.idb.controls.onCommit = () => { if (!changed) { changed = true; f.context.generation = 'changed-during-read'; } };
+  await assert.rejects(f.store.read(op(f)), blocked('context-changed'));
+});
+
+test("reused native connection never reuses a record or actor inventory observation", async () => {
+  for (const change of ['remove', 'replace', 'add']) {
+    const f = await fixture(); await f.store.capture(f.value); await f.store.read(op(f)); await f.inventory();
+    const raw = rows(f)[0];
+    if (change === 'remove') { f.idb.rows().delete(raw.key); assert.equal(await f.store.read(op(f)), null); }
+    if (change === 'replace') { f.idb.rows().get(raw.key).intentHash = '0'.repeat(64); await assert.rejects(f.store.read(op(f))); }
+    if (change === 'add') { f.idb.rows().set('added-invalid-record', { ...raw, key: 'added-invalid-record' }); await assert.rejects(f.inventory()); }
+  }
+});

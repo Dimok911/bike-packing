@@ -4,6 +4,9 @@ import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.j
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./admin-template-photo-whole-copy-protocol.js";
 import { encodeAdminTemplatePhotoWholeCopyRecord, decodeAdminTemplatePhotoWholeCopyRecord } from "./admin-template-photo-whole-copy-record.js";
 
+// Reuse only the database connection. Every operation still creates its own
+// fresh transaction, reads complete values and performs unchanged readbacks.
+const openConnections = new WeakMap();
 const databaseName = "bike-packing-admin-template-photo-whole-copy-actions-v1";
 const clone = value => JSON.parse(canonical(value));
 const blocked = (code, cause) => Object.assign(Error("Сохранённое копирование требует сверки. Исходный выбор сохранён для восстановления."),
@@ -23,31 +26,48 @@ function access(indexedDB, getContext, scope) {
     return clone(value);
   };
   const guard = initial => { if (!same(initial, current())) throw blocked("context-changed"); };
-  const open = () => new Promise((resolve, reject) => {
-    if (!indexedDB?.open) { reject(blocked("unavailable")); return; }
-    let request, abandoned = false;
-    try { request = indexedDB.open(databaseName, 1); } catch (cause) { reject(blocked("open", cause)); return; }
-    request.onupgradeneeded = () => {
-      try {
-        const db = request.result;
-        if (!db.objectStoreNames.contains("actions")) db.createObjectStore("actions", { keyPath: "key" }).createIndex("binding", "bindingKey", { unique: false });
-        if (!db.objectStoreNames.contains("stage-dispatches")) db.createObjectStore("stage-dispatches", { keyPath: "key" });
-      } catch (cause) { abandoned = true; try { request.transaction.abort(); } catch {} reject(blocked("upgrade", cause)); }
-    };
-    request.onerror = () => reject(blocked("open", request.error));
-    request.onblocked = () => { abandoned = true; reject(blocked("open-blocked")); };
-    request.onsuccess = () => { const db = request.result; db.onversionchange = () => db.close(); if (abandoned) db.close(); else resolve(db); };
-  });
+  const release = db => {
+    if (openConnections.get(indexedDB)?.db === db) openConnections.delete(indexedDB);
+    db.close();
+  };
+  const open = () => {
+    if (!indexedDB?.open) return Promise.reject(blocked("unavailable"));
+    const existing = openConnections.get(indexedDB);
+    if (existing) return existing.promise;
+    const retained = { db: null, promise: null };
+    openConnections.set(indexedDB, retained);
+    retained.promise = new Promise((resolve, reject) => {
+      let request, abandoned = false;
+      try { request = indexedDB.open(databaseName, 1); } catch (cause) { reject(blocked("open", cause)); return; }
+      request.onupgradeneeded = () => {
+        try {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("actions")) db.createObjectStore("actions", { keyPath: "key" }).createIndex("binding", "bindingKey", { unique: false });
+          if (!db.objectStoreNames.contains("stage-dispatches")) db.createObjectStore("stage-dispatches", { keyPath: "key" });
+        } catch (cause) { abandoned = true; try { request.transaction.abort(); } catch {} reject(blocked("upgrade", cause)); }
+      };
+      request.onerror = () => reject(blocked("open", request.error));
+      request.onblocked = () => { abandoned = true; reject(blocked("open-blocked")); };
+      request.onsuccess = () => {
+        const db = request.result; retained.db = db;
+        db.onversionchange = () => release(db);
+        db.onclose = () => { if (openConnections.get(indexedDB) === retained) openConnections.delete(indexedDB); };
+        if (abandoned) release(db); else resolve(db);
+      };
+    });
+    retained.promise.catch(() => { if (openConnections.get(indexedDB) === retained) openConnections.delete(indexedDB); });
+    return retained.promise;
+  };
   const transaction = async (mode, initial, run, names = ["actions"]) => {
     guard(initial); const db = await open();
-    try { guard(initial); } catch (cause) { db.close(); throw cause; }
+    try { guard(initial); } catch (cause) { release(db); throw cause; }
     return new Promise((resolve, reject) => {
       let tx, value, error;
       try { tx = db.transaction(names, mode, mode === "readwrite" ? { durability: "strict" } : undefined); }
-      catch (cause) { db.close(); reject(blocked("transaction", cause)); return; }
-      const abort = cause => { error = cause; try { tx.abort(); } catch { db.close(); reject(cause); } };
-      tx.oncomplete = () => { db.close(); try { guard(initial); resolve(value); } catch (cause) { reject(cause); } };
-      tx.onabort = () => { db.close(); reject(error || blocked("transaction-aborted", tx.error)); };
+      catch (cause) { release(db); reject(blocked("transaction", cause)); return; }
+      const abort = cause => { error = cause; try { tx.abort(); } catch { release(db); reject(cause); } };
+      tx.oncomplete = () => { try { guard(initial); resolve(value); } catch (cause) { release(db); reject(cause); } };
+      tx.onabort = () => { release(db); reject(error || blocked("transaction-aborted", tx.error)); };
       tx.onerror = () => { error ||= blocked("transaction-failed", tx.error); };
       try { guard(initial); run(tx, result => { value = result; }, abort); } catch (cause) { abort(cause); }
     });

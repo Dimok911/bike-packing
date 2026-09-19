@@ -1,0 +1,47 @@
+import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { wholeRecordInput } from '../fixtures/admin-template-photo-whole-copy-record-fixture.js';
+
+const origin='https://whole-store.localhost';
+const databaseName='bike-packing-admin-template-photo-whole-copy-actions-v1';
+const bootstrap=`
+import {createAdminTemplatePhotoWholeCopyActionStore} from '/src/sync/admin-template-photo-whole-copy-action-store.js';
+window.opens=0;window.transactions=0;
+const nativeOpen=indexedDB.open,nativeTransaction=IDBDatabase.prototype.transaction;
+indexedDB.open=function(...args){window.opens++;return nativeOpen.apply(this,args)};
+IDBDatabase.prototype.transaction=function(...args){window.transactions++;return nativeTransaction.apply(this,args)};
+window.configure=binding=>{window.context={...binding,scope:'admin-template',admin:true,generation:'native'};window.store=createAdminTemplatePhotoWholeCopyActionStore({binding,getContext:()=>window.context,enabled:true});};
+window.invoke=async(method,...args)=>{try{return{ok:true,value:await window.store[method](...args)}}catch(error){return{ok:false,code:error.code}}};
+window.ready=true;
+`;
+test.beforeEach(async({context})=>{
+  await context.route('**/*',async route=>{
+    const url=new URL(route.request().url());
+    if(url.origin!==origin||route.request().method()!=='GET')throw Error('Unexpected request');
+    if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><script type="module" src="/bootstrap.js"></script>'});
+    if(url.pathname==='/bootstrap.js')return route.fulfill({contentType:'text/javascript',body:bootstrap});
+    if(/^\/src\/[A-Za-z0-9_/-]+\.js$/.test(url.pathname))return route.fulfill({contentType:'text/javascript',body:await readFile(path.resolve('.'+url.pathname),'utf8')});
+    throw Error('Unexpected path '+url.pathname);
+  });
+});
+async function capture(page){
+  const input=await wholeRecordInput();await page.goto(origin);await page.waitForFunction(()=>window.ready);
+  const result=await page.evaluate(async input=>{window.configure(input.binding);return window.invoke('capture',{action:input.action,snapshot:input.snapshot})},input);
+  expect(result.ok).toBe(true);return input;
+}
+test('native connection reuse keeps fresh readbacks and sees a second-tab record change',async({page,context})=>{
+  const input=await capture(page);
+  const result=await page.evaluate(async id=>{const start=window.transactions;for(let i=0;i<5;i++){const r=await window.invoke('read',id);if(!r.ok)throw Error(r.code)}return{opens:window.opens,transactions:window.transactions-start}},input.action.operationId);
+  expect(result).toEqual({opens:1,transactions:10});
+  const other=await context.newPage();await other.goto(origin);await other.waitForFunction(()=>window.ready);
+  await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('actions','readwrite'),store=tx.objectStore('actions'),r=store.getAll();r.onsuccess=()=>{const row=r.result[0];row.intentHash='0'.repeat(64);store.put(row)};tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});db.close()},databaseName);
+  const changed=await page.evaluate(id=>window.invoke('read',id),input.action.operationId);
+  expect(changed.ok).toBe(false);expect(changed.code).toBe('admin-template-photo-whole-copy-record');
+});
+test('native versionchange closes the retained connection and a newer schema fails closed',async({page,context})=>{
+  const input=await capture(page),other=await context.newPage();await other.goto(origin);await other.waitForFunction(()=>window.ready);
+  await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,2);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});db.close()},databaseName);
+  const result=await page.evaluate(async id=>({read:await window.invoke('read',id),opens:window.opens}),input.action.operationId);
+  expect(result.read.ok).toBe(false);expect(result.read.code).toBe('admin-template-photo-whole-copy-storage-open');expect(result.opens).toBe(2);
+});
