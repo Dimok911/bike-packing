@@ -246,3 +246,21 @@ test("a cold decoded intent rederives identical final manifests and exact projec
   assert.deepEqual(rebuilt.intent, f.intent); assert.deepEqual(rebuilt.manifests, f.manifests);
   assert.deepEqual(rebuilt.projected, f.projected); assert.equal(await prove(rebuilt.intent), true);
 });
+
+test("warm exact-value grammar proof cannot hide changed, added or removed input fields", async () => {
+  const f = await wholeCopyProtocolFixture(), original = copy(f.input), accepted = intent(original);
+  assert.ok(Object.isFrozen(accepted.body.photoCopy.sourcePayload.items));
+  assert.throws(() => { accepted.body.metadata.title = "poison"; }, TypeError);
+  for (const mutate of [
+    value => { value.body.photoCopy.owners[0].entityId = "changed-owner"; },
+    value => { value.body.photoCopy.owners[0].unexpected = true; },
+    value => { delete value.body.photoCopy.owners[0].entityType; },
+    value => { value.body.photoCopy.sourcePayload.items["item-a"].unexpected = undefined; }
+  ]) {
+    const value = copy(original); mutate(value); assert.throws(() => intent(value));
+    assert.deepEqual(intent(original), accepted);
+  }
+  const renamed = copy(original); renamed.body.metadata.title = "Different copy metadata";
+  assert.equal(intent(renamed).body.metadata.title, renamed.body.metadata.title);
+  assert.deepEqual(intent(original), accepted);
+});

@@ -65,17 +65,26 @@ function validate(input) {
   return { binding, action, snapshot, intent };
 }
 
+// A bounded memo of a pure derivation, not of storage observations or authority.
+// Canonicalize the complete input on EVERY call; any changed byte recomputes the
+// grammar, source/editor proof and every manifest/digest. Freeze the private
+// result so no caller can poison later proofs. Store reads/readbacks are intact.
+let derivedProof = null;
+const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 async function derive(input) {
-  // Detach everything before the first await. Every later call repeats this
-  // semantic proof from its own bytes; no cached ID or prior hash grants trust.
+  // Detach everything before the first await. Reuse only a complete exact-value
+  // derivation; no cached ID or prior hash grants trust.
   const raw = canonical(input);
   if (new TextEncoder().encode(raw).byteLength > maxBytes) invalid();
+  if (derivedProof?.raw === raw) return derivedProof.result;
   const frozen = JSON.parse(raw), { binding, action, snapshot, intent } = validate(frozen);
   const stages = await adminTemplatePhotoWholeCopyStageManifests(intent), assets = intent.body.photoCopy.owners.flatMap(owner => owner.photos);
   for (const [index, stage] of stages.entries()) if (await adminTemplatePhotoWholeCopyStageDigest(stage) !== assets[index].assetDigest) invalid();
   const envelope = { version: 1, kind, binding, action, snapshot, stages }, intentJson = canonical(envelope);
   if (new TextEncoder().encode(intentJson).byteLength > maxBytes) invalid();
-  return { envelope, intentJson };
+  const result = freeze({ envelope, intentJson });
+  derivedProof = { raw, result };
+  return result;
 }
 
 const decoded = (value, intentHash) => clone({ binding: value.binding, action: value.action,

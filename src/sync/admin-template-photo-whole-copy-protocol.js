@@ -36,9 +36,15 @@ function binding(value, { target = false } = {}) {
 }
 function reserve(occupied, value) { if (occupied.has(value)) fail("collision"); occupied.add(value); }
 
+// Only pure grammar results are reused. The key is the complete canonical input,
+// never a UUID, digest, storage key or mutable object identity. Every caller still
+// reads and guards its current journal/IDB bytes. Two forms cover id/operationId.
+const intentProofs = new Map();
 export function adminTemplatePhotoWholeCopyIntent(input) {
   // Canonical JSON detaches the caller before any asynchronous hash work.
-  const raw = clone(input);
+  const inputText = canonical(input);
+  if (intentProofs.has(inputText)) return intentProofs.get(inputText);
+  const raw = JSON.parse(inputText);
   const keys = ["actorId", "kind", "itemKey", "listId", "body", ...(Object.hasOwn(raw, "id") ? ["id"] : []),
     ...(Object.hasOwn(raw, "operationId") ? ["operationId"] : []), ...(Object.hasOwn(raw, "environment") ? ["environment"] : [])];
   const operationId = raw.id ?? raw.operationId, body = raw.body, c = body?.photoCopy;
@@ -80,7 +86,10 @@ export function adminTemplatePhotoWholeCopyIntent(input) {
   limit(intent);
   limit({ expectedActorId: intent.actorId, environment, operationId: intent.id, kind: intent.kind,
     itemKey: intent.itemKey, listId: intent.listId, body: intent.body });
-  return freeze(intent);
+  const result = freeze(intent);
+  if (intentProofs.size === 2) intentProofs.delete(intentProofs.keys().next().value);
+  intentProofs.set(inputText, result);
+  return result;
 }
 
 export function adminTemplatePhotoWholeCopyStageManifest(input) {

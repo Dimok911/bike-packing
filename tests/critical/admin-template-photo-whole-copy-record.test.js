@@ -115,3 +115,34 @@ test("JSON-only exact envelope has a bounded 12 MiB limit and never accepts uplo
   const huge = " ".repeat(12 * 1024 * 1024 + 1);
   await assert.rejects(decode({ ...raw, intentJson: huge, intentHash: hash(huge) }, f.binding, f.action.operationId), blocked);
 });
+
+test("identical historical record reuses derivation but changed content is fully checked", async t => {
+  const f = await wholeRecordInput();
+  const other = await wholeRecordInput(); // Evict any fixture preparation.
+  await prepare(other);
+  const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+  let calls = 0;
+  t.mock.method(crypto.subtle, "digest", (...args) => { calls++; return originalDigest(...args); });
+  const first = await prepare(f), coldCalls = calls;
+  calls = 0;
+  const second = await prepare(structuredClone(f));
+  assert.deepEqual(second, first);
+  assert.ok(coldCalls > first.stages.length * 2, "cold proof checks every source reference and stage digest");
+  assert.equal(calls, 1, "repeat exact content hashes only its completed envelope, not every historical photo again");
+  second.snapshot.target.layoutId = "caller-mutation";
+  second.stages[0].copyDigest = "0".repeat(64);
+  assert.deepEqual(await prepare(f), first, "returned decoded objects cannot poison the private proof");
+  const changed = structuredClone(f);
+  changed.snapshot.target.layoutId = "valid-new-allocation";
+  calls = 0;
+  const updated = await prepare(changed);
+  assert.ok(calls > first.stages.length * 2, "same UUID and binding with changed bytes must derive again");
+  assert.notEqual(updated.intentHash, first.intentHash);
+  assert.equal(updated.snapshot.target.layoutId, "valid-new-allocation");
+  const corrupted = structuredClone(changed);
+  corrupted.action.body.photoCopy.owners.find(o => o.photos.length).photos[0].assetDigest = "0".repeat(64);
+  await assert.rejects(prepare(corrupted), blocked);
+  delete corrupted.snapshot.source.beforeState;
+  await assert.rejects(prepare(corrupted), blocked);
+  assert.deepEqual(await prepare(f), first);
+});
