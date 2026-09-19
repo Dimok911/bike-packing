@@ -133,3 +133,40 @@ for (const mutation of ["add", "remove", "replace-ignored", "corrupt-ignored"]) 
     assert.deepEqual(f.calls, []);
   });
 }
+
+test("nested acceptance does not multiply capture inventory scans for forty previous commands", async () => {
+  const { adminTemplateCommandPlan } = await import("../../src/sync/admin-template-save-plan.js");
+  const { canonicalTemplateJson: canonical } = await import("../../src/sync/admin-template-protocol.js");
+  const { hash } = await import("../fixtures/admin-template-photo-whole-copy-acceptance-fixture.js");
+  const f = await fixture(); let scans = 0;
+  const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonical(f.binding)) + ":";
+  const input = () => ({ operationId: crypto.randomUUID(), kind: "template.metadata",
+    body: { version: 1, base: { stateRevision: 42 }, metadata: { title: "Rename", language: "en" } },
+    editorSnapshot: { payload: f.record.action.body.photoCopy.sourcePayload, metadata: f.record.snapshot.target.metadata } });
+  for (let i = 0; i < 40; i++) {
+    const plan = adminTemplateCommandPlan({ ...input(), binding: f.binding });
+    f.values.set(prefix + plan.id, canonical({ version: 1, plan, digest: hash(plan), cancelRequested: false }));
+  }
+  let keys = [...f.values.keys()];
+  const storage = { get length() { return keys.length; }, key(i) { if (i === 0) scans++; return keys[i]; },
+    getItem: name => f.values.get(name) ?? null, setItem(name, value) { f.values.set(name, value); keys = [...f.values.keys()]; } };
+  const plans = f.make({ storage, assertCaptureAllowed: async ({ guard }) => { await f.read(guard); return true; } });
+  await plans.captureCommand(input());
+  assert.ok(scans < 1500, "nested inventory cascade: " + scans + " scans");
+  assert.ok(scans > 0); assert.deepEqual(f.calls, []);
+});
+
+test("mutations during nested acceptance still stop successor before persistence", async () => {
+  for (const mutation of ["add", "remove", "replace"]) {
+    const f = await fixture(), input = f.input(); let armed = false;
+    f.hooks.get = name => {
+      if (!armed || name !== f.journalKey) return; armed = false;
+      if (mutation === "add") f.values.set(f.planKey + ":another", f.values.get(f.planKey));
+      if (mutation === "remove") f.values.delete(f.planKey);
+      if (mutation === "replace") f.values.set(f.planKey, f.values.get(f.planKey) + " ");
+    };
+    const plans = f.make({ assertCaptureAllowed: async ({ guard }) => { armed = true; await f.read(guard); return true; } });
+    await assert.rejects(plans.capture(input));
+    assert.equal([...f.values.keys()].some(key => key.endsWith(input.operationId)), false); assert.deepEqual(f.calls, []);
+  }
+});

@@ -22,6 +22,16 @@ export { adminTemplatePhotoWholeCopySavePlan } from "./admin-template-photo-whol
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./admin-template-capture-lease.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
+// Pure V2 shape/digest derivations only, keyed by the COMPLETE serialized row.
+// No journal enumeration, storage read, context, dependency or write permission
+// is memoized. Readers still fetch full current bytes and verify readback.
+const verifiedCommandRows = new Map();
+const rememberCommandRow = (raw, saved) => {
+  if (raw.length > 128 * 1024) return;
+  verifiedCommandRows.delete(raw);
+  verifiedCommandRows.set(raw, clone(saved));
+  while (verifiedCommandRows.size > 64) verifiedCommandRows.delete(verifiedCommandRows.keys().next().value);
+};
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const paused = () => Object.assign(Error("Сохранение шаблона ожидает продолжения исходного действия."), { code: "admin-template-plan-paused", isAdminTemplateBlocked: true });
@@ -350,9 +360,16 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   const read = async id => {
     const initial = context();
     const raw = storage.getItem(key(id)); if (raw === null) return null;
-    const saved = JSON.parse(raw);
+    const cached = verifiedCommandRows.get(raw);
+    const saved = cached ? clone(cached) : JSON.parse(raw);
     if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || typeof saved.cancelRequested !== "boolean"
-      || saved.plan.id !== id || !same(saved.plan.binding, binding) || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
+      || saved.plan.id !== id || !same(saved.plan.binding, binding) || !cached && saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
+    if (saved.plan.version === 2) {
+      guard(initial);
+      if (storage.getItem(key(id)) !== raw) throw paused();
+      guard(initial);
+      if (!cached) rememberCommandRow(raw, saved);
+    }
     if ([3, 4].includes(saved.plan.version) && await adminTemplateCopyPayloadDigest(saved.plan.sourceSnapshot) !== saved.plan.operations[0].body.source.payloadDigest) throw paused();
     if (saved.plan.version === 7) {
       guard(initial);

@@ -94,3 +94,34 @@ test("prepared acceptance refuses forged caller target, changed mirror, expired 
   await assert.rejects(f.prepare(async () => { throw Error("async guard"); }));
   await new Promise(resolve => setImmediate(resolve)); assert.equal(await f.read(), null); assert.deepEqual(f.writes, []); noNetwork(f);
 });
+
+
+test("synchronous acceptance guard has bounded external checks and fresh row readback on every invocation", async () => {
+  const f = await wholeCopyAcceptanceFixture(); await accept(f); let calls = 0;
+  const proof = await f.read(() => { calls++; }); calls = 0;
+  proof.assertCurrent(); assert.equal(calls, 3);
+  const prior = f.values.get(f.journalKey); f.values.set(f.journalKey, prior + " ");
+  assert.throws(proof.assertCurrent); f.values.set(f.journalKey, prior);
+  proof.assertCurrent(); noNetwork(f);
+});
+
+test("every outer callback boundary observes changed or deleted named rows, including the final callback", async () => {
+  for (const boundary of [1, 2, 3]) for (const field of ["planKey", "journalKey", "acceptanceKey"]) for (const mutation of ["change", "delete"]) {
+    const f = await wholeCopyAcceptanceFixture(); await accept(f); let armed = false, calls = 0;
+    const proof = await f.read(() => {
+      if (armed && ++calls === boundary) {
+        if (mutation === "delete") f.values.delete(f[field]);
+        else f.values.set(f[field], f.values.get(f[field]) + " ");
+      }
+    });
+    armed = true; assert.throws(proof.assertCurrent, boundary + "/" + field + "/" + mutation); noNetwork(f);
+  }
+});
+
+test("named reads cannot hide mutations to rows already read in the synchronous block", async () => {
+  for (const [trigger, changed] of [["journalKey", "planKey"], ["planKey", "acceptanceKey"], ["acceptanceKey", "journalKey"]]) {
+    const f = await wholeCopyAcceptanceFixture(); await accept(f); const proof = await f.read(); let armed = true;
+    f.hooks.get = name => { if (armed && name === f[trigger]) { armed = false; f.values.delete(f[changed]); } };
+    assert.throws(proof.assertCurrent); noNetwork(f);
+  }
+});

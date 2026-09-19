@@ -53,24 +53,54 @@ function scope(input, externalGuard) {
   if (!exact(mirror, ["storage", "key", "scopeKey"]) || typeof mirror.key !== "string" || !mirror.key
     || mirror.scopeKey !== `id:${binding.actorId}` || typeof mirror.storage?.getItem !== "function") pause("mirror-context");
   const { storage, key: mirrorKey, scopeKey } = mirror;
-  const guard = () => {
-    if (sync(externalGuard) === false) pause("scope");
+  let batchReads = null;
+  const localGuard = () => {
     const current = sync(getMirrorContext);
     if (!same(context(), initial) || !same(store.binding, binding) || !exact(current, ["storage", "key", "scopeKey"])
       || current.storage !== storage || current.key !== mirrorKey || current.scopeKey !== scopeKey) pause("context");
   };
-  const read = name => { guard(); const value = sync(() => storage.getItem(name)); guard(); return value; };
-  guard(); return { binding, operationId, key, store, storage, mirrorKey, scopeKey, guard, read };
+  const guard = () => {
+    if (!batchReads && sync(externalGuard) === false) pause("scope");
+    localGuard();
+  };
+  const read = name => {
+    guard(); const value = sync(() => storage.getItem(name)); guard();
+    if (batchReads) {
+      if (batchReads.has(name) && batchReads.get(name) !== value) pause("proof-changed");
+      batchReads.set(name, value);
+    }
+    return value;
+  };
+  // A synchronous check has no await boundary inside it. Run the complete
+  // external inventory guard around that block, rather than recursively for
+  // every named read. Context checks and every actual storage read remain.
+  // Re-read ALL observed rows after external callbacks, then check inventory
+  // again. No observation or permission survives this invocation.
+  const checkBatch = task => {
+    if (batchReads) pause("guard-reentry");
+    guard();
+    const observed = new Map(); batchReads = observed;
+    try { sync(task); } finally { batchReads = null; }
+    guard();
+    const readback = () => {
+      for (const [name, raw] of observed) {
+        localGuard(); const current = sync(() => storage.getItem(name)); localGuard();
+        if (current !== raw) pause("proof-changed");
+      }
+    };
+    readback(); guard(); readback();
+  };
+  guard(); return { binding, operationId, key, store, storage, mirrorKey, scopeKey, guard, read, checkBatch };
 }
 async function fullProof(s, extraGuard = () => {}) {
   const suffix = encodeURIComponent(canonical(s.binding)) + ":" + s.operationId;
   const planKey = "bike-packing-admin-save-plans-v1:" + suffix, journalKey = "bike-packing-admin-photo-whole-copy-commands-v1:" + suffix;
   const planText = s.read(planKey), journalText = s.read(journalKey), saved = parse(planText), journal = parse(journalText);
-  const guard = () => {
+  const guard = () => s.checkBatch(() => {
     s.guard(); extraGuard();
     if (s.read(planKey) !== planText || s.read(journalKey) !== journalText) pause("proof-changed");
     extraGuard(); s.guard();
-  };
+  });
   if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || saved.cancelRequested !== false
     || saved.plan?.version !== 10 || saved.plan.id !== s.operationId || !same(saved.plan.binding, s.binding)) pause("plan");
   const planDigest = await digest(saved.plan); guard(); if (saved.digest !== planDigest) pause("plan");

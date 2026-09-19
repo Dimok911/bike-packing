@@ -125,3 +125,53 @@ test("source save quota and durable cancellation preserve both snapshots without
   f.state.failId = null; assert.equal((await f.make().run(input.operationId)).state, "cancelled");
   assert.deepEqual(f.calls, [{ id: input.operationId, cancel: true }]);
 });
+
+
+async function commandRowFixture() {
+  const { adminTemplateCommandPlan } = await import("../../src/sync/admin-template-save-plan.js");
+  const { canonicalTemplateJson: canonical } = await import("../../src/sync/admin-template-protocol.js");
+  const { createHash } = await import("node:crypto");
+  const f = fixture(), hash = value => createHash("sha256").update(canonical(value)).digest("hex");
+  const plan = adminTemplateCommandPlan({ binding, operationId: randomUUID(), kind: "template.metadata",
+    body: { version: 1, base: { stateRevision: 8 }, metadata: { title: "Command", language: "ru" } },
+    editorSnapshot: { payload: { items: { a: { id: "a", note: "snapshot".repeat(7000) } } }, metadata: { title: "Before", language: "ru" } } });
+  const row = { version: 1, plan, digest: hash(plan), cancelRequested: false };
+  const key = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonical(binding)) + ":" + plan.id;
+  f.values.set(key, canonical(row)); return { ...f, plan, row, key, canonical, hash };
+}
+
+test("exact V2 derivation reuse still reads current bytes twice and detaches every returned value", async t => {
+  const f = await commandRowFixture(), original = crypto.subtle.digest; let digests = 0, reads = 0;
+  crypto.subtle.digest = function(...args) { digests++; return original.apply(this, args); };
+  t.after(() => { crypto.subtle.digest = original; });
+  const plans = f.make({ storage: { getItem(key) { reads++; return f.values.get(key) ?? null; } } });
+  const first = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 2);
+  first.plan.editorSnapshot.payload.items.a.note = "caller mutation";
+  const second = await plans.read(f.plan.id); assert.equal(digests, 1); assert.equal(reads, 4);
+  assert.equal(second.plan.editorSnapshot.payload.items.a.note, f.plan.editorSnapshot.payload.items.a.note);
+  f.context.admin = false; await assert.rejects(plans.read(f.plan.id));
+});
+
+test("warm V2 derivation detects full-row changes, deletion and valid replacement with the same UUID", async () => {
+  const f = await commandRowFixture(), plans = f.make(); await plans.read(f.plan.id);
+  const original = f.values.get(f.key), changed = structuredClone(f.row);
+  changed.plan.editorSnapshot.payload.items.a.note += "x";
+  f.values.set(f.key, f.canonical(changed)); await assert.rejects(plans.read(f.plan.id));
+  changed.digest = f.hash(changed.plan); f.values.set(f.key, f.canonical(changed));
+  assert.equal((await plans.read(f.plan.id)).plan.editorSnapshot.payload.items.a.note, changed.plan.editorSnapshot.payload.items.a.note);
+  f.values.set(f.key, f.canonical({ ...changed, cancelRequested: true })); assert.equal((await plans.read(f.plan.id)).cancelRequested, true);
+  f.values.set(f.key, f.canonical({ ...changed, extra: true })); await assert.rejects(plans.read(f.plan.id));
+  f.values.delete(f.key); assert.equal(await plans.read(f.plan.id), null);
+  f.values.set(f.key, original); assert.deepEqual(await plans.read(f.plan.id), f.row);
+});
+
+test("V2 readback rejects replacement during hashing and during a memo hit", async t => {
+  const f = await commandRowFixture(), original = crypto.subtle.digest;
+  crypto.subtle.digest = function(...args) { return original.apply(this, args).then(result => { f.values.delete(f.key); return result; }); };
+  t.after(() => { crypto.subtle.digest = original; });
+  await assert.rejects(f.make().read(f.plan.id)); crypto.subtle.digest = original;
+  f.values.set(f.key, f.canonical(f.row)); await f.make().read(f.plan.id);
+  let calls = 0;
+  const plans = f.make({ storage: { getItem(key) { const raw = f.values.get(key) ?? null; if (++calls === 1) f.values.delete(key); return raw; } } });
+  await assert.rejects(plans.read(f.plan.id)); assert.equal(calls, 2);
+});

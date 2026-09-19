@@ -60,3 +60,39 @@ test('native raw readback sees changed and deleted bytes from another tab',async
   await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('actions','readwrite');tx.objectStore('actions').clear();tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});db.close()},databaseName);
   expect(await page.evaluate(()=>window.checkSnapshot())).toEqual({ok:false,code:'admin-template-photo-whole-copy-storage-inventory-changed'});
 });
+
+
+test('warm command derivation observes another tab replacement, additions and deletion',async({page,context})=>{
+  const input=await wholeRecordInput();await page.goto(origin);await page.waitForFunction(()=>window.ready);
+  const setup=await page.evaluate(async binding=>{
+    const {adminTemplateCommandPlan,createAdminTemplateSavePlans}=await import('/src/sync/admin-template-save-plan.js');
+    const {canonicalTemplateJson:canonical}=await import('/src/sync/admin-template-protocol.js');
+    window.commandHash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(value)))),x=>x.toString(16).padStart(2,'0')).join('');
+    const id=crypto.randomUUID(),plan=adminTemplateCommandPlan({binding,operationId:id,kind:'template.metadata',body:{version:1,base:{stateRevision:1},metadata:{title:'Before',language:'en'}},editorSnapshot:{payload:{note:'large snapshot'.repeat(4000)},metadata:{title:'Original',language:'en'}}});
+    const key='bike-packing-admin-save-plans-v1:'+encodeURIComponent(canonical(binding))+':'+id;
+    const raw=canonical({version:1,plan,digest:await window.commandHash(plan),cancelRequested:false});localStorage.setItem(key,raw);
+    window.commandContext={...binding,scope:'admin-template',admin:true,generation:'native'};
+    window.commandPlans=createAdminTemplateSavePlans({binding,storage:localStorage,client:{},getContext:()=>window.commandContext,enabled:false});
+    window.readCommand=async id=>{try{const row=await window.commandPlans.read(id);return{ok:true,title:row?.plan.operations[0].body.metadata.title??null}}catch(error){return{ok:false,code:error.code}}};
+    return{id,key,raw,first:await window.readCommand(id),warm:await window.readCommand(id)};
+  },input.binding);
+  expect(setup.first).toEqual({ok:true,title:'Before'});expect(setup.warm).toEqual(setup.first);
+  const other=await context.newPage();await other.goto(origin);await other.waitForFunction(()=>window.ready);
+  await other.evaluate(({key})=>{const row=JSON.parse(localStorage.getItem(key));row.plan.editorSnapshot.payload.note+='corrupt';localStorage.setItem(key,JSON.stringify(row));},setup);
+  expect((await page.evaluate(id=>window.readCommand(id),setup.id)).ok).toBe(false);
+  await other.evaluate(async({key,raw})=>{
+    const {canonicalTemplateJson:canonical}=await import('/src/sync/admin-template-protocol.js');
+    const row=JSON.parse(raw);row.plan.operations[0].body.metadata.title='Valid replacement';
+    row.digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(row.plan)))),x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem(key,canonical(row));
+  },setup);
+  expect(await page.evaluate(id=>window.readCommand(id),setup.id)).toEqual({ok:true,title:'Valid replacement'});
+  const added=await other.evaluate(async({key,raw})=>{
+    const {canonicalTemplateJson:canonical}=await import('/src/sync/admin-template-protocol.js');const row=JSON.parse(raw),id=crypto.randomUUID();row.plan.id=id;row.plan.operations[0].id=id;
+    row.digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(row.plan)))),x=>x.toString(16).padStart(2,'0')).join('');const next=key.slice(0,-36)+id;localStorage.setItem(next,canonical(row));return next;
+  },setup);
+  expect(await page.evaluate(async()=> (await window.commandPlans.list()).length)).toBe(2);
+  await other.evaluate(key=>localStorage.removeItem(key),added);
+  expect(await page.evaluate(async()=> (await window.commandPlans.list()).length)).toBe(1);
+  await other.evaluate(key=>localStorage.removeItem(key),setup.key);
+  expect(await page.evaluate(id=>window.readCommand(id),setup.id)).toEqual({ok:true,title:null});
+});
