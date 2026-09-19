@@ -11592,7 +11592,7 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
   prefixes.push("bike-packing-admin-order-v1:" + encodeURIComponent(binding.actorId) + ":");
   let active = true, snapshot = null, sawJournal = false, validatedJournalRaw = null, sawPlan = false, expectedPlanRaw = null;
   const acceptedWhole = new Map(), stoppedWhole = new Map();
-  const inventoryBytes = () => {
+  const inventoryEntries = () => {
     if (!storage || !Number.isSafeInteger(storage.length) || storage.length < 0) pause();
     const entries = [], names = new Set();
     for (let index = 0; index < storage.length; index++) {
@@ -11604,7 +11604,7 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
       if (key === ownJournalKey || phase === "capture" && key === ownPlanKey || !prefixes.some(value => key.startsWith(value))) continue;
       const raw = storage.getItem(key); if (typeof raw !== "string") pause(); entries.push([key, raw]);
     }
-    return canonicalTemplateJson(entries.sort(([a], [b]) => a < b ? -1 : 1));
+    return entries.sort(([a], [b]) => a < b ? -1 : 1);
   };
   const rawGuard = () => {
     if (!active) pause();
@@ -11616,7 +11616,14 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
       const current = adminTemplateOperationContext(side.binding, side.layoutId, true);
       if (!current.admin || current.scope !== "admin-template" || !current.generation || !same(current, contexts[index])) pause();
     }
-    if (snapshot !== null && inventoryBytes() !== snapshot) pause();
+    if (snapshot !== null) {
+      // Read every current key and full raw value on every guard. Compare the
+      // immutable strings directly; do not re-encode entire retained plans as
+      // escaped JSON merely to compare them. No hash/length-only shortcut.
+      const current = inventoryEntries();
+      if (current.length !== snapshot.length || current.some(([key, raw], index) =>
+        key !== snapshot[index][0] || raw !== snapshot[index][1])) pause();
+    }
     if (phase === "capture" && expectedPlanRaw !== null) {
       const planRaw = storage.getItem(ownPlanKey);
       if (planRaw === null) { if (sawPlan) pause(); }
@@ -11639,7 +11646,7 @@ async function withAdminTemplatePhotoWholeCopyInventoryScope(proof, task, phase)
   };
   const guard = () => { rawGuard(); for (const accepted of [...acceptedWhole.values(), ...stoppedWhole.values()]) accepted.assertCurrent(); };
   try {
-    guard(); snapshot = inventoryBytes();
+    guard(); snapshot = inventoryEntries();
     if (phase === "capture") {
       const digest = await adminTemplateCopyPayloadDigest(expectedPlan); guard();
       expectedPlanRaw = canonicalTemplateJson({ version: 1, plan: expectedPlan, digest, cancelRequested: false }); guard();

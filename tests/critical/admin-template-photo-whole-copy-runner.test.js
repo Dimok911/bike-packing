@@ -1,3 +1,4 @@
+import { withAdminTemplateCapture } from "../../src/sync/admin-template-capture-lease.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { wholeAppRunnerFixture, planPrefix } from "../fixtures/admin-template-photo-whole-copy-runner-fixture.js";
@@ -118,4 +119,27 @@ test("actual whole-copy inventory and registry refuse a journal whose typed IDB 
   await assert.rejects(f.run());
   assert.equal(f.values.get(commandKey(f)), raw); assert.equal(f.values.get(f.planKey), plan);
   assert.equal(f.server.calls.length, 0); noPosts(f); assert.equal(f.state.layouts[f.target.layoutId], undefined);
+});
+
+test("actual inventory guards compare fresh complete raw plans without serializing them again", async () => {
+  const f = await wholeAppRunnerFixture(), raw = f.values.get(f.planKey);
+  await withAdminTemplateCapture({ bindings: f.bindings, locks: f.locks }, captureLease =>
+    f.build().withAdminTemplatePhotoWholeCopyInventoryScope({ record: f.record, bindings: f.bindings,
+      captureLease, assertCurrent() {} }, async scope => {
+      const stringify = JSON.stringify; let serializedRawPlans = 0, reads = 0;
+      const getItem = f.storage.getItem;
+      f.storage.getItem = key => { if (key === f.planKey) reads++; return getItem(key); };
+      JSON.stringify = (value, ...rest) => { if (value === raw) serializedRawPlans++; return stringify(value, ...rest); };
+      try { for (let i = 0; i < 20; i++) scope.assertCurrent(); }
+      finally { JSON.stringify = stringify; f.storage.getItem = getItem; }
+      assert.equal(serializedRawPlans, 0); assert.ok(reads >= 20, "Every guard must reread the plan");
+      await Promise.resolve();
+      f.values.set(f.planKey, raw.replace('"version":1', '"version":2'));
+      assert.notEqual(f.values.get(f.planKey), raw); assert.equal(f.values.get(f.planKey).length, raw.length);
+      assert.throws(scope.assertCurrent); f.values.set(f.planKey, raw); scope.assertCurrent();
+      f.values.delete(f.planKey); assert.throws(scope.assertCurrent); f.values.set(f.planKey, raw); scope.assertCurrent();
+      const extra = planPrefix + encodeURIComponent(canonicalTemplateJson(f.bindings[0])) + ":" + crypto.randomUUID();
+      f.values.set(extra, raw); assert.throws(scope.assertCurrent); f.values.delete(extra); scope.assertCurrent();
+    }, "dispatch"));
+  noPosts(f); assert.equal(f.held.size, 0);
 });

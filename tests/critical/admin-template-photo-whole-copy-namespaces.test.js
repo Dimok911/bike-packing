@@ -142,3 +142,16 @@ test("missing or changing native record, forged snapshot and non-synchronous gua
   const plan = copy(f.plan); plan.sourceEditorSnapshot.metadata.title = "forged";
   await assert.rejects(prepare(args(f, { plan }), guard)); noWrites(f);
 });
+
+test("repeated namespace guards avoid source serialization but still detect nested add/change/delete", async () => {
+  const f = await fixture(), result = await prepare(args(f), guard);
+  const item = f.state.items[Object.keys(f.record.snapshot.source.beforeState.items)[0]], name = item.name;
+  const stringify = JSON.stringify; let sourceSerializations = 0;
+  JSON.stringify = (value, ...rest) => { if (value === name) sourceSerializations++; return stringify(value, ...rest); };
+  try { for (let i = 0; i < 20; i++) result.assertCurrent(); }
+  finally { JSON.stringify = stringify; }
+  assert.equal(sourceSerializations, 0);
+  await Promise.resolve(); item.name = name + " changed"; assert.throws(result.assertCurrent); item.name = name; result.assertCurrent();
+  item.extra = { nested: true }; assert.throws(result.assertCurrent); delete item.extra; result.assertCurrent();
+  delete item.name; assert.throws(result.assertCurrent); item.name = name; result.assertCurrent(); noWrites(f);
+});

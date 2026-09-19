@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "../sync/protocol-json-equality.js";
 import { canonicalTemplateJson as canonical } from "../sync/admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "../sync/admin-template-photo-record.js";
 import { assertAdminTemplatePhotoWholeCopyPlanRecord, adminTemplatePhotoWholeCopySavePlan, adminTemplatePhotoWholeCopySourceEditorSnapshot } from "../sync/admin-template-photo-whole-copy-save-plan.js";
@@ -7,7 +8,6 @@ const collections = ["layouts", "items", "containers"];
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const clone = value => JSON.parse(canonical(value));
-const same = (a, b) => canonical(a) === canonical(b);
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const paused = code => { throw Object.assign(Error("Исходная укладка и место для её копии требуют сверки. Местные данные сохранены."),
   { code: `admin-template-photo-whole-copy-namespaces-${code}`, isAdminTemplateBlocked: true }); };
