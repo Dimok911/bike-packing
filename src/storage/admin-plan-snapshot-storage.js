@@ -3,6 +3,22 @@ import { sameProtocolJson as same } from "../sync/protocol-json-equality.js";
 
 export const ADMIN_PLAN_PREFIX = "bike-packing-admin-save-plans-v1:";
 const field = "editorSnapshotReference";
+// Cache a PURE text transformation, never a storage proof or permission. A hit
+// requires both complete current strings. Every returned guard is newly built
+// against this storage and retains all fresh reads before/after async work.
+const derivedRows = new Map();
+let derivedChars = 0;
+function rememberDerived(physical, entry) {
+  const size = physical.length + entry.baseRaw.length + entry.raw.length;
+  if (size > 384 * 1024) return;
+  const previous = derivedRows.get(physical);
+  if (previous) { derivedChars -= previous.size; derivedRows.delete(physical); }
+  derivedRows.set(physical, { ...entry, size }); derivedChars += size;
+  while (derivedRows.size > 64 || derivedChars > 8 * 1024 * 1024) {
+    const first = derivedRows.keys().next().value;
+    derivedChars -= derivedRows.get(first).size; derivedRows.delete(first);
+  }
+}
 const plain = value => value !== null && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const copy = value => JSON.parse(canonical(value));
@@ -50,19 +66,25 @@ export function resolveAdminPlanStorageRow(storage, key, physical = storage.getI
   let raw = physical;
   if (isCompactAdminPlanRow(row)) {
     const reference = row[field], plan = row.plan;
-    if (!exact(row, ["version", "plan", "digest", "cancelRequested", field]) || row.version !== 1
-      || !exact(plan, ["version", "id", "binding", "operations"]) || plan.version !== 2 || adminPlanKey(plan) !== key
-      || !exact(reference, ["version", "key", "planDigest", "changes"]) || reference.version !== 1
-      || typeof reference.key !== "string" || reference.key === key || !reference.key.startsWith(ADMIN_PLAN_PREFIX)
-      || !/^[a-f0-9]{64}$/.test(reference.planDigest || "") || canonical(row) !== physical) fail();
-    const baseRaw = storage.getItem(reference.key); if (baseRaw === null) fail();
-    const base = JSON.parse(baseRaw);
-    if (isCompactAdminPlanRow(base) || base.plan?.version !== 2 || adminPlanKey(base.plan) !== reference.key
-      || !same(base.plan.binding, plan.binding) || base.digest !== reference.planDigest || canonical(base) !== baseRaw) fail();
-    dependencies.push({ key: reference.key, raw: baseRaw, row: base });
-    const { [field]: ignored, ...saved } = row;
-    saved.plan = { ...plan, editorSnapshot: applyChanges(base.plan.editorSnapshot, reference.changes) };
-    raw = canonical(saved);
+    const derived = derivedRows.get(physical), currentBase = typeof reference?.key === "string" ? storage.getItem(reference.key) : null;
+    if (derived && derived.key === key && derived.baseRaw === currentBase) {
+      raw = derived.raw; dependencies.push({ key: reference.key, raw: currentBase, row: JSON.parse(currentBase) });
+    } else {
+      if (!exact(row, ["version", "plan", "digest", "cancelRequested", field]) || row.version !== 1
+        || !exact(plan, ["version", "id", "binding", "operations"]) || plan.version !== 2 || adminPlanKey(plan) !== key
+        || !exact(reference, ["version", "key", "planDigest", "changes"]) || reference.version !== 1
+        || typeof reference.key !== "string" || reference.key === key || !reference.key.startsWith(ADMIN_PLAN_PREFIX)
+        || !/^[a-f0-9]{64}$/.test(reference.planDigest || "") || canonical(row) !== physical) fail();
+      const baseRaw = currentBase; if (baseRaw === null) fail();
+      const base = JSON.parse(baseRaw);
+      if (isCompactAdminPlanRow(base) || base.plan?.version !== 2 || adminPlanKey(base.plan) !== reference.key
+        || !same(base.plan.binding, plan.binding) || base.digest !== reference.planDigest || canonical(base) !== baseRaw) fail();
+      dependencies.push({ key: reference.key, raw: baseRaw, row: base });
+      const { [field]: ignored, ...saved } = row;
+      saved.plan = { ...plan, editorSnapshot: applyChanges(base.plan.editorSnapshot, reference.changes) };
+      raw = canonical(saved);
+      rememberDerived(physical, { key, baseRaw, raw });
+    }
   }
   const assertCurrent = () => {
     if (storage.getItem(key) !== physical || dependencies.some(row => storage.getItem(row.key) !== row.raw)) fail();

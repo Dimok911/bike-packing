@@ -29,11 +29,17 @@ const clone = value => JSON.parse(JSON.stringify(value));
 // No journal enumeration, storage read, context, dependency or write permission
 // is memoized. Readers still fetch full current bytes and verify readback.
 const verifiedCommandRows = new Map();
+// This subset additionally records canonical encoding of the exact full row.
+// It is a pure shape/hash derivation; storage and dependency guards are never cached.
+const canonicalCommandRows = new Set();
 const rememberCommandRow = (raw, saved) => {
   if (raw.length > 128 * 1024) return;
   verifiedCommandRows.delete(raw);
   verifiedCommandRows.set(raw, clone(saved));
-  while (verifiedCommandRows.size > 64) verifiedCommandRows.delete(verifiedCommandRows.keys().next().value);
+  while (verifiedCommandRows.size > 64) {
+    const first = verifiedCommandRows.keys().next().value;
+    verifiedCommandRows.delete(first); canonicalCommandRows.delete(first);
+  }
 };
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -220,10 +226,14 @@ export function adminTemplateDataSourceSnapshot(plan, records = [], { baseline =
 }
 
 export async function verifyAdminCommandStorageRow(key, raw) {
+  const derived = canonicalCommandRows.has(raw) ? verifiedCommandRows.get(raw) : null;
+  if (derived) { if (adminPlanKey(derived.plan) !== key) throw paused(); return clone(derived); }
   const saved = JSON.parse(raw);
   if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1
     || typeof saved.cancelRequested !== "boolean" || saved.plan?.version !== 2 || adminPlanKey(saved.plan) !== key
     || canonicalTemplateJson(saved) !== raw || saved.digest !== await hash(validatePlan(saved.plan))) throw paused();
+  rememberCommandRow(raw, saved);
+  if (verifiedCommandRows.has(raw)) canonicalCommandRows.add(raw);
   return saved;
 }
 

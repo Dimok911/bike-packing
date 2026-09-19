@@ -62,7 +62,7 @@ test("restart after one atomic replacement resumes and preserves every original"
   for (const item of originals) assert.equal(resolve(f.storage, item.key).raw, item.raw);
 });
 
-test("fresh reads and guards detect base edits, removal and reference changes without a cache", async () => {
+test("fresh reads and guards detect base edits, removal and reference changes after warm derivations", async () => {
   const f = fixture(), a = f.seed(row("A")), b = f.seed(row("B"));
   const packed = await prepare({ storage: f.storage, key: b.key, raw: b.raw, validate }); f.values.set(b.key, packed.raw);
   for (const mutate of [() => f.values.delete(a.key), () => f.values.set(a.key, a.raw.replace("Common item", "Changed one")), () => f.values.set(b.key, packed.raw + " ")]) {
@@ -101,4 +101,47 @@ test("real registry captures compact rows, cold reads full snapshots and dispatc
   assert.deepEqual(await make().read(b.plan.id),b); assert.equal((await make().run(b.plan.id)).state,"committed");
   assert.equal(effects.length,1);assert.equal(effects[0].operationId,b.plan.id);assert.equal(f.values.get(a.key),a.raw);
   f.values.delete(a.key);await assert.rejects(make().read(b.plan.id));await assert.rejects(make().run(b.plan.id));assert.equal(effects.length,1);
+});
+
+test("warm reconstruction uses exact current byte pairs and avoids serializing the shared payload again", async t => {
+  const f=fixture(), a=f.seed(row("Warm A")), b=f.seed(row("Warm B"));
+  const packed=await prepare({storage:f.storage,key:b.key,raw:b.raw,validate}); f.values.set(b.key,packed.raw);
+  const originalStringify=JSON.stringify; let largeSerializations=0, freshReads=0;
+  t.mock.method(JSON,"stringify",function(value,...args){if(typeof value==="string"&&value.length>1000)largeSerializations++;return originalStringify.call(this,value,...args);});
+  const read=f.storage.getItem; f.storage.getItem=key=>{freshReads++;return read(key);};
+  for(let i=0;i<20;i++) {
+    const proof=resolve(f.storage,b.key); assert.equal(proof.raw,b.raw);
+    proof.dependencies[0].row.plan.editorSnapshot.payload.items.a.name="Caller mutation";
+    proof.assertCurrent();
+  }
+  assert.equal(largeSerializations,0,"unchanged large payload must not be serialized once per history row");
+  assert.ok(freshReads>=20*6,"every read and its guard must still fetch both complete current rows");
+  const proof=resolve(f.storage,b.key);
+  f.values.set(a.key,a.raw.replace("Common item","Changed item"));
+  assert.throws(proof.assertCurrent);
+  const changed=resolve(f.storage,b.key); assert.notEqual(changed.raw,b.raw);
+  await assert.rejects(validate(a.key,changed.dependencies[0].raw));
+  f.values.set(a.key,a.raw); assert.equal(resolve(f.storage,b.key).raw,b.raw);
+  f.values.delete(a.key); assert.throws(()=>resolve(f.storage,b.key));
+  f.values.set(a.key,a.raw); f.values.set(b.key,packed.raw+" "); assert.throws(()=>resolve(f.storage,b.key));
+});
+
+test("strict base derivation reuses SHA only for full identical canonical bytes and returns detached data", async t => {
+  const originalDigest=crypto.subtle.digest; let digests=0;
+  t.mock.method(crypto.subtle,"digest",function(...args){digests++;return originalDigest.apply(this,args);});
+  const f=fixture(), a=f.seed(row("Strict derivation"));
+  const first=await validate(a.key,a.raw); first.plan.editorSnapshot.payload.items.a.name="Caller mutation";
+  for(let i=0;i<20;i++) assert.equal((await validate(a.key,a.raw)).plan.editorSnapshot.payload.items.a.name,"Common item");
+  assert.equal(digests,1,"the same full base must not be hashed once per history row");
+  await assert.rejects(validate(a.key+"-wrong",a.raw));
+  await assert.rejects(validate(a.key,a.raw.replace("Common item","Tampered item")));
+  assert.equal(digests,2,"changed bytes require a fresh hash even after warm reads");
+  // A valid row remembered by the compatibility reader is not automatically a
+  // proof of canonical encoding for the stricter storage codec.
+  const noncanonical=JSON.stringify({...JSON.parse(a.raw),version:1},null,1);
+  f.values.set(a.key,noncanonical);
+  const registry=createAdminTemplateSavePlans({binding,storage:f.storage,locks:f.locks,enabled:true,client:{},
+    getContext:()=>({...binding,admin:true,scope:"admin-template",generation:"one"})});
+  await registry.read(a.value.plan.id);
+  await assert.rejects(validate(a.key,noncanonical));
 });
