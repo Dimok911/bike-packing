@@ -1,5 +1,5 @@
 import { canonicalTemplateJson as canonical } from "../sync/admin-template-protocol.js";
-import { projectAdminTemplatePhotoWholeCopyPlanResult } from "../sync/admin-template-photo-whole-copy-save-plan.js";
+import { prepareAdminTemplatePhotoWholeCopyPlanProof } from "../sync/admin-template-photo-whole-copy-save-plan.js";
 import { assertAdminTemplatePhotoCopyEditor } from "../sync/admin-template-photo-copy-record.js";
 import { captureAdminTemplatePhotoOwnerMap } from "../sync/admin-template-photo-owner-map.js";
 import { captureAdminTemplatePhotoView } from "../sync/admin-template-photo-view.js";
@@ -62,12 +62,18 @@ function targetSnapshot(proof, plan) {
 // typed record and committed receipt. Current source/mirror admission and any
 // durable/live application remain the caller's responsibility.
 export async function prepareAdminTemplatePhotoWholeCopyProjection(input, guard) {
+  return (await prepareAdminTemplatePhotoWholeCopyProjectionProof(input, guard)).projection;
+}
+
+// Acceptance consumes the very record used to reconstruct the projection.
+// Every invocation still proves the complete typed row and committed receipt.
+export async function prepareAdminTemplatePhotoWholeCopyProjectionProof(input, guard) {
   if (!exact(input, ["plan", "store", "receipt", "stageReceipts"])) pause("dependencies");
   const { store } = input, frozen = copy({ plan: input.plan, receipt: input.receipt, stageReceipts: input.stageReceipts });
   current(guard);
-  const proof = await projectAdminTemplatePhotoWholeCopyPlanResult({ ...frozen, store }, () => current(guard));
+  const { record, payloadDigest, result: proof } = await prepareAdminTemplatePhotoWholeCopyPlanProof({ ...frozen, store }, () => current(guard));
   current(guard);
   const result = targetSnapshot(proof, frozen.plan);
   current(guard);
-  return copy({ proof, targetSnapshot: result });
+  return { record, payloadDigest, projection: copy({ proof, targetSnapshot: result }) };
 }

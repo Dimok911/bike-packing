@@ -100,6 +100,12 @@ export async function assertAdminTemplatePhotoWholeCopyPlanRecord(input, store, 
 // absent-target/own-pending namespace admission and durable target-only apply.
 // Rejected/cancelled receipts cannot adopt a target or retire any stage claim.
 export async function projectAdminTemplatePhotoWholeCopyPlanResult(input, guard = () => {}) {
+  return (await prepareAdminTemplatePhotoWholeCopyPlanProof(input, guard)).result;
+}
+
+// Derive the record and result together from fresh storage in this invocation.
+// This accepts no prevalidated evidence and retains the complete row readbacks.
+export async function prepareAdminTemplatePhotoWholeCopyPlanProof(input, guard = () => {}) {
   if (!exact(input, ["plan", "store", "receipt", "stageReceipts"])) paused();
   const { store } = input, { plan, receipt, stageReceipts } = clone({ plan: input.plan, receipt: input.receipt, stageReceipts: input.stageReceipts });
   const proof = await planRecordProof(plan, store, guard); synchronous(guard);
@@ -121,6 +127,7 @@ export async function projectAdminTemplatePhotoWholeCopyPlanResult(input, guard 
     if (!same(current, record)) paused();
   }
   if (!same(confirmedPayload, receipt.result.payload.photoCopy.confirmedPayload)) paused();
-  return clone({ recordIntentHash: record.intentHash, source: record.snapshot.source, target: record.snapshot.target,
+  const result = clone({ recordIntentHash: record.intentHash, source: record.snapshot.source, target: record.snapshot.target,
     copiedOwners: record.snapshot.copiedOwners, confirmedPayload, stateRevision: receipt.result.payload.stateRevision, metadata: record.snapshot.target.metadata });
+  return { record, payloadDigest, result };
 }

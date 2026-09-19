@@ -125,3 +125,42 @@ test("named reads cannot hide mutations to rows already read in the synchronous 
     assert.throws(proof.assertCurrent); noNetwork(f);
   }
 });
+
+test("acceptance derives the historical record once, retaining all four fresh native reads on every call", async () => {
+  const f = await wholeCopyAcceptanceFixture(); await accept(f);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    f.idb.requests.length = 0;
+    const proof = await f.read();
+    assert.equal(f.idb.requests.filter(row => row.storeName === 'actions' && row.operation === 'get').length, 4,
+      'one record derivation with post-decode, post-derivation and post-receipt raw readbacks');
+    assert.deepEqual(proof.record, f.record); assert.deepEqual(proof.targetSnapshot, f.targetSnapshot);
+    assert.throws(() => { proof.record.snapshot.target.layoutId = 'poisoned'; }, TypeError);
+    assert.throws(() => { proof.targetSnapshot.beforeState.layouts[f.targetId].name = 'poisoned'; }, TypeError);
+  }
+  f.idb.rows().clear(); await assert.rejects(f.read()); noNetwork(f);
+});
+
+test("single acceptance pipeline catches native record changes at every derivation boundary", async () => {
+  for (const boundary of [1, 2, 3]) for (const mutation of ['delete', 'change']) {
+    const f = await wholeCopyAcceptanceFixture(); await accept(f);
+    const [key, raw] = [...f.idb.rows()][0]; let commits = 0;
+    f.idb.controls.onCommit = ({ mode }) => {
+      if (mode !== 'readonly' || ++commits !== boundary) return;
+      if (mutation === 'delete') f.idb.rows().delete(key);
+      else f.idb.rows().set(key, { ...raw, extra: 'changed-after-await' });
+    };
+    await assert.rejects(f.read(), undefined, mutation + ' at boundary ' + boundary); noNetwork(f);
+  }
+});
+
+test("acceptance binds the journal payload digest as well as the independently validated receipt", async () => {
+  const f = await wholeCopyAcceptanceFixture(); await accept(f);
+  mutateJournal(f, row => { row.payloadDigest = '0'.repeat(64); });
+  // Rehashing the acceptance row must not conceal a forged journal commitment.
+  const row = JSON.parse(f.values.get(f.journalKey));
+  const terminal = Object.fromEntries(['version', 'kind', 'intent', 'payloadDigest', 'recordIntentHash', 'stageReceipts', 'receipt'].map(key => [key, row[key]]));
+  terminal.stageReceipts = row.stageReceipts.map(stage => stage.receipt);
+  const accepted = JSON.parse(f.values.get(f.acceptanceKey)); accepted.terminalJournalDigest = hash(terminal);
+  f.values.set(f.acceptanceKey, canonical(accepted));
+  await assert.rejects(f.read()); noNetwork(f);
+});

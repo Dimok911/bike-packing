@@ -1,3 +1,4 @@
+import { setRequiredStorageItem } from "../utils/storage-pressure.js";
 import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admin-template-copy-projection.js";
@@ -354,7 +355,7 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   };
   const lock = (id, task) => { if (!locks?.request) throw paused(); return locks.request(key(id), task); };
   const persist = (saved, initial) => {
-    guard(initial); const encoded = canonicalTemplateJson(saved); storage.setItem(key(saved.plan.id), encoded);
+    guard(initial); const encoded = canonicalTemplateJson(saved); setRequiredStorageItem(storage, key(saved.plan.id), encoded);
     if (storage.getItem(key(saved.plan.id)) !== encoded) throw paused(); guard(initial); return saved;
   };
   const read = async id => {

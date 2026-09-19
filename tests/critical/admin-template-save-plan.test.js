@@ -175,3 +175,39 @@ test("V2 readback rejects replacement during hashing and during a memo hit", asy
   const plans = f.make({ storage: { getItem(key) { const raw = f.values.get(key) ?? null; if (++calls === 1) f.values.delete(key); return raw; } } });
   await assert.rejects(plans.read(f.plan.id)); assert.equal(calls, 2);
 });
+
+test("admin plan quota uses the existing renewable-cache fallback without changing operation bytes or history", async () => {
+  const { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY: cacheKey } = await import('../../src/config/constants.js');
+  const { canPersistOptionalStorage } = await import('../../src/utils/storage-pressure.js');
+  const f = fixture(), input = action(); await f.make().capture(input);
+  const history = [...f.values], next = action(), writes = [], removals = [];
+  f.values.set(cacheKey, 'renewable public templates');
+  f.values.set('original-private-draft', 'retained original');
+  const storage = { get length() { return f.values.size; }, key: i => [...f.values.keys()][i],
+    getItem: key => f.values.get(key) ?? null,
+    removeItem(key) { removals.push(key); f.values.delete(key); },
+    setItem(key, raw) {
+      writes.push([key, raw]);
+      if (f.values.has(cacheKey)) throw new DOMException('Full', 'QuotaExceededError');
+      f.values.set(key, raw);
+    } };
+  const result = await f.make({ storage }).capture(next);
+  assert.equal(result.plan.id, next.operationId); assert.equal(writes.length, 2);
+  assert.deepEqual(writes[0], writes[1]); assert.deepEqual(removals, [cacheKey]);
+  assert.equal(canPersistOptionalStorage(storage), false);
+  for (const [key, raw] of history) assert.equal(f.values.get(key), raw);
+  assert.equal(f.values.get('original-private-draft'), 'retained original');
+  assert.deepEqual((await f.make({ storage }).read(next.operationId)), result);
+  assert.deepEqual(f.calls, []);
+});
+
+test("persistent admin plan quota retains all original records and never dispatches a substitute", async () => {
+  const { PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY: cacheKey } = await import('../../src/config/constants.js');
+  const f = fixture(); await f.make().capture(action()); const history = [...f.values];
+  f.values.set(cacheKey, 'renewable'); let attempts = 0;
+  const storage = { get length() { return f.values.size; }, key: i => [...f.values.keys()][i],
+    getItem: key => f.values.get(key) ?? null, removeItem: key => f.values.delete(key),
+    setItem() { attempts++; throw new DOMException('Still full', 'QuotaExceededError'); } };
+  await assert.rejects(f.make({ storage }).capture(action()), { name: 'QuotaExceededError' });
+  assert.equal(attempts, 2); assert.deepEqual([...f.values], history); assert.deepEqual(f.calls, []);
+});

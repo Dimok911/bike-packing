@@ -1,9 +1,7 @@
 import { sameProtocolJson as same } from "../sync/protocol-json-equality.js";
 import { canonicalTemplateJson as canonical, validTemplateOperationId } from "../sync/admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "../sync/admin-template-photo-record.js";
-import { assertAdminTemplatePhotoWholeCopyPlanRecord } from "../sync/admin-template-photo-whole-copy-save-plan.js";
-import { validateAdminTemplatePhotoWholeCopyReceipt } from "../sync/admin-template-photo-whole-copy-receipt.js";
-import { prepareAdminTemplatePhotoWholeCopyProjection } from "./admin-template-photo-whole-copy-projection.js";
+import { prepareAdminTemplatePhotoWholeCopyProjectionProof } from "./admin-template-photo-whole-copy-projection.js";
 
 export const ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ACCEPTANCE_PREFIX = "bike-packing-admin-photo-whole-copy-accepted-v1:";
 const kind = "admin-template-photo-whole-copy-accepted", collections = ["layouts", "items", "containers"];
@@ -104,22 +102,19 @@ async function fullProof(s, extraGuard = () => {}) {
   if (!exact(saved, ["version", "plan", "digest", "cancelRequested"]) || saved.version !== 1 || saved.cancelRequested !== false
     || saved.plan?.version !== 10 || saved.plan.id !== s.operationId || !same(saved.plan.binding, s.binding)) pause("plan");
   const planDigest = await digest(saved.plan); guard(); if (saved.digest !== planDigest) pause("plan");
-  const record = await assertAdminTemplatePhotoWholeCopyPlanRecord(saved.plan, s.store, guard); guard();
   const keys = ["version", "kind", "intent", "payloadDigest", "recordIntentHash", "dispatched", "stageReceipts", "receipt"];
   if (!(exact(journal, keys) || exact(journal, [...keys, "cancelRequested"])) || journal.version !== 1
     || journal.kind !== "admin-template-photo-whole-copy" || typeof journal.dispatched !== "boolean"
     || Object.hasOwn(journal, "cancelRequested") && typeof journal.cancelRequested !== "boolean"
-    || journal.recordIntentHash !== record.intentHash || !same(journal.intent, saved.plan.operations[0])
+    || journal.recordIntentHash !== saved.plan.recordIntentHash || !same(journal.intent, saved.plan.operations[0])
     || journal.receipt?.operation?.state !== "committed") pause("journal");
-  const valid = await validateAdminTemplatePhotoWholeCopyReceipt(journal.receipt,
-    { intent: journal.intent, payloadDigest: journal.payloadDigest, stageReceipts: journal.stageReceipts }); guard();
-  if (!valid) pause("receipt");
   // Reconstruct from immutable historical source only. Current source and target
   // can legitimately have changed since acceptance; never substitute their
   // present state for the complete typed record and confirmed server result.
-  const { target } = record.snapshot;
-  const projection = await prepareAdminTemplatePhotoWholeCopyProjection({ plan: saved.plan, store: s.store,
+  const { record, payloadDigest, projection } = await prepareAdminTemplatePhotoWholeCopyProjectionProof({ plan: saved.plan, store: s.store,
     receipt: journal.receipt, stageReceipts: journal.stageReceipts }, guard); guard();
+  if (journal.recordIntentHash !== record.intentHash || journal.payloadDigest !== payloadDigest) pause("journal");
+  const { target } = record.snapshot;
   const terminal = Object.fromEntries(keys.filter(key => key !== "dispatched").map(key => [key, journal[key]]));
   // Availability is a current GET observation, not part of an immutable stage
   // receipt. Revalidate every exact wrapper above, but bind the ordered receipt
@@ -146,8 +141,8 @@ export async function readAdminTemplatePhotoWholeCopyAcceptance(input, externalG
   const row = parse(raw), guard = () => { if (s.read(s.key) !== raw) pause("acceptance-changed"); };
   const proved = await fullProof(s, guard); proved.assertCurrent();
   if (!same(row, proved.acceptance)) pause("acceptance");
-  return Object.freeze({ ...freeze(copy({ plan: proved.plan, record: proved.record, journal: proved.journal, receipt: proved.receipt,
-    stageReceipts: proved.stageReceipts, targetSnapshot: proved.targetSnapshot, acceptance: proved.acceptance })), assertCurrent: proved.assertCurrent });
+  // fullProof owns and deeply freezes these detached facts already.
+  return Object.freeze(proved);
 }
 
 // Cold mirror-only interruption discovery. A candidate is NOT acceptance and
