@@ -3,8 +3,8 @@ const PRESERVED_CACHE_NAMES = new Set(["bike-packing-manufacturer-catalog-offlin
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=1632",
-  "./app.js?v=1632",
+  "./styles.css?v=1633",
+  "./app.js?v=1633",
   "./manifest.webmanifest"
 ];
 
