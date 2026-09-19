@@ -7,6 +7,12 @@ import { encodeAdminTemplatePhotoWholeCopyRecord, decodeAdminTemplatePhotoWholeC
 // Reuse only the database connection. Every operation still creates its own
 // fresh transaction, reads complete values and performs unchanged readbacks.
 const openConnections = new WeakMap();
+// Private capability for exact raw readback, available only for stores created
+// here. The registry holds readers only; snapshots are private to one proof.
+const snapshotReaders = new WeakMap();
+export function readWholeCopyActionSnapshot(store, operationId) {
+  return snapshotReaders.get(store)?.(operationId) ?? null;
+}
 const databaseName = "bike-packing-admin-template-photo-whole-copy-actions-v1";
 const clone = value => JSON.parse(canonical(value));
 const blocked = (code, cause) => Object.assign(Error("Сохранённое копирование требует сверки. Исходный выбор сохранён для восстановления."),
@@ -117,7 +123,7 @@ export function createAdminTemplatePhotoWholeCopyActionStore({ binding, getConte
       } catch (cause) { abort(cause); }
     };
   });
-  return Object.freeze({ binding,
+  const store = Object.freeze({ binding,
     async capture(input) {
       if (enabled !== true) throw blocked("disabled");
       const initial = current(), frozen = clone(input);
@@ -214,8 +220,23 @@ export function createAdminTemplatePhotoWholeCopyActionStore({ binding, getConte
       guard(initial); if (!same(saved, claim)) throw blocked("claim-readback"); return { ...claim, fresh };
     }
   });
+  snapshotReaders.set(store, async operationId => {
+    operation(operationId);
+    const initial = current(), raw = await readRaw(operationId, initial);
+    const record = await decode(raw, operationId, initial);
+    // This closure owns the entire detached IDB row. Every invocation opens a
+    // NEW transaction and compares ALL fields, including key, routing, raw JSON
+    // and digest. It cannot bless a changed or deleted row from a prior hash.
+    const assertUnchanged = async () => {
+      guard(initial);
+      if (!same(raw, await readRaw(operationId, initial))) throw blocked("inventory-changed");
+      guard(initial);
+    };
+    await assertUnchanged(); guard(initial);
+    return Object.freeze({ record, assertUnchanged });
+  });
+  return store;
 }
-
 
 // Discovery cannot start from a target layout: a crash may precede its creation.
 // Foreign records with a canonical, self-consistent routing header stay private.

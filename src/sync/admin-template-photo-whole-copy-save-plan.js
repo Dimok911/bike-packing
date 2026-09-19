@@ -3,6 +3,7 @@ import { canonicalTemplateJson as canonical } from "./admin-template-protocol.js
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 import { adminTemplatePhotoWholeCopyIntent, adminTemplatePhotoWholeCopyPayload } from "./admin-template-photo-whole-copy-protocol.js";
 import { prepareAdminTemplatePhotoWholeCopyRecord } from "./admin-template-photo-whole-copy-record.js";
+import { readWholeCopyActionSnapshot } from "./admin-template-photo-whole-copy-action-store.js";
 import { validateAdminTemplatePhotoWholeCopyReceipt } from "./admin-template-photo-whole-copy-receipt.js";
 import { personalBusinessPayload } from "./personal-business-payload.js";
 import { stripAdminTemplateEditorMetadata } from "../public/admin-template-causal-save-flow.js";
@@ -42,7 +43,7 @@ export function adminTemplatePhotoWholeCopySavePlan(input) {
   return clone({ version: 10, id: operationId, binding, operations: [intent], sourceEditorSnapshot, recordIntentHash });
 }
 
-export async function readAdminTemplatePhotoWholeCopyRecord(store, input, recordIntentHash, guard = () => {}) {
+async function recordProof(store, input, recordIntentHash, guard = () => {}) {
   // Detach caller-owned values before the first await; neither a hash pointer
   // nor a plausible decoded object establishes this record's authority.
   const value = clone(input), intent = adminTemplatePhotoWholeCopyIntent({ ...value, operationId: value.id });
@@ -53,29 +54,46 @@ export async function readAdminTemplatePhotoWholeCopyRecord(store, input, record
     if (!store || typeof store.read !== "function" || !same(adminTemplatePhotoActionBinding(store.binding), binding)) paused();
   };
   current();
-  const valueRead = await store.read(intent.id); current();
+  const snapshot = await readWholeCopyActionSnapshot(store, intent.id); current();
+  const valueRead = snapshot ? snapshot.record : await store.read(intent.id); current();
   if (!valueRead) paused();
   const retained = clone(valueRead);
   const record = await prepareAdminTemplatePhotoWholeCopyRecord({ binding: retained.binding, action: retained.action, snapshot: retained.snapshot }); current();
   if (!same(retained, record) || record.intentHash !== recordIntentHash || !same(record.binding, binding)
     || !same(record.action, { operationId: intent.id, kind: intent.kind, listId: intent.listId, itemKey: intent.itemKey, body: intent.body })) paused();
   // A record may disappear or change while its manifests and digests are being
-  // rederived. Re-read its exact decoded bytes before returning the proof.
-  const readback = await store.read(intent.id); current();
-  if (!readback || !same(readback, record)) paused();
-  return record;
+  // rederived. Re-read the complete row before returning the proof.
+  const assertUnchanged = async () => {
+    current();
+    if (snapshot) await snapshot.assertUnchanged();
+    else {
+      const readback = await store.read(intent.id); current();
+      if (!readback || !same(readback, record)) paused();
+    }
+    current();
+  };
+  await assertUnchanged(); current();
+  return { record, assertUnchanged: snapshot ? assertUnchanged : null };
 }
 
-export async function assertAdminTemplatePhotoWholeCopyPlanRecord(input, store, guard = () => {}) {
+export async function readAdminTemplatePhotoWholeCopyRecord(store, input, recordIntentHash, guard = () => {}) {
+  return (await recordProof(store, input, recordIntentHash, guard)).record;
+}
+
+async function planRecordProof(input, store, guard = () => {}) {
   const plan = clone(input);
   if (!exact(plan, ["version", "id", "binding", "operations", "sourceEditorSnapshot", "recordIntentHash"])
     || plan.version !== 10 || !Array.isArray(plan.operations) || plan.operations.length !== 1) paused();
   const expected = adminTemplatePhotoWholeCopySavePlan({ binding: plan.binding, operationId: plan.id, body: plan.operations[0]?.body,
     sourceEditorSnapshot: plan.sourceEditorSnapshot, recordIntentHash: plan.recordIntentHash });
   if (!same(plan, expected)) paused();
-  const record = await readAdminTemplatePhotoWholeCopyRecord(store, expected.operations[0], expected.recordIntentHash, guard); synchronous(guard);
-  if (!same(expected.sourceEditorSnapshot, adminTemplatePhotoWholeCopySourceEditorSnapshot(record))) paused();
-  return record;
+  const proof = await recordProof(store, expected.operations[0], expected.recordIntentHash, guard); synchronous(guard);
+  if (!same(expected.sourceEditorSnapshot, adminTemplatePhotoWholeCopySourceEditorSnapshot(proof.record))) paused();
+  return proof;
+}
+
+export async function assertAdminTemplatePhotoWholeCopyPlanRecord(input, store, guard = () => {}) {
+  return (await planRecordProof(input, store, guard)).record;
 }
 
 // Detached RAW confirmation package only. The caller still owes current source,
@@ -84,7 +102,8 @@ export async function assertAdminTemplatePhotoWholeCopyPlanRecord(input, store, 
 export async function projectAdminTemplatePhotoWholeCopyPlanResult(input, guard = () => {}) {
   if (!exact(input, ["plan", "store", "receipt", "stageReceipts"])) paused();
   const { store } = input, { plan, receipt, stageReceipts } = clone({ plan: input.plan, receipt: input.receipt, stageReceipts: input.stageReceipts });
-  const record = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, store, guard); synchronous(guard);
+  const proof = await planRecordProof(plan, store, guard); synchronous(guard);
+  const { record } = proof;
   const intent = plan.operations[0], { id: ignoredId, ...encoded } = intent;
   const payloadDigest = await digest(encoded); synchronous(guard);
   const valid = await validateAdminTemplatePhotoWholeCopyReceipt(receipt, { intent, payloadDigest, stageReceipts }); synchronous(guard);
@@ -92,8 +111,16 @@ export async function projectAdminTemplatePhotoWholeCopyPlanResult(input, guard 
   const confirmedPayload = adminTemplatePhotoWholeCopyPayload(intent, receipt.result.payload.photoCopy.owners);
   // Full receipt validation binds revision 1, the new owner to actorId, every
   // ordered manifest/path and deterministic owner allocation to this raw result.
-  const current = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, store, guard); synchronous(guard);
-  if (!same(current, record) || !same(confirmedPayload, receipt.result.payload.photoCopy.confirmedPayload)) paused();
+  if (proof.assertUnchanged) {
+    // The plan and derived record are private detached values. Re-read the
+    // complete native row after receipt validation; identical bytes preserve
+    // the derivation already performed in THIS call. No cross-call proof cache.
+    await proof.assertUnchanged(); synchronous(guard);
+  } else {
+    const current = await assertAdminTemplatePhotoWholeCopyPlanRecord(plan, store, guard); synchronous(guard);
+    if (!same(current, record)) paused();
+  }
+  if (!same(confirmedPayload, receipt.result.payload.photoCopy.confirmedPayload)) paused();
   return clone({ recordIntentHash: record.intentHash, source: record.snapshot.source, target: record.snapshot.target,
     copiedOwners: record.snapshot.copiedOwners, confirmedPayload, stateRevision: receipt.result.payload.stateRevision, metadata: record.snapshot.target.metadata });
 }

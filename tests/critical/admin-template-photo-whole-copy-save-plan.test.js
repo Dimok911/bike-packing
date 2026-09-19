@@ -241,3 +241,56 @@ test("a disappearing or replaced record blocks both manifest readback and later 
   }
   readOnly(f);
 });
+
+
+test("native proof uses full fresh row readback instead of decoding identical bytes again", async () => {
+  const f = await fixture(), args = proof(f);
+  assert.deepEqual(await assertRecord(args.plan, f.store), f.record);
+  assert.equal(f.idb.transactions.length, 3, 'initial read, post-decode readback, post-derivation readback');
+  f.idb.transactions.length = 0; f.idb.requests.length = 0;
+  assert.deepEqual((await project(args)).confirmedPayload, f.receipt.result.payload.photoCopy.confirmedPayload);
+  assert.equal(f.idb.transactions.length, 4, 'receipt verification ends with another fresh full-row transaction');
+  assert.equal(f.idb.requests.filter(row => row.operation === 'get').length, 4);
+  readOnly(f);
+});
+
+test("full raw readback catches deletion or any envelope-field change between derivation boundaries", async () => {
+  for (const boundary of [1, 2, 3]) for (const field of ['delete', 'version', 'kind', 'key', 'bindingKey', 'intentJson', 'intentHash', 'extra']) {
+    const f = await fixture(), args = proof(f), [key, raw] = [...f.idb.rows()][0];
+    let commits = 0;
+    f.idb.controls.onCommit = ({ mode }) => {
+      if (mode !== 'readonly' || ++commits !== boundary) return;
+      if (field === 'delete') f.idb.rows().delete(key);
+      else f.idb.rows().set(key, { ...raw, [field]: field === 'version' ? 2 : String(raw[field] ?? '') + 'changed' });
+    };
+    await assert.rejects(project(args), undefined, field + ' at boundary ' + boundary);
+    readOnly(f);
+  }
+});
+
+test("raw readback rejects a different valid record under the same UUID and a context change", async () => {
+  const { encodeAdminTemplatePhotoWholeCopyRecord } = await import('../../src/sync/admin-template-photo-whole-copy-record.js');
+  for (const change of ['valid-replacement', 'context']) {
+    const f = await fixture(), args = proof(f), [key] = [...f.idb.rows()][0];
+    const input = copy(f.input); input.snapshot.target.layoutId += '-changed';
+    const replacement = await encodeAdminTemplatePhotoWholeCopyRecord(input);
+    let commits = 0;
+    f.idb.controls.onCommit = ({ mode }) => { if (mode === 'readonly' && ++commits === 3) {
+      if (change === 'context') f.context.generation = 'another-session';
+      else f.idb.rows().set(key, replacement);
+    } };
+    await assert.rejects(project(args));
+    readOnly(f);
+  }
+});
+
+test("unbranded stores cannot provide their own unchanged-row authority", async () => {
+  const { readWholeCopyActionSnapshot } = await import('../../src/sync/admin-template-photo-whole-copy-action-store.js');
+  const f = await fixture(), args = proof(f); let reads = 0, forgedCalls = 0;
+  const store = { binding: f.binding,
+    async read() { reads++; return reads === 4 ? { ...f.record, intentHash: '0'.repeat(64) } : copy(f.record); },
+    async readSnapshot() { forgedCalls++; return { record: f.record, assertUnchanged: async () => true }; } };
+  assert.equal(readWholeCopyActionSnapshot(store, f.id), null);
+  await assert.rejects(project({ ...args, store }));
+  assert.equal(reads, 4); assert.equal(forgedCalls, 0);
+});

@@ -6,13 +6,15 @@ import { wholeRecordInput } from '../fixtures/admin-template-photo-whole-copy-re
 const origin='https://whole-store.localhost';
 const databaseName='bike-packing-admin-template-photo-whole-copy-actions-v1';
 const bootstrap=`
-import {createAdminTemplatePhotoWholeCopyActionStore} from '/src/sync/admin-template-photo-whole-copy-action-store.js';
+import {createAdminTemplatePhotoWholeCopyActionStore,readWholeCopyActionSnapshot} from '/src/sync/admin-template-photo-whole-copy-action-store.js';
 window.opens=0;window.transactions=0;
 const nativeOpen=indexedDB.open,nativeTransaction=IDBDatabase.prototype.transaction;
 indexedDB.open=function(...args){window.opens++;return nativeOpen.apply(this,args)};
 IDBDatabase.prototype.transaction=function(...args){window.transactions++;return nativeTransaction.apply(this,args)};
 window.configure=binding=>{window.context={...binding,scope:'admin-template',admin:true,generation:'native'};window.store=createAdminTemplatePhotoWholeCopyActionStore({binding,getContext:()=>window.context,enabled:true});};
 window.invoke=async(method,...args)=>{try{return{ok:true,value:await window.store[method](...args)}}catch(error){return{ok:false,code:error.code}}};
+window.takeSnapshot=async id=>{window.snapshot=await readWholeCopyActionSnapshot(window.store,id);return !!window.snapshot.record};
+window.checkSnapshot=async()=>{try{await window.snapshot.assertUnchanged();return {ok:true}}catch(error){return {ok:false,code:error.code}}};
 window.ready=true;
 `;
 test.beforeEach(async({context})=>{
@@ -44,4 +46,17 @@ test('native versionchange closes the retained connection and a newer schema fai
   await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,2);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});db.close()},databaseName);
   const result=await page.evaluate(async id=>({read:await window.invoke('read',id),opens:window.opens}),input.action.operationId);
   expect(result.read.ok).toBe(false);expect(result.read.code).toBe('admin-template-photo-whole-copy-storage-open');expect(result.opens).toBe(2);
+});
+
+test('native raw readback sees changed and deleted bytes from another tab',async({page,context})=>{
+  const input=await capture(page);
+  const other=await context.newPage();await other.goto(origin);await other.waitForFunction(()=>window.ready);
+  expect(await page.evaluate(id=>window.takeSnapshot(id),input.action.operationId)).toBe(true);
+  const initial=await page.evaluate(()=>window.transactions);
+  expect(await page.evaluate(()=>window.checkSnapshot())).toEqual({ok:true});
+  expect(await page.evaluate(()=>window.transactions)).toBe(initial+1);
+  await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('actions','readwrite'),store=tx.objectStore('actions'),r=store.getAll();r.onsuccess=()=>{const row=r.result[0];row.intentHash='0'.repeat(64);store.put(row)};tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});db.close()},databaseName);
+  expect(await page.evaluate(()=>window.checkSnapshot())).toEqual({ok:false,code:'admin-template-photo-whole-copy-storage-inventory-changed'});
+  await other.evaluate(async name=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('actions','readwrite');tx.objectStore('actions').clear();tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});db.close()},databaseName);
+  expect(await page.evaluate(()=>window.checkSnapshot())).toEqual({ok:false,code:'admin-template-photo-whole-copy-storage-inventory-changed'});
 });
