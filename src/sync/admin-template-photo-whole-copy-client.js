@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { canonicalTemplateJson as canonical, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED, TEMPLATE_OPERATION_CAPABILITY, TEMPLATE_COPY_CAPABILITY } from "./admin-template-protocol.js";
 import { ADMIN_TEMPLATE_PHOTO_APPEND_ENABLED, TEMPLATE_PHOTO_APPEND_CAPABILITY } from "./admin-template-photo-append-protocol.js";
 import { ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED, TEMPLATE_PHOTO_CREATE_CAPABILITY } from "./admin-template-photo-create-protocol.js";
@@ -10,7 +11,7 @@ import { prepareAdminTemplatePhotoWholeCopyRecord } from "./admin-template-photo
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 
 const stagePath = "/bike-packing/admin/template-photo-assets/whole-copy", copyPath = stagePath, commandPath = "/bike-packing/admin/template-operations";
-const kind = "admin-template-photo-whole-copy", clone = value => JSON.parse(canonical(value)), same = (a, b) => canonical(a) === canonical(b);
+const kind = "admin-template-photo-whole-copy", clone = value => JSON.parse(canonical(value));
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);

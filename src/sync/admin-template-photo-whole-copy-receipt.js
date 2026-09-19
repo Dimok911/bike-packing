@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { canonicalAccessJson as canonical } from "./personal-access-protocol.js";
 import { adminTemplatePhotoWholeCopyIntent, adminTemplatePhotoWholeCopyStageManifest,
   adminTemplatePhotoWholeCopyStageManifests, adminTemplatePhotoWholeCopyPayload } from "./admin-template-photo-whole-copy-protocol.js";
@@ -8,7 +9,6 @@ const mode = "admin-template-photo-whole-copy", maxReceiptBytes = 4 * 1024 * 102
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const clone = value => JSON.parse(canonical(value));
-const same = (left, right) => canonical(left) === canonical(right);
 const bytes = value => new TextEncoder().encode(canonical(value));
 const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const digest = async value => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes(value))), byte => byte.toString(16).padStart(2, "0")).join("");

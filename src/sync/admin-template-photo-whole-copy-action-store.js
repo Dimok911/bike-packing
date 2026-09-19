@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { canonicalTemplateJson as canonical, validTemplateOperationId } from "./admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 import { ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ENABLED } from "./admin-template-photo-whole-copy-protocol.js";
@@ -5,7 +6,6 @@ import { encodeAdminTemplatePhotoWholeCopyRecord, decodeAdminTemplatePhotoWholeC
 
 const databaseName = "bike-packing-admin-template-photo-whole-copy-actions-v1";
 const clone = value => JSON.parse(canonical(value));
-const same = (a, b) => canonical(a) === canonical(b);
 const blocked = (code, cause) => Object.assign(Error("Сохранённое копирование требует сверки. Исходный выбор сохранён для восстановления."),
   { code: `admin-template-photo-whole-copy-storage-${code}`, cause, isAdminTemplateBlocked: true });
 

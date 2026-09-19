@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { adminTemplateIntent, canonicalTemplateJson, validTemplateOperationId, ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "./admin-template-copy-projection.js";
 import { adminTemplatePhotoSavePlan } from "./admin-template-photo-save-plan.js";
@@ -21,7 +22,6 @@ export { adminTemplatePhotoWholeCopySavePlan } from "./admin-template-photo-whol
 import { withAdminTemplateCapture, assertAdminTemplateCaptureLease } from "./admin-template-capture-lease.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
-const same = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
 const exact = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const paused = () => Object.assign(Error("Сохранение шаблона ожидает продолжения исходного действия."), { code: "admin-template-plan-paused", isAdminTemplateBlocked: true });

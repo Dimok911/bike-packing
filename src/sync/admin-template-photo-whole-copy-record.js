@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { canonicalTemplateJson as canonical, validTemplateOperationId } from "./admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 import { assertAdminTemplatePhotoCopyEditor } from "./admin-template-photo-copy-record.js";
@@ -8,7 +9,6 @@ const kind = "admin-template-photo-whole-copy", collections = ["layouts", "items
 const plain = value => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const clone = value => JSON.parse(canonical(value));
-const same = (a, b) => canonical(a) === canonical(b);
 const id = value => typeof value === "string" && value.length <= 191 && /^[\p{L}\p{N}][\p{L}\p{N}._:-]*$/u.test(value)
   && !["__proto__", "prototype", "constructor"].includes(value);
 const invalid = () => { throw Object.assign(Error("Сохранённое копирование укладки и исходный шаблон требуют сверки."),

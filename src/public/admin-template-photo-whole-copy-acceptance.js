@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "../sync/protocol-json-equality.js";
 import { canonicalTemplateJson as canonical, validTemplateOperationId } from "../sync/admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "../sync/admin-template-photo-record.js";
 import { assertAdminTemplatePhotoWholeCopyPlanRecord } from "../sync/admin-template-photo-whole-copy-save-plan.js";
@@ -6,7 +7,7 @@ import { prepareAdminTemplatePhotoWholeCopyProjection } from "./admin-template-p
 
 export const ADMIN_TEMPLATE_PHOTO_WHOLE_COPY_ACCEPTANCE_PREFIX = "bike-packing-admin-photo-whole-copy-accepted-v1:";
 const kind = "admin-template-photo-whole-copy-accepted", collections = ["layouts", "items", "containers"];
-const copy = value => JSON.parse(canonical(value)), same = (a, b) => canonical(a) === canonical(b);
+const copy = value => JSON.parse(canonical(value));
 const plain = value => value && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (value, keys) => plain(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };

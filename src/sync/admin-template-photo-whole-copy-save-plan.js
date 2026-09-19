@@ -1,3 +1,4 @@
+import { sameProtocolJson as same } from "./protocol-json-equality.js";
 import { canonicalTemplateJson as canonical } from "./admin-template-protocol.js";
 import { adminTemplatePhotoActionBinding } from "./admin-template-photo-record.js";
 import { adminTemplatePhotoWholeCopyIntent, adminTemplatePhotoWholeCopyPayload } from "./admin-template-photo-whole-copy-protocol.js";
@@ -7,7 +8,6 @@ import { personalBusinessPayload } from "./personal-business-payload.js";
 import { stripAdminTemplateEditorMetadata } from "../public/admin-template-causal-save-flow.js";
 
 const clone = value => JSON.parse(canonical(value));
-const same = (a, b) => canonical(a) === canonical(b);
 const exact = (value, keys) => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
