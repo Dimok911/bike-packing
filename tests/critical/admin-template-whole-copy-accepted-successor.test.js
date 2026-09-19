@@ -117,3 +117,19 @@ test("resuming an existing successor still requires acceptance before any client
   const f = await fixture(), input = f.input(); await f.make().capture(input);
   await assert.rejects(f.make({ readWholeCopyAcceptance: null }).run(input.operationId)); assert.deepEqual(f.calls, []);
 });
+
+for (const mutation of ["add", "remove", "replace-ignored", "corrupt-ignored"]) {
+  test(`whole-copy inventory ${mutation} during acceptance blocks successor dispatch`, async () => {
+    const f = await fixture(), input = f.input(), plans = f.make();
+    const otherKey = f.planKey + ":another";
+    if (mutation.endsWith("ignored")) f.values.set(otherKey, JSON.stringify({ plan: { version: 1 } }));
+    f.controlsSuccessor.hook = () => {
+      if (mutation === "remove") f.values.delete(f.planKey);
+      else if (mutation === "corrupt-ignored") f.values.set(otherKey, JSON.stringify({ plan: { version: 10 } }));
+      else f.values.set(otherKey, f.values.get(f.planKey));
+    };
+    await assert.rejects(plans.capture(input));
+    assert.equal([...f.values.keys()].some(key => key.endsWith(input.operationId)), false);
+    assert.deepEqual(f.calls, []);
+  });
+}

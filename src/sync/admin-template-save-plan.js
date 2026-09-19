@@ -227,23 +227,39 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, shou
   // parent cancellation releases its source only; generic UUID exclusions and
   // cancelled target reuse never grant permission.
   const assertNoWholeCopyPlan = async (successor, check) => {
+    // Cache only the classification of exact immutable bytes within this proof.
+    // Every guard still enumerates storage and reads every current value, so a
+    // changed, added or removed plan is observed at the same boundaries.
+    const classified = new Map();
     const scan = () => {
       const found = [];
       for (let index = 0; index < storage.length; index++) {
         const name = storage.key(index);
         if (!name?.startsWith("bike-packing-admin-save-plans-v1:")) continue;
-        const raw = storage.getItem(name), saved = JSON.parse(raw), plan = saved?.plan;
-        if (plan?.version !== 10) continue;
-        validatePlan(plan);
-        const source = plan.operations[0].body.source;
-        if (plan.binding.actorId === binding.actorId && plan.binding.environment === binding.environment
-          && (same(plan.binding, binding) || source.listId === binding.listId && source.itemKey === binding.itemKey)) found.push([name, raw]);
+        const raw = storage.getItem(name);
+        let entry = classified.get(name);
+        if (!entry || entry.raw !== raw) {
+          const plan = JSON.parse(raw)?.plan;
+          let relevant = false;
+          if (plan?.version === 10) {
+            validatePlan(plan);
+            const source = plan.operations[0].body.source;
+            relevant = plan.binding.actorId === binding.actorId && plan.binding.environment === binding.environment
+              && (same(plan.binding, binding) || source.listId === binding.listId && source.itemKey === binding.itemKey);
+          }
+          entry = { raw, relevant };
+          classified.set(name, entry);
+        }
+        if (entry.relevant) found.push([name, raw]);
       }
       return found.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
     };
     check(); const retained = scan(), guards = [];
     const retainedGuard = () => {
-      check(); if (!same(scan(), retained)) throw paused();
+      check();
+      const observed = scan();
+      if (observed.length !== retained.length
+        || observed.some(([name, raw], index) => name !== retained[index][0] || raw !== retained[index][1])) throw paused();
     };
     const current = () => {
       retainedGuard();
