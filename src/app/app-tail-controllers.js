@@ -412,6 +412,8 @@ export function createAppTailControllers(ctx) {
   } = ctx;
 
   const preparationDialog = createPreparationDialogController({
+    renderThumbnail: (item) => pickerListThumbnailHtml(item, { enabled: true, photoObjectUrls }),
+    hydratePhotos: (root) => hydrateItemPhotos(root, { photoObjectUrls, photoPreviewLoader }).catch(() => null),
     getContext: () => {
       const layout = state.layouts?.[state.activeLayoutId];
       if (!layout || isSharedLayoutView() || isPublicLayoutContext()) return null;
@@ -439,6 +441,12 @@ export function createAppTailControllers(ctx) {
     const required = inLayout ? getLayoutItemQuantityForState(state, state.activeLayoutId, item.id) : 0;
     return renderPreparationBadges({
       missing: Math.max(0, required - itemStockQuantity(item)),
+      buyHint: t("preparation.buyHint", {
+        layout: state.layouts?.[state.activeLayoutId]?.name || "",
+        required,
+        available: itemStockQuantity(item),
+        missing: Math.max(0, required - itemStockQuantity(item))
+      }),
       repair: itemNeedsPreparation(item, "repair", dictionaryValueLabel),
       charge: itemNeedsPreparation(item, "charge", dictionaryValueLabel)
     }, t);
