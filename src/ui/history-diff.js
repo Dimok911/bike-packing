@@ -80,6 +80,7 @@ function historyFieldDefinitions(type, localText = historyRuText) {
       name: localText("Name", "Название"),
       weight: localText("Weight", "Вес"),
       quantity: localText("Quantity", "Количество"),
+      stockQuantity: localText("In stock", "В наличии"),
       color: localText("Color", "Цвет"),
       dimensions: localText("Dimensions", "Размеры"),
       location: localText("Storage location", "Место хранения"),

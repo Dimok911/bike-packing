@@ -1,0 +1,136 @@
+import { expect, test } from "@playwright/test";
+import { createEmptyLayout, createGuestWorkspace, openApp, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
+
+test("an empty layout only shows the invitation on desktop and mobile", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  await openApp(page);
+  await createEmptyLayout(page, "Пустая укладка");
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const invitation = page.locator("#packingView .packing-empty-state");
+    const actions = page.locator("#packingView .preparation-actions");
+    await expect(invitation).toBeVisible();
+    await expect(actions).toHaveCount(0);
+    const invitationBox = await invitation.boundingBox();
+    expect(invitationBox.x + invitationBox.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `test-results/inventory-empty-${width}.png` });
+  }
+});
+
+test("a fresh user has both built-in categories without automatically marking new items", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  const { item } = await createGuestWorkspace(page, { layoutName: "Новая укладка", containerName: "Новая сумка", itemName: "Фонарь" });
+  await expect(page.locator('[data-preparation-action="repair"] strong')).toHaveText("0");
+  await expect(page.locator('[data-preparation-action="charge"] strong')).toHaveText("0");
+  await item.locator(".item-title-hitarea").click();
+  const repair = page.locator("#itemCategoryList").getByRole("checkbox", { name: "Нужна починка", exact: true });
+  const charge = page.locator("#itemCategoryList").getByRole("checkbox", { name: "Требует заряда", exact: true });
+  await expect(repair).not.toBeChecked();
+  await expect(charge).not.toBeChecked();
+  await repair.check();
+  await charge.check();
+  await expect(page.locator("#itemAvailabilityStatus")).toHaveValue("available");
+  await page.locator("#saveItemBtn").click();
+  await expect(item.locator(".preparation-repair")).toBeVisible();
+  await expect(item.locator(".preparation-charge")).toBeVisible();
+  await page.locator('.tab[data-view="settings"]').click();
+  await expect(page.locator(".dictionary-chip-builtin")).toHaveCount(2);
+  await expect(page.locator(".dictionary-chip-builtin button")).toHaveCount(0);
+  await page.reload();
+  await waitForApp(page);
+  await page.locator('.tab[data-view="settings"]').click();
+  await expect(page.locator(".dictionary-chip-builtin")).toHaveCount(2);
+});
+
+test("dragging the first bag pushes the empty invitation right and then reveals preparation actions", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  await createGuestWorkspace(page, { layoutName: "Исходная укладка", containerName: "Сумка для переноса", itemName: "Вещь" });
+  await createEmptyLayout(page, "Пустая цель");
+  await page.locator('.tab[data-view="bags"]').click();
+  const handle = page.locator("[data-root-drag] .root-container-title").filter({ hasText: "Сумка для переноса" });
+  const sourceBox = await handle.boundingBox();
+  const packingTab = page.locator('.tab[data-view="packing"]');
+  const tabBox = await packingTab.boundingBox();
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2, { steps: 12 });
+  const invitation = page.locator("#packingView .packing-empty-state");
+  await expect(invitation).toBeVisible();
+  const before = await invitation.boundingBox();
+  await page.mouse.move(before.x + 45, before.y + 45, { steps: 6 });
+  const placeholder = page.locator("#packingView .board > .column-placeholder");
+  await expect(placeholder).toBeVisible();
+  const placeholderBox = await placeholder.boundingBox();
+  const during = await invitation.boundingBox();
+  expect(during.x).toBeGreaterThan(before.x + 200);
+  expect(during.x).toBeGreaterThanOrEqual(placeholderBox.x + placeholderBox.width);
+  await expect(page.locator("#packingView .preparation-actions")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/inventory-first-bag-drag.png" });
+  await page.mouse.up();
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(1);
+  await expect(invitation).toHaveCount(0);
+  await expect(page.locator("#packingView .preparation-actions")).toBeVisible();
+  const addBox = await page.locator("#packingView .packing-add-root-card").boundingBox();
+  const actionsBox = await page.locator("#packingView .preparation-actions").boundingBox();
+  expect(actionsBox.width).toBeCloseTo(addBox.width, 0);
+  expect(actionsBox.y).toBeGreaterThanOrEqual(addBox.y + addBox.height + 8);
+});
+
+test("stock, three preparation lists and purchases stay independent of the packing plan", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const { item } = await createGuestWorkspace(page, { layoutName: "Поход с запасами", containerName: "Провизия", itemName: "Каша гречневая", quantity: "7", weight: "100" });
+  await expect(item.locator(".preparation-buy")).toHaveText("Докупить: 6 шт.");
+  await item.locator(".item-title-hitarea").click();
+  await page.locator("#itemStockQuantity").fill("3");
+  await page.locator("#itemNeedsRepair").check();
+  await page.locator("#itemNeedsCharge").check();
+  await page.locator("#saveItemBtn").click();
+  await expect(item.locator(".preparation-buy")).toHaveText("Докупить: 4 шт.");
+  await page.screenshot({ path: "test-results/inventory-desktop.png" });
+  for (const action of ["buy", "repair", "charge"]) {
+    await expect(page.locator(`[data-preparation-action="${action}"] strong`)).toHaveText("1");
+    await page.locator(`[data-preparation-action="${action}"]`).click();
+    await expect(page.locator("#preparationDialog [data-preparation-item]")).toHaveCount(1);
+    await expect(page.locator("#preparationDialog")).toContainText("Каша гречневая");
+    await page.locator("[data-preparation-close]").click();
+  }
+  await page.locator('[data-preparation-action="buy"]').click();
+  await page.locator("[data-purchase-item] input").fill("2");
+  await page.locator("[data-purchase-item] button").click();
+  await expect(page.locator(".preparation-shortage strong")).toHaveText("2");
+  await page.locator("[data-purchase-item] button").click();
+  await expect(page.locator("#preparationDialog")).toContainText("Всего хватает");
+  await page.locator("[data-preparation-close]").click();
+  await expect(page.locator('[data-preparation-action="buy"] strong')).toHaveText("0");
+  await item.locator(".item-title-hitarea").click();
+  await expect(page.locator("#itemQuantity")).toHaveValue("7");
+  await expect(page.locator("#itemStockQuantity")).toHaveValue("7");
+  await page.locator("#itemNeedsRepair").uncheck();
+  await page.locator("#itemNeedsCharge").uncheck();
+  await page.locator("#saveItemBtn").click();
+  await expect(page.locator('[data-preparation-action="repair"] strong')).toHaveText("0");
+  await expect(page.locator('[data-preparation-action="charge"] strong')).toHaveText("0");
+  await page.locator('.tab[data-view="items"]').click();
+  const stock = page.locator("[data-stock-input]");
+  await expect(stock).toHaveValue("7");
+  await stock.fill("0");
+  await stock.press("Tab");
+  await expect(page.locator("#itemsView .preparation-buy")).toHaveText("Докупить: 7 шт.");
+  await page.screenshot({ path: "test-results/inventory-items.png" });
+  await page.reload();
+  await waitForApp(page);
+  await page.locator('.tab[data-view="items"]').click();
+  await expect(page.locator("[data-stock-input]")).toHaveValue("0");
+  await page.locator('[data-stock-step="1"]').click();
+  await expect(page.locator("[data-stock-input]")).toHaveValue("1");
+  await page.locator('.tab[data-view="packing"]').click();
+  await expect(item.locator(".preparation-buy")).toHaveText("Докупить: 6 шт.");
+  await expect(item).toContainText("700");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-preparation-action="buy"]').click();
+  await expect(page.locator("#preparationDialog")).toBeVisible();
+  await page.screenshot({ path: "test-results/inventory-mobile.png" });
+  expect(errors).toEqual([]);
+});

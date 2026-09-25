@@ -1,4 +1,6 @@
 import { containerCategories, itemCategories } from "./normalize.js";
+import { isLegacyPurchaseLocation } from "./item-stock.js";
+import { isBuiltinCategory, withBuiltinCategories } from "./builtin-categories.js";
 import { collectPublicLayoutRecordIds, isPublicLayoutRecord } from "./public-layout-scope.js";
 
 const PUBLIC_DICTIONARY_CLEANUP_VERSION = "public-dictionaries-v1";
@@ -213,6 +215,7 @@ export function addCustomDictionaryValue(owner, type, value) {
 
 export function removeCustomDictionaryValue(owner, type, value) {
   if (!owner) return owner;
+  if (type === "category" && isBuiltinCategory(value)) return owner;
   setCustomDictionaryValues(owner, type, customDictionaryValues(owner, type).filter((item) => item !== value));
   setLegacyDictionaryValues(owner, type, legacyDictionaryValues(owner, type).filter((item) => item !== value));
   return owner;
@@ -220,6 +223,7 @@ export function removeCustomDictionaryValue(owner, type, value) {
 
 export function renameCustomDictionaryValue(owner, type, oldValue, newValue) {
   if (!owner) return owner;
+  if (type === "category" && isBuiltinCategory(oldValue)) return owner;
   const normalizedNewValue = normalizeDictionaryValues([newValue])[0];
   if (!normalizedNewValue) return owner;
   const customValues = customDictionaryValues(owner, type).map((item) => item === oldValue ? normalizedNewValue : item);
@@ -313,7 +317,8 @@ export function readOnlyLayoutDictionaries(layout, {
 
 export function dictionaryOptionsForUi(type, activeValues, { selected = [] } = {}) {
   const selectedValues = Array.isArray(selected) ? selected : [...selected || []];
-  return normalizeDictionaryValues(activeValues, selectedValues);
+  const values = normalizeDictionaryValues(activeValues, selectedValues);
+  return type === "category" ? withBuiltinCategories(values) : values.filter((value) => !isLegacyPurchaseLocation(value));
 }
 
 export function sortDictionaryValues(values, sortMode = "none", locale = "ru") {

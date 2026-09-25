@@ -54,6 +54,16 @@ test("CRITICAL root column drag: the final placeholder stays before the add-root
   assert.equal(getPackingRootPlaceholderBefore(board, rootCard), rootCard);
 });
 
+test("root drag inserts before the empty invitation and the preparation actions column", () => {
+  for (const className of ["board-empty", "packing-actions-column"]) {
+    const trailingPanel = { classList: { contains: (value) => value === className } };
+    const existingRoot = { hasAttribute: () => false };
+    assert.equal(getPackingRootPlaceholderBefore({ children: [trailingPanel] }), trailingPanel);
+    assert.equal(getPackingRootPlaceholderBefore({ children: [existingRoot, trailingPanel] }), trailingPanel);
+    assert.equal(getPackingRootPlaceholderBefore({ children: [existingRoot, trailingPanel] }, existingRoot), existingRoot);
+  }
+});
+
 test("CRITICAL container drag: a nested package target shows the localized nesting action", () => {
   const html = renderSubcontainerSectionHtml({
     collapsed: false,

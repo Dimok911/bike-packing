@@ -195,6 +195,7 @@ export function renderSubcontainerSectionHtml({
 }
 
 export function renderPackingItemCardHtml({
+  preparationHtml = "",
   categoriesHtml,
   collection,
   filterMatch,
@@ -237,6 +238,7 @@ export function renderPackingItemCardHtml({
         </button>
         ${availabilityBadge}
       </div>
+      ${preparationHtml}
       ${renderSearchNoteMatchBadge(item, searchQuery, t, { editAttribute: "data-note-match-open" })}
       <div class="meta ${labelsVisible ? "" : "meta-hidden"}">
         <span class="pill">${weightHtml}</span>
