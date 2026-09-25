@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createEmptyLayout, createGuestWorkspace, openApp, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
+import { createEmptyLayout, createGuestWorkspace, createItemInContainer, openApp, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
 
 test("an empty layout only shows the invitation on desktop and mobile", async ({ page }) => {
   await prepareIsolatedRussianGuest(page);
@@ -76,11 +76,51 @@ test("dragging the first bag pushes the empty invitation right and then reveals 
   expect(actionsBox.y).toBeGreaterThanOrEqual(addBox.y + addBox.height + 8);
 });
 
+test("catalog stock controls and purchase badges align for one-, two- and three-line names", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const { container } = await createGuestWorkspace(page, { layoutName: "Ровные карточки", containerName: "Еда", itemName: "Чай", quantity: "2" });
+  await createItemInContainer(page, container, "Шоколадка Марс", { quantity: "2" });
+  await createItemInContainer(page, container, "Каша гречневая с говядиной", { quantity: "2" });
+  await page.locator('.tab[data-view="items"]').click();
+  const cards = page.locator("#itemsView [data-list-item-id]");
+  await expect(cards).toHaveCount(3);
+  const boxes = await cards.evaluateAll((entries) => entries.map((card) => {
+    const bounds = (selector) => {
+      const box = card.querySelector(selector).getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+    };
+    return { stock: bounds(".item-stock-control"), badge: bounds(".preparation-buy"), photo: bounds(".item-photo"), card: card.getBoundingClientRect().toJSON() };
+  }));
+  for (const box of boxes) {
+    expect(box.stock.top).toBeCloseTo(boxes[0].stock.top, 0);
+    expect(box.badge.top).toBeCloseTo(boxes[0].badge.top, 0);
+    expect(box.stock.bottom + 4).toBeLessThanOrEqual(box.photo.top);
+    expect(box.badge.top).toBeGreaterThan(box.photo.top);
+    expect(box.badge.bottom).toBeLessThan(box.photo.bottom);
+    expect(box.stock.right).toBeLessThan(box.card.right);
+  }
+  await page.screenshot({ path: "test-results/inventory-aligned-cards.png" });
+});
+
 test("stock, three preparation lists and purchases stay independent of the packing plan", async ({ page }) => {
   await prepareIsolatedRussianGuest(page);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const { item } = await createGuestWorkspace(page, { layoutName: "Поход с запасами", containerName: "Провизия", itemName: "Каша гречневая", quantity: "7", weight: "100" });
+  await page.route("**/e2e-preparation-photo.png*", (route) => route.fulfill({
+    status: 200, contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")
+  }));
+  await page.evaluate(() => {
+    const key = "bike-packing-prototype-state-v1";
+    const state = JSON.parse(localStorage.getItem(key));
+    const record = Object.values(state.items).find((entry) => entry.name === "Каша гречневая");
+    record.photos = [{ id: "preparation-photo", url: `${location.origin}/e2e-preparation-photo.png`, thumbUrl: `${location.origin}/e2e-preparation-photo.png` }];
+    localStorage.setItem(key, JSON.stringify(state));
+  });
+  await page.reload();
+  await waitForApp(page);
   await expect(item.locator(".preparation-buy")).toHaveText("Докупить: 6 шт.");
   await item.locator(".item-title-hitarea").click();
   await page.locator("#itemStockQuantity").fill("3");
@@ -94,7 +134,15 @@ test("stock, three preparation lists and purchases stay independent of the packi
     await page.locator(`[data-preparation-action="${action}"]`).click();
     await expect(page.locator("#preparationDialog [data-preparation-item]")).toHaveCount(1);
     await expect(page.locator("#preparationDialog")).toContainText("Каша гречневая");
-    await page.locator("[data-preparation-close]").click();
+    const photo = page.locator("#preparationDialog .picker-list-thumbnail img");
+    await expect(photo).toBeVisible();
+    await expect.poll(() => photo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+    await photo.click();
+    await expect(page.locator("#preparationDialog")).not.toBeVisible();
+    await expect(page.locator("#itemDialog")).toBeVisible();
+    await expect(page.locator("#itemName")).toHaveValue("Каша гречневая");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#itemDialog")).not.toBeVisible();
   }
   await page.locator('[data-preparation-action="buy"]').click();
   await page.locator("[data-purchase-item] input").fill("2");
@@ -118,6 +166,7 @@ test("stock, three preparation lists and purchases stay independent of the packi
   await stock.fill("0");
   await stock.press("Tab");
   await expect(page.locator("#itemsView .preparation-buy")).toHaveText("Докупить: 7 шт.");
+  await expect(page.locator("#itemsView .preparation-buy")).toHaveAttribute("title", "Для укладки «Поход с запасами» нужно 7 шт., в наличии 0 шт. Не хватает 7 шт.");
   await page.screenshot({ path: "test-results/inventory-items.png" });
   await page.reload();
   await waitForApp(page);

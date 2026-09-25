@@ -11,9 +11,9 @@ export function renderPreparationButtons(tasks, t) {
   </div>`;
 }
 
-export function renderPreparationBadges({ missing = 0, repair = false, charge = false }, t) {
+export function renderPreparationBadges({ missing = 0, buyHint = "", repair = false, charge = false }, t) {
   return `<div class="preparation-badges">${[
-    missing > 0 ? `<span class="preparation-badge preparation-buy">${escapeHtml(t("preparation.missing", { count: missing }))}</span>` : "",
+    missing > 0 ? `<span class="preparation-badge preparation-buy"${buyHint ? ` title="${escapeHtml(buyHint)}" aria-label="${escapeHtml(buyHint)}"` : ""}>${escapeHtml(t("preparation.missing", { count: missing }))}</span>` : "",
     repair ? `<span class="preparation-badge preparation-repair">${escapeHtml(t("preparation.repair"))}</span>` : "",
     charge ? `<span class="preparation-badge preparation-charge">${escapeHtml(t("preparation.charge"))}</span>` : ""
   ].join("")}</div>`;
@@ -31,7 +31,7 @@ export function renderStockControl(item, t) {
   </div>`;
 }
 
-export function createPreparationDialogController({ getContext, openDialog, openItem, purchase, t }) {
+export function createPreparationDialogController({ getContext, openDialog, openItem, purchase, renderThumbnail, hydratePhotos, t }) {
   let dialog;
   let activeAction = "buy";
   let layoutId = "";
@@ -48,7 +48,10 @@ export function createPreparationDialogController({ getContext, openDialog, open
     dialog.querySelector("[data-preparation-layout]").textContent = context.layout.name;
     dialog.querySelector("[data-preparation-list]").innerHTML = rows.length ? rows.map(({ item, required, available, missing }) => `
       <article class="preparation-row" data-preparation-item="${escapeHtml(item.id)}">
-        <button type="button" class="ghost preparation-item-name" data-preparation-edit="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>
+        <button type="button" class="add-item-result with-thumbnail preparation-item-name" data-preparation-edit="${escapeHtml(item.id)}">
+          ${renderThumbnail(item)}
+          <span class="picker-list-result-copy"><strong>${escapeHtml(item.name)}</strong></span>
+        </button>
         ${activeAction === "buy" ? `
           <div class="preparation-quantities">
             <span>${escapeHtml(t("preparation.required"))}<strong>${required}</strong></span>
@@ -60,6 +63,7 @@ export function createPreparationDialogController({ getContext, openDialog, open
             <button type="submit">${escapeHtml(t("preparation.purchased"))}</button>
           </form>` : `<small>${escapeHtml(t("preparation.editHint"))}</small>`}
       </article>`).join("") : `<p class="preparation-empty" role="status">${escapeHtml(t(`preparation.empty.${activeAction}`))}</p>`;
+    hydratePhotos(dialog.querySelector("[data-preparation-list]"));
     dialog.querySelectorAll("[data-preparation-edit]").forEach((button) => button.addEventListener("click", () => {
       dialog.close();
       openItem(button.dataset.preparationEdit);

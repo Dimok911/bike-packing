@@ -10023,6 +10023,38 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 .item-stock-control { margin: 8px 0; }
 .item-stock-control .quantity-stepper { grid-template-columns: 30px 52px 30px; }
 .item-stock-control input { margin: 0; min-height: 36px; }
+@media (min-width: 721px) {
+  .items-list .item-card:has(.item-stock-control) {
+    position: relative;
+    height: auto;
+    min-height: 160px;
+  }
+  .items-list .item-card:has(.item-stock-control) .item-title {
+    min-height: 3.75em;
+    max-height: 3.75em;
+    line-height: 1.25;
+  }
+  .items-list .item-card:has(.item-stock-control) .meta {
+    height: 22px;
+    max-height: 22px;
+  }
+  .items-list .item-stock-control { margin: 4px 0 0; flex-wrap: nowrap; }
+  .items-list.with-photo-slots .item-card:has(.item-stock-control) {
+    --photo-top-row-height: 144px;
+    height: calc(var(--photo-top-row-height) + var(--photo-frame-height) + 23px);
+    min-height: 0;
+  }
+  .items-list.with-photo-slots .item-card:has(.item-stock-control) .preparation-badges {
+    position: absolute;
+    z-index: 4;
+    top: calc(var(--photo-top-row-height) + 20px);
+    left: 16px;
+    right: 16px;
+    margin: 0;
+    pointer-events: none;
+  }
+  .items-list.with-photo-slots .preparation-badge { pointer-events: auto; }
+}
 .item-preparation-fields { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .item-preparation-fields label { display: flex; align-items: center; gap: 6px; }
 .item-preparation-fields input { width: auto; margin: 0; }
@@ -10031,7 +10063,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 .preparation-layout-name { color: var(--muted); margin: 0; overflow-wrap: anywhere; }
 .preparation-list { display: grid; gap: 12px; }
 .preparation-row { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
-.preparation-item-name { white-space: normal; text-align: left; overflow-wrap: anywhere; justify-self: start; }
+.preparation-item-name { width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .preparation-row > small { color: var(--muted); }
 .preparation-quantities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .preparation-quantities span { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
