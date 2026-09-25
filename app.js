@@ -1,3 +1,4 @@
+import { isBuiltinCategory, builtinCategoryAction } from "./src/state/builtin-categories.js";
 import {
   STORAGE_KEY,
   APP_VERSION,
@@ -2302,6 +2303,7 @@ function localText(en, ru) {
 }
 
 function dictionaryValueLabel(value) {
+  if (isBuiltinCategory(value)) return t(`preparation.${builtinCategoryAction(value)}Label`);
   return value;
 }
 
@@ -5921,7 +5923,7 @@ function requireUsageCapacity(name, add = 1) {
   const current = {
     items: Object.keys(state.items || {}).length,
     containers: Object.keys(state.containers || {}).length,
-    categories: dictionaryOptionsForOwner("category", activeDictionaryOwner()).length,
+    categories: dictionaryOptionsForOwner("category", activeDictionaryOwner()).filter((value) => !isBuiltinCategory(value)).length,
     locations: dictionaryOptionsForOwner("location", activeDictionaryOwner()).length
   }[name] || 0;
   const limit = currentUsageLimit(name);

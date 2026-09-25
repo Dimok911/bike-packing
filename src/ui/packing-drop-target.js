@@ -18,7 +18,9 @@ export function getPackingEntryAfterPointer(zone, pointerY, placeholder = null) 
 export function getPackingRootPlaceholderBefore(board, beforeNode = null) {
   if (beforeNode) return beforeNode;
   return [...(board?.children || [])].find((child) =>
-    child?.hasAttribute?.("data-add-packing-root")
+    child?.hasAttribute?.("data-add-packing-root") ||
+    child?.classList?.contains?.("packing-actions-column") ||
+    child?.classList?.contains?.("board-empty")
   ) || null;
 }
 

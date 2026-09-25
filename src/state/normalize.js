@@ -2,6 +2,7 @@ import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
 import { hasContainerDimensions, normalizeContainerColor, normalizeContainerDimensions } from "./container-fields.js";
 import { normalizeItemPhotos } from "./item-photos.js";
 import { parseWeightInput } from "../utils/weight.js";
+import { itemStockQuantity, migrateLegacyPurchaseLocations } from "./item-stock.js";
 
 export function defaultRootContainerLocation(targetState) {
   const list = Array.isArray(targetState.locations) ? targetState.locations : [];
@@ -48,9 +49,11 @@ export function normalizeItemQuantity(value) {
 }
 
 export function normalizeItemFields(targetState) {
+  migrateLegacyPurchaseLocations(targetState);
   Object.values(targetState.items || {}).forEach((item) => {
     item.weight = parseWeightInput(item.weight);
     item.quantity = normalizeItemQuantity(item.quantity);
+    item.stockQuantity = itemStockQuantity(item);
     item.color = normalizeContainerColor(item.color);
     const dimensions = normalizeContainerDimensions(item.dimensions);
     if (hasContainerDimensions(dimensions)) item.dimensions = dimensions;

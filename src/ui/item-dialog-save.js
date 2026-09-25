@@ -1,3 +1,5 @@
+import { normalizeStockQuantity } from "../state/item-stock.js";
+
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
 export function itemDialogContainerPickerMode(editingItemId = "") {
@@ -166,6 +168,7 @@ export function saveItemDialogAction({
     item.name = name;
     item.weight = parseWeightInput(refs.itemWeight.value);
     item.quantity = 1;
+    if (refs.itemStockQuantity && !refs.itemStockQuantity.disabled) item.stockQuantity = normalizeStockQuantity(refs.itemStockQuantity.value);
     item.color = normalizeItemColor(refs.itemColor?.value);
     applyItemDimensions(item, dimensions);
     item.location = refs.itemLocation.value;
@@ -216,6 +219,7 @@ export function saveItemDialogAction({
       name,
       weight: parseWeightInput(refs.itemWeight.value),
       quantity: 1,
+      stockQuantity: normalizeStockQuantity(refs.itemStockQuantity?.value),
       color: normalizeItemColor(refs.itemColor?.value),
       ...(hasItemDimensions(dimensions) ? { dimensions } : {}),
       location: refs.itemLocation.value,

@@ -1,4 +1,5 @@
 import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
+import { stripPrivateInventory } from "../state/item-stock.js";
 
 export function exportLayoutAsPublishedState(targetState, layoutId, {
   clone,
@@ -36,7 +37,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     if (!item) return "";
     const nextItemId = mapItemId(itemId);
     if (items[nextItemId]) return nextItemId;
-    items[nextItemId] = clone(item);
+    items[nextItemId] = stripPrivateInventory(clone(item));
     items[nextItemId].id = nextItemId;
     items[nextItemId].quantity = Math.max(1, Math.round(Number(layout.arrangement?.itemQuantities?.[itemId] ?? item.quantity) || 1));
     items[nextItemId].containerId = containerId;

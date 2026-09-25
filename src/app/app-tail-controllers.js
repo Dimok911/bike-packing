@@ -1,3 +1,7 @@
+import { itemStockQuantity, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
+import { layoutPreparation, itemNeedsPreparation, preparationCategoryMatches } from "../state/layout-preparation.js";
+import { isBuiltinCategory } from "../state/builtin-categories.js";
+import { renderPreparationButtons, renderPreparationBadges, renderStockControl, createPreparationDialogController, bindStockField } from "../ui/layout-preparation.js";
 import {
   applyPhotoPrimaryButtonState,
   photoPrimaryButtonState,
@@ -406,6 +410,45 @@ export function createAppTailControllers(ctx) {
     userStorageScopeKey, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
+
+  const preparationDialog = createPreparationDialogController({
+    getContext: () => {
+      const layout = state.layouts?.[state.activeLayoutId];
+      if (!layout || isSharedLayoutView() || isPublicLayoutContext()) return null;
+      return { layout, tasks: layoutPreparation(state, layout, dictionaryValueLabel) };
+    },
+    openDialog: openModalDialog,
+    openItem: (id) => openItemDialog(id),
+    purchase: (id, value, layoutId) => {
+      if (isSharedLayoutView() || isPublicLayoutContext() || state.activeLayoutId !== layoutId) return;
+      if (!layoutPreparation(state, layoutId).buy.some(({ item }) => item.id === id)) return;
+      if (addPurchasedStock(state.items[id], value)) saveInventoryChange(id);
+    },
+    t
+  });
+
+  function saveInventoryChange(id) {
+    capturePackingScroll();
+    touchItem(id, nowIso());
+    saveState();
+    render();
+  }
+
+  function preparationBadgesForItem(item, { inLayout = true } = {}) {
+    if (isSharedLayoutView() || isPublicLayoutContext()) return "";
+    const required = inLayout ? getLayoutItemQuantityForState(state, state.activeLayoutId, item.id) : 0;
+    return renderPreparationBadges({
+      missing: Math.max(0, required - itemStockQuantity(item)),
+      repair: itemNeedsPreparation(item, "repair", dictionaryValueLabel),
+      charge: itemNeedsPreparation(item, "charge", dictionaryValueLabel)
+    }, t);
+  }
+
+  function bindPreparationActions(root) {
+    root.querySelectorAll("[data-preparation-action]").forEach((button) => {
+      button.addEventListener("click", () => preparationDialog.open(button.dataset.preparationAction));
+    });
+  }
 
   const itemNoteSearchNavigator = createNoteSearchNavigator({
     container: refs.itemNoteSearchNav,
@@ -1141,8 +1184,8 @@ function applyRootContainerDialogPlacement() {
   return true;
 }
 
-function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
-  const layoutId = getLayoutRootTargetLayoutId();
+function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true, targetLayoutId = "" } = {}) {
+  const layoutId = targetLayoutId || getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
   if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
     includeContents: !pendingCopyTargetContainerSetup,
@@ -1403,7 +1446,8 @@ function renderCategoryPicker(target, selected = null, {
     });
     return;
   }
-  if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
+  const fallbackCategory = categoryOptions.find((category) => !isBuiltinCategory(category));
+  if (fallbackDefault && !selectedSet.size && fallbackCategory) selectedSet.add(fallbackCategory);
   target.innerHTML = categoryOptions.map((category) => {
     const id = `${idPrefix}-${cssSafeId(category)}`;
     return renderCategorySearchOption({
@@ -3171,6 +3215,7 @@ function renderSharedSummary() {
 }
 
 function renderPacking() {
+  preparationDialog.refresh();
   const photoRenderState = capturePackingPhotoRenderState(refs.packingView);
   const activatePhotoGalleries = () => restoreAndBindPackingPhotoGalleries(
     refs.packingView,
@@ -3270,7 +3315,15 @@ function renderPacking() {
         text: t("packing.addRootText")
       })
     : "";
-  const boardHtml = columns.length ? `${columns.join("")}${addRootHtml}` : emptyHtml;
+  const preparationHtml = rootIds.length > 0 && !isPublicLayoutContext()
+    ? renderPreparationButtons(layoutPreparation(state, layout, dictionaryValueLabel), t)
+    : "";
+  const actionsHtml = addRootHtml || preparationHtml
+    ? `<aside class="packing-actions-column">${addRootHtml}${preparationHtml}</aside>`
+    : "";
+  const boardHtml = columns.length
+    ? `${columns.join("")}${actionsHtml}`
+    : `${emptyHtml}${actionsHtml}`;
   refs.packingView.innerHTML = `
     ${renderPackingRootHeaderRow(visibleRootIds, { filtered: hasActiveContentFilter() && !isFilterContextActive() })}
     <div class="board">${boardHtml}</div>
@@ -3278,6 +3331,7 @@ function renderPacking() {
   activatePhotoGalleries();
   bindEmptyContentFilterReset(refs.packingView);
   bindPackingEvents(refs.packingView);
+  bindPreparationActions(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
@@ -3295,7 +3349,9 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
   }
   renderBike3dPackingView({
     target: refs.packingView,
-    beforeHtml,
+    beforeHtml: rootIds.length > 0 && !shared && !isPublicLayoutContext()
+      ? `${beforeHtml}<div class="preparation-bike3d-actions">${renderPreparationButtons(layoutPreparation(state, layout, dictionaryValueLabel), t)}</div>`
+      : beforeHtml,
     rootIds,
     containers: state.containers,
     selectedContainerId: runtime.selectedBike3dContainerId,
@@ -3317,6 +3373,7 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
   });
   if (shared) bindSharedVirtualEvents(refs.packingView);
   else bindPackingEvents(refs.packingView.querySelector(".bike3d-detail") || refs.packingView);
+  if (!shared) bindPreparationActions(refs.packingView);
   const scrollHost = getPackingScrollHost();
   restorePendingPackingScroll(scrollHost);
   bindFixedScrollbar(scrollHost);
@@ -4030,6 +4087,7 @@ function renderItemCard(item) {
     : `<strong class="item-title">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
   const titleDragAttr = isEditingTitle ? "" : ` data-item-drag="${item.id}"`;
   return renderPackingItemCardHtml({
+    preparationHtml: preparationBadgesForItem(item),
     categoriesHtml: itemCategories(item).map((category) => `<span class="pill">${highlight(dictionaryValueLabel(category))}</span>`).join(""),
     collection,
     filterMatch,
@@ -4327,6 +4385,26 @@ function renderItems() {
     t
   });
   syncNewEntityFormDraftCatalogCards();
+  refs.itemsView.querySelectorAll("[data-stock-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (isSharedLayoutView() || isPublicLayoutContext()) return;
+      const id = button.dataset.stockItem;
+      const item = state.items[id];
+      if (setItemStockQuantity(item, Math.max(0, itemStockQuantity(item) + Number(button.dataset.stockStep)))) saveInventoryChange(id);
+    });
+  });
+  refs.itemsView.querySelectorAll("[data-stock-input]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (isSharedLayoutView() || isPublicLayoutContext()) return;
+      const id = input.dataset.stockInput;
+      if (!input.value || !input.reportValidity()) {
+        input.value = itemStockQuantity(state.items[id]);
+        return;
+      }
+      if (setItemStockQuantity(state.items[id], input.value)) saveInventoryChange(id);
+    });
+    input.addEventListener("keydown", (event) => { if (event.key === "Enter") input.blur(); });
+  });
   bindCatalogBackToTop(refs.itemsView);
   bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
@@ -4404,6 +4482,8 @@ function renderListItem(item) {
       : `<div class="item-photo item-photo-empty" aria-hidden="true">${t("labels.noPhoto")}</div>`
     : "";
   return renderListItemHtml({
+    stockHtml: isSharedLayoutView() || isPublicLayoutContext() ? "" : renderStockControl(item, t),
+    preparationHtml: preparationBadgesForItem(item, { inLayout: inCurrentLayout }),
     categories: itemCategories(item),
     filterMatch,
     highlightText: highlight,
@@ -4779,7 +4859,8 @@ function cleanupLayoutDropState(list, placeholder) {
 
 function bindSettingsPointerDrag() {
   bindSettingsPointerDragUi({
-    addRootContainerToActiveLayout,
+    addRootContainerToActiveLayout: (containerId, targetIndex, options = {}) =>
+      addRootContainerToActiveLayout(containerId, targetIndex, { ...options, targetLayoutId: state.activeLayoutId }),
     canNestContainer: (containerId) => state.containers?.[containerId]?.nestable === true,
     cleanupLayoutDropState,
     createPackingEdgeScroller: (...args) => getPackingDragController().createBoardEdgeScroller(...args),
@@ -5625,6 +5706,7 @@ function newItemFormDraftFields() {
     name: refs.itemName?.value || "",
     weight: refs.itemWeight?.value || "",
     quantity: refs.itemQuantity?.value || "",
+    stockQuantity: refs.itemStockQuantity?.value ?? "1",
     color: refs.itemColor?.value || "",
     width: refs.itemWidth?.value || "",
     height: refs.itemHeight?.value || "",
@@ -5751,6 +5833,7 @@ function restoreNewItemFormDraft() {
   refs.itemName.value = String(fields.name || "");
   refs.itemWeight.value = String(fields.weight || "");
   refs.itemQuantity.value = String(fields.quantity || 1);
+  refs.itemStockQuantity.value = String(normalizeStockQuantity(fields.stockQuantity));
   if (refs.itemColor) refs.itemColor.value = String(fields.color || "");
   if (refs.itemWidth) refs.itemWidth.value = String(fields.width || "");
   if (refs.itemHeight) refs.itemHeight.value = String(fields.height || "");
@@ -5920,6 +6003,28 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   refs.dialogTitle.textContent = itemId ? t("items.editItem") : t("items.addItem");
   refs.itemName.value = item.name;
   refs.itemWeight.value = item.weight || 0;
+  refs.itemStockQuantity.value = itemStockQuantity(item);
+  refs.itemStockField.hidden = isPublicLayoutContext();
+  refs.itemStockQuantity.disabled = isPublicLayoutContext();
+  refs.itemStockMinus.disabled = isPublicLayoutContext() || itemStockQuantity(item) === 0;
+  refs.itemStockPlus.disabled = isPublicLayoutContext();
+  refs.itemPreparationFields.hidden = isPublicLayoutContext();
+  for (const [action, checkbox] of [["repair", refs.itemNeedsRepair], ["charge", refs.itemNeedsCharge]]) {
+    checkbox.onclick = () => {
+      const selected = getDialogSelectedCategories().filter((category) => !preparationCategoryMatches(dictionaryValueLabel(category), action));
+      if (checkbox.checked) {
+        const existing = dictionaryOptionsForUi("category").find((category) => preparationCategoryMatches(dictionaryValueLabel(category), action));
+        if (!existing && !requireUsageCapacity("categories")) {
+          checkbox.checked = false;
+          return;
+        }
+        selected.push(existing || t(`preparation.${action}Label`));
+      }
+      renderItemCategoryPicker(selected, { fallbackDefault: false });
+      updateItemDialogSaveState();
+    };
+  }
+  bindStockField(refs, updateItemDialogSaveState);
   if (refs.itemColor) refs.itemColor.value = item.color || "";
   const dimensions = normalizeContainerDimensions(item.dimensions);
   if (refs.itemWidth) refs.itemWidth.value = dimensions.width ? String(dimensions.width).replace(".", ",") : "";
@@ -6051,6 +6156,8 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
 }
 
 function setSharedReadonlyItemDialog(readonly) {
+  if (refs.itemStockField) refs.itemStockField.hidden = readonly;
+  if (refs.itemPreparationFields) refs.itemPreparationFields.hidden = readonly;
   refs.copySharedItemDialogBtn.hidden = !readonly;
   refs.saveItemBtn.hidden = readonly;
   refs.itemContainerPickerBtn.hidden = readonly;
@@ -7800,6 +7907,7 @@ function getItemDialogSnapshot() {
     name: refs.itemName.value.trim(),
     weight: parseWeightInput(refs.itemWeight.value),
     quantity: readItemDialogQuantity(),
+    stockQuantity: normalizeStockQuantity(refs.itemStockQuantity?.value),
     color: normalizeContainerColor(refs.itemColor?.value),
     width: dimensions.width,
     height: dimensions.height,
@@ -8677,6 +8785,9 @@ function getRootContainerDialogSnapshot() {
 
 function updateItemDialogSaveState() {
   if (!refs.saveItemBtn) return;
+  const categories = getDialogSelectedCategories();
+  if (refs.itemNeedsRepair) refs.itemNeedsRepair.checked = categories.some((value) => preparationCategoryMatches(dictionaryValueLabel(value), "repair"));
+  if (refs.itemNeedsCharge) refs.itemNeedsCharge.checked = categories.some((value) => preparationCategoryMatches(dictionaryValueLabel(value), "charge"));
   const snapshot = getItemDialogSnapshot();
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.itemDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.itemDialogInitialSnapshot);
@@ -8932,6 +9043,7 @@ function saveRootContainerDialog(event) {
 
 function saveDialogItem(event) {
   event?.preventDefault();
+  if (!refs.itemStockQuantity.disabled && !refs.itemStockQuantity.reportValidity()) return;
   if (warnLockedItemDialogPlacementChange()) return;
   capturePackingScroll();
   const creatingNewItem = !runtime.editingItemId;

@@ -56,6 +56,7 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["name", localText("Name", "Название")],
       ["weight", localText("Weight", "Вес"), "weight"],
       ["quantity", localText("Quantity", "Количество")],
+      ["stockQuantity", localText("In stock", "В наличии")],
       ["location", localText("Storage location", "Место хранения")],
       ["categories", localText("Categories", "Категории"), "list"],
       ["category", localText("Category", "Категория")],

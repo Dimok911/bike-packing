@@ -139,6 +139,11 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.dialog?.querySelector("label:has(#itemName)"), t("forms.name"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemWeight)"), t("forms.weightGrams"));
   setFirstText(refs.dialog?.querySelector(".quantity-field"), t("forms.layoutQuantity"));
+  setText(refs.dialog?.querySelector("#itemStockLabel"), t("stock.available"));
+  setText(refs.dialog?.querySelector("#itemNeedsRepairLabel"), t("preparation.repairLabel"));
+  setText(refs.dialog?.querySelector("#itemNeedsChargeLabel"), t("preparation.chargeLabel"));
+  setAttr(refs.itemStockMinus, "aria-label", t("stock.decrease"));
+  setAttr(refs.itemStockPlus, "aria-label", t("stock.increase"));
   setText(refs.dialog?.querySelector(".item-total-weight span"), t("forms.totalWeight"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemColor)"), t("forms.color"));
   if (refs.itemColor) refs.itemColor.placeholder = t("forms.colorPlaceholder");

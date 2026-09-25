@@ -1,4 +1,5 @@
 import { escapeHtml } from "../utils/html.js";
+import { stripPrivateInventory } from "../state/item-stock.js";
 
 export const SHARED_ENTITY_SCOPE_ENTITY = "entity";
 export const SHARED_ENTITY_SCOPE_LAYOUT = "layout";
@@ -156,7 +157,7 @@ function layoutSnapshotPayload(targetState, { entityId, entityType, layoutId }) 
     if (!source) return;
     const containerId = arrangement.items?.[id] || source.containerId || "";
     items[id] = {
-      ...cloneValue(source),
+      ...stripPrivateInventory(cloneValue(source)),
       quantity: Math.max(1, Math.round(Number(arrangement.itemQuantities?.[id] ?? source.quantity) || 1)),
       containerId: ids.containerIds.has(containerId) ? containerId : ""
     };
@@ -194,7 +195,7 @@ function itemSnapshotPayload(targetState, { entityId, wrapperName }) {
   if (!source) return null;
   const layoutId = "shared-entity-layout";
   const containerId = `shared-entity-item-wrapper-${entityId}`;
-  const item = { ...cloneValue(source), containerId };
+  const item = { ...stripPrivateInventory(cloneValue(source)), containerId };
   const container = {
     id: containerId,
     name: wrapperName,
