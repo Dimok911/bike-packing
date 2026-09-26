@@ -3,7 +3,8 @@ param(
   [string]$ExpectedVersion = "",
   [string]$ArtifactRoot = "",
   [string]$ConfigPath = "",
-  [string]$PublicUrl = "https://vniipo-help.ru/bike-packing/"
+  [string]$PublicUrl = "https://vniipo-help.ru/bike-packing/",
+  [string]$IncrementalManifest = ""
 )
 
 Set-StrictMode -Version Latest
@@ -257,6 +258,69 @@ $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "bike-packing-ftp-deploy-$
 if (Test-Path -LiteralPath $temporaryRoot) { throw "Temporary deployment directory already exists." }
 New-Item -Path $temporaryRoot -ItemType Directory | Out-Null
 
+if ($IncrementalManifest) {
+  # The manifest is a reviewed comparison with the deployed release. Only these
+  # five application files may be replaced; photographs and directories stay put.
+  $allowed = @("app.js", "styles.css", "release-contract.json", "index.html", "sw.js")
+  $plan = @(Get-Content -LiteralPath $IncrementalManifest -Raw | ConvertFrom-Json | Where-Object { $_.changed })
+  if (-not $plan.Count -or @($plan | Where-Object { $_.path -notin $allowed }).Count) { throw "Invalid incremental transfer list." }
+  if (@($plan.path | Select-Object -Unique).Count -ne $plan.Count) { throw "Duplicate incremental paths." }
+  $backedUp = [Collections.Generic.List[string]]::new()
+  $activated = [Collections.Generic.List[string]]::new()
+  try {
+    $apiContractVerification = Assert-ProductionApiContract (Join-Path $ArtifactRoot "release-contract.json") $temporaryRoot "$safeVersion-$timestamp"
+    foreach ($entry in $plan) {
+      $relative = [string]$entry.path
+      if ($entry.deployedHash -notmatch '^[A-Fa-f0-9]{64}$' -or $entry.releaseHash -notmatch '^[A-Fa-f0-9]{64}$') { throw "Invalid manifest hash." }
+      $candidate = Join-Path $ArtifactRoot $relative
+      if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $entry.releaseHash) { throw "Candidate changed: $relative" }
+      $previous = Join-Path $temporaryRoot "previous/$relative"
+      Receive-FtpFile "$productionRemotePath/$relative" $previous
+      if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne $entry.deployedHash) { throw "Production baseline changed: $relative" }
+      Send-FtpFile $candidate "$stageRemotePath/$relative"
+      $verified = Join-Path $temporaryRoot "stage/$relative"
+      Receive-FtpFile "$stageRemotePath/$relative" $verified
+      Assert-FilesEqual $candidate $verified "staging/$relative"
+    }
+    Assert-PublicBuild $stagePublicUrl (Join-Path $temporaryRoot "stage-https") "$safeVersion-$timestamp"
+    # Create empty backup destinations; never rename an application directory.
+    $createCode = Invoke-CurlConfig -Ftps -Lines @("silent", "show-error", "fail", (Curl-Line "user" $credential), (Curl-Line "url" $ftpAccountRootUrl), (Curl-Line "output" "NUL"), (Curl-Line "quote" "MKD $backupRemotePath"), (Curl-Line "quote" "MKD $failedRemotePath"))
+    if ($createCode -ne 0) { throw "Could not prepare backup directories." }
+    foreach ($relative in $allowed) {
+      $entry = $plan | Where-Object { $_.path -eq $relative }
+      if (-not $entry) { continue }
+      $preactivate = Join-Path $temporaryRoot "preactivate/$relative"
+      Receive-FtpFile "$productionRemotePath/$relative" $preactivate
+      if ((Get-FileHash -LiteralPath $preactivate -Algorithm SHA256).Hash -ne $entry.deployedHash) { throw "Production changed before activation: $relative" }
+      Move-FtpDirectory "$productionRemotePath/$relative" "$backupRemotePath/$relative"
+      $backedUp.Add($relative)
+      Move-FtpDirectory "$stageRemotePath/$relative" "$productionRemotePath/$relative"
+      $activated.Add($relative)
+    }
+    foreach ($entry in $plan) {
+      $relative = [string]$entry.path
+      $verified = Join-Path $temporaryRoot "production/$relative"
+      Receive-FtpFile "$productionRemotePath/$relative" $verified
+      Assert-FilesEqual (Join-Path $ArtifactRoot $relative) $verified "production/$relative"
+      Receive-HttpsFile "$($PublicUrl.TrimEnd('/'))/${relative}?release=$safeVersion-$timestamp" $verified
+      Assert-FilesEqual (Join-Path $ArtifactRoot $relative) $verified "HTTPS/$relative"
+    }
+    [pscustomobject]@{ Version=$ExpectedVersion; UploadedFiles=$plan.path; RemoteBackup="/$backupRemotePath/"; FtpSha256="verified"; ProductionHttps="verified"; PhotographsTransferred=0 } | ConvertTo-Json
+  } catch {
+    $originalError = $_
+    for ($index = $backedUp.Count - 1; $index -ge 0; $index--) {
+      $relative = $backedUp[$index]
+      if ($activated.Contains($relative)) { Move-FtpDirectory "$productionRemotePath/$relative" "$failedRemotePath/$relative" }
+      Move-FtpDirectory "$backupRemotePath/$relative" "$productionRemotePath/$relative"
+      $verified = Join-Path $temporaryRoot "rollback/$relative"
+      Receive-FtpFile "$productionRemotePath/$relative" $verified
+      Assert-FilesEqual (Join-Path $temporaryRoot "previous/$relative") $verified "rollback/$relative"
+    }
+    throw $originalError
+  }
+  # Keep the local verification evidence and remote backups for recovery.
+  return
+}
 $productionMoved = $false
 $stageActivated = $false
 $rollbackCompleted = $false
