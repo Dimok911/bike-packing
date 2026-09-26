@@ -42,6 +42,7 @@ export function publicCopyRecordContentHash(record, kind = "item", { containerCa
       publicCopyPhotoFingerprint(record)
     ].join("\u001f");
   }
+  if (record?.noteHtml) content += `\u001f${record.noteHtml}`;
   return publicCopyStableHash(content);
 }
 

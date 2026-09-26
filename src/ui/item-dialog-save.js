@@ -1,4 +1,5 @@
 import { normalizeStockQuantity, setItemStockLocations } from "../state/item-stock.js";
+import { applyNoteFields } from "./rich-note-content.js";
 
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
@@ -78,6 +79,7 @@ export function saveRootContainerDialogAction({
       photos: rootContainerDialogPhotoDraft?.photos ? [...rootContainerDialogPhotoDraft.photos] : [],
       ...currentCreateMeta(changedAt)
     };
+    applyNoteFields(state.containers[id], refs.rootContainerNote);
     markRecordActivePublicCatalog(state.containers[id]);
     placeCreatedRootContainer(id, changedAt);
     const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
@@ -95,7 +97,7 @@ export function saveRootContainerDialogAction({
   container.categories = selectedCategories;
   applyRootContainerDimensions(container, dimensions);
   container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
-  container.note = refs.rootContainerNote.value.trim();
+  applyNoteFields(container, refs.rootContainerNote);
   container.nestable = Boolean(refs.rootContainerNestable?.checked);
   applyRootContainerDialogPhotoDraft(container, changedAt);
   markRecordActivePublicCatalog(container);
@@ -176,7 +178,7 @@ export function saveItemDialogAction({
     if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(item, readItemStockLocations());
     item.categories = selectedCategories;
     item.category = selectedCategories[0] || "";
-    item.note = refs.itemNote.value.trim();
+    applyNoteFields(item, refs.itemNote);
     applyItemAvailabilityStatus(item, availabilityStatus);
     applyItemDialogPhotoDraft(item, changedAt);
     markRecordActivePublicCatalog(item, layoutId);
@@ -232,6 +234,7 @@ export function saveItemDialogAction({
       photos: itemDialogPhotoDraft?.photos ? [...itemDialogPhotoDraft.photos] : [],
       ...currentEditMeta(changedAt)
     };
+    applyNoteFields(state.items[id], refs.itemNote);
     applyItemAvailabilityStatus(state.items[id], availabilityStatus);
     if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(state.items[id], readItemStockLocations());
     markRecordActivePublicCatalog(state.items[id], layoutId);

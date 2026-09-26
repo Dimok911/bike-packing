@@ -81,7 +81,7 @@ export function setupDialogKeyboardScrollGuard(dialogs = []) {
 
   const captureFocusLock = (event) => {
     const field = event.target;
-    if (!field?.matches?.("input, textarea, select")) return;
+    if (!field?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     if (!shouldGuard()) return;
     const dialog = trackedDialogs.find((candidate) => candidate.open && candidate.contains(field));
     if (!dialog) return;
@@ -126,7 +126,7 @@ function scrollFieldIntoDialogViewport({ field, scroller }) {
   const visibleTop = (viewport?.offsetTop || 0) + 12;
   const keyboardOpen = viewport && viewport.height < window.innerHeight - 80;
   const bottomReserve = keyboardOpen
-    ? (field.matches?.("textarea") ? 96 : 56)
+    ? (field.matches?.('textarea, [contenteditable="true"]') ? 96 : 56)
     : 16;
   const visibleBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight) - bottomReserve;
   const rect = field.getBoundingClientRect();

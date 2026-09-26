@@ -63,6 +63,7 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["category", localText("Category", "Категория")],
       ["containerId", localText("Stored in", "Где лежит"), "container"],
       ["note", localText("Note", "Заметка")],
+      ["noteHtml", localText("Note formatting", "Форматирование заметки"), "note-format"],
       ["photos", localText("Photos", "Фото"), "photos"]
     ];
   }
@@ -77,6 +78,7 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["childIds", localText("Nested bags", "Вложенные сумки"), "count"],
       ["order", localText("Order inside", "Порядок внутри"), "count"],
       ["note", localText("Note", "Заметка")],
+      ["noteHtml", localText("Note formatting", "Форматирование заметки"), "note-format"],
       ["color", localText("Color", "Цвет")],
       ["photos", localText("Photos", "Фото"), "photos"]
     ];
@@ -139,6 +141,7 @@ export function createConflictValueFormatter({
   function formatConflictFieldValue(value, key, conflict, format = "") {
     if (conflict.type === "packed" && key === "value") return value ? localText("packed", "собрано") : localText("not packed", "не собрано");
     if (value == null || value === "") return localText("empty", "пусто");
+    if (format === "note-format") return localText("Formatted text", "Форматированный текст");
     if (format === "weight") return formatWeight(parseWeightInput(value));
     if (format === "list") return Array.isArray(value) ? value.filter(Boolean).join(", ") || localText("empty", "пусто") : String(value);
     if (format === "container") return formatConflictContainerValue(value);
@@ -221,6 +224,7 @@ export function createConflictValueFormatter({
         ["categories", localText("categories", "категории")],
         ["containerId", localText("bag/place", "сумка/пакет")],
         ["note", localText("note", "заметка")],
+        ["noteHtml", localText("note formatting", "форматирование заметки")],
         ["photos", localText("photos", "фото")]
       ]);
     }
@@ -231,6 +235,7 @@ export function createConflictValueFormatter({
         ["volume", localText("volume", "объём")],
         ["location", localText("location", "место")],
         ["note", localText("note", "заметка")],
+        ["noteHtml", localText("note formatting", "форматирование заметки")],
         ["color", localText("color", "цвет")],
         ["itemIds", localText("contents", "состав")],
         ["childIds", localText("nested bags", "вложенные сумки")],
