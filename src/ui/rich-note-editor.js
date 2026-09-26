@@ -125,6 +125,23 @@ export function createRichNoteEditor(textarea) {
   editor.addEventListener("beforeinput", clearMatch);
   editor.addEventListener("paste", paste);
   textarea.addEventListener("paste", paste);
+  function openLink(event) {
+    if (event.button !== 0 && event.button !== 1) return;
+    const link = event.target.closest?.("a[href]");
+    if (!link || !editor.contains(link)) return;
+    event.preventDefault();
+    // Dragging across link text must still allow selecting and editing it.
+    const selection = doc.getSelection();
+    if (selection && !selection.isCollapsed && selection.containsNode(link, true)) return;
+    try {
+      const url = new URL(link.getAttribute("href"));
+      if (["https:", "http:", "mailto:"].includes(url.protocol)) {
+        doc.defaultView.open(url.href, "_blank", "noopener,noreferrer");
+      }
+    } catch { /* An invalid address must never navigate the editor. */ }
+  }
+  editor.addEventListener("click", openLink);
+  editor.addEventListener("auxclick", openLink);
   editor.addEventListener("drop", (event) => {
     event.preventDefault();
     if (textarea.disabled || textarea.readOnly) return;

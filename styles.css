@@ -1402,7 +1402,7 @@ button.filter-active.filter-no-results {
 .rich-note-editor th { background: var(--accent-faint); font-weight: 700; }
 .rich-note-editor blockquote { border-left: 3px solid var(--accent-border); margin: 0.6em 0; padding-left: 12px; }
 .rich-note-editor pre { white-space: pre-wrap; }
-.rich-note-editor a { color: var(--accent); text-decoration: underline; }
+.rich-note-editor a { color: var(--accent); text-decoration: underline; cursor: pointer; }
 .rich-note-editor mark[data-note-match] { background: #ffdd71; color: var(--ink); }
 @media (max-width: 760px) {
   .rich-note-editor { font-size: 16px; min-height: 96px; max-height: 65dvh; resize: none; }

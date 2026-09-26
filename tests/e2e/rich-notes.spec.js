@@ -135,3 +135,33 @@ test('new bags and items save rich notes and preserve them in the form draft', a
   const records=await page.evaluate(()=>{const s=JSON.parse(localStorage.getItem('bike-packing-prototype-state-v1'));return [Object.values(s.items).find(x=>x.name==='Новая вещь'),Object.values(s.containers).find(x=>x.name==='Новая сумка')];});
   for(const record of records) {expect(record.noteHtml).toContain('<table>');expect(record.note).toContain('60ml');}
 });
+
+test('item and bag links open separately after save and reload without closing the note', async({page,isMobile,context})=>{
+  await fixture(page);
+  const target='https://example.com/note-manual?part=1#table';
+  await context.route('https://example.com/note-manual**',route=>route.fulfill({contentType:'text/html',body:'<h1>Note manual</h1>'}));
+  for (const kind of ['item','bag']) {
+    const prefix=kind==='item'?'item':'rootContainer';
+    const open=()=>activate(kind==='item'?page.locator('[data-item-id="notesItem"] .item-title-hitarea'):page.getByRole('heading',{name:'Сумка',exact:true}),isMobile);
+    await open();
+    await page.locator(`#${prefix}Note`).fill('');
+    await paste(page.locator(`#${prefix}Note`),`<p><a href="${target}"><strong>Инструкция</strong></a></p>`);
+    await save(page,kind==='item'?'#saveItemBtn':'#saveRootContainerBtn',isMobile);
+    await page.reload(); await waitForApp(page);
+    await open();
+    const originalUrl=page.url();
+    const originalHtml=await page.locator(`#${prefix}NoteRich`).innerHTML();
+    const popupPromise=page.waitForEvent('popup');
+    await activate(page.locator(`#${prefix}NoteRich a strong`),isMobile);
+    const popup=await popupPromise;
+    await popup.waitForLoadState();
+    expect(popup.url()).toBe(target);
+    expect(await popup.evaluate(()=>window.opener)).toBeNull();
+    await expect(popup.getByRole('heading')).toHaveText('Note manual');
+    expect(page.url()).toBe(originalUrl);
+    await expect(page.locator(`#${prefix}Dialog`)).toBeVisible();
+    expect(await page.locator(`#${prefix}NoteRich`).innerHTML()).toBe(originalHtml);
+    await popup.close();
+    await activate(page.locator(`#${prefix}Dialog header button[value="cancel"]`),isMobile);
+  }
+});
