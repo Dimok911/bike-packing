@@ -10,6 +10,10 @@ export function createRichNoteEditor(textarea) {
   const toolbar = doc.createElement("div");
   toolbar.className = "rich-note-toolbar";
   toolbar.setAttribute("role", "toolbar");
+  const linkPanel = doc.createElement("div");
+  linkPanel.className = "rich-note-link-panel";
+  linkPanel.hidden = true;
+  linkPanel.setAttribute("role", "group");
   const editor = doc.createElement("div");
   editor.id = `${textarea.id}Rich`;
   editor.className = "rich-note-editor";
@@ -20,9 +24,11 @@ export function createRichNoteEditor(textarea) {
   editor.hidden = true;
   const anchor = textarea.closest(".desktop-input-layout") || textarea;
   anchor.before(toolbar);
+  toolbar.after(linkPanel);
   anchor.after(editor);
   let active = false;
   let savedRange = null;
+  let linkDraft = null;
 
   function clearMatch() {
     const marks = editor.querySelectorAll("mark[data-note-match]");
@@ -42,6 +48,7 @@ export function createRichNoteEditor(textarea) {
     editor.contentEditable = String(!disabled);
     editor.setAttribute("aria-readonly", String(disabled));
     toolbar.hidden = disabled;
+    if (disabled) { linkPanel.hidden = true; linkPanel.replaceChildren(); linkDraft = null; }
   }
   function showRich() {
     active = true;
@@ -102,6 +109,76 @@ export function createRichNoteEditor(textarea) {
     clearMatch();
     insert(html ? sanitizeNoteHtml(html, doc) : plainNoteHtml(text));
   }
+  function openLinkPanel() {
+    if (textarea.disabled || textarea.readOnly) return;
+    const selection = doc.getSelection();
+    const range = active && selection?.rangeCount && editor.contains(selection.anchorNode) && editor.contains(selection.focusNode)
+      ? selection.getRangeAt(0).cloneRange() : savedRange?.cloneRange();
+    const node = range?.startContainer;
+    const existing = (node?.nodeType === 1 ? node : node?.parentElement)?.closest?.("a[href]");
+    const existingLink = active && existing && editor.contains(existing) && existing.contains(range.endContainer) ? existing : null;
+    linkDraft = { range, start: textarea.selectionStart, end: textarea.selectionEnd, existingLink };
+    linkPanel.replaceChildren();
+    linkPanel.setAttribute("aria-label", tr("Link", "Ссылка"));
+    const makeField = (caption, key, value) => {
+      const label = doc.createElement("label");
+      label.textContent = caption;
+      const input = doc.createElement("input");
+      input.dataset.noteLinkField = key;
+      input.value = value;
+      label.append(input); linkPanel.append(label);
+      return input;
+    };
+    const textInput = makeField(tr("Link text", "Текст ссылки"), "text", existingLink?.textContent || (active ? range?.toString() || "" : textarea.value.slice(linkDraft.start, linkDraft.end)));
+    const urlInput = makeField(tr("Address", "Адрес"), "url", existingLink?.getAttribute("href") || "");
+    urlInput.inputMode = "url"; urlInput.autocapitalize = "off"; urlInput.spellcheck = false;
+    urlInput.placeholder = "https://example.com";
+    urlInput.addEventListener("input", () => urlInput.setCustomValidity(""));
+    const actions = doc.createElement("div"); actions.className = "rich-note-link-actions";
+    const cancel = doc.createElement("button"); cancel.type = "button"; cancel.className = "ghost";
+    cancel.textContent = tr("Cancel", "Отмена");
+    cancel.addEventListener("click", () => {
+      linkPanel.hidden = true; linkPanel.replaceChildren(); linkDraft = null;
+      if (active) restoreRange(); else textarea.focus({ preventScroll: true });
+    });
+    const apply = doc.createElement("button"); apply.type = "button";
+    apply.textContent = tr("Insert link", "Вставить ссылку"); apply.dataset.noteLinkApply = "";
+    const commitLink = () => {
+      if (textarea.disabled || textarea.readOnly || !linkDraft) return;
+      let url;
+      try {
+        const address = urlInput.value.trim();
+        if (!address) throw new Error("empty");
+        url = new URL(address.startsWith("//") ? `https:${address}` : /^[a-z][a-z\d+.-]*:/i.test(address) ? address : `https://${address}`);
+        if (!["https:", "http:", "mailto:"].includes(url.protocol)) throw new Error("protocol");
+      } catch {
+        urlInput.setCustomValidity(tr("Enter a website address or mailto link.", "Введите адрес сайта или ссылку mailto."));
+        urlInput.reportValidity(); return;
+      }
+      const draft = linkDraft;
+      const link = doc.createElement("a");
+      link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.textContent = textInput.value.trim() || url.href;
+      linkPanel.hidden = true; linkPanel.replaceChildren(); linkDraft = null;
+      if (!active) textarea.setSelectionRange(draft.start, draft.end);
+      activate();
+      if (draft.existingLink?.isConnected) {
+        draft.range = doc.createRange(); draft.range.selectNode(draft.existingLink);
+      }
+      if (draft.range && editor.contains(draft.range.commonAncestorContainer)) {
+        const selection = doc.getSelection(); selection.removeAllRanges(); selection.addRange(draft.range);
+      }
+      insert(link.outerHTML);
+    };
+    apply.addEventListener("click", commitLink);
+    for (const input of [textInput, urlInput]) input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); commitLink(); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancel.click(); }
+    });
+    actions.append(cancel, apply); linkPanel.append(actions);
+    linkPanel.hidden = false;
+    (textInput.value ? urlInput : textInput).focus();
+  }
   function renderToolbar() {
     toolbar.replaceChildren();
     toolbar.setAttribute("aria-label", tr("Note formatting", "Форматирование заметки"));
@@ -120,6 +197,12 @@ export function createRichNoteEditor(textarea) {
       button.addEventListener("click", () => { if (textarea.disabled || textarea.readOnly) return; activate(); doc.execCommand(command, false); sync(); });
       toolbar.append(button);
     }
+    const linkButton = doc.createElement("button");
+    linkButton.type = "button"; linkButton.className = "ghost";
+    linkButton.textContent = tr("Link", "Ссылка"); linkButton.dataset.noteCommand = "link";
+    linkButton.addEventListener("mousedown", (event) => event.preventDefault());
+    linkButton.addEventListener("click", openLinkPanel);
+    toolbar.append(linkButton);
   }
   editor.addEventListener("input", () => sync());
   editor.addEventListener("beforeinput", clearMatch);
@@ -159,6 +242,7 @@ export function createRichNoteEditor(textarea) {
     clearMatch,
     load(note, html) {
       active = false; savedRange = null;
+      linkPanel.hidden = true; linkPanel.replaceChildren(); linkDraft = null;
       textarea.value = String(note);
       textarea.hidden = false; editor.hidden = true;
       field.classList.remove("rich-note-active");
