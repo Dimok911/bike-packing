@@ -23,8 +23,9 @@ test("a fresh user has both built-in categories without automatically marking ne
   await expect(page.locator('[data-preparation-action="repair"] strong')).toHaveText("0");
   await expect(page.locator('[data-preparation-action="charge"] strong')).toHaveText("0");
   await item.locator(".item-title-hitarea").click();
-  const repair = page.locator("#itemCategoryList").getByRole("checkbox", { name: "Нужна починка", exact: true });
-  const charge = page.locator("#itemCategoryList").getByRole("checkbox", { name: "Требует заряда", exact: true });
+  const repair = page.locator("#itemNeedsRepair");
+  const charge = page.locator("#itemNeedsCharge");
+  await expect(page.locator('#itemCategoryList [data-category-search-option]')).toHaveCount(0);
   await expect(repair).not.toBeChecked();
   await expect(charge).not.toBeChecked();
   await repair.check();

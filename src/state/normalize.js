@@ -2,7 +2,7 @@ import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
 import { hasContainerDimensions, normalizeContainerColor, normalizeContainerDimensions } from "./container-fields.js";
 import { normalizeItemPhotos } from "./item-photos.js";
 import { parseWeightInput } from "../utils/weight.js";
-import { itemStockQuantity, migrateLegacyPurchaseLocations } from "./item-stock.js";
+import { itemStockQuantity, itemStockLocations, setItemStockLocations, migrateLegacyPurchaseLocations } from "./item-stock.js";
 
 export function defaultRootContainerLocation(targetState) {
   const list = Array.isArray(targetState.locations) ? targetState.locations : [];
@@ -54,6 +54,7 @@ export function normalizeItemFields(targetState) {
     item.weight = parseWeightInput(item.weight);
     item.quantity = normalizeItemQuantity(item.quantity);
     item.stockQuantity = itemStockQuantity(item);
+    if (!item.adminDemo && !item.adminSharedSourceId && !item.publicCatalogLayoutId) setItemStockLocations(item, itemStockLocations(item));
     item.color = normalizeContainerColor(item.color);
     const dimensions = normalizeContainerDimensions(item.dimensions);
     if (hasContainerDimensions(dimensions)) item.dimensions = dimensions;

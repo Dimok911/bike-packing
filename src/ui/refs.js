@@ -107,6 +107,8 @@ export function createRefs(root = document) {
     itemStockQuantity: root.querySelector("#itemStockQuantity"),
     itemStockMinus: root.querySelector("#itemStockMinus"),
     itemStockPlus: root.querySelector("#itemStockPlus"),
+    itemStockLocationsBtn: root.querySelector("#itemStockLocationsBtn"),
+    itemStockLocationsSummary: root.querySelector("#itemStockLocationsSummary"),
     itemPreparationFields: root.querySelector("#itemPreparationFields"),
     itemNeedsRepair: root.querySelector("#itemNeedsRepair"),
     itemNeedsCharge: root.querySelector("#itemNeedsCharge"),

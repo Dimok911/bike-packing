@@ -1,5 +1,6 @@
 import { currentDocumentLanguage } from "../utils/language.js";
 import { isBuiltinCategory } from "../state/builtin-categories.js";
+import { renameItemStockLocation } from "../state/item-stock.js";
 import {
   collectDictionaryValueUsage,
   dictionaryDeleteImpactHtml
@@ -147,8 +148,7 @@ export function bindDictionaryControls(type, {
           const changedAt = nowIso();
           removeCustomDictionaryValue(owner, type, value);
           scope.items.forEach((item) => {
-            if (type === "location" && item.location === value) {
-              item.location = fallback;
+            if (type === "location" && renameItemStockLocation(item, value, fallback)) {
               markEdited(item, changedAt);
             }
             if (type === "category" && itemCategories(item).includes(value)) {
@@ -215,8 +215,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
   renameCustomDictionaryValue(owner, type, oldValue, newValue);
   if (type === "location") {
     scope.items.forEach((item) => {
-      if (item.location !== oldValue) return;
-      item.location = newValue;
+      if (!renameItemStockLocation(item, oldValue, newValue)) return;
       markEdited(item, changedAt);
     });
     scope.containers.forEach((container) => {
