@@ -140,6 +140,10 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.dialog?.querySelector("label:has(#itemWeight)"), t("forms.weightGrams"));
   setFirstText(refs.dialog?.querySelector(".quantity-field"), t("forms.layoutQuantity"));
   setText(refs.dialog?.querySelector("#itemStockLabel"), t("stock.available"));
+  setText(refs.dialog?.querySelector("#itemPackingSectionTitle"), uiLanguage === "en" ? "For this layout" : "Для этой укладки");
+  setText(refs.dialog?.querySelector("#itemStockSectionTitle"), uiLanguage === "en" ? "Stock and storage places" : "Запасы и места хранения");
+  setText(refs.dialog?.querySelector("#itemReadinessSectionTitle"), uiLanguage === "en" ? "Condition and preparation" : "Состояние и подготовка");
+  setText(refs.dialog?.querySelector("#itemDetailsSectionTitle"), uiLanguage === "en" ? "Item details" : "Характеристики вещи");
   setText(refs.dialog?.querySelector("#itemNeedsRepairLabel"), t("preparation.repairLabel"));
   setText(refs.dialog?.querySelector("#itemNeedsChargeLabel"), t("preparation.chargeLabel"));
   setAttr(refs.itemStockMinus, "aria-label", t("stock.decrease"));

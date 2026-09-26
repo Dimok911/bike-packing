@@ -1,4 +1,4 @@
-import { normalizeStockQuantity } from "../state/item-stock.js";
+import { normalizeStockQuantity, setItemStockLocations } from "../state/item-stock.js";
 
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
@@ -135,6 +135,7 @@ export function saveItemDialogAction({
   placementFailedText = "Could not add the item to this layout.",
   readItemDialogDimensions = () => ({}),
   readItemDialogQuantity = () => 1,
+  readItemStockLocations = null,
   refs,
   removeItemFromLayoutArrangement = () => {},
   render = () => {},
@@ -172,6 +173,7 @@ export function saveItemDialogAction({
     item.color = normalizeItemColor(refs.itemColor?.value);
     applyItemDimensions(item, dimensions);
     item.location = refs.itemLocation.value;
+    if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(item, readItemStockLocations());
     item.categories = selectedCategories;
     item.category = selectedCategories[0] || "";
     item.note = refs.itemNote.value.trim();
@@ -231,6 +233,7 @@ export function saveItemDialogAction({
       ...currentEditMeta(changedAt)
     };
     applyItemAvailabilityStatus(state.items[id], availabilityStatus);
+    if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(state.items[id], readItemStockLocations());
     markRecordActivePublicCatalog(state.items[id], layoutId);
     if (containerId && state.containers[containerId] && layout) {
       if (itemIsUnavailable) {

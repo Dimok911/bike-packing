@@ -1,4 +1,5 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
+import { itemStorageLocations } from "../state/item-stock.js";
 import { renderEmptyState } from "./empty-state.js";
 import { formatItemWeight, renderItemQuantityText } from "./item-format.js";
 import {
@@ -157,7 +158,7 @@ export function renderListItemHtml({
     quantityText,
     formatItemWeight(item),
     categories.join(", "),
-    item.location,
+    itemStorageLocations(item).join(", "),
     placementText
   ].filter(Boolean).join("\n");
   return renderCatalogCard({
@@ -177,7 +178,7 @@ export function renderListItemHtml({
     metaHtml: renderCatalogPills([
       formatItemWeight(item),
       ...categories.map((category) => highlightText(category)),
-      highlightText(item.location)
+      ...itemStorageLocations(item).map((location) => highlightText(location))
     ], { hidden: !showLabels }),
     statusHtml: highlightText(placementText),
     badgeHtml: `${stockHtml}${preparationHtml}${renderSearchNoteMatchBadge(item, searchQuery, t, { editAttribute: "data-note-match-open" })}`,

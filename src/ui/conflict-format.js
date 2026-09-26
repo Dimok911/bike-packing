@@ -57,6 +57,7 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["weight", localText("Weight", "Вес"), "weight"],
       ["quantity", localText("Quantity", "Количество")],
       ["stockQuantity", localText("In stock", "В наличии")],
+      ["stockLocations", localText("Stock by place", "Остатки по местам"), "stock-locations"],
       ["location", localText("Storage location", "Место хранения")],
       ["categories", localText("Categories", "Категории"), "list"],
       ["category", localText("Category", "Категория")],
@@ -144,6 +145,7 @@ export function createConflictValueFormatter({
     if (format === "photos") return Array.isArray(value)
       ? localText(`${value.length} photos`, `${value.length} фото`)
       : (value ? localText("present", "есть") : localText("none", "нет"));
+    if (format === "stock-locations") return Array.isArray(value) ? value.map((row) => `${row.location || localText("Not specified", "Не указано")}: ${row.quantity}`).join(", ") : localText("not specified", "не указано");
     if (format === "count") return formatConflictCountValue(value, key, conflict);
     if (format === "arrangement") return formatArrangementConflictValue(value, { localText });
     if (format === "boolean") return value ? localText("yes", "да") : localText("no", "нет");

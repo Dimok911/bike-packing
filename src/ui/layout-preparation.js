@@ -1,5 +1,5 @@
 import { escapeHtml } from "../utils/html.js";
-import { itemStockQuantity } from "../state/item-stock.js";
+import { itemStockQuantity, itemStockLocations } from "../state/item-stock.js";
 import { PREPARATION_ACTIONS } from "../state/layout-preparation.js";
 
 export function renderPreparationButtons(tasks, t) {
@@ -21,6 +21,8 @@ export function renderPreparationBadges({ missing = 0, buyHint = "", repair = fa
 
 export function renderStockControl(item, t) {
   const count = itemStockQuantity(item);
+  const rows = itemStockLocations(item);
+  if (rows.length > 1) return `<div class="item-stock-control"><span>${escapeHtml(t("stock.available"))}</span><button type="button" class="ghost stock-by-place-button" data-stock-locations="${escapeHtml(item.id)}" title="${escapeHtml(rows.map((row) => `${row.location || t("stock.unspecified")}: ${row.quantity}`).join("\n"))}"><strong>${count}</strong><span>${escapeHtml(t("stock.byPlace"))}</span></button></div>`;
   return `<div class="item-stock-control">
     <span>${escapeHtml(t("stock.available"))}</span>
     <div class="quantity-stepper">
@@ -59,6 +61,7 @@ export function createPreparationDialogController({ getContext, openDialog, open
             <span class="preparation-shortage">${escapeHtml(t("preparation.buy"))}<strong>${missing}</strong></span>
           </div>
           <form class="preparation-purchase" data-purchase-item="${escapeHtml(item.id)}">
+            <label>${escapeHtml(t("stock.storePurchase"))}<select data-purchase-location>${purchaseLocationOptions(item, context.locations || [], t)}</select></label>
             <label>${escapeHtml(t("preparation.purchasedCount"))}<input type="number" min="1" max="${Number.MAX_SAFE_INTEGER - available}" step="1" inputmode="numeric" value="${missing}" required /></label>
             <button type="submit">${escapeHtml(t("preparation.purchased"))}</button>
           </form>` : `<small>${escapeHtml(t("preparation.editHint"))}</small>`}
@@ -70,7 +73,7 @@ export function createPreparationDialogController({ getContext, openDialog, open
     }));
     dialog.querySelectorAll("[data-purchase-item]").forEach((form) => form.addEventListener("submit", (event) => {
       event.preventDefault();
-      if (form.reportValidity()) purchase(form.dataset.purchaseItem, form.querySelector("input").value, layoutId);
+      if (form.reportValidity()) purchase(form.dataset.purchaseItem, form.querySelector("input").value, layoutId, form.querySelector("[data-purchase-location]").value);
     }));
   }
 
@@ -107,6 +110,7 @@ export function bindStockField(refs, onChange) {
   if (!input || input.dataset.stockBound) return;
   input.dataset.stockBound = "true";
   const update = (delta = 0) => {
+    if (input.readOnly || input.disabled) return;
     input.value = Math.max(0, itemStockQuantity({ stockQuantity: input.value }) + delta);
     minus.disabled = Number(input.value) === 0 || input.disabled;
     onChange();
@@ -116,4 +120,10 @@ export function bindStockField(refs, onChange) {
   plus.addEventListener("click", () => update(1));
   input.addEventListener("change", () => update());
   input.addEventListener("input", () => { minus.disabled = Number(input.value) === 0 || input.disabled; });
+}
+
+function purchaseLocationOptions(item, locations, t) {
+  const labels = new Map(locations);
+  const own = itemStockLocations(item).map((row) => row.location);
+  return [...new Set([...own, ...labels.keys()])].map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(labels.get(location) || location || t("stock.unspecified"))}</option>`).join("");
 }

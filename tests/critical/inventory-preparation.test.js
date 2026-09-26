@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { itemStockQuantity, addPurchasedStock } from "../../src/state/item-stock.js";
+import { itemStockQuantity, itemStockLocations, setItemStockQuantity, setItemStockLocations, moveItemStock, renameItemStockLocation, addPurchasedStock } from "../../src/state/item-stock.js";
+import { matchesItemFieldsFilter } from "../../src/state/catalog-search.js";
 import { normalizeItemFields } from "../../src/state/normalize.js";
 import { layoutPreparation } from "../../src/state/layout-preparation.js";
 import { getLayoutItemQuantity } from "../../src/state/layout-item-quantity.js";
@@ -43,7 +44,7 @@ test("migration defaults stock to one, translates purchase location to zero and 
   assert.equal(state.items.outside.stockQuantity, 1);
   assert.deepEqual(state.locations, ["Дома"]);
   assert.deepEqual(state.customLocations, []);
-  state.items.lamp.stockQuantity = 4;
+  setItemStockQuantity(state.items.lamp, 4);
   normalizeItemFields(state);
   assert.equal(state.items.lamp.stockQuantity, 4, "subsequent normalization must not reset purchases");
   assert.deepEqual(dictionaryOptionsForUi("location", ["Дома", "Надо купить"], { selected: ["Надо купить"] }), ["Дома"]);
@@ -74,10 +75,52 @@ test("partial purchases update only stock, survive entity sync and leave layout 
 
 test("shared item snapshots do not expose inventory", () => {
   const state = fixture();
+  setItemStockLocations(state.items.oats, [{ location: "Дом", quantity: 2 }, { location: "Дача", quantity: 1 }]);
   const snapshot = createSharedEntitySnapshotPayload(state, { entityType: "item", entityId: "oats", layoutId: "trip", scope: "entity" });
   assert.ok(snapshot);
   assert.equal(snapshot.items.oats.stockQuantity, undefined);
   assert.equal(state.items.oats.stockQuantity, 3);
+});
+
+test("stock by place migrates without losing zero, sums purchases and moves without changing the plan", () => {
+  const state = fixture();
+  const item = state.items.oats;
+  item.location = "Дом";
+  normalizeItemFields(state);
+  assert.deepEqual(itemStockLocations(item), [{ location: "Дом", quantity: 3 }]);
+  assert.equal(moveItemStock(item, "Дом", "Дача", 2), true);
+  assert.deepEqual(itemStockLocations(item), [{ location: "Дом", quantity: 1 }, { location: "Дача", quantity: 2 }]);
+  assert.equal(itemStockQuantity(item), 3);
+  assert.equal(setItemStockQuantity(item, 9), false, "ambiguous aggregate edits cannot choose a place");
+  assert.equal(addPurchasedStock(item, 1), false, "multi-place purchases need a destination");
+  assert.equal(addPurchasedStock(item, 2, "Дача"), true);
+  assert.equal(itemStockQuantity(item), 5);
+  assert.equal(layoutPreparation(state, "trip").buy[0].missing, 2);
+  assert.equal(matchesItemFieldsFilter(item, { location: "Дом" }), true);
+  assert.equal(matchesItemFieldsFilter(item, { location: "Дача" }), true);
+  assert.equal(matchesItemFieldsFilter(item, { location: "Гараж" }), false);
+  assert.deepEqual(compactItemForEntitySync(item).stockLocations, item.stockLocations);
+  const before = JSON.stringify(item);
+  for (const count of [0, -1, 1.5, 20, Infinity]) assert.equal(moveItemStock(item, "Дом", "Дача", count), false);
+  assert.equal(JSON.stringify(item), before);
+  assert.equal(renameItemStockLocation(item, "Дом", "Дача"), true);
+  assert.deepEqual(itemStockLocations(item), [{ location: "Дача", quantity: 5 }]);
+  assert.equal(setItemStockQuantity(item, 0), true);
+  normalizeItemFields(state);
+  assert.deepEqual(itemStockLocations(item), [{ location: "Дача", quantity: 0 }]);
+  assert.equal(getLayoutItemQuantity(state, "trip", "oats"), 7);
+});
+
+test("stock locations reject invalid totals and public snapshots omit every private stock field", () => {
+  const state = fixture();
+  const item = state.items.oats;
+  assert.equal(setItemStockLocations(item, [{ location: "Дом", quantity: Number.MAX_SAFE_INTEGER }, { location: "Дача", quantity: 1 }]), false);
+  assert.equal(setItemStockLocations(item, [{ location: "Дом", quantity: -1 }]), false);
+  assert.equal(setItemStockLocations(item, []), false);
+  setItemStockLocations(item, [{ location: "Дом", quantity: 2 }, { location: "Дача", quantity: 2 }]);
+  const snapshot = createSharedEntitySnapshotPayload(state, { entityType: "item", entityId: "oats", layoutId: "trip", scope: "entity" });
+  assert.ok(!JSON.stringify(snapshot).includes("stockLocations"));
+  assert.ok(!JSON.stringify(snapshot).includes("stockQuantity"));
 });
 
 test("repair and charge are always available without creating personal dictionary entries", () => {

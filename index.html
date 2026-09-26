@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1607" />
+    <link rel="stylesheet" href="./styles.css?v=1608" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -164,6 +164,8 @@
           Name
           <input id="itemName" />
         </label>
+        <section class="item-editor-section" aria-labelledby="itemPackingSectionTitle">
+          <h3 id="itemPackingSectionTitle">Для этой укладки</h3>
         <div class="item-measure-row">
           <label>
             Weight, g
@@ -182,6 +184,9 @@
             <strong id="itemTotalWeight">0 g</strong>
           </div>
         </div>
+        </section>
+        <section class="item-editor-section" aria-labelledby="itemStockSectionTitle">
+          <h3 id="itemStockSectionTitle">Запасы и места хранения</h3>
         <div id="itemStockField" class="item-stock-field">
           <label for="itemStockQuantity" id="itemStockLabel">В наличии, шт.</label>
           <div class="quantity-stepper">
@@ -190,10 +195,31 @@
             <button id="itemStockPlus" class="ghost" type="button" aria-label="Увеличить остаток">+</button>
           </div>
         </div>
+        <p id="itemStockLocationsSummary" class="stock-locations-summary" hidden></p>
+        <button id="itemStockLocationsBtn" type="button" class="ghost stock-locations-button">Разделить по местам</button>
+        <label>
+          Storage place
+          <select id="itemLocation"></select>
+        </label>
+        </section>
+        <section class="item-editor-section" aria-labelledby="itemReadinessSectionTitle">
+          <h3 id="itemReadinessSectionTitle">Состояние и подготовка</h3>
+        <label>
+          Availability
+          <select id="itemAvailabilityStatus">
+            <option value="available">Available</option>
+            <option value="lost">Lost</option>
+            <option value="broken">Broken</option>
+            <option value="retired">Retired</option>
+          </select>
+        </label>
         <div id="itemPreparationFields" class="item-preparation-fields">
           <label><input id="itemNeedsRepair" type="checkbox" /><span id="itemNeedsRepairLabel">Нужна починка</span></label>
           <label><input id="itemNeedsCharge" type="checkbox" /><span id="itemNeedsChargeLabel">Требует заряда</span></label>
         </div>
+        </section>
+        <section class="item-editor-section" aria-labelledby="itemDetailsSectionTitle">
+          <h3 id="itemDetailsSectionTitle">Характеристики вещи</h3>
         <div class="dialog-two-columns item-physical-properties">
           <label>
             Color
@@ -215,10 +241,6 @@
             </label>
           </fieldset>
         </div>
-        <label>
-          Storage place
-          <select id="itemLocation"></select>
-        </label>
         <div class="field-label">
           Categories
           <label class="category-search-field">
@@ -230,15 +252,7 @@
             <input id="itemCategoryScroll" class="mobile-category-scroll-control" type="range" min="0" max="0" value="0" step="1" aria-label="Scroll category list" data-modal-scroll-control hidden />
           </div>
         </div>
-        <label>
-          Availability
-          <select id="itemAvailabilityStatus">
-            <option value="available">Available</option>
-            <option value="lost">Lost</option>
-            <option value="broken">Broken</option>
-            <option value="retired">Retired</option>
-          </select>
-        </label>
+        </section>
         <div class="field-label item-container-field">
           <span id="itemContainerLabel">Положить в</span>
           <div class="item-container-control">
@@ -855,6 +869,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1607" type="module"></script>
+    <script src="./app.js?v=1608" type="module"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 import { containerCategories, itemCategories } from "./normalize.js";
-import { isLegacyPurchaseLocation } from "./item-stock.js";
+import { isLegacyPurchaseLocation, itemStorageLocations } from "./item-stock.js";
 import { isBuiltinCategory, withBuiltinCategories } from "./builtin-categories.js";
 import { collectPublicLayoutRecordIds, isPublicLayoutRecord } from "./public-layout-scope.js";
 
@@ -33,8 +33,7 @@ export function layoutDictionaryValues(layout, type, sourceState, {
       if (value) values.push(value);
     });
     itemIds.forEach((id) => {
-      const value = sourceState.items?.[id]?.location;
-      if (value) values.push(value);
+      values.push(...itemStorageLocations(sourceState.items?.[id]));
     });
   } else {
     containerIds.forEach((id) => {
@@ -61,7 +60,7 @@ export function privateDictionaryValues(type, sourceState, helpers = {}) {
       if (!publicIds.containerIds.has(id) && !isPublicSyncContainer(id, container) && isPrivateDictionaryRecord(container) && container.location) values.push(container.location);
     });
     Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
-      if (!publicIds.itemIds.has(id) && !isPublicSyncItem(id, item) && isPrivateDictionaryRecord(item) && item.location) values.push(item.location);
+      if (!publicIds.itemIds.has(id) && !isPublicSyncItem(id, item) && isPrivateDictionaryRecord(item)) values.push(...itemStorageLocations(item));
     });
   } else {
     Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
