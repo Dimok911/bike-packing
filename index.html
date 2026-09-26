@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1612" />
+    <link rel="stylesheet" href="./styles.css?v=1613" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -117,6 +117,7 @@
         </div>
       </section>
 
+      <section class="layout-photo-summary auth-required" id="layoutPhotoSummary" aria-label="Фото укладки" hidden></section>
       <section class="summary auth-required" id="summary"></section>
 
       <div class="tabs-row auth-required">
@@ -566,10 +567,10 @@
           Template language
           <select id="layoutEditLanguage"></select>
         </label>
-        <label>
-          Notes
+        <div class="note-field">
+          <label id="layoutEditNotesLabel" for="layoutEditNotes">Notes</label>
           <textarea id="layoutEditNotes" rows="4"></textarea>
-        </label>
+        </div>
         <section data-layout-media-editor class="layout-media-editor">
           <label>
             <span data-layout-photos-label>Фотографии</span>
@@ -889,6 +890,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1612" type="module"></script>
+    <script src="./app.js?v=1613" type="module"></script>
   </body>
 </html>

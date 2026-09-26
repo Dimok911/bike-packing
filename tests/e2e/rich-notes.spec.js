@@ -231,3 +231,69 @@ test('toolbar adds named links to selected text and bags, edits addresses and ca
   expect(popup.url()).toBe('https://example.com/created#bag');
   await popup.close();
 });
+
+
+test('layout notes support formatting, named links, reload and discard', async ({page,isMobile})=>{
+  await fixture(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await paste(page.locator('#layoutEditNotes'), '<p><strong>Проверить</strong> перед поездкой</p>');
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await activate(page.locator('#layoutEditDialog [data-note-command="link"]'),isMobile);
+  const panel=page.locator('#layoutEditDialog .rich-note-link-panel');
+  await panel.locator('[data-note-link-field="text"]').fill('Инструкция');
+  await panel.locator('[data-note-link-field="url"]').fill('https://example.com/manual');
+  await panel.locator('[data-note-link-field="url"]').blur();
+  await activate(panel.locator('[data-note-link-apply]'),isMobile);
+  await save(page,'#saveEditedLayoutBtn',isMobile);
+  await expect(page.locator('.layout-notes-content strong')).toHaveText('Проверить');
+  await expect(page.locator('.layout-notes-content a')).toHaveAttribute('href','https://example.com/manual');
+  await page.reload(); await waitForApp(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await expect(page.locator('#layoutEditNotesRich a')).toHaveText('Инструкция');
+  await expect(page.locator('#saveEditedLayoutBtn')).toBeDisabled();
+  await page.locator('#layoutEditNotesRich').fill('Не сохранять');
+  await page.evaluate(()=>document.activeElement?.blur());
+  await activate(page.locator('#layoutEditDialog header button'),isMobile);
+  await activate(page.locator('#confirmCancelBtn'),isMobile);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await page.screenshot({path:`test-results/v1613-layout-notes-${isMobile?'mobile':'desktop'}.png`});
+});
+
+
+test('history renders safe formatted before/after notes and exact layout quantities', async({page})=>{
+  const {readFile}=await import('node:fs/promises');
+  const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await page.route('**/__testsrc/**',async route=>{
+    const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];
+    if (!relative.startsWith('src/') || relative.includes('..')) return route.abort();
+    await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});
+  });
+  await page.evaluate(async()=>{
+    const {renderHistoryRecordDetails}=await import('/__testsrc/src/ui/history-diff.js');
+    const before={items:{i:{id:'i',name:'Носки',note:'Старое'}},containers:{b:{id:'b',name:'Сумка',note:'Старое'}},layouts:{l:{id:'l',name:'Поход',notes:'Старое',arrangement:{items:{i:'b'},itemQuantities:{i:1}}}}};
+    const after=structuredClone(before);
+    for (const [map,key] of [['items','note'],['containers','note'],['layouts','notes']]) {
+      const entity=Object.values(after[map])[0];
+      entity[key]='Новое инструкция';
+      entity[`${key}Html`]='<p><strong>Новое</strong> <a href="https://example.com/manual">инструкция</a></p><img src=x onerror="window.historyXss=1"><script>window.historyXss=1</script>';
+    }
+    after.layouts.l.arrangement.itemQuantities.i=3;
+    const host=document.createElement('section');host.id='history-render-test';
+    host.innerHTML=renderHistoryRecordDetails({id:1},0,[{id:1}],{recordState:()=>before,currentComparisonState:()=>after});
+    document.body.append(host);
+  });
+  const result=page.locator('#history-render-test');
+  await expect(result.locator('.history-note-comparison')).toHaveCount(3);
+  await expect(result.locator('.note-content strong')).toHaveText(['Новое','Новое','Новое']);
+  await expect(result.locator('a')).toHaveCount(3);
+  await expect(result.locator('a').first()).toHaveAttribute('rel','noopener noreferrer');
+  await expect(result).toContainText('Количество «Носки»: 1 → 3');
+  await expect(result).not.toContainText('Изменено размещение');
+  await expect(result).not.toContainText('<strong>');
+  await expect(result.locator('script,img,[onerror]')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.historyXss)).toBeUndefined();
+  await result.screenshot({path:'test-results/v1613-history-formatted.png'});
+});

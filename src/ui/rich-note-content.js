@@ -103,3 +103,15 @@ export function loadNoteFields(textarea, record = {}) {
   if (textarea?.richNoteEditor) textarea.richNoteEditor.load(record?.note || "", record?.noteHtml || "");
   else if (textarea) textarea.value = record?.note || "";
 }
+
+// Reuse the editor allowlist and reject stale formatting left by older clients.
+export function renderNoteContent(note, html, documentRef = globalThis.document) {
+  const text = String(note || "");
+  if (html && documentRef?.createElement) {
+    const safe = sanitizeNoteHtml(html, documentRef);
+    const root = documentRef.createElement("div");
+    root.innerHTML = safe;
+    if (noteTextMap(root).text === text.trim()) return safe;
+  }
+  return plainNoteHtml(text);
+}

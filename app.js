@@ -1,3 +1,4 @@
+import { setupLayoutPhotoViewControl } from "./src/ui/layout-photo-summary.js";
 import { isBuiltinCategory, builtinCategoryAction } from "./src/state/builtin-categories.js";
 import {
   STORAGE_KEY,
@@ -3812,6 +3813,8 @@ function setupPackingVisualStyleQuickControl() {
     if (!button) return;
     setPackingVisualStyle(button.dataset.packingVisualStyle);
   });
+  setupLayoutPhotoViewControl(control, localText);
+  document.body.append(control);
 }
 
 function syncPackingVisualStyleControls() {

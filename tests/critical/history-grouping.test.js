@@ -1535,3 +1535,29 @@ test("CRITICAL history: private and public undo flows restore captured navigatio
   assert.match(appSource, /applyRemoteState\(restoredState,[\s\S]*?preferredLayout,[\s\S]*?preservePublicDraftId/);
   assert.ok((appSource.match(/restoreHistoryNavigationContext\(/g) || []).length >= 2);
 });
+
+
+test("layout quantities report item names and exact values without claiming a move", () => {
+  const before = { items: { socks: { id: "socks", name: "Носки", quantity: 1 } }, layouts: {
+    trip: { id: "trip", name: "Поход", arrangement: { items: { socks: "bag" }, itemQuantities: { socks: 1 } } }
+  } };
+  const after = structuredClone(before);
+  after.layouts.trip.arrangement.itemQuantities.socks = 3;
+  const rows = buildHistoryStateDiff(before, after).layouts.changed;
+  assert.deepEqual(rows[0].details, ["Количество «Носки»: 1 → 3"]);
+  delete before.layouts.trip.arrangement.itemQuantities;
+  assert.deepEqual(buildHistoryStateDiff(before, after).layouts.changed[0].details, ["Количество «Носки»: 1 → 3"]);
+  after.layouts.trip.arrangement.items = {};
+  assert.ok(!buildHistoryStateDiff(before, after).layouts.changed[0].details.some(text => text.startsWith("Количество")));
+});
+
+test("format-only changes produce one note comparison for items, bags and layouts", () => {
+  for (const [map, key] of [["items", "note"], ["containers", "note"], ["layouts", "notes"]]) {
+    const before = { [map]: { a: { id: "a", name: "A", [key]: "Text" } } };
+    const after = structuredClone(before);
+    after[map].a[`${key}Html`] = "<strong>Text</strong>";
+    const row = buildHistoryStateDiff(before, after)[map].changed[0];
+    assert.deepEqual(row.details, ["Изменена заметка"]);
+    assert.deepEqual(row.detailNotes[0], { before: {text:"Text",html:""}, after:{text:"Text",html:"<strong>Text</strong>"} });
+  }
+});

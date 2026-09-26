@@ -31,7 +31,11 @@ export function backupLayoutMatchesCurrent(layout, existing) {
   const restored = clonePlain(layout);
   if (existing.locked && !restored.locked) restored.locked = true;
   const existingNotes = normalizeLayoutNotes(existing.notes);
-  if (existing.locked && existingNotes && !normalizeLayoutNotes(restored.notes)) restored.notes = existingNotes;
+  if (existing.locked && existingNotes && !normalizeLayoutNotes(restored.notes)) {
+    restored.notes = existingNotes;
+    if (existing.notesHtml) restored.notesHtml = existing.notesHtml;
+    else delete restored.notesHtml;
+  }
   return JSON.stringify(comparableBackupLayout(restored)) === JSON.stringify(comparableBackupLayout(existing));
 }
 
@@ -187,6 +191,8 @@ export function restoreSelectedBackupLayoutsToState({
       if (existingWasLocked && !restoredLayout.locked) restoredLayout.locked = true;
       if (existingWasLocked && existingNotes && !normalizeLayoutNotes(restoredLayout.notes)) {
         restoredLayout.notes = existingNotes;
+        if (existing.notesHtml) restoredLayout.notesHtml = existing.notesHtml;
+        else delete restoredLayout.notesHtml;
       }
       if (!createCopy && existing?.id) delete targetState.layouts[existing.id];
       getLayoutContainerIdSet(sourceState, layout).forEach((containerId) => {

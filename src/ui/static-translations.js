@@ -292,7 +292,7 @@ export function applyStaticTranslationsUi({
   setText(refs.saveLayoutBtn, t("buttons.add"));
 
   setFirstText(refs.layoutEditDialog?.querySelector("label:has(#layoutEditName)"), t("forms.name"));
-  setFirstText(refs.layoutEditDialog?.querySelector("label:has(#layoutEditNotes)"), t("forms.notes"));
+  setText(refs.layoutEditDialog?.querySelector("#layoutEditNotesLabel"), t("forms.notes"));
   if (refs.layoutEditNotes) refs.layoutEditNotes.placeholder = t("layout.notesPlaceholder");
   setText(refs.layoutLockedLabel?.querySelector("span"), t("layout.lockedLabel"));
   setText(refs.deleteEditedLayoutBtn, t("buttons.deleteLayout"));

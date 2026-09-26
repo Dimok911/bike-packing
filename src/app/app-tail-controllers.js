@@ -1,8 +1,10 @@
+import { createLayoutPhotoSummary } from "../ui/layout-photo-summary.js";
+import { openPhotoLightbox } from "../ui/photo-gallery.js";
 import { applyLayoutMedia } from "../state/layout-media.js";
 import { createLayoutMediaEditor } from "../ui/layout-media-editor.js";
 import { bindPhotoDropZone } from "../ui/photo-drop-zone.js";
 import { createRichNoteEditor } from "../ui/rich-note-editor.js";
-import { loadNoteFields, readNoteFields } from "../ui/rich-note-content.js";
+import { loadNoteFields, readNoteFields, renderNoteContent } from "../ui/rich-note-content.js";
 import { itemStockQuantity, itemStockLocations, itemStorageLocations, setItemStockLocations, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
 import { createStockLocationsDialog } from "../ui/stock-locations-dialog.js";
 import { layoutPreparation, itemNeedsPreparation, preparationCategoryMatches } from "../state/layout-preparation.js";
@@ -150,6 +152,7 @@ export function createAppTailControllers(ctx) {
   let layoutOrderDragId = "";
   let layoutEditInitialSnapshot = null;
   let layoutMediaEditor = null;
+  let layoutPhotoSummary = null;
   let layoutOrderDraftSections = null;
   let layoutOrderInitialSignature = "";
   let layoutOrderSavePromise = null;
@@ -420,6 +423,7 @@ export function createAppTailControllers(ctx) {
 
   createRichNoteEditor(refs.itemNote);
   createRichNoteEditor(refs.rootContainerNote);
+  createRichNoteEditor(refs.layoutEditNotes);
 
   let itemStockLocationsDraft = null;
   const stockLocationsDialog = createStockLocationsDialog({
@@ -3054,6 +3058,7 @@ function bindLayoutComparisonView() {
 function renderSummary() {
   const comparison = currentLayoutComparison();
   if (comparison) {
+    renderLayoutPhotoSummary(false);
     renderLayoutComparisonSummary(comparison);
     return;
   }
@@ -3170,12 +3175,28 @@ function layoutNotesSummaryHtml() {
           ><span class="layout-notes-chevron" aria-hidden="true"></span></button>
         </div>
       </div>
-      <p ${collapsed ? "hidden" : ""}>${escapeHtml(notes)}</p>
+      <div class="layout-notes-content note-content" ${collapsed ? "hidden" : ""}>${renderNoteContent(notes, state.layouts?.[layoutId]?.notesHtml)}</div>
     </div>
   `;
 }
 
+function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
+  const host = document.querySelector("#layoutPhotoSummary");
+  if (!host) return;
+  if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
+    host,
+    renderGallery: renderPhotoGalleryHtml,
+    bindGalleries: (root) => bindPhotoGalleries(root, {
+      ...photoGalleryBindingOptions(),
+      openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
+    }),
+    localText
+  });
+  layoutPhotoSummary.render(state.layouts?.[state.activeLayoutId], visible).catch(() => { host.hidden = true; });
+}
+
 function renderSummaryContent(metrics) {
+  renderLayoutPhotoSummary();
   refs.summary.innerHTML = `${metrics.join("")}${layoutNotesSummaryHtml()}`;
   refs.summary.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
@@ -6870,7 +6891,10 @@ function openLayoutEditDialog() {
     createPhoto: createItemPhotoFromFile,
     deleteCachedPhoto,
     renderGallery: renderPhotoGalleryHtml,
-    bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+    bindGalleries: (root) => bindPhotoGalleries(root, {
+      ...photoGalleryBindingOptions(),
+      openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
+    }),
     onChange: updateLayoutEditSaveState,
     getLimit: () => usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit()),
     localText,
@@ -6880,12 +6904,12 @@ function openLayoutEditDialog() {
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
   refs.layoutEditName.value = layout.name || "";
   const showLanguage = isAdminEditablePublishedLayout(layout.id);
-  const notesLabel = refs.layoutEditNotes?.closest("label");
+  const notesLabel = refs.layoutEditNotes?.closest(".note-field");
   if (notesLabel) {
     notesLabel.hidden = showLanguage;
     notesLabel.setAttribute("aria-hidden", String(showLanguage));
   }
-  if (refs.layoutEditNotes) refs.layoutEditNotes.value = showLanguage ? "" : normalizeLayoutNotes(layout.notes);
+  loadNoteFields(refs.layoutEditNotes, showLanguage ? {} : { note: normalizeLayoutNotes(layout.notes), noteHtml: layout.notesHtml });
   refs.layoutEditLanguageLabel.hidden = !showLanguage;
   refs.layoutEditLanguageLabel.setAttribute("aria-hidden", String(!showLanguage));
   const showLock = !showLanguage;
@@ -7368,7 +7392,7 @@ function getLayoutEditSnapshot() {
   return {
     name: refs.layoutEditName?.value.trim() || "",
     language: adminPublished ? normalizeUiLanguage(refs.layoutEditLanguage?.value || layoutManageLanguage(layout, uiLanguage)) : "",
-    notes: adminPublished ? "" : normalizeLayoutNotes(refs.layoutEditNotes?.value || ""),
+    notes: adminPublished ? {} : readNoteFields(refs.layoutEditNotes),
     media: layoutMediaEditor?.signature() || "",
     locked: adminPublished ? false : Boolean(refs.layoutLocked?.checked)
   };
@@ -7465,7 +7489,8 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     uiLanguage,
     uniqueLayoutName
   });
-  const notesChanged = !adminPublished && applyLayoutNotes(layout, refs.layoutEditNotes?.value || "");
+  const noteFields = readNoteFields(refs.layoutEditNotes);
+  const notesChanged = !adminPublished && applyLayoutNotes(layout, noteFields.note, noteFields.noteHtml);
   const mediaChanged = applyLayoutMedia(layout, layoutMediaEditor.snapshot());
   const lockChanged = !adminPublished && applyLayoutLocked(layout, nextLocked);
   if (!changed && !notesChanged && !lockChanged && !mediaChanged) {

@@ -82,13 +82,13 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   });
   input.addEventListener("change", async () => {
     const files = [...input.files];
-    input.value = "";
-    await addFiles(files);
+    try { await addFiles(files); }
+    finally { input.value = ""; }
   });
   camera.addEventListener("change", async () => {
     const files = [...camera.files];
-    camera.value = "";
-    await addFiles(files);
+    try { await addFiles(files); }
+    finally { camera.value = ""; }
   });
   async function addFiles(files) {
     if (!files.length || busy) return;
