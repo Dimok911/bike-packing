@@ -34,7 +34,7 @@ test("form payload patches only the mapped raw owner and retains complete packed
     source.items["server-item"].unknownBusiness = { exact: "raw item" };
     source.containers["server-bag"].unknownBusiness = { exact: "raw container" };
     source[type][serverId].dimensions = { length: 9, unknown: "old dimensions" };
-    const fields = { name: "Selected form name", dimensions: null, categories: ["New category"], updatedByDeviceId: "device-a",
+    const fields = { name: "Selected form name", note: "Selected note", noteHtml: "<strong>Selected note</strong>", dimensions: null, categories: ["New category"], updatedByDeviceId: "device-a",
       ...(entityType === "item" ? { quantity: 1 } : { volume: 4, nestable: false }) };
     const before = structuredClone(source), beforeFields = structuredClone(fields), expected = structuredClone(source);
     Object.assign(expected[type][serverId], structuredClone(fields)); delete expected[type][serverId].dimensions;

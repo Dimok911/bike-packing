@@ -13162,7 +13162,7 @@ async function captureAdminTemplatePhotoAppendForm(input, { isCurrent, onDurable
   }
   const fields = clone(input.fields), photos = clone(input.photos), files = [...input.files], operationId = attempt.operationId;
   const applyFields = row => { Object.assign(row, fields); if (fields.dimensions === null) delete row.dimensions; };
-  const allowed = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions",
+  const allowed = ["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions",
     "updatedAt", "updatedByDeviceId", "updatedByDeviceName", ...(type === "items" ? ["quantity"] : ["volume", "nestable"])];
   if (Object.keys(fields).some(field => !allowed.includes(field))) throw Error("Поля формы не соответствуют выбранному сохранению.");
   const beforeState = attempt.beforeState, original = canonicalTemplateJson(beforeState);
@@ -14071,7 +14071,7 @@ function adminTemplateCanonicalEditorSnapshot(layoutId) {
   const order = values => values.map(row => { if (!["item", "container"].includes(row.type)) fail(); return { ...clone(row), id: ref(row.type === "item" ? "items" : "containers", row.id) }; });
   const links = row => ({ ...clone(row), parentId: ref("containers", row.parentId), childIds: refs("containers", row.childIds || []),
     itemIds: refs("items", row.itemIds || []), order: order(row.order || []) });
-  const payload = clone(raw), formFields = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions", "quantity", "volume", "nestable",
+  const payload = clone(raw), formFields = ["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions", "quantity", "volume", "nestable",
     "createdAt", "updatedAt", "updatedByDeviceId", "updatedByDeviceName", "availabilityStatus"];
   for (const type of ["items", "containers"]) for (const [localId, serverId] of Object.entries(mappings[type])) {
     const current = state[type][localId], original = raw[type][serverId], row = clone(original);
@@ -14082,7 +14082,7 @@ function adminTemplateCanonicalEditorSnapshot(layoutId) {
       if (!Object.hasOwn(original, key) && !formFields.includes(key)) fail();
       row[key] = clone(value);
     }
-    for (const key of ["dimensions", "availabilityStatus"]) if (!Object.hasOwn(current, key)) delete row[key];
+    for (const key of ["dimensions", "availabilityStatus", "noteHtml"]) if (!Object.hasOwn(current, key)) delete row[key];
     if (type === "items") {
       const parent = ref("containers", current.containerId);
       if (Object.hasOwn(original, "containerId") || parent) row.containerId = parent;

@@ -205,7 +205,7 @@ test("beforeState keeps the exact original photo prefix while item and container
   for (const entityType of ["item", "container"]) {
     const { input, type, localId, serverId } = await beforeStateFixture(entityType);
     const fields = { name: "Changed in selected form", weight: 321, color: "green", location: "Bike", category: "Repair", categories: ["Repair"],
-      note: "Captured note", dimensions: { length: 12, width: 8 }, updatedAt: "2026-09-11T17:00:00Z",
+      note: "Captured note", noteHtml: "<strong>Captured note</strong>", dimensions: { length: 12, width: 8 }, updatedAt: "2026-09-11T17:00:00Z",
       updatedByDeviceId: "current-device", updatedByDeviceName: "Current device",
       ...(entityType === "item" ? { quantity: 3 } : { volume: 8, nestable: true }) };
     Object.assign(input.snapshot.state[type][localId], fields);
@@ -220,6 +220,7 @@ test("beforeState keeps the exact original photo prefix while item and container
     assert.deepEqual(record.action.body.payload[type][serverId].photos, input.snapshot.sourcePayload[type][serverId].photos);
     assert.equal(record.snapshot.beforeState[type][localId].name, input.snapshot.sourcePayload[type][serverId].name);
     assert.equal(record.snapshot.state[type][localId].name, fields.name);
+    assert.equal(record.snapshot.state[type][localId].noteHtml, fields.noteHtml);
     assert.deepEqual(record.snapshot.beforeState.layouts, record.snapshot.state.layouts);
     record.snapshot.beforeState[type][localId].photos[0].fileName = "Detached readback.png";
     assert.deepEqual(input, frozen);
