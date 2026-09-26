@@ -415,7 +415,7 @@ export function createAppTailControllers(ctx) {
   let itemStockLocationsDraft = null;
   const stockLocationsDialog = createStockLocationsDialog({
     openDialog: openModalDialog,
-    getLocations: () => dictionaryOptionsForUi("location"),
+    getLocations: () => dictionaryOptionsForUi("location").map(dictionarySelectEntry),
     canAddLocations: (values) => {
       const known = new Set(dictionaryOptionsForUi("location"));
       const count = new Set(values.filter((value) => value && !known.has(value))).size;

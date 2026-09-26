@@ -68,7 +68,6 @@ export function createPreparationDialogController({ getContext, openDialog, open
       </article>`).join("") : `<p class="preparation-empty" role="status">${escapeHtml(t(`preparation.empty.${activeAction}`))}</p>`;
     hydratePhotos(dialog.querySelector("[data-preparation-list]"));
     dialog.querySelectorAll("[data-preparation-edit]").forEach((button) => button.addEventListener("click", () => {
-      dialog.close();
       openItem(button.dataset.preparationEdit);
     }));
     dialog.querySelectorAll("[data-purchase-item]").forEach((form) => form.addEventListener("submit", (event) => {
