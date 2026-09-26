@@ -21,4 +21,13 @@ Chromium and mobile WebKit cover formatted notes, links, reload/discard, safe re
 
 Publish only app.js, index.html, styles.css, sw.js and release-contract.json using the existing incremental FTPS script. Preserve all existing photographs. The exact preflight hashes are recorded in ftp-upload/v1613/production-comparison.json. A recoverable file backup and both FTPS/HTTPS verification are required. GitHub Actions is waived by the user's explicit instruction; commits use [skip ci].
 
-Publication result and rollback location will be recorded after verification.
+Published and verified on 2026-09-26 UTC (2026-09-27 Moscow).
+
+- Application source: 946d98a3d4c04762cf084af144a7536de49618c5, PR https://github.com/Dimok911/bike-packing/pull/34.
+- Backup: /www/vniipo-help.ru/bike-packing-backup-before-v1613-20260926T232408Z/.
+- Incremental FTPS staging, activation and production HTTPS SHA-256 checks passed for all five changed files; zero photographs transferred.
+- 17 distinct browser scenarios passed across Chromium and mobile WebKit (one pre-existing form-draft mobile case skipped). Final gallery acceptance: both browsers passed, including touch swipes, starting from the clicked photo, all three view variants, persistence, layout switching, editor navigation and narrow-screen sizing.
+- Live user tab shows v1613 and three loaded photos with existing captions. Verified А/Б/В switching and fullscreen navigation from Photo 1 of 3 to Photo 2 of 3. Rich-note toolbar is present in Edit layout, with Save disabled on an unchanged record. No personal content was edited.
+- Left the live page on the А strip view with the view switcher visible.
+
+Evidence: ftp-upload/v1613/{production-comparison.json,publication.log,critical.log,acceptance.log}; screenshot in the primary project test-results/v1613-live-photo-views.png. The API and shared gallery runtime were not redeployed.
