@@ -258,3 +258,22 @@ test("actual fresh background hydration retains its exact raw source before snap
   assert.equal((await hydrateCausalAdminTemplateDrafts(opts)).restored, 0);
   assert.deepEqual(f.state, before); assert.equal(captured.length, 1);
 });
+
+
+test("actual canonical template snapshot preserves new rich notes and explicit clearing for both owner types", async () => {
+  const f = await fixture(), layoutId = f.input.snapshot.layoutId, layout = f.state.layouts[layoutId];
+  const raw = clone(f.input.snapshot.sourcePayload);
+  layout.adminCausalSource.canonicalPayload = clone(raw);
+  const api = actual(app, ["adminTemplateCanonicalEditorSnapshot"], { state: f.state, clone, canonicalTemplateJson, assertAdminTemplatePhotoView,
+    ADMIN_TEMPLATE_PHOTO_CREATE_ENABLED: true, normalizeUiLanguage: value => value, uiLanguage: "ru" });
+  for (const type of ["items", "containers"]) {
+    const owner = f.input.snapshot.ownerMap.owners.find(row => row.type === type);
+    f.state[type][owner.localId].noteHtml = "<strong>Rich note</strong>";
+    const expected = clone(raw); expected[type][owner.serverId].noteHtml = "<strong>Rich note</strong>";
+    assert.deepEqual(api.adminTemplateCanonicalEditorSnapshot(layoutId).payload, expected);
+    layout.adminCausalSource.canonicalPayload = clone(expected);
+    delete f.state[type][owner.localId].noteHtml;
+    assert.deepEqual(api.adminTemplateCanonicalEditorSnapshot(layoutId).payload, raw);
+    layout.adminCausalSource.canonicalPayload = clone(raw);
+  }
+});
