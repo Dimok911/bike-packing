@@ -12,7 +12,7 @@ const invalid = () => { throw Object.assign(Error("Полное действие
 const clone = value => JSON.parse(canonicalTemplateJson(value));
 const same = (left, right) => canonicalTemplateJson(left) === canonicalTemplateJson(right);
 const types = ["items", "containers"];
-const formFields = Object.freeze(["name", "weight", "color", "location", "category", "categories", "note", "dimensions",
+const formFields = Object.freeze(["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions",
   "updatedAt", "updatedByDeviceId", "updatedByDeviceName"]);
 export function adminTemplatePhotoFormFieldNames(entityType) {
   if (!["item", "container"].includes(entityType)) invalid();

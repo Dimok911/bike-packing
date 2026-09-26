@@ -124,6 +124,13 @@ for (const type of ["item", "container"]) for (const edit of [false, true]) test
   await expect.poll(() => server.photoReads.length).toBeGreaterThan(0);
   await page.locator(".photo-lightbox-close").click();
   await page.locator(`#${prefix}Name`).fill("Релизная фотоформа");
+  await page.locator(`#${prefix}Note`).evaluate(el => {
+    el.focus();
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/html", "<strong>Релизная заметка</strong>");
+    clipboardData.setData("text/plain", "Релизная заметка");
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+  });
   if (edit) {
     await page.locator(`#${prefix}PhotoRemoveBtn`).click();
     await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
@@ -131,12 +138,16 @@ for (const type of ["item", "container"]) for (const edit of [false, true]) test
     await page.locator(`#${prefix}PhotoInput`).setInputFiles({ name: "Релизное фото.gif", mimeType: "image/gif", buffer: selectedGif });
     await expect(dialog).toContainText("Фото подготовлены: 1");
   }
-  await page.locator(`#${prefix}Name`).blur();
+  await page.evaluate(() => document.activeElement?.blur());
+  await expect(page.locator("dialog.keyboard-focus-active")).toHaveCount(0);
+  await page.locator(button).scrollIntoViewIfNeeded();
   if (test.info().project.name === "mobile-webkit") await page.locator(button).tap(); else await page.locator(button).click();
   await expect(dialog).not.toBeVisible(); await expect.poll(() => server.revision, { timeout: 15000 }).toBe(8);
   expect(server.posts).toHaveLength(1); const action = server.posts[0];
   expect(photoReferences(action.body.payload)).toEqual(photoReferences(server.initialPayload));
   expect(server.payload[collection][rawId].name).toBe("Релизная фотоформа");
+  expect(server.payload[collection][rawId].note).toBe("Релизная заметка");
+  expect(server.payload[collection][rawId].noteHtml).toContain("<strong>Релизная заметка</strong>");
   if (edit) {
     expect(action.body.photoEdit).toEqual({ version: 1, entityType: type, entityId: rawId,
       photoIds: server.initialPayload[collection][rawId].photos.slice(1).map(photo => photo.id) });
