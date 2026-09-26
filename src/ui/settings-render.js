@@ -1,4 +1,5 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
+import { isBuiltinCategory, builtinCategoryAction } from "../state/builtin-categories.js";
 import { renderEmptyState } from "./empty-state.js";
 import { escapeHtml } from "../utils/html.js";
 import { formatWeight } from "../utils/weight.js";
@@ -208,6 +209,9 @@ function dictionarySortMeta(mode, t = (key) => key) {
 }
 
 export function renderDictionaryEntryHtml(type, value, { editingEntry = null, t = (key) => key } = {}) {
+  if (type === "category" && isBuiltinCategory(value)) {
+    return `<span class="chip dictionary-chip dictionary-chip-builtin"><span class="dictionary-chip-title">${escapeHtml(tr(t, `preparation.${builtinCategoryAction(value)}Label`, value))}</span><small>${escapeHtml(tr(t, "categories.builtin", "Системная"))}</small></span>`;
+  }
   const editing = editingEntry?.type === type && editingEntry?.value === value;
   if (editing) {
     return `

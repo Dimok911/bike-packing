@@ -30,12 +30,13 @@ function bindNoteResize(textarea, handle, windowRef) {
   let startY = 0;
   let startHeight = 0;
 
+  const surface = () => textarea.richNoteEditor?.active ? textarea.richNoteEditor.element : textarea;
   const viewportHeight = () => Number(windowRef?.visualViewport?.height || windowRef?.innerHeight) || NOTE_MAX_HEIGHT_PX;
   const setHeight = (height) => {
     const bounds = noteResizeBounds({ viewportHeight: viewportHeight() });
     const next = clamp(height, bounds.min, bounds.max);
-    textarea.style.height = `${Math.round(next)}px`;
-    textarea.style.minHeight = `${bounds.min}px`;
+    surface().style.height = `${Math.round(next)}px`;
+    surface().style.minHeight = `${bounds.min}px`;
     handle.setAttribute?.("aria-valuemin", String(bounds.min));
     handle.setAttribute?.("aria-valuemax", String(bounds.max));
     handle.setAttribute?.("aria-valuenow", String(Math.round(next)));
@@ -46,7 +47,7 @@ function bindNoteResize(textarea, handle, windowRef) {
     if (event.button != null && event.button !== 0) return;
     activePointerId = event.pointerId;
     startY = Number(event.clientY) || 0;
-    startHeight = textarea.getBoundingClientRect?.().height || textarea.offsetHeight || NOTE_MIN_HEIGHT_PX;
+    startHeight = surface().getBoundingClientRect?.().height || surface().offsetHeight || NOTE_MIN_HEIGHT_PX;
     handle.setPointerCapture?.(event.pointerId);
     handle.classList?.add?.("dragging");
     event.preventDefault?.();
@@ -69,7 +70,7 @@ function bindNoteResize(textarea, handle, windowRef) {
   };
 
   const onKeyDown = (event) => {
-    const currentHeight = textarea.getBoundingClientRect?.().height || textarea.offsetHeight || NOTE_MIN_HEIGHT_PX;
+    const currentHeight = surface().getBoundingClientRect?.().height || surface().offsetHeight || NOTE_MIN_HEIGHT_PX;
     const bounds = noteResizeBounds({ viewportHeight: viewportHeight() });
     let next = null;
     if (event.key === "ArrowDown") next = currentHeight + NOTE_KEYBOARD_STEP_PX;
@@ -82,8 +83,8 @@ function bindNoteResize(textarea, handle, windowRef) {
   };
 
   const onViewportResize = () => {
-    if (!textarea.style.height) return;
-    setHeight(textarea.getBoundingClientRect?.().height || textarea.offsetHeight || NOTE_MIN_HEIGHT_PX);
+    if (!surface().style.height) return;
+    setHeight(surface().getBoundingClientRect?.().height || surface().offsetHeight || NOTE_MIN_HEIGHT_PX);
   };
 
   handle.setAttribute?.("role", "separator");

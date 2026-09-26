@@ -1,3 +1,5 @@
+import { renameItemStockLocation } from "../state/item-stock.js";
+import { isBuiltinCategory } from "../state/builtin-categories.js";
 import { addCustomDictionaryValue, removeCustomDictionaryValue, renameCustomDictionaryValue } from "../state/dictionaries.js";
 import { itemCategories, containerCategories } from "../state/normalize.js";
 
@@ -14,7 +16,7 @@ export function preparePersonalDictionaryMutation(state, { type, action, value, 
     || !validValue(value) || !Array.isArray(values) || values.some(entry => !validValue(entry))
     || new Set(values).size !== values.length || (action === "add" ? values.includes(value) : !values.includes(value))
     || action === "rename" && (!validValue(nextValue) || values.includes(nextValue))
-    || action === "delete" && fallback !== (values.find(entry => entry !== value) || "")) {
+    || action === "delete" && fallback !== (values.find(entry => entry !== value && (type !== "category" || !isBuiltinCategory(entry))) || "")) {
     throw Error("Справочник изменился. Повторите выбор значения.");
   }
   for (const [field, ids] of [["items", itemIds], ["containers", containerIds]]) {
@@ -33,8 +35,8 @@ export function preparePersonalDictionaryMutation(state, { type, action, value, 
       for (const id of ids) {
         const record = snapshot[field][id];
         if (type === "location") {
-          if (record.location !== value) continue;
-          record.location = replacement;
+          if (field === "items") { if (!renameItemStockLocation(record, value, replacement)) continue; }
+          else { if (record.location !== value) continue; record.location = replacement; }
         } else {
           const previous = categories(record);
           if (!previous.includes(value)) continue;

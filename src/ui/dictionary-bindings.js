@@ -1,4 +1,6 @@
 import { currentDocumentLanguage } from "../utils/language.js";
+import { isBuiltinCategory } from "../state/builtin-categories.js";
+import { renameItemStockLocation } from "../state/item-stock.js";
 import {
   collectDictionaryValueUsage,
   dictionaryDeleteImpactHtml
@@ -136,6 +138,7 @@ export function bindDictionaryControls(type, {
   document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
+      if (type === "category" && isBuiltinCategory(value)) return;
       const dictionaryValues = dictionaryOptionsForOwner(type, owner);
       const usage = collectDictionaryValueUsage(type, value, {
         items: scope.items,
@@ -144,7 +147,7 @@ export function bindDictionaryControls(type, {
         containerCategories
       });
       const affectedCount = usage.items.length + usage.containers.length;
-      const fallback = dictionaryValues.find((item) => item !== value) || "";
+      const fallback = dictionaryValues.find((item) => item !== value && (type !== "category" || !isBuiltinCategory(item))) || "";
       const prepared = prepareDictionaryMutation({ type, action: "delete", value, fallback }, owner);
       if (prepared === false) return;
       const title = type === "location"
@@ -173,8 +176,7 @@ export function bindDictionaryControls(type, {
           const changedAt = nowIso();
           removeCustomDictionaryValue(owner, type, value);
           scope.items.forEach((item) => {
-            if (type === "location" && item.location === value) {
-              item.location = fallback;
+            if (type === "location" && renameItemStockLocation(item, value, fallback)) {
               markEdited(item, changedAt);
             }
             if (type === "category" && itemCategories(item).includes(value)) {
@@ -228,6 +230,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
   const scope = dictionaryEditScope(owner);
   const newValue = String(rawNewValue || "").trim();
   if (!oldValue || !newValue) return;
+  if (type === "category" && isBuiltinCategory(oldValue)) return;
   if (newValue === oldValue) {
     setEditingDictionaryEntry(null);
     render();
@@ -246,8 +249,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
   renameCustomDictionaryValue(owner, type, oldValue, newValue);
   if (type === "location") {
     scope.items.forEach((item) => {
-      if (item.location !== oldValue) return;
-      item.location = newValue;
+      if (!renameItemStockLocation(item, oldValue, newValue)) return;
       markEdited(item, changedAt);
     });
     scope.containers.forEach((container) => {

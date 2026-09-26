@@ -15,7 +15,7 @@ function editSelection(entry, draft, fields) {
   if (!plain(fields) || !Array.isArray(draft?.photos) || !Array.isArray(draft.deletedPhotos) || !entry.basePhotos.length) {
     fail("Не удалось связать изменения фото с исходной формой.");
   }
-  const allowed = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions",
+  const allowed = ["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions",
     "updatedAt", "updatedByDeviceId", "updatedByDeviceName", ...(entry.type === "item" ? ["quantity"] : ["volume", "nestable"])];
   if (Object.keys(fields).some(key => !allowed.includes(key))) fail("В этой форме можно изменить только поля записи и её фотографии.");
   const originals = new Map(), selected = new Set(), deleted = new Set();

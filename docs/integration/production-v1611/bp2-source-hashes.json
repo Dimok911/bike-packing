@@ -1,0 +1,16 @@
+{
+  "scripts/bp2-pilot-convert.mjs": "b4ed70970fd4dba836ad93bd575fa387b4cefdd4a160683fc42e2486e0e9594c",
+  "scripts/bp2-pilot-manifest-contract.mjs": "78db5db66052d70cb43572d72145dfbe7b8e22139d528a007801b31c40d80749",
+  "src/bp2/copy-plan.mjs": "82f8da19eeb15cb00e366c99c1702bb7b572f27cbb432e0f25a4216e054a6649",
+  "src/bp2/protocol.mjs": "2eb290934ff1a2053ed9ac6d5085a082c60bebf257474bd53f2bd0966bbeabb8",
+  "src/bp2/move.mjs": "ea26f7be8757171df9ef8b7f65d8668b5511dfd20489b2a454403836ca8a5659",
+  "src/bp2/batch.mjs": "9fe298bdae713d7d0a4b3ee0f8ba5e34436c76b6f034af6f6329a463e42e33a6",
+  "src/bp2/manifest-store.mjs": "5cef2822cc9ddf7834328309f097325489cfbb6277dcabf4aadbb6c09e5155e8",
+  "src/bp2/copy-profile.mjs": "de91a0c302c6907b84c71c2263d1fbf3bdbdf2f8bee1ea8a8c933e9b822f685b",
+  "test/bp2-copy-fixture.mjs": "07f64a1a7f8642a0f72348f21c4955164505ce45059c5a03d5e2a7cb9db9fd5a",
+  "test/bp2-pilot-convert.test.js": "17554edecab6ebe4364850dfdf8397b221db82863f6160a76e44baf489a54483",
+  "test/bp2-protocol.test.js": "029f66ed474e80028c3d93480bd3991266bcbc987920d91b144f815a30bed49c",
+  "test/bp2-entity.test.js": "c7a4c5740909c54797dd3bd40af555a346c2d4f227362c6b2625d077983175c6",
+  "test/bp2-copy-indexes.test.js": "d7d23dd892a636157cbb3752288b7d0bedc9030f5bb98bee0a06d19ee0f8af2c",
+  "test/bp2-copy-batching.test.js": "45ea434f01682f5d18317dc29f09fa49ed9df4ab8520bc7f1098bdd10ee0aab4"
+}

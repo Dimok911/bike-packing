@@ -12,6 +12,7 @@ import {
   renderLayoutComparisonToolbarHtml
 } from "../../src/ui/layout-comparison-render.js";
 import {
+  layoutComparisonPickerState,
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../../src/ui/layout-comparison-selection.js";
@@ -67,6 +68,7 @@ function legacyQuantityState() {
 
 const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 const appTailSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+const indexSource = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
 function placement({ parentId = "", itemIds = [], childIds = [] } = {}) {
   return {
@@ -149,6 +151,7 @@ test("CRITICAL layout comparison uses shared entity ids across independently cre
   const itemChangesHtml = renderLayoutComparisonItemChangesHtml({
     comparison,
     escapeHtml: (value) => String(value),
+    renderThumbnail: (item) => `<span class="picker-list-thumbnail">${item?.id || ""}</span>`,
     state,
     t: (key, values = {}) => String(itemChangeTranslations[key] || key)
       .replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "")
@@ -158,6 +161,8 @@ test("CRITICAL layout comparison uses shared entity ids across independently cre
   assert.match(itemChangesHtml, /Excluded[\s\S]*Mug[\s\S]*Excluded from Handlebar/);
   assert.ok(itemChangesHtml.indexOf("Pump") < itemChangesHtml.indexOf("Mug"));
   assert.doesNotMatch(itemChangesHtml, /Stove/);
+  assert.match(itemChangesHtml, /data-compare-open-item="pump"[\s\S]*picker-list-thumbnail[\s\S]*pump/);
+  assert.match(itemChangesHtml, /data-compare-open-item="mug"[\s\S]*picker-list-thumbnail[\s\S]*mug/);
 
   assert.deepEqual(comparisonContainerEntries(comparison, "handlebar"), [
     { type: "item", id: "stove", variant: "source-ghost" },
@@ -167,6 +172,37 @@ test("CRITICAL layout comparison uses shared entity ids across independently cre
     { type: "item", id: "stove", variant: "target" },
     { type: "item", id: "pump", variant: "target" }
   ]);
+});
+
+test("CRITICAL comparison pickers keep the full main layout order and flag matching selections", () => {
+  const layouts = [
+    { id: "third", name: "Third" },
+    { id: "first", name: "First" },
+    { id: "second", name: "Second" }
+  ];
+  const picker = layoutComparisonPickerState(layouts, {
+    fromLayoutId: "first",
+    toLayoutId: "second"
+  });
+
+  assert.equal(picker.fromLayoutId, "first");
+  assert.equal(picker.toLayoutId, "second");
+  assert.deepEqual(picker.fromLayouts.map((layout) => layout.id), ["third", "first", "second"]);
+  assert.deepEqual(picker.toLayouts.map((layout) => layout.id), ["third", "first", "second"]);
+  assert.equal(picker.sameLayout, false);
+
+  const matchingPicker = layoutComparisonPickerState(layouts, {
+    fromLayoutId: "second",
+    toLayoutId: "second"
+  });
+  assert.equal(matchingPicker.fromLayoutId, "second");
+  assert.equal(matchingPicker.toLayoutId, "second");
+  assert.equal(matchingPicker.sameLayout, true);
+  assert.match(appTailSource, /function comparisonLayoutOptions\(\)[\s\S]*?return orderedLayouts\(state\.layouts/);
+  assert.match(appTailSource, /layoutCompareFrom\?\.addEventListener\("change", \(\) => updateLayoutComparisonDialogState\(\)\)/);
+  assert.match(appTailSource, /classList\.add\("layout-compare-option-conflict"\)/);
+  assert.match(appTailSource, /classList\.toggle\("layout-compare-selection-conflict", picker\.sameLayout\)/);
+  assert.match(appTailSource, /data-compare-open-item[\s\S]*?openItemDialog\(button\.dataset\.compareOpenItem\)/);
 });
 
 test("CRITICAL moved container stays one operation while its internal changes are compared", () => {
@@ -326,6 +362,8 @@ test("CRITICAL moved bag explains unchanged hidden contents until all entries ar
 test("CRITICAL comparison dialog remains scrollable inside the viewport", () => {
   assert.match(stylesSource, /#layoutCompareDialog\s*\{[^}]*max-height:\s*calc\(100dvh - 24px\);[^}]*overflow:\s*hidden;/s);
   assert.match(stylesSource, /\.layout-compare-dialog-card\s*\{[^}]*max-height:\s*inherit;[^}]*box-sizing:\s*border-box;[^}]*overflow-y:\s*auto;/s);
+  assert.doesNotMatch(indexSource, /id="layoutCompareCancelBtn"/);
+  assert.match(indexSource, /id="layoutCompareDialog"[\s\S]*?class="icon-button"[^>]*>×<\/button>/);
 });
 
 test("CRITICAL comparison structure heading can collapse and expand all bags independently", () => {

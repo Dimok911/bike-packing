@@ -1,3 +1,4 @@
+import { readNoteFields } from "../../src/ui/rich-note-content.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -125,7 +126,7 @@ test("actual bag picker snapshot remains bound to source roots after target acti
     containers: { "source-bag": { id: "source-bag", parentId: "" } }, locations: ["Base"] };
   let active = "source";
   const refs = Object.fromEntries(["rootContainerName", "rootContainerWeight", "rootContainerVolume", "rootContainerColor", "rootContainerLocation", "rootContainerNote"].map(key => [key, { value: "" }]));
-  const api = actual(tail, ["getRootContainerDialogLayoutRootIds", "getRootContainerDialogSnapshot"], { state, refs,
+  const api = actual(tail, ["getRootContainerDialogLayoutRootIds", "getRootContainerDialogSnapshot"], { state, refs, readNoteFields,
     runtime: { editingRootContainerId: "source-bag" }, getPublishedWorkLayout: () => state.layouts[active], getVisibleLayoutRootIds: layout => layout.rootContainerIds,
     readRootContainerDialogDimensions: () => ({}), parseWeightInput: Number, parseVolumeInput: Number, normalizeContainerColor: value => value,
     defaultRootContainerLocation: () => "Base", getRootContainerDialogSelectedCategories: () => [], getRootContainerDialogPhotoSnapshot: () => "original-photos" });

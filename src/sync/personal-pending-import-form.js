@@ -34,8 +34,8 @@ export function createPersonalPendingImportFormSession({ outbox, getContext, onD
           || !["item", "container"].includes(frozen.entityType) || !same(frozen.basePayload, readPayload(head))
           || !same(snapshotToPayload(frozen.snapshot), frozen.basePayload)) fail();
         const collection = frozen.entityType === "item" ? "items" : "containers", owner = frozen.snapshot[collection]?.[frozen.entityId];
-        const fields = frozen.fields, allowed = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions",
-          "updatedAt", "updatedByDeviceId", "updatedByDeviceName", ...(collection === "items" ? ["quantity"] : ["volume", "nestable"])];
+        const fields = frozen.fields, allowed = ["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions",
+          "updatedAt", "updatedByDeviceId", "updatedByDeviceName", ...(collection === "items" ? ["quantity", "stockQuantity", "stockLocations"] : ["volume", "nestable"])];
         if (!owner || owner.id !== frozen.entityId || !fields || typeof fields !== "object" || Array.isArray(fields)
           || !Object.keys(fields).length || Object.keys(fields).some(key => !allowed.includes(key))
           || Object.hasOwn(fields, "name") && (typeof fields.name !== "string" || !fields.name.trim())

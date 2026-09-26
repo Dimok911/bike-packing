@@ -1,3 +1,5 @@
+import { itemStorageLocations } from "./item-stock.js";
+
 export function matchesItemFieldsFilter(item, {
   query = "",
   location = "",
@@ -7,7 +9,7 @@ export function matchesItemFieldsFilter(item, {
   itemCategories = () => []
 } = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
-  if (!ignoreLocation && location && item?.location !== location) return false;
+  if (!ignoreLocation && location && !itemStorageLocations(item).includes(location)) return false;
   const itemCategoryValues = itemCategories(item);
   if (!ignoreCategories && categories.length && !categories.some((category) => itemCategoryValues.includes(category))) return false;
   if (!normalizedQuery) return true;

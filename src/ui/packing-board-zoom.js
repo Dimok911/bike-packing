@@ -44,6 +44,7 @@ export function packingBoardHorizontalGeometry(board, {
   const targets = [...(board?.children || [])].filter((child) => (
     child?.classList?.contains?.("container-card") ||
     child?.classList?.contains?.("packing-add-root-card") ||
+    child?.classList?.contains?.("packing-actions-column") ||
     child?.classList?.contains?.("comparison-root")
   ));
   const visualRight = targets.reduce((right, target) => {
@@ -400,6 +401,7 @@ function zoomTargets(board) {
   return [...(board?.children || [])].filter((child) => (
     child.classList?.contains("container-card") ||
     child.classList?.contains("packing-add-root-card") ||
+    child.classList?.contains("packing-actions-column") ||
     child.classList?.contains("comparison-root")
   ));
 }

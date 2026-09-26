@@ -239,6 +239,92 @@ test("guest creates a layout, bag and item and keeps them after reload", async (
   expect(persisted).toEqual({ hasLayout: true, hasContainer: true, hasItem: true });
 });
 
+test("layout comparison keeps the full main order, marks the opposite choice, and opens pictured item cards", async ({ page }) => {
+  const firstLayout = "Сравнение первое";
+  const secondLayout = "Сравнение второе";
+  const thirdLayout = "Сравнение третье";
+  const itemName = "Насос для сравнения";
+  await page.route("**/e2e-comparison-thumb.png*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+    });
+  });
+  await createGuestWorkspace(page, {
+    layoutName: firstLayout,
+    containerName: "Сумка сравнения",
+    itemName,
+  });
+  await createEmptyLayout(page, secondLayout);
+  await createEmptyLayout(page, thirdLayout);
+  await page.evaluate(({ targetName }) => {
+    const storageKey = "bike-packing-prototype-state-v1";
+    const state = JSON.parse(localStorage.getItem(storageKey) || "null");
+    const item = Object.values(state?.items || {}).find((entry) => entry?.name === targetName);
+    if (!item) throw new Error("comparison item missing");
+    item.photos = [{
+      id: "e2e-comparison-photo",
+      url: `${location.origin}/e2e-comparison-thumb.png`,
+      thumbUrl: `${location.origin}/e2e-comparison-thumb.png`,
+      updatedAt: "2026-09-03T00:00:00.000Z",
+    }];
+    localStorage.setItem(storageKey, JSON.stringify(state));
+  }, { targetName: itemName });
+  await page.reload();
+  await waitForApp(page);
+  const mainLayoutOptions = await page.locator("#layoutSelect option.select-option-personal").evaluateAll((options) => (
+    options.map((option) => ({ value: option.value, text: option.textContent?.trim() || "" }))
+  ));
+
+  await page.locator("#menuBtn").click();
+  await page.locator("#compareLayoutsMenuBtn").click();
+  await expect(page.locator("#layoutCompareDialog")).toBeVisible();
+  await expect(page.locator("#layoutCompareCancelBtn")).toHaveCount(0);
+  const initialFromId = await page.locator("#layoutCompareFrom").inputValue();
+  const initialToId = await page.locator("#layoutCompareTo").inputValue();
+  await expect(page.locator("#layoutCompareFrom option")).toHaveText(
+    mainLayoutOptions.map((option) => (
+      option.value === initialToId ? `${option.text} — уже выбрана` : option.text
+    ))
+  );
+  await expect(page.locator("#layoutCompareTo option")).toHaveText(
+    mainLayoutOptions.map((option) => (
+      option.value === initialFromId ? `${option.text} — уже выбрана` : option.text
+    ))
+  );
+  await expect(page.locator(`#layoutCompareFrom option[value="${initialToId}"]`))
+    .toHaveClass(/layout-compare-option-conflict/);
+  await expect(page.locator(`#layoutCompareTo option[value="${initialFromId}"]`))
+    .toHaveClass(/layout-compare-option-conflict/);
+
+  await page.locator("#layoutCompareFrom").selectOption(initialToId);
+  await expect(page.locator("#layoutCompareFrom")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareTo")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareUnavailable")).toBeVisible();
+  await expect(page.locator("#layoutCompareStartBtn")).toBeDisabled();
+
+  await page.locator("#layoutCompareTo").selectOption({ label: secondLayout });
+  await page.locator("#layoutCompareFrom").selectOption({ label: firstLayout });
+  await expect(page.locator("#layoutCompareTo option")).toHaveText(
+    mainLayoutOptions.map((option) => (
+      option.text === firstLayout ? `${option.text} — уже выбрана` : option.text
+    ))
+  );
+  await expect(page.locator("#layoutCompareFrom")).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareTo")).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareUnavailable")).toBeHidden();
+  await expect(page.locator("#layoutCompareStartBtn")).toBeEnabled();
+  await page.locator("#layoutCompareStartBtn").click();
+
+  const changedItem = page.locator("[data-compare-open-item]").filter({ hasText: itemName });
+  await expect(changedItem).toHaveCount(1);
+  await expect(changedItem.locator(".picker-list-thumbnail img")).toHaveAttribute("src", /blob:/);
+  await changedItem.click();
+  await expect(page.locator("#itemDialog")).toBeVisible();
+  await expect(page.locator("#itemName")).toHaveValue(itemName);
+});
+
 test("layout comparison keeps a move arrow aligned while zoom changes", async ({ page }) => {
   const fromLayoutName = "Стрелка исходная";
   const toLayoutName = "Стрелка конечная";

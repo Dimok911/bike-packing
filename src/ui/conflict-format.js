@@ -56,11 +56,14 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["name", localText("Name", "Название")],
       ["weight", localText("Weight", "Вес"), "weight"],
       ["quantity", localText("Quantity", "Количество")],
+      ["stockQuantity", localText("In stock", "В наличии")],
+      ["stockLocations", localText("Stock by place", "Остатки по местам"), "stock-locations"],
       ["location", localText("Storage location", "Место хранения")],
       ["categories", localText("Categories", "Категории"), "list"],
       ["category", localText("Category", "Категория")],
       ["containerId", localText("Stored in", "Где лежит"), "container"],
       ["note", localText("Note", "Заметка")],
+      ["noteHtml", localText("Note formatting", "Форматирование заметки"), "note-format"],
       ["photos", localText("Photos", "Фото"), "photos"]
     ];
   }
@@ -75,6 +78,7 @@ export function conflictDiffFieldDefinitions(conflict, {
       ["childIds", localText("Nested bags", "Вложенные сумки"), "count"],
       ["order", localText("Order inside", "Порядок внутри"), "count"],
       ["note", localText("Note", "Заметка")],
+      ["noteHtml", localText("Note formatting", "Форматирование заметки"), "note-format"],
       ["color", localText("Color", "Цвет")],
       ["photos", localText("Photos", "Фото"), "photos"]
     ];
@@ -137,12 +141,14 @@ export function createConflictValueFormatter({
   function formatConflictFieldValue(value, key, conflict, format = "") {
     if (conflict.type === "packed" && key === "value") return value ? localText("packed", "собрано") : localText("not packed", "не собрано");
     if (value == null || value === "") return localText("empty", "пусто");
+    if (format === "note-format") return localText("Formatted text", "Форматированный текст");
     if (format === "weight") return formatWeight(parseWeightInput(value));
     if (format === "list") return Array.isArray(value) ? value.filter(Boolean).join(", ") || localText("empty", "пусто") : String(value);
     if (format === "container") return formatConflictContainerValue(value);
     if (format === "photos") return Array.isArray(value)
       ? localText(`${value.length} photos`, `${value.length} фото`)
       : (value ? localText("present", "есть") : localText("none", "нет"));
+    if (format === "stock-locations") return Array.isArray(value) ? value.map((row) => `${row.location || localText("Not specified", "Не указано")}: ${row.quantity}`).join(", ") : localText("not specified", "не указано");
     if (format === "count") return formatConflictCountValue(value, key, conflict);
     if (format === "arrangement") return formatArrangementConflictValue(value, { localText });
     if (format === "boolean") return value ? localText("yes", "да") : localText("no", "нет");
@@ -218,6 +224,7 @@ export function createConflictValueFormatter({
         ["categories", localText("categories", "категории")],
         ["containerId", localText("bag/place", "сумка/пакет")],
         ["note", localText("note", "заметка")],
+        ["noteHtml", localText("note formatting", "форматирование заметки")],
         ["photos", localText("photos", "фото")]
       ]);
     }
@@ -228,6 +235,7 @@ export function createConflictValueFormatter({
         ["volume", localText("volume", "объём")],
         ["location", localText("location", "место")],
         ["note", localText("note", "заметка")],
+        ["noteHtml", localText("note formatting", "форматирование заметки")],
         ["color", localText("color", "цвет")],
         ["itemIds", localText("contents", "состав")],
         ["childIds", localText("nested bags", "вложенные сумки")],

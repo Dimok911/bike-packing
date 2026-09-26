@@ -1,3 +1,10 @@
+import { createRichNoteEditor } from "../ui/rich-note-editor.js";
+import { loadNoteFields, readNoteFields } from "../ui/rich-note-content.js";
+import { itemStockQuantity, itemStockLocations, itemStorageLocations, setItemStockLocations, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
+import { createStockLocationsDialog } from "../ui/stock-locations-dialog.js";
+import { layoutPreparation, itemNeedsPreparation, preparationCategoryMatches } from "../state/layout-preparation.js";
+import { isBuiltinCategory } from "../state/builtin-categories.js";
+import { renderPreparationButtons, renderPreparationBadges, renderStockControl, createPreparationDialogController, bindStockField } from "../ui/layout-preparation.js";
 import {
   applyPhotoPrimaryButtonState,
   photoPrimaryButtonState,
@@ -126,6 +133,7 @@ import {
 } from "../ui/layout-comparison-render.js";
 import {
   LAYOUT_COMPARISON_SELECTION_STORAGE_KEY,
+  layoutComparisonPickerState,
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../ui/layout-comparison-selection.js";
@@ -505,6 +513,100 @@ export function createAppTailControllers(ctx) {
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
 
+  createRichNoteEditor(refs.itemNote);
+  createRichNoteEditor(refs.rootContainerNote);
+
+  let itemStockLocationsDraft = null;
+  const stockLocationsDialog = createStockLocationsDialog({
+    openDialog: openModalDialog,
+    getLocations: () => dictionaryOptionsForUi("location").map(dictionarySelectEntry),
+    canAddLocations: (values) => {
+      const known = new Set(dictionaryOptionsForUi("location"));
+      const count = new Set(values.filter((value) => value && !known.has(value))).size;
+      return !count || requireUsageCapacity("locations", count);
+    }
+  });
+  function readItemStockLocations() {
+    if (itemStockLocationsDraft?.length > 1) return itemStockLocationsDraft.map((row) => ({ ...row }));
+    return [{ location: refs.itemLocation.value, quantity: normalizeStockQuantity(refs.itemStockQuantity.value) }];
+  }
+  function syncItemStockLocationsUi() {
+    const multiple = itemStockLocationsDraft?.length > 1;
+    if (multiple) refs.itemStockQuantity.value = itemStockQuantity({ stockLocations: itemStockLocationsDraft });
+    refs.itemStockQuantity.readOnly = multiple;
+    refs.itemStockMinus.hidden = multiple;
+    refs.itemStockPlus.hidden = multiple;
+    refs.itemLocation.closest("label").hidden = multiple;
+    refs.itemStockLocationsBtn.textContent = multiple
+      ? localText("Manage storage places", "Изменить по местам") : localText("Split by storage place", "Разделить по местам");
+    refs.itemStockLocationsSummary.textContent = multiple
+      ? itemStockLocationsDraft.map((row) => `${dictionaryValueLabel(row.location) || localText("Not specified", "Не указано")}: ${row.quantity}`).join(" · ") : "";
+    refs.itemStockLocationsSummary.hidden = !multiple;
+  }
+  function openItemStockLocations() {
+    if (refs.itemStockQuantity.disabled || !refs.itemStockQuantity.reportValidity()) return;
+    stockLocationsDialog.open({ name: refs.itemName.value, stockLocations: readItemStockLocations() }, (rows) => {
+      itemStockLocationsDraft = rows;
+      refs.itemStockQuantity.value = itemStockQuantity({ stockLocations: rows });
+      fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: rows.map((row) => row.location) }).map(dictionarySelectEntry), rows[0].location);
+      syncItemStockLocationsUi();
+      refs.itemStockQuantity.dispatchEvent(new Event("input", { bubbles: true }));
+      updateItemDialogSaveState();
+    });
+  }
+  function openCatalogStockLocations(id) {
+    if (isSharedLayoutView() || isPublicLayoutContext() || !state.items[id]) return;
+    stockLocationsDialog.open(state.items[id], (rows) => {
+      if (setItemStockLocations(state.items[id], rows)) return saveInventoryChange(id);
+    });
+  }
+  const preparationDialog = createPreparationDialogController({
+    renderThumbnail: (item) => pickerListThumbnailHtml(item, { enabled: true, photoObjectUrls }),
+    hydratePhotos: (root) => hydrateItemPhotos(root, { photoObjectUrls, photoPreviewLoader }).catch(() => null),
+    getContext: () => {
+      const layout = state.layouts?.[state.activeLayoutId];
+      if (!layout || isSharedLayoutView() || isPublicLayoutContext()) return null;
+      return { layout, tasks: layoutPreparation(state, layout, dictionaryValueLabel), locations: dictionaryOptionsForUi("location").map(dictionarySelectEntry) };
+    },
+    openDialog: openModalDialog,
+    openItem: (id) => openItemDialog(id),
+    purchase: (id, value, layoutId, location) => {
+      if (isSharedLayoutView() || isPublicLayoutContext() || state.activeLayoutId !== layoutId) return;
+      if (!layoutPreparation(state, layoutId).buy.some(({ item }) => item.id === id)) return;
+      if (addPurchasedStock(state.items[id], value, location)) return saveInventoryChange(id);
+      return false;
+    },
+    t
+  });
+
+  function saveInventoryChange(id) {
+    capturePackingScroll();
+    touchItem(id, nowIso());
+    return finishPreparedPersonalMutation(() => saveState(), () => { render(); return true; });
+  }
+
+  function preparationBadgesForItem(item, { inLayout = true } = {}) {
+    if (isSharedLayoutView() || isPublicLayoutContext()) return "";
+    const required = inLayout ? getLayoutItemQuantityForState(state, state.activeLayoutId, item.id) : 0;
+    return renderPreparationBadges({
+      missing: Math.max(0, required - itemStockQuantity(item)),
+      buyHint: t("preparation.buyHint", {
+        layout: state.layouts?.[state.activeLayoutId]?.name || "",
+        required,
+        available: itemStockQuantity(item),
+        missing: Math.max(0, required - itemStockQuantity(item))
+      }),
+      repair: itemNeedsPreparation(item, "repair", dictionaryValueLabel),
+      charge: itemNeedsPreparation(item, "charge", dictionaryValueLabel)
+    }, t);
+  }
+
+  function bindPreparationActions(root) {
+    root.querySelectorAll("[data-preparation-action]").forEach((button) => {
+      button.addEventListener("click", () => preparationDialog.open(button.dataset.preparationAction));
+    });
+  }
+
   const itemNoteSearchNavigator = createNoteSearchNavigator({
     container: refs.itemNoteSearchNav,
     nextButton: refs.itemNoteSearchNext,
@@ -672,7 +774,7 @@ async function applyManufacturerBagCatalogSelection(entry) {
   refs.rootContainerWeight.value = draft.weight || 0;
   refs.rootContainerVolume.value = draft.volume ? String(draft.volume).replace(".", ",") : "";
   if (refs.rootContainerColor) refs.rootContainerColor.value = draft.color || "";
-  if (refs.rootContainerNote) refs.rootContainerNote.value = draft.note || "";
+  loadNoteFields(refs.rootContainerNote, draft);
   if (refs.rootContainerWidth) refs.rootContainerWidth.value = draft.dimensions?.width
     ? String(draft.dimensions.width).replace(".", ",")
     : "";
@@ -1444,8 +1546,8 @@ function finishPreparedPersonalMutation(commit, finish = value => value) {
   } catch (error) { return failed(error); }
 }
 
-function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
-  const layoutId = getLayoutRootTargetLayoutId();
+function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true, targetLayoutId = "" } = {}) {
+  const layoutId = targetLayoutId || getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
   if (adminTemplateUiEnabled() && isAdminEditablePublishedLayout(layoutId) && !pendingCopyTargetContainerSetup) {
     const placement = state.layouts[layoutId]?.arrangement?.containers?.[containerId];
@@ -1741,9 +1843,12 @@ function renderCategoryPicker(target, selected = null, {
     ? refs.itemCategorySearch
     : (target === refs.rootContainerCategoryList ? refs.rootContainerCategorySearch : null);
   const selectedSet = new Set(selected || getCheckedCategoriesFromList(target));
-  const categoryOptions = dictionaryOptionsForUi("category", { selected: [...selectedSet] });
+  const isItemPicker = target === refs.itemCategoryList && !isPublicLayoutContext() && !isSharedLayoutView();
+  const hiddenPreparation = isItemPicker ? [...selectedSet].filter(isBuiltinCategory) : [];
+  const hiddenPreparationHtml = hiddenPreparation.map((category) => `<input type="checkbox" value="${escapeHtml(category)}" checked hidden data-preparation-category />`).join("");
+  const categoryOptions = dictionaryOptionsForUi("category", { selected: [...selectedSet] }).filter((category) => !isItemPicker || !isBuiltinCategory(category));
   if (!categoryOptions.length && allowCreate) {
-    target.innerHTML = renderEmptyCategoryPicker({
+    target.innerHTML = hiddenPreparationHtml + renderEmptyCategoryPicker({
       hint: t("categories.emptyCreateHint"),
       placeholder: t("categories.newPlaceholder"),
       actionText: t("categories.add")
@@ -1758,7 +1863,8 @@ function renderCategoryPicker(target, selected = null, {
     });
     return;
   }
-  if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
+  const fallbackCategory = categoryOptions.find((category) => !isBuiltinCategory(category));
+  if (fallbackDefault && !selectedSet.size && fallbackCategory) selectedSet.add(fallbackCategory);
   target.innerHTML = categoryOptions.map((category) => {
     const id = `${idPrefix}-${cssSafeId(category)}`;
     return renderCategorySearchOption({
@@ -1767,7 +1873,7 @@ function renderCategoryPicker(target, selected = null, {
       id,
       checked: selectedSet.has(category)
     });
-  }).join("") + categorySearchEmptyHtml(t("categories.searchEmpty"));
+  }).join("") + hiddenPreparationHtml + categorySearchEmptyHtml(t("categories.searchEmpty"));
   syncCategorySearchAvailability(searchInput, target, {
     available: Boolean(categoryOptions.length),
     emptyText: t("categories.searchEmpty"),
@@ -3233,15 +3339,51 @@ function currentLayoutComparison() {
 }
 
 function comparisonLayoutOptions() {
-  return userEditableLayouts().filter((layout) => layout?.id);
+  const editableIds = new Set(userEditableLayouts().map((layout) => layout?.id).filter(Boolean));
+  return orderedLayouts(state.layouts, {
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    includeLayout: (layout) => editableIds.has(layout?.id),
+    locale: uiLanguage || "ru"
+  });
 }
 
-function updateLayoutComparisonDialogState() {
+function updateLayoutComparisonDialogState(selection = null) {
   const options = comparisonLayoutOptions();
+  const picker = layoutComparisonPickerState(options, selection || {
+    fromLayoutId: refs.layoutCompareFrom?.value,
+    toLayoutId: refs.layoutCompareTo?.value
+  });
+  const comparisonOptionLabel = (layout, oppositeLayoutId) => {
+    const name = layoutDisplayName(layout);
+    return String(layout.id) === String(oppositeLayoutId)
+      ? `${name} — ${t("compare.alreadySelected")}`
+      : name;
+  };
+  fillSelect(
+    refs.layoutCompareFrom,
+    picker.fromLayouts.map((layout) => [layout.id, comparisonOptionLabel(layout, picker.toLayoutId)]),
+    picker.fromLayoutId
+  );
+  fillSelect(
+    refs.layoutCompareTo,
+    picker.toLayouts.map((layout) => [layout.id, comparisonOptionLabel(layout, picker.fromLayoutId)]),
+    picker.toLayoutId
+  );
+  [
+    [refs.layoutCompareFrom, picker.toLayoutId],
+    [refs.layoutCompareTo, picker.fromLayoutId]
+  ].forEach(([select, conflictId]) => {
+    const option = Array.from(select?.options || []).find((entry) => entry.value === String(conflictId));
+    option?.classList.add("layout-compare-option-conflict");
+  });
   const enoughLayouts = options.length >= 2;
-  const differentLayouts = refs.layoutCompareFrom?.value &&
-    refs.layoutCompareTo?.value &&
-    refs.layoutCompareFrom.value !== refs.layoutCompareTo.value;
+  const differentLayouts = picker.fromLayoutId && picker.toLayoutId && picker.fromLayoutId !== picker.toLayoutId;
+  [refs.layoutCompareFrom, refs.layoutCompareTo].forEach((select) => {
+    if (!select) return;
+    select.classList.toggle("layout-compare-selection-conflict", picker.sameLayout);
+    if (picker.sameLayout) select.setAttribute("aria-invalid", "true");
+    else select.removeAttribute("aria-invalid");
+  });
   if (refs.layoutCompareFields) refs.layoutCompareFields.hidden = !enoughLayouts;
   if (refs.layoutCompareUnavailable) {
     refs.layoutCompareUnavailable.hidden = enoughLayouts && differentLayouts;
@@ -3266,10 +3408,10 @@ function openLayoutComparisonDialog() {
   );
   const preferredToId = layoutComparison?.toLayoutId || savedSelection?.toLayoutId ||
     options.find((layout) => layout.id !== preferredFromId)?.id || "";
-  const selectOptions = options.map((layout) => [layout.id, layoutDisplayName(layout)]);
-  fillSelect(refs.layoutCompareFrom, selectOptions, preferredFromId);
-  fillSelect(refs.layoutCompareTo, selectOptions, preferredToId);
-  updateLayoutComparisonDialogState();
+  updateLayoutComparisonDialogState({
+    fromLayoutId: preferredFromId,
+    toLayoutId: preferredToId
+  });
   closeTopMenu();
   openModalDialog(refs.layoutCompareDialog);
 }
@@ -3277,9 +3419,11 @@ function openLayoutComparisonDialog() {
 function swapLayoutComparisonDialogValues() {
   if (!refs.layoutCompareFrom || !refs.layoutCompareTo) return;
   const fromId = refs.layoutCompareFrom.value;
-  refs.layoutCompareFrom.value = refs.layoutCompareTo.value;
-  refs.layoutCompareTo.value = fromId;
-  updateLayoutComparisonDialogState();
+  const toId = refs.layoutCompareTo.value;
+  updateLayoutComparisonDialogState({
+    fromLayoutId: toId,
+    toLayoutId: fromId
+  });
 }
 
 function startLayoutComparison() {
@@ -3338,8 +3482,8 @@ function bindLayoutComparisonControls() {
     }
     openLayoutComparisonDialog();
   });
-  refs.layoutCompareFrom?.addEventListener("change", updateLayoutComparisonDialogState);
-  refs.layoutCompareTo?.addEventListener("change", updateLayoutComparisonDialogState);
+  refs.layoutCompareFrom?.addEventListener("change", () => updateLayoutComparisonDialogState());
+  refs.layoutCompareTo?.addEventListener("change", () => updateLayoutComparisonDialogState());
   refs.layoutCompareSwapBtn?.addEventListener("click", swapLayoutComparisonDialogValues);
   refs.layoutCompareStartBtn?.addEventListener("click", startLayoutComparison);
 }
@@ -3366,6 +3510,9 @@ function bindLayoutComparisonView() {
       moveLinkRefreshFrame = null;
       refreshLayoutComparisonMoveLink(refs.packingView);
     });
+  });
+  refs.packingView.querySelectorAll("[data-compare-open-item]").forEach((button) => {
+    button.addEventListener("click", () => openItemDialog(button.dataset.compareOpenItem));
   });
   refs.packingView.querySelector("[data-compare-only-changes]")?.addEventListener("click", () => {
     capturePackingScroll();
@@ -3659,6 +3806,7 @@ function renderSharedSummary() {
 }
 
 function renderPacking() {
+  preparationDialog.refresh();
   const photoRenderState = capturePackingPhotoRenderState(refs.packingView);
   const activatePhotoGalleries = () => restoreAndBindPackingPhotoGalleries(
     refs.packingView,
@@ -3685,6 +3833,7 @@ function renderPacking() {
       ${renderLayoutComparisonItemChangesHtml({
         comparison,
         escapeHtml,
+        renderThumbnail: (record) => pickerListThumbnailHtml(record, { enabled: true, photoObjectUrls }),
         state,
         t
       })}
@@ -3754,7 +3903,15 @@ function renderPacking() {
         text: t("packing.addRootText")
       })
     : "";
-  const boardHtml = columns.length ? `${columns.join("")}${addRootHtml}` : emptyHtml;
+  const preparationHtml = rootIds.length > 0 && !isPublicLayoutContext()
+    ? renderPreparationButtons(layoutPreparation(state, layout, dictionaryValueLabel), t)
+    : "";
+  const actionsHtml = addRootHtml || preparationHtml
+    ? `<aside class="packing-actions-column">${addRootHtml}${preparationHtml}</aside>`
+    : "";
+  const boardHtml = columns.length
+    ? `${columns.join("")}${actionsHtml}`
+    : `${emptyHtml}${actionsHtml}`;
   refs.packingView.innerHTML = `
     ${renderPackingRootHeaderRow(visibleRootIds, { filtered: hasActiveContentFilter() && !isFilterContextActive() })}
     <div class="board">${boardHtml}</div>
@@ -3762,6 +3919,7 @@ function renderPacking() {
   activatePhotoGalleries();
   bindEmptyContentFilterReset(refs.packingView);
   bindPackingEvents(refs.packingView);
+  bindPreparationActions(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
@@ -3779,7 +3937,9 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
   }
   renderBike3dPackingView({
     target: refs.packingView,
-    beforeHtml,
+    beforeHtml: rootIds.length > 0 && !shared && !isPublicLayoutContext()
+      ? `${beforeHtml}<div class="preparation-bike3d-actions">${renderPreparationButtons(layoutPreparation(state, layout, dictionaryValueLabel), t)}</div>`
+      : beforeHtml,
     rootIds,
     containers: state.containers,
     selectedContainerId: runtime.selectedBike3dContainerId,
@@ -3801,6 +3961,7 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
   });
   if (shared) bindSharedVirtualEvents(refs.packingView);
   else bindPackingEvents(refs.packingView.querySelector(".bike3d-detail") || refs.packingView);
+  if (!shared) bindPreparationActions(refs.packingView);
   const scrollHost = getPackingScrollHost();
   restorePendingPackingScroll(scrollHost);
   bindFixedScrollbar(scrollHost);
@@ -4538,13 +4699,14 @@ function renderItemCard(item) {
     : `<strong class="item-title">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
   const titleDragAttr = isEditingTitle ? "" : ` data-item-drag="${item.id}"`;
   return renderPackingItemCardHtml({
+    preparationHtml: preparationBadgesForItem(item),
     categoriesHtml: itemCategories(item).map((category) => `<span class="pill">${highlight(dictionaryValueLabel(category))}</span>`).join(""),
     collection,
     filterMatch,
     item,
     justAdded,
     labelsVisible: shouldShowItemLabels(),
-    locationHtml: highlight(dictionaryValueLabel(item.location)),
+    locationHtml: itemStorageLocations(item).map((location) => highlight(dictionaryValueLabel(location))).join(" · "),
     packed,
     packedVisible,
     photoHtml: renderItemPhoto(item),
@@ -4835,6 +4997,29 @@ function renderItems() {
     t
   });
   syncNewEntityFormDraftCatalogCards();
+  refs.itemsView.querySelectorAll("[data-stock-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (isSharedLayoutView() || isPublicLayoutContext()) return;
+      const id = button.dataset.stockItem;
+      const item = state.items[id];
+      if (setItemStockQuantity(item, Math.max(0, itemStockQuantity(item) + Number(button.dataset.stockStep)))) saveInventoryChange(id);
+    });
+  });
+  refs.itemsView.querySelectorAll("[data-stock-locations]").forEach((button) => {
+    button.addEventListener("click", () => openCatalogStockLocations(button.dataset.stockLocations));
+  });
+  refs.itemsView.querySelectorAll("[data-stock-input]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (isSharedLayoutView() || isPublicLayoutContext()) return;
+      const id = input.dataset.stockInput;
+      if (!input.value || !input.reportValidity()) {
+        input.value = itemStockQuantity(state.items[id]);
+        return;
+      }
+      if (setItemStockQuantity(state.items[id], input.value)) saveInventoryChange(id);
+    });
+    input.addEventListener("keydown", (event) => { if (event.key === "Enter") input.blur(); });
+  });
   bindCatalogBackToTop(refs.itemsView);
   bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
@@ -4912,6 +5097,8 @@ function renderListItem(item) {
       : `<div class="item-photo item-photo-empty" aria-hidden="true">${t("labels.noPhoto")}</div>`
     : "";
   return renderListItemHtml({
+    stockHtml: isSharedLayoutView() || isPublicLayoutContext() ? "" : renderStockControl(item, t),
+    preparationHtml: preparationBadgesForItem(item, { inLayout: inCurrentLayout }),
     categories: itemCategories(item),
     filterMatch,
     highlightText: highlight,
@@ -5345,7 +5532,8 @@ function cleanupLayoutDropState(list, placeholder) {
 
 function bindSettingsPointerDrag() {
   bindSettingsPointerDragUi({
-    addRootContainerToActiveLayout,
+    addRootContainerToActiveLayout: (containerId, targetIndex, options = {}) =>
+      addRootContainerToActiveLayout(containerId, targetIndex, { ...options, targetLayoutId: state.activeLayoutId }),
     canNestContainer: (containerId) => state.containers?.[containerId]?.nestable === true,
     cleanupLayoutDropState,
     createPackingEdgeScroller: (...args) => getPackingDragController().createBoardEdgeScroller(...args),
@@ -6309,6 +6497,8 @@ function newItemFormDraftFields() {
     name: refs.itemName?.value || "",
     weight: refs.itemWeight?.value || "",
     quantity: refs.itemQuantity?.value || "",
+    stockQuantity: refs.itemStockQuantity?.value ?? "1",
+    stockLocations: readItemStockLocations(),
     color: refs.itemColor?.value || "",
     width: refs.itemWidth?.value || "",
     height: refs.itemHeight?.value || "",
@@ -6317,7 +6507,7 @@ function newItemFormDraftFields() {
     categories: getDialogSelectedCategories(),
     availabilityStatus: refs.itemAvailabilityStatus?.value || "available",
     containerId: refs.itemContainer?.value || "",
-    note: refs.itemNote?.value || ""
+    ...readNoteFields(refs.itemNote)
   };
 }
 
@@ -6333,7 +6523,7 @@ function newRootContainerFormDraftFields() {
     location: refs.rootContainerLocation?.value || "",
     categories: getRootContainerDialogSelectedCategories(),
     nestable: Boolean(refs.rootContainerNestable?.checked),
-    note: refs.rootContainerNote?.value || ""
+    ...readNoteFields(refs.rootContainerNote)
   };
 }
 
@@ -6437,6 +6627,7 @@ function restoreNewItemFormDraft() {
   refs.itemName.value = String(fields.name || "");
   refs.itemWeight.value = String(fields.weight || "");
   refs.itemQuantity.value = String(fields.quantity || 1);
+  refs.itemStockQuantity.value = String(normalizeStockQuantity(fields.stockQuantity));
   if (refs.itemColor) refs.itemColor.value = String(fields.color || "");
   if (refs.itemWidth) refs.itemWidth.value = String(fields.width || "");
   if (refs.itemHeight) refs.itemHeight.value = String(fields.height || "");
@@ -6445,6 +6636,8 @@ function restoreNewItemFormDraft() {
   fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", {
     selected: location ? [location] : []
   }).map(dictionarySelectEntry), location);
+  itemStockLocationsDraft = itemStockLocations(fields);
+  syncItemStockLocationsUi();
   renderItemCategoryPicker(Array.isArray(fields.categories) ? fields.categories : [], { fallbackDefault: false });
   if (refs.itemAvailabilityStatus) {
     refs.itemAvailabilityStatus.value = normalizeItemAvailabilityStatus(fields.availabilityStatus);
@@ -6454,7 +6647,7 @@ function restoreNewItemFormDraft() {
   refs.itemContainer.value = state.containers?.[containerId] && getLayoutContainerIdSet(targetLayout).has(containerId)
     ? containerId
     : "";
-  refs.itemNote.value = String(fields.note || "");
+  loadNoteFields(refs.itemNote, fields);
   runtime.itemDialogPhotoDraft = restoredNewEntityFormDraftPhotos(draft);
   runtime.itemDialogPhotoActiveIndex = 0;
   updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || []);
@@ -6483,7 +6676,7 @@ function restoreNewRootContainerFormDraft() {
   fillRootContainerLocationSelect(location);
   renderRootContainerCategoryPicker(Array.isArray(fields.categories) ? fields.categories : [], { fallbackDefault: false });
   if (refs.rootContainerNestable) refs.rootContainerNestable.checked = Boolean(fields.nestable);
-  refs.rootContainerNote.value = String(fields.note || "");
+  loadNoteFields(refs.rootContainerNote, fields);
   runtime.rootContainerDialogPhotoDraft = restoredNewEntityFormDraftPhotos(draft);
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || []);
@@ -6567,7 +6760,7 @@ function openRootContainerDialog(containerId = null, {
   if (refs.shareRootContainerLinkBtn) {
     refs.shareRootContainerLinkBtn.hidden = !containerId || !currentUserId() || isPublicLayoutContext();
   }
-  refs.rootContainerNote.value = container?.note || "";
+  loadNoteFields(refs.rootContainerNote, container);
   runtime.rootContainerDialogPhotoDraft = null;
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
@@ -6609,12 +6802,38 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   refs.dialogTitle.textContent = itemId ? t("items.editItem") : t("items.addItem");
   refs.itemName.value = item.name;
   refs.itemWeight.value = item.weight || 0;
+  refs.itemStockQuantity.value = itemStockQuantity(item);
+  refs.itemStockField.hidden = isPublicLayoutContext();
+  refs.itemStockQuantity.disabled = isPublicLayoutContext();
+  refs.itemStockMinus.disabled = isPublicLayoutContext() || itemStockQuantity(item) === 0;
+  refs.itemStockPlus.disabled = isPublicLayoutContext();
+  refs.itemStockLocationsBtn.hidden = isPublicLayoutContext();
+  refs.itemPreparationFields.hidden = isPublicLayoutContext();
+  for (const [action, checkbox] of [["repair", refs.itemNeedsRepair], ["charge", refs.itemNeedsCharge]]) {
+    checkbox.onclick = () => {
+      const selected = getDialogSelectedCategories().filter((category) => !preparationCategoryMatches(dictionaryValueLabel(category), action));
+      if (checkbox.checked) {
+        const existing = dictionaryOptionsForUi("category").find((category) => preparationCategoryMatches(dictionaryValueLabel(category), action));
+        if (!existing && !requireUsageCapacity("categories")) {
+          checkbox.checked = false;
+          return;
+        }
+        selected.push(existing || t(`preparation.${action}Label`));
+      }
+      renderItemCategoryPicker(selected, { fallbackDefault: false });
+      updateItemDialogSaveState();
+    };
+  }
+  bindStockField(refs, updateItemDialogSaveState);
   if (refs.itemColor) refs.itemColor.value = item.color || "";
   const dimensions = normalizeContainerDimensions(item.dimensions);
   if (refs.itemWidth) refs.itemWidth.value = dimensions.width ? String(dimensions.width).replace(".", ",") : "";
   if (refs.itemHeight) refs.itemHeight.value = dimensions.height ? String(dimensions.height).replace(".", ",") : "";
   if (refs.itemDepth) refs.itemDepth.value = dimensions.depth ? String(dimensions.depth).replace(".", ",") : "";
   fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map(dictionarySelectEntry), item.location);
+  itemStockLocationsDraft = itemStockLocations(item);
+  refs.itemStockLocationsBtn.onclick = openItemStockLocations;
+  syncItemStockLocationsUi();
   renderItemCategoryPicker(itemCategories(item), { fallbackDefault: false });
   if (refs.itemAvailabilityStatus) refs.itemAvailabilityStatus.value = normalizeItemAvailabilityStatus(item.availabilityStatus);
   refs.itemContainer.value = itemId
@@ -6635,7 +6854,7 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   updateItemRemoveFromLayoutButton();
   updateItemReplacementButton();
   updateItemDeleteForeverButton();
-  refs.itemNote.value = item.note || "";
+  loadNoteFields(refs.itemNote, item);
   runtime.itemDialogPhotoDraft = null;
   runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -6732,7 +6951,7 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
     refs.itemContainerCurrent.classList.toggle("active", Boolean(containerId));
   }
   updateItemDeleteForeverButton();
-  refs.itemNote.value = item.note || "";
+  loadNoteFields(refs.itemNote, item);
   runtime.itemDialogPhotoDraft = null;
   runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -6744,6 +6963,13 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
 }
 
 function setSharedReadonlyItemDialog(readonly) {
+  if (refs.itemStockLocationsBtn) refs.itemStockLocationsBtn.hidden = readonly || isPublicLayoutContext();
+  if (readonly) {
+    refs.itemStockLocationsSummary.hidden = true;
+    refs.itemLocation.closest("label").hidden = false;
+  }
+  if (refs.itemStockField) refs.itemStockField.hidden = readonly;
+  if (refs.itemPreparationFields) refs.itemPreparationFields.hidden = readonly;
   refs.copySharedItemDialogBtn.hidden = !readonly;
   refs.saveItemBtn.hidden = readonly;
   refs.itemContainerPickerBtn.hidden = readonly;
@@ -6836,7 +7062,7 @@ async function openSharedReadonlyContainerDialog(sourceContainerId) {
     refs.rootContainerPlacementCurrent.textContent = sharedRecordContainerPath(match.sourceState, parentId) || t("settings.currentLayout");
     refs.rootContainerPlacementCurrent.classList.toggle("active", true);
   }
-  refs.rootContainerNote.value = container.note || "";
+  loadNoteFields(refs.rootContainerNote, container);
   runtime.rootContainerDialogPhotoDraft = null;
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
@@ -8636,6 +8862,8 @@ function getItemDialogSnapshot() {
     name: refs.itemName.value.trim(),
     weight: parseWeightInput(refs.itemWeight.value),
     quantity: readItemDialogQuantity(),
+    stockQuantity: normalizeStockQuantity(refs.itemStockQuantity?.value),
+    stockLocations: readItemStockLocations(),
     color: normalizeContainerColor(refs.itemColor?.value),
     width: dimensions.width,
     height: dimensions.height,
@@ -8644,7 +8872,7 @@ function getItemDialogSnapshot() {
     categories: getDialogSelectedCategories().join("\u0000"),
     availabilityStatus: refs.itemAvailabilityStatus ? normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus.value) : "available",
     containerId: refs.itemContainer.value || "",
-    note: refs.itemNote.value.trim(),
+    ...readNoteFields(refs.itemNote),
     photo: getItemDialogPhotoSnapshot()
   };
 }
@@ -8712,7 +8940,7 @@ const adminTemplatePhotoCreateForms = createAdminTemplatePhotoCreateFormControll
       : placeNewRootInCurrentLayout ? { layoutId: rootContainerPlacementTargetLayoutId || layoutId } : null;
     return { created: !(item ? runtime.editingItemId : runtime.editingRootContainerId),
       fields: { name: snapshot.name, weight: snapshot.weight, color: snapshot.color, location: snapshot.location,
-        category: categories[0] || "", categories, note: snapshot.note, dimensions: hasContainerDimensions(dimensions) ? dimensions : null,
+        category: categories[0] || "", categories, note: snapshot.note, noteHtml: snapshot.noteHtml || "", dimensions: hasContainerDimensions(dimensions) ? dimensions : null,
         ...(item ? { ...currentEditMeta(), quantity: 1 } : { ...currentCreateMeta(), volume: snapshot.volume, nestable: snapshot.nestable }) },
       localFormContext: { version: 1, ...(item ? { availabilityStatus: snapshot.availabilityStatus } : {}), placement },
       catalogSource: item ? Boolean(runtime.sharedDialogCopyItemId) : Boolean(rootContainerCatalogSelection || rootContainerManufacturerPhotoSource),
@@ -8746,7 +8974,7 @@ const adminTemplatePhotoForms = createAdminTemplatePhotoFormController({
     const dimensions = item ? readItemDialogDimensions() : readRootContainerDialogDimensions();
     return { created: !entityId,
       fields: { name: snapshot.name, weight: snapshot.weight, color: snapshot.color, location: snapshot.location,
-        category: categories[0] || "", categories, note: snapshot.note,
+        category: categories[0] || "", categories, note: snapshot.note, noteHtml: snapshot.noteHtml || "",
         dimensions: hasContainerDimensions(dimensions) ? dimensions : null, ...currentEditMeta(),
         ...(item ? { quantity: 1 } : { volume: snapshot.volume, nestable: snapshot.nestable }) },
       placementChanged: item ? itemPlacementSnapshotChanged(initial, snapshot)
@@ -8811,10 +9039,10 @@ const personalPhotoForms = createPersonalPhotoFormController({
     const categories = item ? getDialogSelectedCategories() : getRootContainerDialogSelectedCategories();
     const dimensions = item ? readItemDialogDimensions() : readRootContainerDialogDimensions();
     const fields = { name: snapshot.name, weight: snapshot.weight, color: snapshot.color,
-      location: snapshot.location, category: categories[0] || "", categories, note: snapshot.note,
+      location: snapshot.location, category: categories[0] || "", categories, note: snapshot.note, noteHtml: snapshot.noteHtml || "",
       dimensions: hasContainerDimensions(dimensions) ? dimensions : null,
       ...(created ? currentCreateMeta() : currentEditMeta()),
-      ...(item ? { quantity: 1 } : { volume: snapshot.volume, nestable: snapshot.nestable }) };
+      ...(item ? { quantity: 1, stockQuantity: snapshot.stockQuantity, stockLocations: snapshot.stockLocations } : { volume: snapshot.volume, nestable: snapshot.nestable }) };
     const placementChanged = item ? itemPlacementSnapshotChanged(initial, snapshot) || Boolean(created && snapshot.containerId)
       : containerPlacementSnapshotChanged(initial, snapshot) || Boolean(created && (placeNewRootInCurrentLayout || pendingCopyTargetContainerSetup));
     const availabilityChanged = item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available");
@@ -9739,7 +9967,7 @@ function getRootContainerDialogSnapshot(sourceLayoutId = "") {
     location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
     categories: getRootContainerDialogSelectedCategories().join("\u0000"),
     nestable: Boolean(refs.rootContainerNestable?.checked),
-    note: refs.rootContainerNote.value.trim(),
+    ...readNoteFields(refs.rootContainerNote),
     photo: getRootContainerDialogPhotoSnapshot(),
     parentId: runtime.editingRootContainerId && (
       runtime.rootContainerDialogPendingParentId !== undefined || state.containers[runtime.editingRootContainerId]?.parentId
@@ -9759,6 +9987,9 @@ function getRootContainerDialogSnapshot(sourceLayoutId = "") {
 
 function updateItemDialogSaveState() {
   if (!refs.saveItemBtn) return;
+  const categories = getDialogSelectedCategories();
+  if (refs.itemNeedsRepair) refs.itemNeedsRepair.checked = categories.some((value) => preparationCategoryMatches(dictionaryValueLabel(value), "repair"));
+  if (refs.itemNeedsCharge) refs.itemNeedsCharge.checked = categories.some((value) => preparationCategoryMatches(dictionaryValueLabel(value), "charge"));
   const snapshot = getItemDialogSnapshot();
   const hasName = Boolean(snapshot.name);
   const changed = !runtime.itemDialogInitialSnapshot || !snapshotsEqual(snapshot, runtime.itemDialogInitialSnapshot);
@@ -10052,6 +10283,7 @@ async function saveRootContainerDialog(event) {
 
 async function saveDialogItem(event) {
   event?.preventDefault();
+  if (!refs.itemStockQuantity.disabled && !refs.itemStockQuantity.reportValidity()) return;
   if (itemFormDraftSaving) return false;
   if (adminTemplatePhotoCreateForms.save("item")) return;
   if (adminTemplatePhotoForms.save("item")) return;
@@ -10091,6 +10323,7 @@ async function saveDialogItem(event) {
     placementFailedText: localText("Could not add the item to this layout.", "Не удалось добавить вещь в эту укладку."),
     readItemDialogDimensions,
     readItemDialogQuantity,
+    readItemStockLocations,
     refs,
     removeItemFromLayoutArrangement,
     render,
