@@ -139,11 +139,13 @@ test("stock, three preparation lists and purchases stay independent of the packi
     await expect(photo).toBeVisible();
     await expect.poll(() => photo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
     await photo.click();
-    await expect(page.locator("#preparationDialog")).not.toBeVisible();
+    await expect(page.locator("#preparationDialog")).toBeVisible();
     await expect(page.locator("#itemDialog")).toBeVisible();
     await expect(page.locator("#itemName")).toHaveValue("Каша гречневая");
     await page.keyboard.press("Escape");
     await expect(page.locator("#itemDialog")).not.toBeVisible();
+    await expect(page.locator("#preparationDialog")).toBeVisible();
+    await page.locator("[data-preparation-close]").click();
   }
   await page.locator('[data-preparation-action="buy"]').click();
   await page.locator("[data-purchase-item] input").fill("2");

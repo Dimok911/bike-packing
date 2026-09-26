@@ -7024,6 +7024,18 @@ button.touch-tooltip-open:active {
   gap: 6px;
 }
 
+.item-physical-properties > label {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.item-dimensions-field legend {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .item-photo-field {
   display: grid;
   gap: 8px;
@@ -10041,12 +10053,10 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 .stock-location-rows { display: grid; gap: 12px; }
 .stock-location-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 34px; align-items: end; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .stock-location-row label, .stock-location-quantity { min-width: 0; }
-.stock-location-quantity { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.stock-location-quantity { display: grid; gap: 6px; font-size: 13px; font-weight: 650; color: var(--muted); }
 .stock-location-quantity .quantity-stepper { grid-template-columns: 34px 64px 34px; }
 .stock-location-quantity input { min-height: 40px; margin: 0; }
 .stock-remove { min-height: 40px; padding: 4px; }
-.stock-transfer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
-.stock-transfer legend { font-weight: 700; font-size: 13px; }
 [data-stock-error] { margin: 0; color: #a8202b; }
 [data-stock-error]:empty { display: none; }
 .preparation-purchase label:has([data-purchase-location]) { flex: 1 1 100%; }

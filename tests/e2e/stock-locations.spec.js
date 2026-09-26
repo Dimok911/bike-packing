@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { createGuestWorkspace, createEmptyLayout, openApp, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
 
-test("split stock, transfer, cancellation, location filters and destination purchases survive reload", async ({ page, isMobile }) => {
+test("stock quantities by selected place, cancellation, location filters and destination purchases survive reload", async ({ page, isMobile }) => {
   await prepareIsolatedRussianGuest(page);
   const activate = async (locator) => {
     await locator.scrollIntoViewIfNeeded();
@@ -30,17 +30,25 @@ test("split stock, transfer, cancellation, location filters and destination purc
   } else {
     ({ item } = await createGuestWorkspace(page, { layoutName: "Поход", containerName: "Еда", itemName: "Каша", quantity: "6" }));
   }
+  await activate(page.locator('.tab[data-view="settings"]'));
+  for (const place of ["Дом", "Дача"]) {
+    if (await page.locator(`#locationFilter option[value="${place}"]`).count()) continue;
+    await page.locator("#locationInput").fill(place);
+    await activate(page.locator("#locationAdd"));
+  }
+  await activate(page.locator('.tab[data-view="packing"]'));
   await activate(item.locator(".item-title-hitarea"));
   await page.locator("#itemStockQuantity").fill("4");
   await activate(page.locator("#itemStockLocationsBtn"));
   const dialog = page.locator("#stockLocationsDialog");
   const names = dialog.locator("[data-stock-location-name]");
   const quantities = dialog.locator("[data-stock-location-quantity]");
-  await names.first().fill("Дом");
+  await names.first().selectOption("Дом");
   await activate(dialog.locator("[data-stock-add]"));
-  await names.nth(1).fill("Дача");
-  await dialog.locator("[data-stock-move-count]").fill("2");
-  await activate(dialog.locator("[data-stock-move]"));
+  await names.nth(1).selectOption("Дача");
+  await expect(dialog.locator(".stock-transfer")).toHaveCount(0);
+  await quantities.first().fill("2");
+  await quantities.nth(1).fill("2");
   await expect(quantities.first()).toHaveValue("2");
   await expect(quantities.nth(1)).toHaveValue("2");
   await expect(dialog.locator("[data-stock-total]")).toHaveText("4");
@@ -65,9 +73,8 @@ test("split stock, transfer, cancellation, location filters and destination purc
   await activate(dialog.getByRole("button", { name: "Отмена", exact: true }));
   await activate(page.locator("[data-stock-locations]"));
   await expect(quantities.first()).toHaveValue("2");
-  await dialog.locator("[data-stock-from]").selectOption("1");
-  await dialog.locator("[data-stock-to]").selectOption("0");
-  await activate(dialog.locator("[data-stock-move]"));
+  await quantities.first().fill("3");
+  await quantities.nth(1).fill("1");
   await expect(quantities.first()).toHaveValue("3");
   await expect(quantities.nth(1)).toHaveValue("1");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -77,6 +84,18 @@ test("split stock, transfer, cancellation, location filters and destination purc
   await page.locator("#locationFilter").selectOption("");
   await activate(page.locator('.tab[data-view="packing"]'));
   await activate(page.locator('[data-preparation-action="buy"]'));
+  await activate(page.locator("[data-preparation-edit]"));
+  await expect(page.locator("#preparationDialog")).toBeVisible();
+  await activate(page.locator('#itemDialog header button[value="cancel"]'));
+  await expect(page.locator("#itemDialog")).not.toBeVisible();
+  await expect(page.locator("#preparationDialog")).toBeVisible();
+  await activate(page.locator("[data-preparation-edit]"));
+  await page.locator("#itemName").fill("Каша в дорогу");
+  await page.locator("#itemName").blur();
+  await expect(page.locator("#itemDialog")).not.toHaveClass(/keyboard-focus-active/);
+  await activate(page.locator("#saveItemBtn"));
+  await expect(page.locator("#itemDialog")).not.toBeVisible();
+  await expect(page.locator("#preparationDialog")).toContainText("Каша в дорогу");
   await page.locator("[data-purchase-location]").selectOption("Дача");
   await activate(page.locator("[data-purchase-item] button"));
   await expect(page.locator("#preparationDialog")).toContainText("Всего хватает");
