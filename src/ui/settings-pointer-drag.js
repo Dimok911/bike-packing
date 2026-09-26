@@ -274,7 +274,7 @@ export function bindSettingsPointerDrag({
       const width = packingColumnPlaceholderWidth(board);
       placeholder.style.width = `${width}px`;
       placeholder.style.height = "";
-      placeholder.style.maxWidth = "none";
+      placeholder.style.maxWidth = "100%";
       placeholder.style.minHeight = "";
     };
 

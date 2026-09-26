@@ -733,7 +733,7 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(appTail, /MANUFACTURER_BAG_CATALOG_INDEX/);
   assert.match(appTail, /loadManufacturerBagCatalog/);
   assert.doesNotMatch(appTail, /from "\.\.\/data\/manufacturer-bag-catalog\.js"/);
-  assert.match(appTail, /refs\.rootContainerNote\.value = draft\.note/);
+  assert.match(appTail, /loadNoteFields\(refs\.rootContainerNote, draft\)/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
   assert.equal((i18n.match(/"bagCatalog\.photoReady"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.open"/g) || []).length, 2);

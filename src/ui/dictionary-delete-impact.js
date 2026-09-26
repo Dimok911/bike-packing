@@ -1,4 +1,5 @@
 import { escapeHtml } from "../utils/html.js";
+import { itemStorageLocations } from "../state/item-stock.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 
 export const DICTIONARY_DELETE_INLINE_LIMIT = 3;
@@ -42,7 +43,7 @@ export function collectDictionaryValueUsage(type, value, {
 } = {}) {
   return {
     items: items.filter((item) => type === "location"
-      ? item.location === value
+      ? itemStorageLocations(item).includes(value)
       : itemCategories(item).includes(value)),
     containers: containers.filter((container) => type === "location"
       ? container.location === value

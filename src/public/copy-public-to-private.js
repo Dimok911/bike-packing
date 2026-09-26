@@ -1,4 +1,5 @@
 import { clonePlain } from "../utils/json.js";
+import { escapeHtml } from "../utils/html.js";
 import { publicCopyRecordContentHash } from "./copy-duplicates.js";
 
 export function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId = "", sourceContentHash = "") {
@@ -22,6 +23,7 @@ export function appendCopiedFromTemplateNote(record, templateName = "") {
   const note = String(record.note || "").trim();
   if (note.split(/\r?\n/).map((line) => line.trim()).includes(marker)) return false;
   record.note = note ? `${note}\n${marker}` : marker;
+  if (record.noteHtml) record.noteHtml += `<p>${escapeHtml(marker)}</p>`;
   return true;
 }
 

@@ -14,7 +14,7 @@ const fail = () => { throw Object.assign(Error("Изменение фотогр�
   { code: "admin-template-photo-edit", isAdminTemplateBlocked: true }); };
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const digest = async value => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(value)))), byte => byte.toString(16).padStart(2, "0")).join("");
-const commonFields = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions",
+const commonFields = ["name", "weight", "color", "location", "category", "categories", "note", "noteHtml", "dimensions",
   "updatedAt", "updatedByDeviceId", "updatedByDeviceName"];
 
 export function adminTemplatePhotoEditFields(entityType) {

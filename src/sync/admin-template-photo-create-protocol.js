@@ -27,12 +27,13 @@ const commonFields = ["name", "weight", "color", "location", "category", "catego
 // width/height/depth controls, not arbitrary new-owner JSON/provenance.
 export function adminTemplatePhotoCreateFields(type) {
   if (!["item", "container"].includes(type)) fail();
-  return [...commonFields, "dimensions", "createdAt", ...(type === "item" ? ["quantity"] : ["volume", "nestable"])];
+  return [...commonFields, "noteHtml", "dimensions", "createdAt", ...(type === "item" ? ["quantity"] : ["volume", "nestable"])];
 }
 function fieldsValid(fields, type) {
   const allowed = adminTemplatePhotoCreateFields(type), required = [...commonFields, ...(type === "item" ? ["quantity"] : ["volume", "nestable", "createdAt"])];
   if (!plain(fields) || required.some(key => !Object.hasOwn(fields, key)) || Object.keys(fields).some(key => !allowed.includes(key))
     || !text(fields.name, 255) || !fields.name.trim() || fields.name !== fields.name.trim() || !number(fields.weight)
+    || Object.hasOwn(fields, "noteHtml") && !text(fields.noteHtml, 262144)
     || !text(fields.color, 64) || !text(fields.location, 255) || !text(fields.category, 255) || !text(fields.note, 65536)
     || !Array.isArray(fields.categories) || fields.categories.length > 256 || fields.categories.some(value => !text(value, 255))
     || new Set(fields.categories).size !== fields.categories.length || fields.category !== (fields.categories[0] || "")

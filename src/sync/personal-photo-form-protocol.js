@@ -25,6 +25,9 @@ const fail = () => { throw Object.assign(new Error("Состав карточк�
   { code: "photo-form-manifest", isOperationPreflightError: true }); };
 const fieldChecks = {
   name: value => text(value, 255) && value.trim().length > 0,
+  noteHtml: value => text(value, 262144),
+  stockQuantity: value => Number.isSafeInteger(value) && value >= 0,
+  stockLocations: value => Array.isArray(value) && value.length > 0 && value.length <= 256 && value.every(row => object(row) && Object.keys(row).length === 2 && text(row.location, 255) && Number.isSafeInteger(row.quantity) && row.quantity >= 0),
   note: value => text(value, 65536), color: value => text(value, 64),
   location: value => text(value, 255), category: value => text(value, 255),
   categories: value => Array.isArray(value) && value.length <= 256 && value.every(entry => text(entry, 255)) && new Set(value).size === value.length,
@@ -55,7 +58,7 @@ export function personalPhotoFormManifest(body, { allowEmptyCopy = false, allowE
     || !Number.isSafeInteger(body.baseEntityRevision) || body.baseEntityRevision < 0 || !object(body.fields) || !Object.keys(body.fields).length
     || Object.entries(body.fields).some(([key, value]) => !Object.hasOwn(fieldChecks, key) || !fieldChecks[key](value))
     || body.entityType === "item" && ["volume", "nestable"].some(key => Object.hasOwn(body.fields, key))
-    || body.entityType === "container" && Object.hasOwn(body.fields, "quantity")
+    || body.entityType === "container" && ["quantity", "stockQuantity", "stockLocations"].some(key => Object.hasOwn(body.fields, key))
     || body.baseEntityRevision === 0 && !Object.hasOwn(body.fields, "name")
     || body.baseEntityRevision > 0 && Object.hasOwn(body.fields, "createdAt")
     || !Array.isArray(body.changes) || !body.changes.length && !(allowEmptyCopy && body.copySource || body.manufacturerSource
@@ -64,6 +67,10 @@ export function personalPhotoFormManifest(body, { allowEmptyCopy = false, allowE
       || change.baseEntityRevision !== body.baseEntityRevision || change.action === "copy" && !body.copySource
       || body.baseEntityRevision === 0 && change.action !== (body.copySource ? "copy" : "attach"))
     || Object.hasOwn(body, "copySource") && !personalPhotoCopySourceValid(body, { allowEmpty: allowEmptyCopy })) fail();
+  if (body.fields.stockLocations) {
+    const rows = body.fields.stockLocations, total = rows.reduce((n, row) => n + row.quantity, 0);
+    if (!Number.isSafeInteger(total) || total !== body.fields.stockQuantity || new Set(rows.map(row => row.location)).size !== rows.length || body.fields.location !== rows[0].location) fail();
+  }
   if (body.baseEntityRevision === 0 && body.changes.length && body.changes[0].expectedPhotoIds?.length !== 0) fail();
   const photos = body.changes.length ? personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true, allowAttachThenOrder: true }) : [];
   if (Object.hasOwn(body, "formContext")) personalPhotoItemFormContext(body);

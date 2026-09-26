@@ -1,4 +1,6 @@
 import { createEntityId } from "../utils/entity-id.js";
+import { normalizeStockQuantity, setItemStockLocations } from "../state/item-stock.js";
+import { applyNoteFields } from "./rich-note-content.js";
 
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
@@ -85,6 +87,7 @@ export function saveRootContainerDialogAction({
       ...rootContainerSourceMeta(),
       ...currentCreateMeta(changedAt)
     };
+    applyNoteFields(state.containers[id], refs.rootContainerNote);
     markRecordActivePublicCatalog(state.containers[id]);
     placeCreatedRootContainer(id, changedAt);
     const layoutId = getPublishedEditLayoutId();
@@ -103,7 +106,7 @@ export function saveRootContainerDialogAction({
   container.categories = selectedCategories;
   applyRootContainerDimensions(container, dimensions);
   container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
-  container.note = refs.rootContainerNote.value.trim();
+  applyNoteFields(container, refs.rootContainerNote);
   container.nestable = Boolean(refs.rootContainerNestable?.checked);
   applyRootContainerDialogPhotoDraft(container, changedAt);
   markRecordActivePublicCatalog(container);
@@ -144,6 +147,7 @@ export function saveItemDialogAction({
   placementFailedText = "Could not add the item to this layout.",
   readItemDialogDimensions = () => ({}),
   readItemDialogQuantity = () => 1,
+  readItemStockLocations = null,
   refs,
   removeItemFromLayoutArrangement = () => {},
   render = () => {},
@@ -177,12 +181,14 @@ export function saveItemDialogAction({
     item.name = name;
     item.weight = parseWeightInput(refs.itemWeight.value);
     item.quantity = 1;
+    if (refs.itemStockQuantity && !refs.itemStockQuantity.disabled) item.stockQuantity = normalizeStockQuantity(refs.itemStockQuantity.value);
     item.color = normalizeItemColor(refs.itemColor?.value);
     applyItemDimensions(item, dimensions);
     item.location = refs.itemLocation.value;
+    if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(item, readItemStockLocations());
     item.categories = selectedCategories;
     item.category = selectedCategories[0] || "";
-    item.note = refs.itemNote.value.trim();
+    applyNoteFields(item, refs.itemNote);
     applyItemAvailabilityStatus(item, availabilityStatus);
     applyItemDialogPhotoDraft(item, changedAt);
     markRecordActivePublicCatalog(item, layoutId);
@@ -229,6 +235,7 @@ export function saveItemDialogAction({
       name,
       weight: parseWeightInput(refs.itemWeight.value),
       quantity: 1,
+      stockQuantity: normalizeStockQuantity(refs.itemStockQuantity?.value),
       color: normalizeItemColor(refs.itemColor?.value),
       ...(hasItemDimensions(dimensions) ? { dimensions } : {}),
       location: refs.itemLocation.value,
@@ -239,7 +246,9 @@ export function saveItemDialogAction({
       photos: itemDialogPhotoDraft?.photos ? [...itemDialogPhotoDraft.photos] : [],
       ...currentEditMeta(changedAt)
     };
+    applyNoteFields(state.items[id], refs.itemNote);
     applyItemAvailabilityStatus(state.items[id], availabilityStatus);
+    if (readItemStockLocations && !refs.itemStockQuantity?.disabled) setItemStockLocations(state.items[id], readItemStockLocations());
     markRecordActivePublicCatalog(state.items[id], layoutId);
     if (containerId && state.containers[containerId] && layout) {
       if (itemIsUnavailable) {

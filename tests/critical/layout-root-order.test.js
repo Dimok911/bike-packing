@@ -54,6 +54,16 @@ test("CRITICAL root column drag: the final placeholder stays before the add-root
   assert.equal(getPackingRootPlaceholderBefore(board, rootCard), rootCard);
 });
 
+test("root drag inserts before the empty invitation and the preparation actions column", () => {
+  for (const className of ["board-empty", "packing-actions-column"]) {
+    const trailingPanel = { classList: { contains: (value) => value === className } };
+    const existingRoot = { hasAttribute: () => false };
+    assert.equal(getPackingRootPlaceholderBefore({ children: [trailingPanel] }), trailingPanel);
+    assert.equal(getPackingRootPlaceholderBefore({ children: [existingRoot, trailingPanel] }), trailingPanel);
+    assert.equal(getPackingRootPlaceholderBefore({ children: [existingRoot, trailingPanel] }, existingRoot), existingRoot);
+  }
+});
+
 test("CRITICAL container drag: a nested package target shows the localized nesting action", () => {
   const html = renderSubcontainerSectionHtml({
     collapsed: false,
@@ -264,7 +274,7 @@ test("CRITICAL item catalog: label rows share the fixed card text height with th
   assert.match(styles, /\.items-list \.item-card:not\(:has\(\.item-photo\)\) \{[\s\S]*?height: 148px;[\s\S]*?overflow: hidden;/);
   assert.match(styles, /\.items-list\.with-photo-slots \.item-card \.item-card-top \{[\s\S]*?max-height: var\(--photo-top-row-height\);[\s\S]*?overflow: hidden;/);
   assert.match(styles, /\.items-list \.item-card \.meta \{[\s\S]*?min-height: 22px;[\s\S]*?max-height: none;/);
-  assert.doesNotMatch(styles, /\.items-list \.item-card \.meta \{[\s\S]*?max-height: 22px;/);
+  assert.doesNotMatch(styles, /\.items-list \.item-card \.meta \{[^}]*max-height: 22px;/);
   assert.match(styles, /\.items-list \.item-card \.catalog-card-title-block \{[\s\S]*?grid-column: 1 \/ -1;/);
   assert.match(styles, /\.items-list \.item-card \.item-title \{[\s\S]*?padding-inline-end: 108px;/);
   assert.match(styles, /\.items-list \.item-card \.copy-item-button \{[\s\S]*?grid-column: 2;[\s\S]*?grid-row: 1;/);
