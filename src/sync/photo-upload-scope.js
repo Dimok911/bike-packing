@@ -26,11 +26,12 @@ export function getPhotoUploadScope(targetState, layoutId = null) {
     if (item?.publicCatalogLayoutId === layoutId) itemIds.add(itemId);
     if (item?.containerId && containerIds.has(item.containerId)) itemIds.add(itemId);
   });
-  return { containerIds, itemIds };
+  return { containerIds, itemIds, layoutId };
 }
 
 export function isEntityInPhotoUploadScope(entity, entityType, scope) {
   if (!scope) return true;
+  if (entityType === "layout") return scope.layoutId === entity.id;
   if (entityType === "container") return scope.containerIds.has(entity.id);
   return scope.itemIds.has(entity.id);
 }
@@ -69,6 +70,7 @@ export function markRecordPhotosForCurrentListCopy(record) {
 export function markLayoutPhotosForCurrentListCopy(targetState, layoutId) {
   const layout = targetState.layouts?.[layoutId];
   if (!layout) return;
+  markRecordPhotosForCurrentListCopy(layout);
   getLayoutContainerIdSet(targetState, layout).forEach((containerId) => {
     markRecordPhotosForCurrentListCopy(targetState.containers?.[containerId]);
   });
@@ -85,6 +87,10 @@ export async function cacheLayoutRemotePhotosForUploadFallback(targetState, {
   const scope = getPhotoUploadScope(targetState, layoutId);
   let changed = 0;
   const options = changedAt ? { changedAt } : {};
+  for (const layout of Object.values(targetState.layouts || {})) {
+    if (!isEntityInPhotoUploadScope(layout, "layout", scope)) continue;
+    changed += await cacheRecordRemotePhotosForUploadFallback(layout, options);
+  }
   for (const item of Object.values(targetState.items || {})) {
     if (!isEntityInPhotoUploadScope(item, "item", scope)) continue;
     changed += await cacheRecordRemotePhotosForUploadFallback(item, options);
@@ -116,6 +122,11 @@ export function getUnsyncedPhotoEntries(targetState, {
 }
 
 function collectPhotoEntities(targetState, scope, visitPhoto) {
+  Object.values(targetState.layouts || {}).forEach((layout) => {
+    if (!isEntityInPhotoUploadScope(layout, "layout", scope)) return;
+    if (!scope && (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId)) return;
+    normalizeItemPhotos(layout).forEach((photo) => visitPhoto(layout, "layout", photo));
+  });
   Object.values(targetState.items || {}).forEach((item) => {
     if (!isEntityInPhotoUploadScope(item, "item", scope)) return;
     normalizeItemPhotos(item).forEach((photo) => visitPhoto(item, "item", photo));

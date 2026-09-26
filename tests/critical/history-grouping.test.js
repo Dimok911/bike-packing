@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  assertHistoryRequestsSucceeded,
   groupHistoryRecords,
   historySharedTemplateOptions,
   historyRecordKey,
@@ -56,6 +57,17 @@ import {
 function normalizeState(payload) {
   return payload || null;
 }
+
+test("history never reports empty when the main list failed but another list is empty", () => {
+  const error = new Error("HTTP 502");
+  assert.throws(() => assertHistoryRequestsSucceeded([
+    { status: "rejected", reason: error },
+    { status: "fulfilled", value: { records: [] } }
+  ]), (actual) => actual === error);
+  assert.doesNotThrow(() => assertHistoryRequestsSucceeded([
+    { status: "fulfilled", value: { records: [] } }
+  ]));
+});
 
 test("CRITICAL history: a single history row keeps its content height", () => {
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");

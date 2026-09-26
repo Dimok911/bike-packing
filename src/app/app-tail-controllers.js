@@ -1,3 +1,6 @@
+import { applyLayoutMedia } from "../state/layout-media.js";
+import { createLayoutMediaEditor } from "../ui/layout-media-editor.js";
+import { bindPhotoDropZone } from "../ui/photo-drop-zone.js";
 import { createRichNoteEditor } from "../ui/rich-note-editor.js";
 import { loadNoteFields, readNoteFields } from "../ui/rich-note-content.js";
 import { itemStockQuantity, itemStockLocations, itemStorageLocations, setItemStockLocations, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
@@ -146,6 +149,7 @@ export function createAppTailControllers(ctx) {
   let rootContainerFormDraftSaving = false;
   let layoutOrderDragId = "";
   let layoutEditInitialSnapshot = null;
+  let layoutMediaEditor = null;
   let layoutOrderDraftSections = null;
   let layoutOrderInitialSignature = "";
   let layoutOrderSavePromise = null;
@@ -6861,6 +6865,18 @@ function openLayoutEditDialog() {
     restoreAdminPublishedLayoutContext(layout.id);
   }
   runtime.layoutEditTargetId = layout.id;
+  if (!layoutMediaEditor) layoutMediaEditor = createLayoutMediaEditor({
+    dialog: refs.layoutEditDialog,
+    createPhoto: createItemPhotoFromFile,
+    deleteCachedPhoto,
+    renderGallery: renderPhotoGalleryHtml,
+    bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+    onChange: updateLayoutEditSaveState,
+    getLimit: () => usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit()),
+    localText,
+    showToast
+  });
+  layoutMediaEditor.open(layout);
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
   refs.layoutEditName.value = layout.name || "";
   const showLanguage = isAdminEditablePublishedLayout(layout.id);
@@ -7353,6 +7369,7 @@ function getLayoutEditSnapshot() {
     name: refs.layoutEditName?.value.trim() || "",
     language: adminPublished ? normalizeUiLanguage(refs.layoutEditLanguage?.value || layoutManageLanguage(layout, uiLanguage)) : "",
     notes: adminPublished ? "" : normalizeLayoutNotes(refs.layoutEditNotes?.value || ""),
+    media: layoutMediaEditor?.signature() || "",
     locked: adminPublished ? false : Boolean(refs.layoutLocked?.checked)
   };
 }
@@ -7362,6 +7379,7 @@ function updateLayoutEditSaveState() {
   const snapshot = getLayoutEditSnapshot();
   const changed = !layoutEditInitialSnapshot || !snapshotsEqual(snapshot, layoutEditInitialSnapshot);
   updateModalSaveButton(refs.saveEditedLayoutBtn, { hasName: Boolean(snapshot.name), changed });
+  if (layoutMediaEditor?.isBusy()) refs.saveEditedLayoutBtn.disabled = true;
 }
 
 function hasSavableLayoutEditChanges() {
@@ -7381,6 +7399,10 @@ function handleLayoutEditFormSubmit(event) {
 }
 
 async function requestCloseLayoutEditDialog() {
+  if (layoutMediaEditor?.isBusy()) {
+    showToast(localText("Please wait for photo preparation to finish.", "Дождитесь окончания подготовки фотографий."), "warning");
+    return;
+  }
   if (!hasSavableLayoutEditChanges()) {
     refs.layoutEditDialog.close("cancel");
     return;
@@ -7394,6 +7416,7 @@ async function requestCloseLayoutEditDialog() {
 }
 
 function handleLayoutEditDialogClose() {
+  layoutMediaEditor?.close(state.layouts?.[runtime.layoutEditTargetId]);
   layoutEditInitialSnapshot = null;
 }
 
@@ -7410,6 +7433,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
   if (refs.saveEditedLayoutBtn?.disabled) return;
   const layout = state.layouts?.[runtime.layoutEditTargetId];
   if (!layout || !canManageLayout(layout.id)) return;
+  if (!layoutMediaEditor?.validate()) return;
   const adminPublished = isAdminEditablePublishedLayout(layout.id);
   const changedAt = nowIso();
   const nextName = refs.layoutEditName.value.trim();
@@ -7442,8 +7466,9 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     uniqueLayoutName
   });
   const notesChanged = !adminPublished && applyLayoutNotes(layout, refs.layoutEditNotes?.value || "");
+  const mediaChanged = applyLayoutMedia(layout, layoutMediaEditor.snapshot());
   const lockChanged = !adminPublished && applyLayoutLocked(layout, nextLocked);
-  if (!changed && !notesChanged && !lockChanged) {
+  if (!changed && !notesChanged && !lockChanged && !mediaChanged) {
     if (closeDialog) refs.layoutEditDialog.close();
     return true;
   }
@@ -7461,6 +7486,9 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     refs.saveEditedLayoutBtn.disabled = true;
     try {
       await savePublishedTemplateMetadata(layout, previousLayout);
+      if (mediaChanged) {
+        await savePublishedLayoutRecord(layout.id, { published: true });
+      }
       if (closeDialog) refs.layoutEditDialog.close();
       render();
       if (notify) showToast(localText("Template label updated.", "Метка шаблона обновлена."), "success");
@@ -8111,18 +8139,31 @@ function bindPhotoOrderDialogControls() {
 function bindPhotoClipboardControls() {
   [
     [refs.dialog, "item"],
-    [refs.rootContainerDialog, "container"]
+    [refs.rootContainerDialog, "container"],
+    [refs.layoutEditDialog, "layout"]
   ].forEach(([dialog, kind]) => {
     dialog?.addEventListener("paste", (event) => handleDialogPhotoPaste(event, kind));
     dialog?.querySelector(".photo-paste-hint")?.addEventListener("click", (event) =>
       handlePhotoPasteButtonClick(event, kind)
     );
+    bindPhotoDropZone({
+      dialog,
+      zone: dialog?.querySelector(".item-photo-field, [data-layout-media-editor]"),
+      fetchImage: fetchClipboardImageSource,
+      onFiles: (files) => processDialogPhotoPasteFiles(files, kind),
+      canReceive: () => kind === "layout"
+        ? !layoutMediaEditor?.isBusy()
+        : kind === "item" ? !refs.saveItemBtn?.hidden && !runtime.sharedDialogCopyItemId : !refs.saveRootContainerBtn?.hidden,
+      onEmpty: () => showToast(localText("Drop an image file or a direct image link.", "Перетащите файл изображения или прямую ссылку на изображение."), "warning"),
+      onError: (error) => showToast(error.message || localText("Could not add photo.", "Не удалось добавить фото."), "error")
+    });
   });
   document.addEventListener("paste", handleActivePhotoClipboardPaste, true);
 }
 
 async function handleDialogPhotoPaste(event, kind = "item") {
   if (event.__bikePackingActivePhotoPaste) return;
+  const layoutSession = kind === "layout" ? layoutMediaEditor?.sessionToken() : null;
   const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
   const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (directFiles.length) event.preventDefault();
@@ -8131,6 +8172,7 @@ async function handleDialogPhotoPaste(event, kind = "item") {
     fetchImpl: fetchClipboardImageSource
   });
   if (!files.length) return;
+  if (kind === "layout" && (!refs.layoutEditDialog?.open || layoutSession !== layoutMediaEditor?.sessionToken())) return;
   event.preventDefault();
   processDialogPhotoPasteFiles(files, kind, request);
 }
@@ -8152,9 +8194,12 @@ function handleActivePhotoClipboardPaste(event) {
 }
 
 function processDialogPhotoPasteFiles(files, kind, request = null) {
+  if (kind === "layout" && request && request.layoutSession !== layoutMediaEditor?.sessionToken()) return;
   if (request?.handled) return request.processing;
   if (request) request.handled = true;
-  const processing = kind === "container"
+  const processing = kind === "layout"
+    ? (refs.layoutEditDialog?.open ? layoutMediaEditor?.addFiles(files) : null)
+    : kind === "container"
     ? handleRootContainerPhotoInputChange({ target: { files } })
     : handleItemPhotoInputChange({ target: { files } });
   if (request) request.processing = Promise.resolve(processing);
@@ -8170,7 +8215,7 @@ async function waitForPhotoPasteEventFallback(request, timeoutMs = 180) {
 async function handlePhotoPasteButtonClick(event, kind = "item") {
   const button = event.currentTarget;
   if (!button || button.disabled || button.getAttribute("aria-busy") === "true") return;
-  const request = { kind, handled: false, processing: null, pasteEventProcessing: null };
+  const request = { kind, handled: false, processing: null, pasteEventProcessing: null, layoutSession: kind === "layout" ? layoutMediaEditor?.sessionToken() : null };
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
   try {

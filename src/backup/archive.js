@@ -30,6 +30,7 @@ export function collectStatePhotoRefs(targetState, normalizePhotos) {
   };
   Object.values(targetState?.items || {}).forEach((item) => collect("item", item));
   Object.values(targetState?.containers || {}).forEach((container) => collect("container", container));
+  Object.values(targetState?.layouts || {}).forEach((layout) => collect("layout", layout));
   return refs;
 }
 

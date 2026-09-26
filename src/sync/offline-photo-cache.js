@@ -69,6 +69,7 @@ export function collectOfflinePhotoCacheTasks(targetState) {
   };
   Object.values(targetState?.items || {}).forEach(visit);
   Object.values(targetState?.containers || {}).forEach(visit);
+  Object.values(targetState?.layouts || {}).forEach(visit);
   return tasks;
 }
 
@@ -99,6 +100,7 @@ export function collectPhotoHydrationTasks(targetState) {
   };
   Object.values(targetState?.items || {}).forEach(visit);
   Object.values(targetState?.containers || {}).forEach(visit);
+  Object.values(targetState?.layouts || {}).forEach(visit);
   return tasks;
 }
 

@@ -1,3 +1,5 @@
+import { layoutMediaSnapshot } from "../state/layout-media.js";
+
 const activeCopies = new Set();
 
 export async function copySharedLayoutFlow({ runtime, dependencies }, layoutId, {
@@ -97,6 +99,7 @@ export async function copySharedLayoutFlow({ runtime, dependencies }, layoutId, 
     createdLayoutId = createLayoutId();
     runtime.state.layouts[createdLayoutId] = {
       id: createdLayoutId,
+      ...layoutMediaSnapshot(sourceLayout),
       name: uniqueLayoutName(sourceLayout.name || layout.name),
       rootContainerIds: fallbackRootIds,
       arrangement: createLayoutArrangementFromCurrentState(runtime.state, fallbackRootIds),

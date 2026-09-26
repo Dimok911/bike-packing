@@ -64,6 +64,9 @@ export function applyPublishedPayloadPhotosToLayoutState(targetState, layoutId, 
     changed = true;
   };
 
+  const sourceLayouts = recordMapFromCollection(publishedPayload.layouts);
+  applyPhotos(layout, sourceLayouts.get(publishedPayload.activeLayoutId) || sourceLayouts.get("layout-main") || sourceLayouts.values().next().value);
+
   containerIds.forEach((containerId) => {
     const targetRecord = targetState.containers?.[containerId];
     const sourceRecord = sourceRecordForLocalRecord(sourceContainers, "container", targetRecord, containerId, publishedEntityId);

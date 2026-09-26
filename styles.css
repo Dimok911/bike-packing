@@ -10913,3 +10913,22 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
     font-size: 12px;
   }
 }
+/* Photos belong to the layout editor; the packing board keeps its current layout. */
+.layout-media-editor { display: grid; gap: 12px; min-width: 0; }
+.item-photo-field.photo-drop-active, .layout-media-editor.photo-drop-active {
+  outline: 2px dashed var(--accent, #2e7b69);
+  outline-offset: 4px;
+  background: color-mix(in srgb, var(--accent, #2e7b69) 12%, transparent);
+  border-radius: 8px;
+}
+.layout-media-editor [data-layout-media-status]:empty { display: none; }
+.layout-media-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.layout-media-photo { min-width: 0; display: grid; align-content: start; gap: 8px; }
+.layout-media-photo input { min-width: 0; width: 100%; box-sizing: border-box; }
+.layout-media-photo .layout-media-thumbnail { width: 100%; height: 120px; margin: 0; }
+.layout-media-photo .photo-gallery-track { height: 100%; }
+.layout-media-photo .photo-gallery-slide { height: 120px; }
+.layout-media-photo-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.layout-media-local .photo-upload-progress { display: none; }
+.layout-media-photo-actions button { min-width: 36px; }
+@media (pointer: coarse) { .layout-media-photo-actions button { min-height: 44px; min-width: 44px; } }

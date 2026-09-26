@@ -133,7 +133,7 @@ async function uploadArchivedTemplatePhotos(payload, {
 } = {}) {
   let uploaded = 0;
   let missing = 0;
-  for (const [entityType, entities] of [["item", payload?.items], ["container", payload?.containers]]) {
+  for (const [entityType, entities] of [["item", payload?.items], ["container", payload?.containers], ["layout", payload?.layouts]]) {
     for (const entity of Object.values(entities || {})) {
       for (const photo of normalizePhotos(entity)) {
         const photoId = String(photo.id || photo.localId || "").trim();

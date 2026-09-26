@@ -100,6 +100,7 @@ export function summarizeBackupLayouts({
   };
   [...itemIds].forEach((id) => collectNewPhotoIds(backupState.items?.[id], currentState.items?.[id]));
   [...containerIds].forEach((id) => collectNewPhotoIds(backupState.containers?.[id], currentState.containers?.[id]));
+  rows.forEach(({ layout, existing }) => collectNewPhotoIds(layout, restoreMode === "copy" ? null : existing));
   const unchangedLayouts = rows.filter((row) => row.matchesCurrent);
   const newItems = [...itemIds].filter((id) => !currentState.items?.[id]);
   const newContainers = [...containerIds].filter((id) => !currentState.containers?.[id]);
@@ -199,6 +200,9 @@ export function restoreSelectedBackupLayoutsToState({
         if (result.created) markEdited(targetState.items[itemId], changedAt);
       });
       targetState.layouts[targetLayoutId] = restoredLayout;
+      normalizePhotos(restoredLayout).forEach((photo) => {
+        if (photo.id) importedPhotoIds.add(photo.id);
+      });
       targetState.activeLayoutId = targetLayoutId;
       restoredLayoutIds.push(targetLayoutId);
     });

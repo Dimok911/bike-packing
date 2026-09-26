@@ -1,4 +1,5 @@
 import { isTemplateCopySharedId } from "../state/layout-manage.js";
+import { layoutMediaSnapshot } from "../state/layout-media.js";
 
 export function materializeSharedLayoutForAdminState(layoutId, {
   canOpenAdminPublishedEdit = () => false,
@@ -72,6 +73,7 @@ export function materializeSharedLayoutForAdminState(layoutId, {
     }
     editableLayout = {
       id: nextLayoutId,
+      ...layoutMediaSnapshot(sourceLayout),
       name: sourceLayout?.name || layout.name,
       rootContainerIds: rootIds,
       arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
@@ -228,6 +230,7 @@ function rebuildStalePublishedAdminSharedDraft({
   const dictionaries = ensureLayoutDictionaries(sourceLayout, sourceState) || {};
   const rebuilt = {
     ...previous,
+    ...layoutMediaSnapshot(sourceLayout),
     name: previous.name || sourceLayout.name || sharedLayout.name || sharedLayout.id,
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),

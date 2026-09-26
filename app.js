@@ -722,6 +722,7 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
+  assertHistoryRequestsSucceeded,
   formatHistoryDateTime,
   historySharedTemplateOptions,
   historyPayloadTitle,
@@ -6328,7 +6329,8 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
       photoObjectUrls.setRecord(task, record);
     },
     markEntityChanged: (targetEntity, targetType, updatedAt) => {
-      if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
+      if (targetType === "layout") touchLayout(targetEntity.id, updatedAt);
+      else if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
       else touchItem(targetEntity.id, updatedAt);
     },
     persistStateSnapshot: () => persistStateSnapshot(state),
@@ -9119,6 +9121,8 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   state.layouts[layoutId] = {
     id: layoutId,
     name: demoCopyLayoutName(sourceLayout.name, { exactTemplateName, preferredName }),
+    ...(sourceLayout.photos?.length ? { photos: clone(sourceLayout.photos) } : {}),
+    ...(sourceLayout.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),
@@ -9896,6 +9900,8 @@ async function refreshHistoryDialog() {
   refs.historyStatus.className = "dialog-status";
   refs.historyStatus.textContent = t("history.loading");
   refs.historyList.innerHTML = "";
+  historyRecords = [];
+  historyPageState = null;
   try {
     const source = activeHistorySource;
     const result = await loadRemoteHistory(source);
@@ -9978,6 +9984,7 @@ async function loadPrivateRemoteHistory(pageState = null) {
       }), { timeoutMs: LIST_API_TIMEOUT_MS });
       return { target, page: normalizeHistorySummaryPage(data) };
     }));
+    assertHistoryRequestsSucceeded(results);
     const updates = new Map();
     const records = [];
     results.forEach((result) => {
@@ -10053,6 +10060,8 @@ async function loadPrivateRemoteHistory(pageState = null) {
     });
     return { target, page: normalizeHistorySummaryPage(data) };
   }));
+
+  assertHistoryRequestsSucceeded(results);
 
   const records = [];
   const loadedTargets = new Map();

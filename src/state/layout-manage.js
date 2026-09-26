@@ -1,5 +1,6 @@
 import { createEmptyLayoutArrangement, uniqueLayoutIds } from "./layout-arrangement.js";
 import { clonePlain } from "../utils/json.js";
+import { layoutMediaSnapshot } from "./layout-media.js";
 
 function normalizeTemplateCopyIdentityValue(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -128,6 +129,7 @@ export function createHydratedTemplateCopyDraftRecord({
   if (!previousLayout?.id || !sharedLayout?.id || !sourceLayout || !rootContainerIds.length) return null;
   return {
     ...clonePlain(previousLayout),
+    ...layoutMediaSnapshot(sourceLayout),
     name: previousLayout.name || sourceLayout.name || sharedLayout.name || sharedLayout.id,
     rootContainerIds: [...rootContainerIds],
     arrangement: clonePlain(arrangement || sourceLayout.arrangement || createEmptyLayoutArrangement()),
@@ -211,6 +213,9 @@ export function shouldCopyPublicTemplatePhotoReferencesOnServer(layout) {
 
 export function withoutPhotoReferences(payload) {
   const copy = clonePlain(payload || {});
+  Object.values(copy.layouts || {}).forEach((layout) => {
+    if (layout && typeof layout === "object") layout.photos = [];
+  });
   Object.values(copy.items || {}).forEach((item) => {
     if (item && typeof item === "object") item.photos = [];
   });
@@ -304,6 +309,8 @@ export function createManagedLayoutCopyRecord({
   const record = {
     id,
     name,
+    ...(sourceLayout?.photos?.length ? { photos: clonePlain(sourceLayout.photos) } : {}),
+    ...(sourceLayout?.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
     rootContainerIds: [...(copiedArrangement.rootContainerIds || [])],
     arrangement: copiedArrangement,
     locations: [...(dictionaries.locations || [])],
