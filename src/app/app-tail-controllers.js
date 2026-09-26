@@ -1,3 +1,5 @@
+import { createRichNoteEditor } from "../ui/rich-note-editor.js";
+import { loadNoteFields, readNoteFields } from "../ui/rich-note-content.js";
 import { itemStockQuantity, itemStockLocations, itemStorageLocations, setItemStockLocations, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
 import { createStockLocationsDialog } from "../ui/stock-locations-dialog.js";
 import { layoutPreparation, itemNeedsPreparation, preparationCategoryMatches } from "../state/layout-preparation.js";
@@ -411,6 +413,9 @@ export function createAppTailControllers(ctx) {
     userStorageScopeKey, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
+
+  createRichNoteEditor(refs.itemNote);
+  createRichNoteEditor(refs.rootContainerNote);
 
   let itemStockLocationsDraft = null;
   const stockLocationsDialog = createStockLocationsDialog({
@@ -5775,7 +5780,7 @@ function newItemFormDraftFields() {
     categories: getDialogSelectedCategories(),
     availabilityStatus: refs.itemAvailabilityStatus?.value || "available",
     containerId: refs.itemContainer?.value || "",
-    note: refs.itemNote?.value || ""
+    ...readNoteFields(refs.itemNote)
   };
 }
 
@@ -5791,7 +5796,7 @@ function newRootContainerFormDraftFields() {
     location: refs.rootContainerLocation?.value || "",
     categories: getRootContainerDialogSelectedCategories(),
     nestable: Boolean(refs.rootContainerNestable?.checked),
-    note: refs.rootContainerNote?.value || ""
+    ...readNoteFields(refs.rootContainerNote)
   };
 }
 
@@ -5913,7 +5918,7 @@ function restoreNewItemFormDraft() {
   refs.itemContainer.value = state.containers?.[containerId] && getLayoutContainerIdSet(targetLayout).has(containerId)
     ? containerId
     : "";
-  refs.itemNote.value = String(fields.note || "");
+  loadNoteFields(refs.itemNote, fields);
   runtime.itemDialogPhotoDraft = restoredNewEntityFormDraftPhotos(draft);
   runtime.itemDialogPhotoActiveIndex = 0;
   updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || []);
@@ -5942,7 +5947,7 @@ function restoreNewRootContainerFormDraft() {
   fillRootContainerLocationSelect(location);
   renderRootContainerCategoryPicker(Array.isArray(fields.categories) ? fields.categories : [], { fallbackDefault: false });
   if (refs.rootContainerNestable) refs.rootContainerNestable.checked = Boolean(fields.nestable);
-  refs.rootContainerNote.value = String(fields.note || "");
+  loadNoteFields(refs.rootContainerNote, fields);
   runtime.rootContainerDialogPhotoDraft = restoredNewEntityFormDraftPhotos(draft);
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || []);
@@ -6023,7 +6028,7 @@ function openRootContainerDialog(containerId = null, {
   if (refs.shareRootContainerLinkBtn) {
     refs.shareRootContainerLinkBtn.hidden = !containerId || !currentUserId() || isPublicLayoutContext();
   }
-  refs.rootContainerNote.value = container?.note || "";
+  loadNoteFields(refs.rootContainerNote, container);
   runtime.rootContainerDialogPhotoDraft = null;
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
@@ -6117,7 +6122,7 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   updateItemRemoveFromLayoutButton();
   updateItemReplacementButton();
   updateItemDeleteForeverButton();
-  refs.itemNote.value = item.note || "";
+  loadNoteFields(refs.itemNote, item);
   runtime.itemDialogPhotoDraft = null;
   runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -6210,7 +6215,7 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
     refs.itemContainerCurrent.classList.toggle("active", Boolean(containerId));
   }
   updateItemDeleteForeverButton();
-  refs.itemNote.value = item.note || "";
+  loadNoteFields(refs.itemNote, item);
   runtime.itemDialogPhotoDraft = null;
   runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -6316,7 +6321,7 @@ async function openSharedReadonlyContainerDialog(sourceContainerId) {
     refs.rootContainerPlacementCurrent.textContent = sharedRecordContainerPath(match.sourceState, parentId) || t("settings.currentLayout");
     refs.rootContainerPlacementCurrent.classList.toggle("active", true);
   }
-  refs.rootContainerNote.value = container.note || "";
+  loadNoteFields(refs.rootContainerNote, container);
   runtime.rootContainerDialogPhotoDraft = null;
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
@@ -7988,7 +7993,7 @@ function getItemDialogSnapshot() {
     categories: getDialogSelectedCategories().join("\u0000"),
     availabilityStatus: refs.itemAvailabilityStatus ? normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus.value) : "available",
     containerId: refs.itemContainer.value || "",
-    note: refs.itemNote.value.trim(),
+    ...readNoteFields(refs.itemNote),
     photo: getItemDialogPhotoSnapshot()
   };
 }
@@ -8837,7 +8842,7 @@ function getRootContainerDialogSnapshot() {
     location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
     categories: getRootContainerDialogSelectedCategories().join("\u0000"),
     nestable: Boolean(refs.rootContainerNestable?.checked),
-    note: refs.rootContainerNote.value.trim(),
+    ...readNoteFields(refs.rootContainerNote),
     photo: getRootContainerDialogPhotoSnapshot(),
     parentId: runtime.editingRootContainerId && (
       runtime.rootContainerDialogPendingParentId !== undefined || state.containers[runtime.editingRootContainerId]?.parentId

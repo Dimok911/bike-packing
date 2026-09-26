@@ -1356,6 +1356,59 @@ button.filter-active.filter-no-results {
   color: var(--accent);
 }
 
+.rich-note-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.rich-note-toolbar button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 15px;
+}
+.rich-note-toolbar [data-note-command="bold"] { font-weight: 800; }
+.rich-note-toolbar [data-note-command="italic"] { font-style: italic; }
+.rich-note-toolbar [data-note-command="underline"] { text-decoration: underline; }
+.rich-note-active .desktop-input-layout.for-textarea,
+.rich-note-active .note-search-match-highlight { display: none !important; }
+.rich-note-editor {
+  width: 100%;
+  min-width: 0;
+  min-height: 140px;
+  max-height: 560px;
+  height: 240px;
+  overflow: auto;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rich-note-editor:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rich-note-editor p { margin: 0 0 0.65em; }
+.rich-note-editor ul, .rich-note-editor ol { padding-left: 1.6em; }
+.rich-note-editor h2, .rich-note-editor h3 { font-size: 1.1em; margin: 0.7em 0; }
+.rich-note-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; white-space: normal; }
+.rich-note-editor th, .rich-note-editor td { border: 1px solid var(--line); padding: 8px; min-width: 80px; vertical-align: top; text-align: left; }
+.rich-note-editor th { background: var(--accent-faint); font-weight: 700; }
+.rich-note-editor blockquote { border-left: 3px solid var(--accent-border); margin: 0.6em 0; padding-left: 12px; }
+.rich-note-editor pre { white-space: pre-wrap; }
+.rich-note-editor a { color: var(--accent); text-decoration: underline; }
+.rich-note-editor mark[data-note-match] { background: #ffdd71; color: var(--ink); }
+@media (max-width: 760px) {
+  .rich-note-editor { font-size: 16px; min-height: 96px; max-height: 65dvh; resize: none; }
+  .rich-note-toolbar button { min-height: 40px; min-width: 40px; }
+}
+
 .note-search-navigation {
   display: flex;
   align-items: center;

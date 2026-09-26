@@ -119,6 +119,10 @@ export function centerNoteFieldInDialog(textarea) {
 
 export function revealNoteSearchMatch({ textarea, start, end, scrollField = false } = {}) {
   if (!textarea || !Number.isFinite(start) || !Number.isFinite(end)) return false;
+  if (textarea.richNoteEditor?.active) {
+    if (scrollField) centerNoteFieldInDialog(textarea);
+    return textarea.richNoteEditor.reveal(start, end);
+  }
   textarea.blur?.();
   textarea.setSelectionRange?.(end, end);
   textarea.classList?.add("note-search-match-active");
@@ -160,6 +164,7 @@ export function createNoteSearchNavigator({
     }
     textarea?.classList?.toggle("note-search-match-active", visible);
     if (!visible) {
+      textarea?.richNoteEditor?.clearMatch();
       clearNoteMatchHighlight(textarea);
       return;
     }
