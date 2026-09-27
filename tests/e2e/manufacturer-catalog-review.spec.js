@@ -6,7 +6,7 @@ for (const language of ["ru", "en"]) {
   test(`catalog review combines type and manufacturer filters and preserves drafts (${language})`, async ({ page }) => {
     const fixtureFiles = new Set([
       "/tests/fixtures/manufacturer-catalog-review.html", "/styles.css",
-      "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js",
+      "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js", "/src/data/manufacturer-catalog-review-publication.js", "/src/data/manufacturer-catalog-review-publications.js",
       "/src/utils/html.js", "/src/utils/language.js", "/src/config/constants.js",
     ]);
     await page.route("**/*", async (route) => {
@@ -55,7 +55,7 @@ for (const language of ["ru", "en"]) {
 
 for (const language of ["ru", "en"]) {
   test(`photo review filter stays scoped to the manufacturer (${language})`, async ({ page }) => {
-    const files = new Set(["/tests/fixtures/manufacturer-catalog-review.html", "/styles.css", "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js", "/src/utils/html.js", "/src/utils/language.js", "/src/config/constants.js"]);
+    const files = new Set(["/tests/fixtures/manufacturer-catalog-review.html", "/styles.css", "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js", "/src/data/manufacturer-catalog-review-publication.js", "/src/data/manufacturer-catalog-review-publications.js", "/src/utils/html.js", "/src/utils/language.js", "/src/config/constants.js"]);
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
       if (url.hostname !== "bike-packing.localhost" || !files.has(url.pathname)) return route.abort();
@@ -79,7 +79,7 @@ for (const language of ["ru", "en"]) {
 
 for (const language of ["ru", "en"]) {
   test(`photo gallery displays added and removed thumbnails (${language})`, async ({ page }) => {
-    const files = new Set(["/tests/fixtures/manufacturer-catalog-review.html", "/styles.css", "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js", "/src/utils/html.js", "/src/utils/language.js", "/src/config/constants.js", "/assets/manufacturer-catalog/ortlieb/frame-pack-10.jpg", "/assets/manufacturer-catalog/ortlieb/frame-pack-11.jpg", "/assets/manufacturer-catalog/ortlieb/frame-pack-12.jpg"]);
+    const files = new Set(["/tests/fixtures/manufacturer-catalog-review.html", "/styles.css", "/src/ui/manufacturer-catalog-review-dialog.js", "/src/data/manufacturer-catalog-comparison.js", "/src/data/manufacturer-catalog-photo-selection.js", "/src/data/manufacturer-catalog-review-publication.js", "/src/data/manufacturer-catalog-review-publications.js", "/src/utils/html.js", "/src/utils/language.js", "/src/config/constants.js", "/assets/manufacturer-catalog/ortlieb/frame-pack-10.jpg", "/assets/manufacturer-catalog/ortlieb/frame-pack-11.jpg", "/assets/manufacturer-catalog/ortlieb/frame-pack-12.jpg"]);
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
       if (url.hostname !== "bike-packing.localhost" || !files.has(url.pathname)) return route.abort();
@@ -170,7 +170,7 @@ for(const language of ['ru','en']){
 
 
 test('saving a decision retains neighboring cards and drafts without another full download',async({page})=>{
-  const files=new Set(['/tests/fixtures/manufacturer-catalog-review.html','/styles.css','/src/ui/manufacturer-catalog-review-dialog.js','/src/data/manufacturer-catalog-comparison.js','/src/data/manufacturer-catalog-photo-selection.js','/src/utils/html.js','/src/utils/language.js','/src/config/constants.js']);
+  const files=new Set(['/tests/fixtures/manufacturer-catalog-review.html','/styles.css','/src/ui/manufacturer-catalog-review-dialog.js','/src/data/manufacturer-catalog-comparison.js','/src/data/manufacturer-catalog-photo-selection.js','/src/data/manufacturer-catalog-review-publication.js','/src/data/manufacturer-catalog-review-publications.js','/src/utils/html.js','/src/utils/language.js','/src/config/constants.js']);
   await page.route('**/*',async route=>{const url=new URL(route.request().url());if(url.hostname!=='bike-packing.localhost'||!files.has(url.pathname))return route.abort();return route.fulfill({contentType:url.pathname.endsWith('.html')?'text/html':url.pathname.endsWith('.css')?'text/css':'text/javascript',body:await readFile(resolve('.'+url.pathname),'utf8')});});
   await page.goto('/tests/fixtures/manufacturer-catalog-review.html');
   const cards=page.locator('[data-change-id]');await expect(cards).toHaveCount(7);

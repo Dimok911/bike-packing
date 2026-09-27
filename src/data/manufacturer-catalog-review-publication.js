@@ -1,4 +1,4 @@
-import receipts from './manufacturer-catalog-review-publications.json' with { type: 'json' };
+import receipts from './manufacturer-catalog-review-publications.js';
 
 // Match the saved decision, so a later review of the same model is not mistaken
 // for a decision already included in the current published catalog.

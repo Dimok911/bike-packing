@@ -1,4 +1,5 @@
-[
+// Published manual exceptions; no private review notes.
+export default [
   {
     "scanId": "catalog-scan-20260927111916",
     "changeId": "apidura:changed:apidura-racing-long-top-tube-pack",
@@ -221,4 +222,4 @@
     "reviewedAt": "2026-09-27T18:32:37.804Z",
     "publishedAt": "2026-09-27T20:09:35.507Z"
   }
-]
+];
