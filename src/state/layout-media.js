@@ -1,4 +1,4 @@
-import { normalizeItemPhotos } from "./item-photos.js";
+import { clonePhotoWithUploadState, normalizeItemPhotos } from "./item-photos.js";
 
 export function hasLayoutMedia(layout) {
   return Boolean(layout?.trips?.length || (Array.isArray(layout?.photos) && layout.photos.length) || layoutVideoUrls(layout).length);
@@ -19,7 +19,7 @@ export function layoutVideoUrls(media) {
 }
 
 export function layoutMediaSnapshot(layout) {
-  const record = { photos: (Array.isArray(layout?.photos) ? layout.photos : []).filter((photo) => photo && typeof photo === "object").map((photo) => Object.defineProperties({}, Object.getOwnPropertyDescriptors(photo))) };
+  const record = { photos: (Array.isArray(layout?.photos) ? layout.photos : []).filter((photo) => photo && typeof photo === "object").map(clonePhotoWithUploadState) };
   return {
     photos: normalizeItemPhotos(record),
     videoUrl: layoutVideoUrls(layout)[0] || "",
@@ -42,7 +42,7 @@ export function applyLayoutMedia(layout, media) {
   next.photos = next.photos.map((photo) => {
     const live = (layout.photos || []).find((candidate) =>
       candidate.id === photo.id || (photo.localId && candidate.localId === photo.localId));
-    return live ? { ...live, caption: photo.caption || "" } : photo;
+    return live ? Object.assign(clonePhotoWithUploadState(live), { caption: photo.caption || "" }) : photo;
   });
   if (next.photos.length) layout.photos = next.photos;
   else delete layout.photos;

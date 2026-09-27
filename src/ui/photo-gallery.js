@@ -519,7 +519,7 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   const batch = photoUploadBatchSummary(photos);
   const slides = photos.map((photo) => renderPhotoSlide(photo, {
     photoObjectUrls,
-    uploadState: photoUploadProgressState(photo, { batch })
+    uploadState: photoUploadProgressState(photo, { batch, showCompletedBatchProgress: true })
   })).join("");
   const dots = renderPhotoDots(photos.length);
   const uploadState = photoUploadState(photos);

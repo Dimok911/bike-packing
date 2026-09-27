@@ -582,3 +582,53 @@ test('trip photos start uploading in the open editor and finish after save acros
   expect(photos).toHaveLength(2);expect(photos.every(photo=>photo.status==='synced'&&photo.url)).toBe(true);
   expect(photos[0].caption).toBe('First caption');expect(photos[0].tripId).toBe('trip');
 });
+
+test("saved trip item and bag galleries keep every recent upload badge", async ({ page }) => {
+  const {readFile}=await import("node:fs/promises"); const {resolve}=await import("node:path");
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await page.route("**/__testsrc/**",async route=>{
+    const relative=new URL(route.request().url()).pathname.split("/__testsrc/")[1];
+    if(!relative.startsWith("src/")||relative.includes(".."))return route.abort();
+    await route.fulfill({contentType:"text/javascript",body:await readFile(resolve(relative),"utf8")});
+  });
+  await page.evaluate(async()=>{
+    const {markPhotoUploadBatch,createPhotoDraftFromRecord,syncPhotoRecordFromUpload}=await import("/__testsrc/src/state/item-photos.js");
+    const {applyLayoutTrips,layoutTripsSnapshot}=await import("/__testsrc/src/state/layout-trips.js");
+    const {renderItemPhotoHtml,renderPhotoGalleryHtml,updatePhotoGalleryUploadProgress}=await import("/__testsrc/src/ui/photo-gallery.js");
+    const {createLayoutPhotoSummary}=await import("/__testsrc/src/ui/layout-photo-summary.js");
+    document.body.innerHTML='<section id="trip"><div class="layout-introduction"><div class="layout-photo-summary"></div></div></section><section id="item"></section><section id="container"></section>';
+    const photos=Array.from({length:10},(_,i)=>({id:String(i),localId:String(i),status:i<5?"synced":"pending",...(i<5?{url:"/photo-"+i}:{})}));
+    markPhotoUploadBatch(photos.slice(0,5),{batchId:"first"}); markPhotoUploadBatch(photos.slice(5),{batchId:"second"});
+    const layout={id:"layout",trips:[]};
+    applyLayoutTrips(layout,[{id:"trip",photos}]);
+    const item={photos:createPhotoDraftFromRecord({photos}).photos};
+    const container={photos:createPhotoDraftFromRecord({photos}).photos};
+    const summary=createLayoutPhotoSummary({host:document.querySelector(".layout-photo-summary"),renderGallery:renderPhotoGalleryHtml,bindGalleries:()=>({destroy(){},refresh(){}}),localText:(en,ru)=>ru});
+    async function render(){
+      await summary.render({...layoutTripsSnapshot(layout)[0],id:layout.id},true);
+      document.querySelector("#item").innerHTML=renderItemPhotoHtml(item);
+      document.querySelector("#container").innerHTML=renderItemPhotoHtml(container);
+    }
+    await render();
+    window.badgeFixture={async finish(){
+      for(const photo of photos.slice(5)){
+        Object.assign(photo,{status:"synced",url:"/photo-"+photo.id});
+        for(const record of [layout,item,container])syncPhotoRecordFromUpload(record,photo);
+      }
+      await summary.render({...layoutTripsSnapshot(layout)[0],id:layout.id},true);
+      updatePhotoGalleryUploadProgress(document.querySelector("#item"),item.photos);
+      updatePhotoGalleryUploadProgress(document.querySelector("#container"),container.photos);
+    },render};
+  });
+  for(const id of ["trip","item","container"]){
+    await expect(page.locator("#"+id+" .photo-upload-complete")).toHaveCount(5);
+    await expect(page.locator("#"+id+" .photo-upload-progress")).toHaveCount(5);
+  }
+  await page.evaluate(()=>window.badgeFixture.finish());
+  for(const id of ["trip","item","container"])await expect(page.locator("#"+id+" .photo-upload-complete")).toHaveCount(10);
+  await page.evaluate(()=>window.badgeFixture.render());
+  for(const id of ["trip","item","container"]){
+    await expect(page.locator("#"+id+" .photo-upload-complete")).toHaveCount(10);
+    await expect(page.locator("#"+id+" .photo-upload-progress")).toHaveCount(0);
+  }
+});

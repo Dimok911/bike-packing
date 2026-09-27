@@ -87,9 +87,14 @@ export function itemPhotosSignature(item) {
   ].join("|")).join("||");
 }
 
+// Preserve local upload indicators across editor/save snapshots without serializing them.
+export function clonePhotoWithUploadState(photo) {
+  return Object.defineProperties({}, Object.getOwnPropertyDescriptors(photo));
+}
+
 export function createPhotoDraftFromRecord(record) {
   return {
-    photos: normalizeItemPhotos(record).map((photo) => ({ ...photo })),
+    photos: normalizeItemPhotos(record).map(clonePhotoWithUploadState),
     deletedPhotos: []
   };
 }

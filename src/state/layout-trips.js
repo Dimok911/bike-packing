@@ -1,3 +1,4 @@
+import { clonePhotoWithUploadState } from "./item-photos.js";
 import { layoutMediaSnapshot, layoutMediaSignature, layoutVideoUrls } from "./layout-media.js";
 import { normalizeLayoutNotes } from "./layout-notes.js";
 
@@ -49,7 +50,7 @@ export function applyLayoutTrips(layout, trips) {
     const media = layoutMediaSnapshot(trip);
     for (const photo of media.photos) {
       const live = (layout.photos || []).find(candidate => candidate.id === photo.id || (photo.localId && candidate.localId === photo.localId));
-      photos.push({ ...(live || photo), caption: photo.caption || "", tripId: trip.id });
+      photos.push(Object.assign(clonePhotoWithUploadState(live || photo), { caption: photo.caption || "", tripId: trip.id }));
     }
     return { id: trip.id, name: String(trip.name || "").trim(), notes: normalizeLayoutNotes(trip.notes), notesHtml: trip.notesHtml || "", privateNotes: normalizeLayoutNotes(trip.privateNotes), privateNotesHtml: trip.privateNotesHtml || "", publishNotes: trip.publishNotes === true, videoUrl: media.videoUrl, videoUrls: media.videoUrls };
   });
