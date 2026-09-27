@@ -233,7 +233,8 @@
         ],
         "imageVariantSource": "manufacturer-single-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -1357,7 +1358,8 @@
         "imageVariantSource": "manufacturer-selected-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
         "imageReviewRequired": false,
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -1827,7 +1829,8 @@
         "imageVariantSource": "manufacturer-selected-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
         "imageReviewRequired": false,
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -2801,7 +2804,8 @@
         "imageVariantSource": "manufacturer-selected-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
         "imageReviewRequired": false,
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -3058,7 +3062,8 @@
         ],
         "imageVariantSource": "manufacturer-single-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -3304,7 +3309,8 @@
         ],
         "imageVariantSource": "manufacturer-single-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -3566,7 +3572,8 @@
           ],
           "imageVariantSource": "manufacturer-image-metadata"
         },
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -3880,7 +3887,8 @@
         ],
         "imageVariantSource": "manufacturer-single-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -4089,7 +4097,8 @@
           ],
           "imageVariantSource": "manufacturer-image-metadata"
         },
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     },
     {
@@ -4264,7 +4273,8 @@
         ],
         "imageVariantSource": "manufacturer-single-variant-gallery",
         "imagesCheckedAt": "2026-09-27",
-        "catalogReviewScope": "correction"
+        "catalogReviewScope": "photos",
+        "catalogReviewCorrection": true
       }
     }
   ]

@@ -193,7 +193,7 @@ export function latestManufacturerCatalogReviewScan(data = {}) {
     const changes = base.changes.flatMap(change => {
       if (change.type !== 'changed' || !photos.has(change.productId)) return [change];
       const replacement = photos.get(change.productId);
-      if (replacement.after?.catalogReviewScope === 'correction') {
+      if (replacement.after?.catalogReviewScope === 'correction' || replacement.after?.catalogReviewCorrection === true) {
         if (!replacement.decisionNote && change.decisionNote) replacement.decisionNote = change.decisionNote;
         return [];
       }

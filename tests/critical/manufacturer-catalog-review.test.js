@@ -372,8 +372,8 @@ test('matching corrections replace only affected records and preserve unrelated 
  {id:'resolved',productId:'resolved',manufacturerId:'ortlieb',type:'changed',fields:[{field:'sourceImageUrls',before:['b'],after:[]}]}
  ]};
  const correction={id:'correction',scannedAt:'2026-09-27',manufacturers:[{id:'ortlieb'}],changes:[
- {id:'fixed',productId:'bag',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'correction'},fields:[{field:'volume',before:23,after:20}]},
- {id:'no-change',productId:'resolved',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'correction'},fields:[]}
+ {id:'fixed',productId:'bag',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'photos',catalogReviewCorrection:true},fields:[{field:'volume',before:23,after:20}]},
+ {id:'no-change',productId:'resolved',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'photos',catalogReviewCorrection:true},fields:[]}
  ]};
  const original=JSON.stringify([correction,base]);
  const result=latestManufacturerCatalogReviewScan({scans:[correction,base]});
