@@ -65,3 +65,67 @@ test("photo uploads are scoped to the requested layout and skip public layouts i
   assert.deepEqual(getUploadablePhotoEntries(state, { layoutId: "a" }).map((entry) => [entry.entityType, entry.entity.id]), [["layout", "a"]]);
   assert.deepEqual(getUploadablePhotoEntries(state).map((entry) => entry.entity.id), ["a", "b"]);
 });
+
+
+import { applyLayoutTrips, layoutTripsSnapshot, layoutTripCountLabel } from "../../src/state/layout-trips.js";
+import { createManagedLayoutCopyRecord } from "../../src/state/layout-manage.js";
+import { buildHistoryStateDiff } from "../../src/ui/history-diff.js";
+
+test("legacy media becomes a trip without mutating the original; saving keeps the common gear", () => {
+  const layout = { id: "l", notes: "Weekend", notesHtml: "<p>Weekend</p>", photos: [{id:"p",localId:"p",status:"pending"}], arrangement: {items:{i:"b"}}, rootContainerIds:["b"] };
+  const original = structuredClone(layout);
+  const trips = layoutTripsSnapshot(layout);
+  assert.deepEqual(layout, original);
+  assert.equal(trips.length, 1);
+  assert.equal(applyLayoutTrips(layout, trips), false);
+  trips[0].name = "Weekend trip";
+  Object.assign(layout.photos[0], {status:"synced",url:"https://example.org/p.jpg"});
+  trips.push({id:"second",name:"Forest",notes:"Two nights",photos:[],videoUrl:""});
+  assert.equal(applyLayoutTrips(layout, trips), true);
+  assert.equal(layout.notes, undefined);
+  assert.equal(layout.trips[0].notesHtml, "<p>Weekend</p>");
+  assert.equal(layout.photos[0].url, "https://example.org/p.jpg");
+  assert.equal(layout.photos[0].tripId, "trip-legacy");
+  assert.deepEqual(layout.arrangement, original.arrangement);
+  assert.deepEqual(layout.rootContainerIds, original.rootContainerIds);
+  assert.equal(applyLayoutTrips(layout, layoutTripsSnapshot(layout)), false);
+});
+
+test("trip associations survive sync, normalization, copying and backup without cross-trip galleries", () => {
+  const layout = {id:"l",trips:[{id:"one",name:"One"},{id:"two",name:"Two"}],photos:[{id:"a",tripId:"one",url:"https://example.org/a.jpg"},{id:"b",tripId:"two",url:"https://example.org/b.jpg"}]};
+  const synced = compactLayoutForEntitySync(layout);
+  normalizeItemPhotos(synced);
+  const copy = createManagedLayoutCopyRecord({id:"copy",name:"Copy",sourceLayout:synced});
+  const trips = layoutTripsSnapshot(copy);
+  assert.deepEqual(trips.map(trip=>trip.photos.map(p=>p.id)), [["a"],["b"]]);
+  trips[0].photos[0].caption = "Changed in copy";
+  applyLayoutTrips(copy,trips);
+  assert.equal(layout.photos[0].caption,undefined);
+  const state = {layouts:{copy},items:{},containers:{}};
+  assert.equal(collectStatePhotoRefs(state,normalizeItemPhotos).length,2);
+  assert.equal(collectOfflinePhotoCacheTasks(state).length,2);
+  assert.equal(isMeaningfulPackingState({layouts:{l:{id:"l",trips:[{id:"one",name:"Only story"}]}},items:{},containers:{}}),true);
+  applyLayoutTrips(copy,[trips[1]]);
+  assert.deepEqual(copy.photos.map(p=>p.id),["b"]);
+  applyLayoutTrips(copy,[]);
+  assert.equal(layoutTripsSnapshot(copy).length,0);
+});
+
+test("trip counts have correct Russian forms and legacy content counts once", () => {
+  for (const [n,label] of [[1,"1 поездка"],[2,"2 поездки"],[5,"5 поездок"],[11,"11 поездок"],[21,"21 поездка"],[22,"22 поездки"]]) {
+    assert.equal(layoutTripCountLabel({trips:Array.from({length:n},(_,i)=>({id:String(i)}))}),label);
+  }
+  assert.equal(layoutTripCountLabel({}),"");
+  assert.equal(layoutTripCountLabel({notes:"Legacy"}),"1 поездка");
+  assert.equal(layoutTripCountLabel({trips:[{id:"a"},{id:"b"}]},"en"),"2 trips");
+});
+
+test("trip edits enter history with rich description data and names", () => {
+  const before={layouts:{l:{id:"l",name:"Kit",trips:[{id:"a",name:"First",notes:"Old"}]}},items:{},containers:{}};
+  const after=structuredClone(before);
+  after.layouts.l.trips[0]={id:"a",name:"Weekend",notes:"New",notesHtml:"<strong>New</strong>"};
+  const diff=buildHistoryStateDiff(before,after);
+  assert.equal(diff.layouts.changed.length,1);
+  assert.match(JSON.stringify(diff),/Название поездки/);
+  assert.match(JSON.stringify(diff),/Описание «Weekend»/);
+});

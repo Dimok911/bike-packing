@@ -11008,3 +11008,23 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   .layout-introduction-content { padding: 0 12px 12px; }
   .layout-introduction-toggle { min-height: 44px; }
 }
+
+/* Trips share one gear list; each story has its own media and description. */
+.layout-trips-editor { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+.layout-trips-heading, .layout-trips-picker { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.layout-trips-picker select { flex: 1; min-width: 0; }
+.layout-trips-editor p { margin: 0; color: var(--muted); font-size: 13px; }
+.layout-trip-navigation { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 0 16px 12px; }
+.layout-trip-heading { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.layout-trip-heading strong { font-size: 16px; }
+.layout-trip-heading small { color: var(--muted); }
+.layout-trip-controls { display: flex; gap: 6px; align-items: center; min-width: 0; max-width: 55%; }
+.layout-trip-controls select { min-width: 0; max-width: 240px; }
+.layout-trip-controls button { flex-shrink: 0; min-width: 36px; }
+.layout-trip-navigation[hidden], .layout-trips-picker select[hidden], .layout-trips-picker button[hidden] { display: none; }
+@media (max-width: 600px) {
+  .layout-trip-navigation { align-items: stretch; flex-direction: column; gap: 10px; padding: 0 12px 12px; }
+  .layout-trip-controls { max-width: none; }
+  .layout-trip-controls select { flex: 1; max-width: none; }
+  .layout-trips-heading, .layout-trips-picker { gap: 8px; }
+}

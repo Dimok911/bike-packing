@@ -1,7 +1,7 @@
 import { normalizeItemPhotos } from "./item-photos.js";
 
 export function hasLayoutMedia(layout) {
-  return Boolean((Array.isArray(layout?.photos) && layout.photos.length) || normalizeLayoutVideoUrl(layout?.videoUrl));
+  return Boolean(layout?.trips?.length || (Array.isArray(layout?.photos) && layout.photos.length) || normalizeLayoutVideoUrl(layout?.videoUrl));
 }
 
 export function normalizeLayoutVideoUrl(value) {

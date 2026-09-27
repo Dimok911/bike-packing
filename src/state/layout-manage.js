@@ -310,6 +310,8 @@ export function createManagedLayoutCopyRecord({
     id,
     name,
     ...(sourceLayout?.photos?.length ? { photos: clonePlain(sourceLayout.photos) } : {}),
+    ...(sourceLayout?.trips ? { trips: clonePlain(sourceLayout.trips) } : {}),
+    ...(sourceLayout?.notes ? { notes: sourceLayout.notes, notesHtml: sourceLayout.notesHtml || "" } : {}),
     ...(sourceLayout?.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
     rootContainerIds: [...(copiedArrangement.rootContainerIds || [])],
     arrangement: copiedArrangement,

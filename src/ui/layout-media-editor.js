@@ -130,11 +130,11 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   return {
     addFiles,
     sessionToken: () => session,
-    open(layout) {
+    open(layout, { preserveCreated = false } = {}) {
       document.addEventListener("keydown", guardGalleryEscape, true);
       session++;
       draft = layoutMediaSnapshot(layout);
-      created = [];
+      if (!preserveCreated) created = [];
       busy = false;
       input.disabled = false;
       addButton.disabled = false;

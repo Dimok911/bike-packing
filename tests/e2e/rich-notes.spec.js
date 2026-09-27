@@ -236,6 +236,7 @@ test('toolbar adds named links to selected text and bags, edits addresses and ca
 test('layout notes support formatting, named links, reload and discard', async ({page,isMobile})=>{
   await fixture(page);
   await activate(page.locator('#editLayoutBtn'),isMobile);
+  await activate(page.locator('[data-trip-add]'),isMobile);
   await paste(page.locator('#layoutEditNotes'), '<p><strong>Проверить</strong> перед поездкой</p>');
   await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
   await activate(page.locator('#layoutEditDialog [data-note-command="link"]'),isMobile);
@@ -310,6 +311,7 @@ test('existing links can be edited through visible fields in layout, item and ba
   for (const [id,dialog,trigger,saveButton] of cases) {
     const open = () => activate(id === 'rootContainerNote' ? page.getByRole('heading',{name:'Сумка',exact:true}) : page.locator(trigger),isMobile);
     await open();
+    if (id === 'layoutEditNotes') await activate(page.locator('[data-trip-add]'),isMobile);
     await page.locator(`#${id}`).fill('');
     await paste(page.locator(`#${id}`), '<p><a href="https://example.com/first"><strong>Первая</strong></a> и <a href="https://example.com/second">Вторая</a></p>');
     await save(page,saveButton,isMobile);

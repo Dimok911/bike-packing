@@ -9126,6 +9126,8 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     id: layoutId,
     name: demoCopyLayoutName(sourceLayout.name, { exactTemplateName, preferredName }),
     ...(sourceLayout.photos?.length ? { photos: clone(sourceLayout.photos) } : {}),
+    ...(sourceLayout.trips ? { trips: clone(sourceLayout.trips) } : {}),
+    ...(sourceLayout.notes ? { notes: sourceLayout.notes, notesHtml: sourceLayout.notesHtml || "" } : {}),
     ...(sourceLayout.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),

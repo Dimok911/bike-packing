@@ -27,6 +27,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await openApp(page);
   await createEmptyLayout(page, "Фото поездки");
   await page.locator("#editLayoutBtn").click();
+  await page.locator("[data-trip-add]").click();
   const editor = page.locator("[data-layout-media-editor]");
   const png = Buffer.from(await page.evaluate(() => {
     const canvas=document.createElement('canvas');canvas.width=320;canvas.height=180;
@@ -44,7 +45,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
       localStorage.setItem(key,JSON.stringify(state));
     });
     await page.reload(); await waitForApp(page);
-    await page.locator('#layoutSelect').selectOption({label:'Фото поездки'});
+    await page.locator('#layoutSelect').selectOption({label:'Фото поездки (1 поездка)'});
     await page.locator('#editLayoutBtn').click();
   } else {
     await editor.locator("input[type=file]").first().setInputFiles([
@@ -71,7 +72,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await expect(page.locator("#layoutEditDialog")).not.toBeVisible();
   await page.reload();
   await waitForApp(page);
-  await page.locator("#layoutSelect").selectOption({ label: "Фото поездки" });
+  await page.locator("#layoutSelect").selectOption({ label: "Фото поездки (1 поездка)" });
   const summary = page.locator('#layoutPhotoSummary');
   await expect(summary).toBeVisible();
   await expect(summary.locator('[data-photo-open]')).toHaveCount(2);
@@ -85,7 +86,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await expect(page.locator('#packingVisualStyleControl')).toBeHidden();
   await expect(summary).toHaveAttribute('data-photo-view','grid');
   const description = page.locator('#layoutDescriptionSummary');
-  await expect(page.locator('#layoutIntroductionTitle')).toHaveText('Об укладке');
+  await expect(page.locator('#layoutIntroductionTitle')).toHaveText('Поездки');
   await expect(description).toContainText('Заметки сохраняются');
   expect(await description.evaluate(el => el.previousElementSibling.id)).toBe('layoutPhotoSummary');
   await page.evaluate(() => {
@@ -93,13 +94,13 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
     localStorage.setItem('bike-packing-layout-description-position-v1','above');
   });
   await page.reload(); await waitForApp(page);
-  await page.locator('#layoutSelect').selectOption({label:'Фото поездки'});
+  await page.locator('#layoutSelect').selectOption({label:'Фото поездки (1 поездка)'});
   await expect(summary).toHaveAttribute('data-photo-view','grid');
   await expect(summary).toBeVisible();
   expect(await description.evaluate(el => el.previousElementSibling.id)).toBe('layoutPhotoSummary');
   await createEmptyLayout(page,'Без фотографий');
   await expect(summary).toBeHidden();
-  await page.locator('#layoutSelect').selectOption({label:'Фото поездки'});
+  await page.locator('#layoutSelect').selectOption({label:'Фото поездки (1 поездка)'});
   await expect(summary.locator('[data-photo-open]')).toHaveCount(2);
   if (browserName !== 'webkit') await page.setViewportSize({width:1280,height:720});
 
@@ -181,6 +182,9 @@ test('shared link opens photos and rich description together without editing con
   await prepareIsolatedRussianGuest(page);
   const photo={id:'shared-photo',url:'https://example.com/shared-bike.svg',thumbUrl:'https://example.com/shared-bike.svg',caption:'Велосипед с сумками',width:320,height:180,status:'synced'};
   const payload={locations:[],categories:[],containers:{},items:{},layouts:{trip:{id:'trip',name:'Поездка на выходные',rootContainerIds:[],notes:'Два дня на велосипеде. Маршрут',notesHtml:'<p><strong>Два дня</strong> на велосипеде. <a href="https://example.com/route">Маршрут</a></p>',photos:[photo],videoUrl:'https://youtu.be/example'}},activeLayoutId:'trip'};
+  payload.layouts.trip.trips=[{id:'first',name:'Первая поездка',notes:payload.layouts.trip.notes,notesHtml:payload.layouts.trip.notesHtml,videoUrl:payload.layouts.trip.videoUrl},{id:'second',name:'Вторая поездка',notes:'Новая поездка с тем же набором вещей'}];
+  payload.layouts.trip.photos[0].tripId='first';
+  delete payload.layouts.trip.notes; delete payload.layouts.trip.notesHtml; delete payload.layouts.trip.videoUrl;
   await page.route('**/bike-packing/lists/intro-test',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({list:{id:'intro-test',visibility:'shared',title:'Поездка на выходные',payload}})}));
   await page.route(`${photo.url}**`,route=>route.fulfill({contentType:'image/svg+xml',headers:{'Access-Control-Allow-Origin':'http://bike-packing.localhost:4173','Access-Control-Allow-Credentials':'true'},body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#d7e4df"/></svg>'}));
   await page.goto('/?sharedList=intro-test&sharedLayout=trip');
@@ -194,6 +198,11 @@ test('shared link opens photos and rich description together without editing con
   await expect(description.locator('strong').last()).toHaveText('Два дня');
   await expect(description.locator('a')).toHaveAttribute('href','https://example.com/route');
   await expect(page.locator('#layoutIntroduction [data-edit-layout-notes]')).toHaveCount(0);
+  await page.locator('[data-trip-next]').click();
+  await expect(description).toContainText('Новая поездка с тем же набором вещей');
+  await expect(photos).toBeHidden();
+  await page.locator('[data-trip-prev]').click();
+  await expect(photos).toBeVisible();
   await expect(page.locator('#packingVisualStyleControl')).toBeHidden();
   const positions=await page.evaluate(()=>['layoutPhotoSummary','layoutDescriptionSummary','summary'].map(id=>document.getElementById(id).getBoundingClientRect().top));
   expect(positions[0]).toBeLessThan(positions[1]); expect(positions[1]).toBeLessThan(positions[2]);
@@ -213,4 +222,117 @@ test('shared link opens photos and rich description together without editing con
   await expect(photos).toBeHidden();await expect(description).toBeHidden();
   await fold.click();await expect(photos).toBeVisible();await expect(description).toBeVisible();
   await page.screenshot({path:`test-results/v1615-shared-description-${test.info().project.name}.png`});
+});
+
+
+test('trips: legacy migration, independent stories, count, paging, reload, cancel and removal', async ({page, isMobile}) => {
+  test.setTimeout(90000);
+  await prepareIsolatedRussianGuest(page); await openApp(page); await createEmptyLayout(page,'Общая укладка');
+  const layoutId=await page.locator('#layoutSelect').inputValue();
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
+  await page.route('https://example.com/trip-photo-*.png**',route=>route.fulfill({contentType:'image/png',headers:{'Access-Control-Allow-Origin':'http://bike-packing.localhost:4173','Access-Control-Allow-Credentials':'true'},body:png}));
+  await page.evaluate(id=>{
+    const key='bike-packing-prototype-state-v1';const state=JSON.parse(localStorage.getItem(key));
+    Object.assign(state.layouts[id],{notes:'Старое описание',photos:['a','b'].map(id=>({id,caption:`Фото ${id}`,url:`https://example.com/trip-photo-${id}.png`,thumbUrl:`https://example.com/trip-photo-${id}.png`,status:'synced'}))});
+    localStorage.setItem(key,JSON.stringify(state));
+  },layoutId);
+  await page.reload(); await waitForApp(page); await page.locator('#layoutSelect').selectOption(layoutId);
+  const original=await page.evaluate(id=>JSON.parse(localStorage.getItem('bike-packing-prototype-state-v1')).layouts[id].arrangement,layoutId);
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Общая укладка (1 поездка)');
+  await expect(page.locator('#layoutDescriptionSummary')).toContainText('Старое описание');
+  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(2);
+  await page.locator('#editLayoutBtn').click();
+  await expect(page.locator('#saveEditedLayoutBtn')).toBeDisabled();
+  await page.locator('[data-trip-name]').fill('По озёрам');
+  await page.evaluate(()=>document.activeElement?.blur());
+  await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+  await page.locator('[data-trip-add]').click();
+  await page.locator('[data-trip-name]').fill('Лесные выходные');
+  await page.locator('#layoutEditNotes').fill('Ночёвка в лесу');
+  await page.locator('[data-layout-video]').fill('https://youtu.be/forest');
+  await page.locator('[data-layout-trips-editor] select').selectOption('0');
+  await expect(page.locator('#layoutEditNotes')).toHaveValue('Старое описание');
+  await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(2);
+  await page.locator('[data-layout-trips-editor] select').selectOption('1');
+  await expect(page.locator('#layoutEditNotes')).toHaveValue('Ночёвка в лесу');
+  await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(0);
+  await page.evaluate(()=>document.activeElement?.blur());
+  await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+  await page.locator('#saveEditedLayoutBtn').click();
+  await expect(page.locator('#layoutEditDialog')).toBeHidden();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Общая укладка (2 поездки)');
+  await expect(page.locator('[data-layout-trip-navigation] strong')).toHaveText('По озёрам');
+  await page.locator('[data-trip-next]').click();
+  await expect(page.locator('[data-layout-trip-navigation] strong')).toHaveText('Лесные выходные');
+  await expect(page.locator('#layoutDescriptionSummary')).toHaveText('Ночёвка в лесу');
+  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(0);
+  await expect(page.locator('#layoutPhotoSummary a')).toHaveAttribute('href','https://youtu.be/forest');
+  expect(await page.locator('#layoutIntroduction').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await page.locator('#layoutIntroduction').screenshot({path:`test-results/v1616-trips-${isMobile?'mobile':'desktop'}.png`});
+  await page.locator('#editLayoutBtn').click();
+  await expect(page.locator('[data-trip-name]')).toHaveValue('Лесные выходные');
+  await page.locator('#layoutEditNotes').fill('Отменить правку');
+  await page.evaluate(()=>document.activeElement?.blur());
+  await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+  await page.locator('#layoutEditDialog header button').click();
+  await page.locator('#confirmCancelBtn').click();
+  await page.reload(); await waitForApp(page); await page.locator('#layoutSelect').selectOption(layoutId);
+  await page.locator('[data-trip-next]').click();
+  await expect(page.locator('#layoutDescriptionSummary')).toHaveText('Ночёвка в лесу');
+  await page.locator('#editLayoutBtn').click();
+  await page.locator('[data-trip-remove]').click();
+  await page.locator('#confirmOkBtn').click();
+  await expect(page.locator('[data-layout-trips-editor] option')).toHaveCount(1);
+  await page.locator('#saveEditedLayoutBtn').click();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Общая укладка (1 поездка)');
+  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(2);
+  const saved=await page.evaluate(id=>JSON.parse(localStorage.getItem('bike-packing-prototype-state-v1')).layouts[id],layoutId);
+  expect(saved.arrangement).toEqual(original);
+  expect(saved.photos.every(photo=>photo.tripId===saved.trips[0].id)).toBe(true);
+  await page.locator('#newLayoutBtn').click();
+  await expect(page.locator('#layoutCopyFrom option:checked')).toHaveText('Общая укладка (1 поездка)');
+  await page.locator('#layoutCreateMode').selectOption('copy');
+  await page.locator('#layoutName').fill('Основа новой укладки');
+  await page.evaluate(()=>document.activeElement?.blur());
+  await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+  await page.locator('#saveLayoutBtn').click();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Основа новой укладки (1 поездка)');
+  await expect(page.locator('#layoutDescriptionSummary')).toContainText('Старое описание');
+  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(2);
+});
+
+
+test('new photos survive switching trip drafts and save, while discarded additions stay out', async ({page,browserName}) => {
+  test.skip(browserName==='webkit','Windows WebKit cannot persist IndexedDB Blob files; synced galleries are covered separately.');
+  await prepareIsolatedRussianGuest(page); await openApp(page); await createEmptyLayout(page,'Фотографии разных поездок');
+  const id=await page.locator('#layoutSelect').inputValue();
+  const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=64;c.height=64;const x=c.getContext('2d');x.fillStyle='#35866c';x.fillRect(0,0,64,64);return c.toDataURL().split(',')[1];}),'base64');
+  await page.locator('#editLayoutBtn').click();
+  for (let i=0;i<2;i++) {
+    await page.locator('[data-trip-add]').click();
+    await page.locator('[data-trip-name]').fill(`Поездка ${i+1}`);
+    await page.locator('[data-layout-media-editor] input[type=file]').first().setInputFiles({name:`trip-${i}.png`,mimeType:'image/png',buffer:png});
+    await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(1);
+    await expect(page.locator('[data-trip-add]')).toBeEnabled();
+    await page.locator('[data-layout-photo-caption]').fill(`Фотография ${i+1}`);
+  }
+  await page.locator('[data-layout-trips-editor] select').selectOption('0');
+  await expect(page.locator('[data-layout-photo-caption]')).toHaveValue('Фотография 1');
+  await page.locator('#saveEditedLayoutBtn').click();
+  await page.reload();await waitForApp(page);await page.locator('#layoutSelect').selectOption(id);
+  for(let i=0;i<2;i++) {
+    await expect(page.locator('#layoutPhotoSummary figcaption')).toHaveText(`Фотография ${i+1}`);
+    await expect.poll(()=>page.locator('#layoutPhotoSummary img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
+    await page.locator('#layoutPhotoSummary [data-photo-open]').click();
+    await expect(page.locator('.photo-lightbox-image')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    if(!i) await page.locator('[data-trip-next]').click();
+  }
+  await page.locator('#editLayoutBtn').click();await page.locator('[data-trip-add]').click();
+  await page.locator('[data-layout-media-editor] input[type=file]').first().setInputFiles({name:'discard.png',mimeType:'image/png',buffer:png});
+  await expect(page.locator('[data-trip-add]')).toBeEnabled();
+  await page.locator('[data-layout-trips-editor] select').selectOption('0');
+  await page.locator('#layoutEditDialog header button').click();await page.locator('#confirmCancelBtn').click();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Фотографии разных поездок (2 поездки)');
+  await page.locator('#editLayoutBtn').click();await expect(page.locator('[data-layout-trips-editor] option')).toHaveCount(2);
 });

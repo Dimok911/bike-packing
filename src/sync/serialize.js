@@ -101,6 +101,7 @@ export function compactPhotoForSync(photo) {
   if (!url && !thumbUrl) return null;
   const compact = {
     id,
+    ...(typeof photo.tripId === "string" ? { tripId: photo.tripId } : {}),
     ...(typeof photo.caption === "string" ? { caption: photo.caption.slice(0, 2000) } : {}),
     status: normalizePhotoStatus(photo.status),
     url,

@@ -1,3 +1,4 @@
+import { layoutTripsSnapshot, tripDisplayName } from "../state/layout-trips.js";
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
 import { isConflictMetaField } from "../sync/conflict-meta.js";
@@ -677,7 +678,26 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
       rows.push(localText(`Quantity of “${title}”: ${before} → ${after}`, `Количество «${title}»: ${before} → ${after}`));
     }
   }
-  if (!snapshotsEqual(beforeValue?.[noteKey], afterValue?.[noteKey]) || !snapshotsEqual(beforeValue?.[htmlKey], afterValue?.[htmlKey])) {
+  if (type === "layout" && (Array.isArray(beforeValue?.trips) || Array.isArray(afterValue?.trips))) {
+    const beforeTrips = layoutTripsSnapshot(beforeValue);
+    const afterTrips = layoutTripsSnapshot(afterValue);
+    const language = localText("en", "ru");
+    for (const [index, trip] of beforeTrips.entries()) {
+      if (!afterTrips.some(entry => entry.id === trip.id)) rows.push(localText(`Removed trip: “${tripDisplayName(trip, index, language)}”`, `Удалена поездка: «${tripDisplayName(trip, index, language)}»`));
+    }
+    for (const [index, trip] of afterTrips.entries()) {
+      const before = beforeTrips.find(entry => entry.id === trip.id);
+      const title = tripDisplayName(trip, index, language);
+      if (!before) rows.push(localText(`Added trip: “${title}”`, `Добавлена поездка: «${title}»`));
+      else {
+        if (before.name !== trip.name) rows.push(localText(`Trip name: ${tripDisplayName(before, index, language)} → ${title}`, `Название поездки: ${tripDisplayName(before, index, language)} → ${title}`));
+        const photoFields = photos => photos.map(photo => [photo.id, photo.caption || ""]);
+        if (!snapshotsEqual(photoFields(before.photos), photoFields(trip.photos))) rows.push(localText(`Photos in “${title}” changed (${before.photos.length} → ${trip.photos.length})`, `Изменены фотографии в «${title}» (${before.photos.length} → ${trip.photos.length})`));
+        if (before.videoUrl !== trip.videoUrl) rows.push(localText(`Video in “${title}”: ${before.videoUrl || "—"} → ${trip.videoUrl || "—"}`, `Видео в «${title}»: ${before.videoUrl || "—"} → ${trip.videoUrl || "—"}`));
+      }
+      if (before?.notes !== trip.notes || before?.notesHtml !== trip.notesHtml) rows.push({ text: localText(`Description of “${title}”`, `Описание «${title}»`), note: { before: { text: before?.notes || "", html: before?.notesHtml || "" }, after: { text: trip.notes, html: trip.notesHtml } } });
+    }
+  } else if (!snapshotsEqual(beforeValue?.[noteKey], afterValue?.[noteKey]) || !snapshotsEqual(beforeValue?.[htmlKey], afterValue?.[htmlKey])) {
     rows.push({
       text: localText("Note changed", "Изменена заметка"),
       note: {

@@ -110,7 +110,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const galleries = await Promise.all(media.photos.map(photo => renderGallery([photo], { className: "layout-summary-thumbnail" })));
       if (token !== version) return;
       host.dataset.photoView = view;
-      host.innerHTML = `<header class="layout-photo-summary-heading"><strong>${escapeHtml(localText("Layout photos", "Фото укладки"))}${media.photos.length ? ` · ${media.photos.length}` : ""}</strong>${media.videoUrl ? `<a href="${escapeHtml(media.videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Watch video", "Смотреть видео"))} ↗</a>` : ""}</header>
+      host.innerHTML = `<header class="layout-photo-summary-heading"><strong>${escapeHtml(localText("Trip photos", "Фото поездки"))}${media.photos.length ? ` · ${media.photos.length}` : ""}</strong>${media.videoUrl ? `<a href="${escapeHtml(media.videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Watch video", "Смотреть видео"))} ↗</a>` : ""}</header>
         <div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`;
       host.querySelectorAll("[data-photo-open]").forEach((button, index) => {
         const caption = media.photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`);

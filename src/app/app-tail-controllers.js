@@ -1,7 +1,8 @@
 import { createLayoutPhotoSummary } from "../ui/layout-photo-summary.js";
 import { openPhotoLightbox } from "../ui/photo-gallery.js";
-import { applyLayoutMedia, layoutMediaSnapshot } from "../state/layout-media.js";
-import { createLayoutMediaEditor } from "../ui/layout-media-editor.js";
+import { layoutMediaSnapshot } from "../state/layout-media.js";
+import { applyLayoutTrips, layoutTripsSnapshot, tripDisplayName } from "../state/layout-trips.js";
+import { createLayoutTripsEditor } from "../ui/layout-trips-editor.js";
 import { bindPhotoDropZone } from "../ui/photo-drop-zone.js";
 import { createRichNoteEditor } from "../ui/rich-note-editor.js";
 import { loadNoteFields, readNoteFields, renderNoteContent } from "../ui/rich-note-content.js";
@@ -16,7 +17,6 @@ import {
   resolvePhotoPrimaryButtonPhotoCount
 } from "../ui/photo-primary-button.js";
 import {
-  applyLayoutNotes,
   normalizeLayoutNotes
 } from "../state/layout-notes.js";
 import {
@@ -3143,8 +3143,9 @@ function metric(value, label) {
   return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
-function layoutNotesSummaryHtml() {
-  const layout = state.layouts?.[state.activeLayoutId];
+const selectedLayoutTrips = new Map();
+
+function layoutNotesSummaryHtml(layout) {
   const notes = normalizeLayoutNotes(layout?.notes);
   return notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
 }
@@ -3155,14 +3156,17 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   const intro = document.querySelector("#layoutIntroduction");
   const description = document.querySelector("#layoutDescriptionSummary");
   const layoutId = state.activeLayoutId || "";
-  const media = layoutMediaSnapshot(state.layouts?.[layoutId]);
+  const trips = layoutTripsSnapshot(state.layouts?.[layoutId]);
+  const tripIndex = Math.max(0, trips.findIndex(trip => trip.id === selectedLayoutTrips.get(layoutId)));
+  const trip = trips[tripIndex];
+  const media = layoutMediaSnapshot(trip);
   const storageKey = scopedLocalStorageKey(LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY);
   const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
-  const title = localText("About this layout", "Об укладке");
+  const title = localText("Trips", "Поездки");
   const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
-  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(state.layouts?.[layoutId]?.notes) ? localText("Description", "Описание") : "", media.videoUrl ? localText("Video", "Видео") : ""].filter(Boolean).join(" · ");
+  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(trip?.notes) ? localText("Description", "Описание") : "", media.videoUrl ? localText("Video", "Видео") : ""].filter(Boolean).join(" · ");
   const header = document.querySelector("#layoutIntroductionHeader");
-  header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(details)}</span></div>
+  header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(trips.length ? `${tripIndex + 1} / ${trips.length}` : "")}</span></div>
     <div class="layout-notes-actions">
       ${canManageActiveLayout() ? `<button type="button" class="edit-button layout-notes-edit-button" data-edit-layout-notes aria-label="${escapeHtml(t("tooltips.edit"))}" title="${escapeHtml(t("tooltips.edit"))}"><span aria-hidden="true">&#9998;</span></button>` : ""}
       <button type="button" class="layout-introduction-toggle" data-toggle-layout-introduction aria-controls="layoutIntroductionContent" aria-expanded="${String(!collapsed)}" aria-label="${escapeHtml(`${title}: ${toggleLabel}`)}"><span>${escapeHtml(toggleLabel)}</span><span class="layout-notes-chevron" aria-hidden="true"></span></button>
@@ -3174,13 +3178,28 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
     renderSummary();
   });
   header.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
-  intro.hidden = !visible || !details;
-  description.innerHTML = visible ? layoutNotesSummaryHtml() : "";
+  let navigation = intro.querySelector("[data-layout-trip-navigation]");
+  if (!navigation) {
+    navigation = document.createElement("div");
+    navigation.className = "layout-trip-navigation";
+    navigation.dataset.layoutTripNavigation = "";
+    document.querySelector("#layoutIntroductionContent").before(navigation);
+  }
+  navigation.hidden = collapsed || !trip;
+  navigation.innerHTML = trip ? `<div class="layout-trip-heading"><strong>${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}</strong><small>${escapeHtml(details)}</small></div>
+    ${trips.length > 1 ? `<div class="layout-trip-controls"><button type="button" class="ghost" data-trip-prev aria-label="${escapeHtml(localText("Previous trip", "Предыдущая поездка"))}" ${tripIndex === 0 ? "disabled" : ""}>←</button><select aria-label="${escapeHtml(localText("Choose trip", "Выбрать поездку"))}">${trips.map((entry, index) => `<option value="${index}" ${index === tripIndex ? "selected" : ""}>${escapeHtml(tripDisplayName(entry, index, uiLanguage))}</option>`).join("")}</select><button type="button" class="ghost" data-trip-next aria-label="${escapeHtml(localText("Next trip", "Следующая поездка"))}" ${tripIndex === trips.length - 1 ? "disabled" : ""}>→</button></div>` : ""}` : "";
+  const selectTrip = index => { if (trips[index]) { selectedLayoutTrips.set(layoutId, trips[index].id); renderSummary(); } };
+  navigation.querySelector("select")?.addEventListener("change", event => selectTrip(Number(event.target.value)));
+  navigation.querySelector("[data-trip-prev]")?.addEventListener("click", () => selectTrip(tripIndex - 1));
+  navigation.querySelector("[data-trip-next]")?.addEventListener("click", () => selectTrip(tripIndex + 1));
+  intro.dataset.hasTrips = String(Boolean(trips.length));
+  intro.hidden = !visible || !trips.length;
+  description.innerHTML = visible ? layoutNotesSummaryHtml(trip) : "";
   description.hidden = !description.childElementCount;
   if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
     host,
     canChoose: isAdminSession,
-    onVisibilityChange: (visible) => { intro.hidden = !visible || (host.hidden && description.hidden); },
+    onVisibilityChange: (visible) => { intro.hidden = !visible || intro.dataset.hasTrips !== "true"; },
     renderGallery: renderPhotoGalleryHtml,
     bindGalleries: (root) => bindPhotoGalleries(root, {
       ...photoGalleryBindingOptions(),
@@ -3188,7 +3207,7 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
     }),
     localText
   });
-  layoutPhotoSummary.render(state.layouts?.[state.activeLayoutId], visible).catch(() => { host.hidden = true; });
+  layoutPhotoSummary.render(trip ? { ...trip, id: `${layoutId}:${trip.id}` } : null, visible).catch(() => { host.hidden = true; });
 }
 
 function renderSummaryContent(metrics) {
@@ -6874,7 +6893,7 @@ function openLayoutEditDialog() {
     restoreAdminPublishedLayoutContext(layout.id);
   }
   runtime.layoutEditTargetId = layout.id;
-  if (!layoutMediaEditor) layoutMediaEditor = createLayoutMediaEditor({
+  if (!layoutMediaEditor) layoutMediaEditor = createLayoutTripsEditor({
     dialog: refs.layoutEditDialog,
     createPhoto: createItemPhotoFromFile,
     deleteCachedPhoto,
@@ -6883,21 +6902,16 @@ function openLayoutEditDialog() {
       ...photoGalleryBindingOptions(),
       openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
     }),
+    confirmRemove: (name) => askConfirmDialog({ title: localText("Delete trip?", "Удалить поездку?"), text: localText(`Delete “${name}” with its description and photos? The gear list stays the same.`, `Удалить «${name}» вместе с описанием и фотографиями? Состав вещей сохранится.`), okText: t("buttons.delete"), cancelText: t("buttons.cancel"), tone: "danger" }),
     onChange: updateLayoutEditSaveState,
     getLimit: () => usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit()),
     localText,
     showToast
   });
-  layoutMediaEditor.open(layout);
+  layoutMediaEditor.open(layout, selectedLayoutTrips.get(layout.id));
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
   refs.layoutEditName.value = layout.name || "";
   const showLanguage = isAdminEditablePublishedLayout(layout.id);
-  const notesLabel = refs.layoutEditNotes?.closest(".note-field");
-  if (notesLabel) {
-    notesLabel.hidden = showLanguage;
-    notesLabel.setAttribute("aria-hidden", String(showLanguage));
-  }
-  loadNoteFields(refs.layoutEditNotes, showLanguage ? {} : { note: normalizeLayoutNotes(layout.notes), noteHtml: layout.notesHtml });
   refs.layoutEditLanguageLabel.hidden = !showLanguage;
   refs.layoutEditLanguageLabel.setAttribute("aria-hidden", String(!showLanguage));
   const showLock = !showLanguage;
@@ -7380,7 +7394,6 @@ function getLayoutEditSnapshot() {
   return {
     name: refs.layoutEditName?.value.trim() || "",
     language: adminPublished ? normalizeUiLanguage(refs.layoutEditLanguage?.value || layoutManageLanguage(layout, uiLanguage)) : "",
-    notes: adminPublished ? {} : readNoteFields(refs.layoutEditNotes),
     media: layoutMediaEditor?.signature() || "",
     locked: adminPublished ? false : Boolean(refs.layoutLocked?.checked)
   };
@@ -7477,11 +7490,9 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     uiLanguage,
     uniqueLayoutName
   });
-  const noteFields = readNoteFields(refs.layoutEditNotes);
-  const notesChanged = !adminPublished && applyLayoutNotes(layout, noteFields.note, noteFields.noteHtml);
-  const mediaChanged = applyLayoutMedia(layout, layoutMediaEditor.snapshot());
+  const mediaChanged = applyLayoutTrips(layout, layoutMediaEditor.snapshot());
   const lockChanged = !adminPublished && applyLayoutLocked(layout, nextLocked);
-  if (!changed && !notesChanged && !lockChanged && !mediaChanged) {
+  if (!changed && !lockChanged && !mediaChanged) {
     if (closeDialog) refs.layoutEditDialog.close();
     return true;
   }

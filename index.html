@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1615" />
+    <link rel="stylesheet" href="./styles.css?v=1616" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -573,8 +573,14 @@
           Template language
           <select id="layoutEditLanguage"></select>
         </label>
+        <section class="layout-trips-editor" data-layout-trips-editor>
+          <div class="layout-trips-heading"><strong data-trips-label>Поездки</strong><button type="button" class="ghost" data-trip-add>Добавить поездку</button></div>
+          <div class="layout-trips-picker"><select aria-label="Редактируемая поездка"></select><button type="button" class="ghost danger" data-trip-remove>Удалить поездку</button></div>
+          <p data-trips-empty></p>
+          <label data-trip-name-field><span data-trip-name-label>Название поездки</span><input data-trip-name maxlength="200" /></label>
+        </section>
         <div class="note-field">
-          <label id="layoutEditNotesLabel" for="layoutEditNotes">Layout description and notes</label>
+          <label id="layoutEditNotesLabel" for="layoutEditNotes">Trip description and notes</label>
           <textarea id="layoutEditNotes" rows="4"></textarea>
         </div>
         <section data-layout-media-editor class="layout-media-editor">
@@ -896,6 +902,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1615" type="module"></script>
+    <script src="./app.js?v=1616" type="module"></script>
   </body>
 </html>

@@ -28,6 +28,7 @@ export function normalizeItemPhotos(item) {
         thumbUrl: typeof photo.thumbUrl === "string" ? photo.thumbUrl : "",
         listId: typeof photo.listId === "string" || typeof photo.listId === "number" ? String(photo.listId) : "",
         fileName: typeof photo.fileName === "string" ? photo.fileName : "",
+        ...(typeof photo.tripId === "string" ? { tripId: photo.tripId } : {}),
         ...(typeof photo.caption === "string" ? { caption: photo.caption.slice(0, 2000) } : {}),
         type: typeof photo.type === "string" ? photo.type : "",
         size: Number.isFinite(Number(photo.size)) ? Number(photo.size) : 0,
