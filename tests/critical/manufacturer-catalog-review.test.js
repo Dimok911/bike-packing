@@ -317,3 +317,49 @@ test("CRITICAL catalog review: a targeted scan replaces only its manufacturer an
   const empty = { scans: [{ ...data.scans[0], changes: [] }, data.scans[1]] };
   assert.equal(catalogReviewCount(empty), 1, "A successful unchanged recheck also supersedes older warnings");
 });
+
+test("photo checks have their own filter, manufacturer count and saved-photo preview", async () => {
+  const { compareManufacturerCatalogSnapshots } = await import("../../src/data/manufacturer-catalog-scan.js");
+  const previous = { id: "photo-bag", brand: "Tailfin", sourceUrl: "https://www.tailfin.cc/", sourceImageUrls: ["https://media.tailfin.cc/old.jpg"] };
+  const fresh = { ...previous, imageReviewRequired: true, imageGalleryPreserved: true, imageReviewReason: "Incomplete size gallery" };
+  const changes = compareManufacturerCatalogSnapshots([previous], [fresh]).changes;
+  changes.push({ id: "text-only", manufacturerId: "arkel", type: "changed", fields: [{field:"weight",before:100,after:200}] });
+  const data = { scans: [{ changes, manufacturers: [{id:"tailfin",name:"Tailfin",status:"complete"},{id:"arkel",name:"Arkel",status:"complete"}] }] };
+  assert.equal(catalogReviewCount(data), 2);
+  const html = renderManufacturerCatalogReview(data, { type: "photos", manufacturer: "tailfin" });
+  assert.match(html,/data-catalog-type="photos" aria-pressed="true"[^>]*>[^<]* · 1/);
+  assert.match(html,/Фотографии к проверке|Photographs to check/);
+  assert.match(html,/Ранее сохранённые фотографии|Previously saved photographs/);
+  assert.match(html,/https:\/\/media.tailfin.cc\/old.jpg/);
+  assert.doesNotMatch(html,/data-change-id="text-only"/);
+  assert.doesNotMatch(html,/<del>https:\/\/media.tailfin.cc\/old.jpg/);
+});
+
+test("photo gallery shows actual additions, removals and cover changes without URL text diffs", async () => {
+  const { catalogPhotoChanges } = await import("../../src/ui/manufacturer-catalog-review-dialog.js");
+  const old="https://photos.test/old.jpg", kept="https://photos.test/kept.jpg", fresh="https://photos.test/new.jpg";
+  const change={id:"gallery",manufacturerId:"arkel",type:"changed",before:{sourceImageUrls:[old,kept]},after:{sourceImageUrls:[fresh,kept]},fields:[{field:"sourceImageUrls",before:[old,kept],after:[fresh,kept]}]};
+  assert.deepEqual(catalogPhotoChanges(change),[{url:fresh,state:"added",newCover:true},{url:kept,state:"unchanged",newCover:false},{url:old,state:"removed",newCover:false}]);
+  const html=renderManufacturerCatalogReview({scans:[{changes:[change]}]},{type:"photos"});
+  assert.match(html,/state-added/);assert.match(html,/state-removed/);assert.match(html,/Новая обложка|New cover/);
+  assert.doesNotMatch(html,/<(?:del|ins)>|>https:\/\//);
+  const unresolved={...change,after:{...change.before,imageReviewRequired:true,imageGalleryPreserved:true}};
+  assert.ok(catalogPhotoChanges(unresolved).every(p=>p.state==='saved'));
+  const reorder={...change,after:{sourceImageUrls:[kept,old]}};
+  assert.ok(catalogPhotoChanges(reorder).every(p=>p.state==='unchanged'));
+  assert.equal(catalogPhotoChanges(reorder)[0].newCover,true);
+});
+
+test('photo repair review supplements original scans without hiding newcomers or resetting decisions',async()=>{
+ const {latestManufacturerCatalogReviewScan}=await import('../../src/ui/manufacturer-catalog-review-dialog.js');
+ const base={id:'base',scannedAt:'2026-09-26',manufacturers:[{id:'arkel',name:'Arkel',productCount:3}],changes:[{id:'new',productId:'new',manufacturerId:'arkel',type:'added',decision:'pending'},{id:'mixed',productId:'bag',manufacturerId:'arkel',type:'changed',decision:'approved',decisionNote:'Keep weight',fields:[{field:'weight',before:1,after:2},{field:'sourceImageUrls',before:['a'],after:[]}]}]};
+ const repair={id:'photos',scannedAt:'2026-09-27',manufacturers:[{id:'arkel',name:'Arkel'}],changes:[{id:'photo-bag',productId:'bag',manufacturerId:'arkel',type:'changed',after:{catalogReviewScope:'photos'},fields:[{field:'sourceImageUrls',before:[],after:['a']}]}]};
+ const result=latestManufacturerCatalogReviewScan({scans:[repair,base]});
+ assert.equal(result.changes.length,3);assert.equal(result.changes[0].type,'added');
+ assert.equal(result.changes[1].decision,'approved');assert.equal(result.changes[1].reviewScanId,'base');assert.deepEqual(result.changes[1].fields.map(f=>f.field),['weight']);
+ assert.equal(result.changes[2].reviewScanId,'photos');assert.equal(result.summary.products,3);
+});
+test('our exceptions remain separately visible with note and publication status',()=>{
+ const html=renderManufacturerCatalogReview({scans:[{changes:[],manufacturers:[{id:'arkel',name:'Arkel'}]}],photoExceptions:[{productId:'bag',productName:'Bag',manufacturer:'Arkel',retainedUrls:['https://photos.test/old.jpg'],excludedUrls:[],note:'Fits the small size',reviewedAt:'2026-09-27'}]},{type:'exceptions'});
+ assert.match(html,/Fits the small size/);assert.match(html,/ожидает публикации|awaiting publication/);assert.ok(html.includes('https://photos.test/old.jpg'));assert.doesNotMatch(html,/data-catalog-decision=/);
+});

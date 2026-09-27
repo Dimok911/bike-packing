@@ -694,12 +694,36 @@ async function loadManufacturerBagCatalogController() {
       t
     });
     controller.setImportAvailable(manufacturerBagCatalogImportAvailable);
-    return controller;
+    return { ...controller, async openEntry(entry, { canOpen = () => true } = {}) {
+      if (!canOpen()) return false;
+      const opened = comparisonController.openEntry({ ...entry, imageUrls: entry.sourceImageUrls || [], imageUrl: entry.sourceImageUrl || '', imageSkuOptions: undefined, imageVolumeOptions: undefined });
+      if (opened) {
+        refs.bagCatalogProductDetailTitle.textContent = (isEnglishUi() ? 'Proposed change · ' : 'Предлагаемое изменение · ') + refs.bagCatalogProductDetailTitle.textContent;
+        if (entry.imageReviewRequired) refs.bagCatalogProductDetailBody.insertAdjacentHTML('afterbegin', '<p class="catalog-review-safety-note">' + escapeHtml(isEnglishUi() ? 'Previously saved photographs. Size assignments still need checking.' : 'Ранее сохранённые фотографии. Соответствие объёму ещё требует проверки.') + '</p>');
+      }
+      return opened;
+    }, async openDetail(id, { canOpen = () => true } = {}) {
+      const indexEntry = MANUFACTURER_BAG_CATALOG_INDEX.find(entry => entry.id === id);
+      if (!indexEntry) return false;
+      await loadManufacturerBagCatalog({ brand: indexEntry.brand });
+      if (!canOpen()) return false;
+      return comparisonController.openDetail(id);
+    } };
   }).catch((error) => {
     manufacturerBagCatalogControllerPromise = null;
     throw error;
   });
   return manufacturerBagCatalogControllerPromise;
+}
+
+async function openManufacturerCatalogProposedProductDetail(entry, options) {
+  const controller = await loadManufacturerBagCatalogController();
+  return controller.openEntry(entry, options);
+}
+
+async function openManufacturerCatalogProductDetail(id, options) {
+  const controller = await loadManufacturerBagCatalogController();
+  return controller.openDetail(id, options);
 }
 
 const manufacturerBagCatalogDialogController = {
@@ -11074,6 +11098,8 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
 }
 
   return {
+    openManufacturerCatalogProductDetail,
+    openManufacturerCatalogProposedProductDetail,
     warnLockedLayoutMutation, openAddToContainerDialog, openNewItemForAddTarget, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
     clearAddToContainerSearch, togglePickerListPhotos, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
     clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,

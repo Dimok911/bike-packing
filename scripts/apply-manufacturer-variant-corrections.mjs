@@ -5,6 +5,7 @@ import { MANUFACTURER_CATALOG_SOURCES } from "../src/data/manufacturer-catalog-s
 import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
 import { annotateManufacturerImageVariants } from "./manufacturer-catalog/image-variants.mjs";
 import { selectManufacturerVariantImages } from "../src/data/manufacturer-catalog-image-variants.js";
+import { assertPublishableManufacturerGalleries } from "./manufacturer-catalog/gallery-preservation.mjs";
 import { generatedCatalogSource } from "./promote-manufacturer-catalog-baseline.mjs";
 
 const work = resolve(process.argv[2]);
@@ -58,6 +59,7 @@ for (const group of Map.groupBy(MANUFACTURER_BAG_CATALOG_GENERATED, (entry) => e
     });
   }
 }
+assertPublishableManufacturerGalleries(rows);
 await writeFile("src/data/manufacturer-bag-catalog.generated.js", generatedCatalogSource(rows, "2026-09-27"));
 await writeFile("catalog-review-inputs/variant-integrity-audit-20260927.json", JSON.stringify({ checkedAt: new Date().toISOString(),
   manufacturers: MANUFACTURER_CATALOG_SOURCES.map((s) => ({ id: s.id, products: audit.filter((row) => row.brand === s.id).length,

@@ -7,7 +7,8 @@ import {
   splitManufacturerBagCatalogSkuModels
 } from "../src/data/manufacturer-bag-catalog-variants.js";
 import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
-import { annotateManufacturerImageVariants } from "./manufacturer-catalog/image-variants.mjs";
+import { resolveManufacturerGallery } from "./manufacturer-catalog/resolve-gallery.mjs";
+import { preserveApprovedManufacturerGallery, MANUFACTURER_GALLERY_FIELDS } from "./manufacturer-catalog/gallery-preservation.mjs";
 import { ortliebVariantEvidence } from "./manufacturer-catalog/ortlieb-variant-evidence.mjs";
 import {
   buildTailfinCatalogEntry,
@@ -524,7 +525,7 @@ async function normalizeProduct({ brandKey, product }) {
   const availableVariants = variants.filter((variant) => variant.available);
   const waterproof = specs.waterproof
     || ((product.tags || []).some((tag) => String(tag).toLowerCase() === "waterproof") ? "Waterproof" : "");
-  return annotateManufacturerImageVariants({
+  return resolveManufacturerGallery({
     id: `${brandKey}-${product.handle}`,
     brand,
     provider: brandKey === "ortlieb" ? "ortlieb.com" : "arkel.ca",
@@ -578,7 +579,7 @@ async function normalizeProduct({ brandKey, product }) {
       ...(product.tags || []),
       product.handle.replace(/-/g, " ")
     ])]
-  }, { html, product: { ...product, catalogVariantEvidence: variantEvidence } });
+  }, { html, product: { ...product, catalogVariantEvidence: variantEvidence }, checkedAt });
 }
 
 async function readProducts(fileName) {
@@ -643,7 +644,7 @@ for (const product of arkelProducts.sort((left, right) => left.title.localeCompa
 }
 function addEntry(build, options) {
   const product = options.product || (options.json ? JSON.parse(options.json) : {});
-  entries.push(annotateManufacturerImageVariants(build(options), { ...options, product }));
+  entries.push(resolveManufacturerGallery(build(options), { ...options, product }));
 }
 for (const target of tailfinTargets) {
   addEntry(buildTailfinCatalogEntry, {
@@ -698,8 +699,9 @@ for (const target of blackburnTargets) {
   });
 }
 for (const target of topeakTargets) {
+  const evidence = JSON.parse(await readFile(join(pagesDir, "topeak", `${target.handle}.variants.json`), "utf8").catch(() => "[]"));
   addEntry(buildTopeakCatalogEntry, {
-    target,
+    target, evidence,
     html: await readFile(join(pagesDir, "topeak", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
@@ -708,6 +710,7 @@ for (const target of topeakTargets) {
 for (const target of rockgeistTargets) {
   addEntry(buildRockgeistCatalogEntry, {
     target,
+    html: await readFile(join(pagesDir, "rockgeist", `${target.handle}.gallery.html`), "utf8").catch(() => ""),
     json: await readFile(join(pagesDir, "rockgeist", `${target.handle}.html`), "utf8"),
     checkedAt,
   });
@@ -746,13 +749,7 @@ if (approvedCatalogPath) {
       const { imageUrl, imageUrls, ...approvedData } = approvedEntry;
       return {
         ...approvedData,
-        imageAssetPath: freshEntry.imageAssetPath,
-        imageAssetPaths: [...freshEntry.imageAssetPaths],
-        sourceImageUrl: freshEntry.sourceImageUrl,
-        sourceImageUrls: [...freshEntry.sourceImageUrls],
-        imageVolumeOptions: freshEntry.imageVolumeOptions,
-        imageVariantSource: freshEntry.imageVariantSource,
-        imagesCheckedAt: checkedAt
+        ...Object.fromEntries([...MANUFACTURER_GALLERY_FIELDS, "imageReviewRequired", "imageReviewReason", "pendingImageGallery"].filter(key => Object.hasOwn(freshEntry, key)).map(key => [key, freshEntry[key]]))
       };
     });
   }
@@ -760,6 +757,10 @@ if (approvedCatalogPath) {
     catalogCheckedAt = String(outputEntries[0]?.sourceCheckedAt || "previous approved snapshot");
   }
 }
+
+const galleryBaselineModule = await import(pathToFileURL(approvedCatalogPath || resolve("src/data/manufacturer-bag-catalog.generated.js")).href);
+const galleryBaseline = new Map((galleryBaselineModule.MANUFACTURER_BAG_CATALOG_GENERATED || galleryBaselineModule.MANUFACTURER_BAG_CATALOG || []).map(entry => [entry.id, entry]));
+outputEntries = outputEntries.map(entry => preserveApprovedManufacturerGallery(entry, galleryBaseline.get(entry.id)));
 
 const imageManifest = [...new Map(outputEntries.flatMap((entry) => {
   const outputs = Array.isArray(entry.imageAssetPaths) ? entry.imageAssetPaths : [entry.imageAssetPath];

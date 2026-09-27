@@ -20,6 +20,7 @@ const stableValue = (value) => {
 };
 
 export function catalogValuesEqual(field, before, after) {
+  if (field === "imageReviewRequired") return Boolean(before) === Boolean(after);
   if (before == null && after == null) return true;
   const comparable = (value) => {
     if (field === "description") value = catalogDescriptionForComparison(value);
@@ -77,6 +78,6 @@ export function catalogChangesForReview(changes = []) {
         before: catalogDescriptionForComparison(item.before),
         after: catalogDescriptionForComparison(item.after),
       } : item);
-    return fields.length ? [{ ...change, fields }] : [];
+    return fields.length || change.after?.imageReviewRequired ? [{ ...change, fields }] : [];
   });
 }

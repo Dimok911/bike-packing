@@ -2271,7 +2271,9 @@ const {
   backupLayoutRows, selectedBackupLayoutIds, summarizeSelectedBackupLayouts, renderBackupAnalysis,
   handleBackupSelectionChange, updateBackupSelectionSummary, resolveExistingBackupPhotos, prepareBackupPhotosForState,
   restoreSelectedBackupLayouts, restoreSelectedBackupAdminTemplates, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
-  readRootContainerDialogDimensions, applyRootContainerDimensions
+  readRootContainerDialogDimensions, applyRootContainerDimensions,
+  openManufacturerCatalogProductDetail,
+  openManufacturerCatalogProposedProductDetail
 } = createAppTailControllers(appTailControllerDeps);
 
 adminReportsDialogController = createAdminReportsDialogController({
@@ -2286,6 +2288,8 @@ adminReportsDialogController = createAdminReportsDialogController({
 
 manufacturerCatalogReviewDialogController = createManufacturerCatalogReviewDialogController({
   refs,
+  openCurrentProduct: openManufacturerCatalogProductDetail,
+  openProposedProduct: openManufacturerCatalogProposedProductDetail,
   fetchScans: () => fetchManufacturerCatalogScans(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
   saveDecision: (decision) => saveManufacturerCatalogDecision(apiFetch, {
     ...decision,

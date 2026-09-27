@@ -9,6 +9,8 @@ import {
 } from "../src/data/manufacturer-catalog-sources.js";
 import { recoverShopifyCatalogProducts } from "./manufacturer-catalog/shopify-presence.mjs";
 import { collectOrtliebVariantEvidence, ortliebVariantEvidence } from "./manufacturer-catalog/ortlieb-variant-evidence.mjs";
+import { fetchTopeakVariantEvidence } from "./manufacturer-catalog/topeak-variant-evidence.mjs";
+import { manufacturerGalleryIssue } from "./manufacturer-catalog/gallery-preservation.mjs";
 import { verifyCatalogAbsences } from "./manufacturer-catalog/absence-evidence.mjs";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
@@ -58,6 +60,7 @@ const generatedPath = join(workDir, "manufacturer-bag-catalog.generated.mjs");
 const imageManifestPath = join(workDir, "manufacturer-catalog-images.json");
 const scannedAt = new Date().toISOString();
 const checkedAt = scannedAt.slice(0, 10);
+const galleryErrors = Object.fromEntries(activeSources.map((source) => [source.id, []]));
 const errors = Object.fromEntries(activeSources.map((source) => [source.id, []]));
 
 async function fetchText(url, attempts = 3, validate = null, acceptLanguage = "en-US,en;q=0.8") {
@@ -218,6 +221,19 @@ async function downloadManufacturer(source) {
                 : source.adapter === "rockgeist-wc-store" ? rockgeistProductPageIsValid : null;
       const html = await fetchSourceText(pageUrl, 3, validate);
       await writeFile(pagePath, html, "utf8");
+      try {
+        if (source.adapter === "topeak-html") {
+          const evidence = await fetchTopeakVariantEvidence({ sourceUrl: pageUrl });
+          await writeFile(join(pagesDir, source.id, `${handle}.variants.json`), JSON.stringify(evidence), "utf8");
+        }
+        if (source.adapter === "rockgeist-wc-store") {
+          const galleryHtml = await fetchSourceText(product.sourceUrl);
+          if (!galleryHtml.includes("woocommerce-product-gallery")) throw new Error("Missing Rockgeist gallery");
+          await writeFile(join(pagesDir, source.id, `${handle}.gallery.html`), galleryHtml, "utf8");
+        }
+      } catch (error) {
+        galleryErrors[source.id].push(`${handle}: ${String(error?.message || error)}`);
+      }
       if (source.id === "ortlieb" && ortliebVariantEvidence(html, pageUrl).sku) {
         const evidence = await collectOrtliebVariantEvidence({ product, html, sourceUrl: pageUrl, fetchText: fetchSourceText });
         await writeFile(join(pagesDir, source.id, `${handle}.variants.json`), JSON.stringify(evidence), "utf8");
@@ -266,6 +282,11 @@ try {
     ...generatedEntries.filter((entry) => !failedIds.has(manufacturerIdForEntry(entry))),
     ...MANUFACTURER_BAG_CATALOG.filter((entry) => failedIds.has(manufacturerIdForEntry(entry))),
   ];
+  for (const entry of scannedEntries) {
+    const brand = manufacturerIdForEntry(entry);
+    const issue = manufacturerGalleryIssue(entry);
+    if (issue && galleryErrors[brand]) galleryErrors[brand].push(`${entry.id}: ${issue}; previous gallery retained where available`);
+  }
   const report = buildManufacturerCatalogScanReport({
     approvedEntries: MANUFACTURER_BAG_CATALOG.filter((entry) => activeSources.some(({ id }) => id === manufacturerIdForEntry(entry))),
     scannedEntries: scannedEntries.filter((entry) => activeSources.some(({ id }) => id === manufacturerIdForEntry(entry))),
@@ -273,6 +294,7 @@ try {
     scannedAt,
     errors,
   });
+  report.galleryDiagnostics = galleryErrors;
   const markdown = manufacturerCatalogScanMarkdown(report);
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   await writeFile(markdownPath, markdown, "utf8");

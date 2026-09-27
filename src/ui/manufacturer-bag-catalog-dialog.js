@@ -366,7 +366,7 @@ export function createManufacturerBagCatalogDialogController({
             </div>
             ${selectedEntry.sku ? `<span class="manufacturer-catalog-sku" title="${escapeHtml(t("bagCatalog.field.skuHelp"))}" aria-label="${escapeHtml(`${t("bagCatalog.field.skuHelp")} ${selectedEntry.sku}`)}">${escapeHtml(selectedEntry.sku)}</span>` : ""}
           </div>
-          <p class="manufacturer-catalog-variant">${escapeHtml(entry.variant)}</p>
+          ${entry.variant ? `<p class="manufacturer-catalog-variant">${escapeHtml(entry.variant)}</p>` : ""}
           ${(selectedEntry.unassignedImageCount || (selectedEntry.imageVariantSource && !selectedEntry.imageUrls?.length)) ? `<p class="manufacturer-catalog-description">${escapeHtml(t("bagCatalog.photosPending"))}</p>` : ""}
           <p class="manufacturer-catalog-description">${escapeHtml(localizedDescription(entry, locale))}</p>
           ${variantChoices.length > 1 ? `

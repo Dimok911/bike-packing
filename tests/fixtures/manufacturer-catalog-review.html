@@ -46,7 +46,14 @@
         fields: [{ field: "mountingOptions", before: ["Quick-Lock2.1"], after: ["Quick-Lock2.1", "Quick-Lock3.1"] }],
         decision: index === 1 ? "approved" : index === 2 ? "deferred" : "pending",
       }));
+      if (new URLSearchParams(location.search).has("photos")) changes.push({
+        id: "tailfin:changed:photo-model", manufacturerId: "tailfin", manufacturer: "Tailfin", productName: "Photo review example",
+        type: "changed", before: { sourceCheckedAt: "2026-08-29" },
+        after: { sourceCheckedAt: "2026-09-27", imageReviewRequired: true, imageGalleryPreserved: true },
+        sourceUrl: "https://www.tailfin.cc/", fields: [{ field: "imageReviewRequired", before: null, after: true }], decision: "pending",
+      });
       const data = {
+        photoSelectionSupported: true,
         generatedAt: "2026-09-27T09:00:00.000Z",
         scans: [{
           id: "catalog-scan-20260830",
@@ -60,11 +67,38 @@
           changes,
         }],
       };
+      if (new URLSearchParams(location.search).has("photos")) data.scans[0].manufacturers.push({id:"tailfin",name:"Tailfin",status:"complete",productCount:1});
+      if (new URLSearchParams(location.search).has("gallery")) {
+        const image = name => location.origin + "/assets/manufacturer-catalog/ortlieb/" + name;
+        changes.push({id:"ortlieb:changed:gallery-demo",manufacturerId:"ortlieb",manufacturer:"ORTLIEB",productName:"Frame Pack · gallery example",type:"changed",decision:"pending",
+          before:{sourceImageUrls:[image("frame-pack-10.jpg"),image("frame-pack-11.jpg")],sourceImageUrl:image("frame-pack-10.jpg")},
+          after:{sourceImageUrls:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")],sourceImageUrl:image("frame-pack-12.jpg")},
+          fields:[{field:"sourceImageUrls",before:[image("frame-pack-10.jpg"),image("frame-pack-11.jpg")],after:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")]}]});
+      }
       const refs = Object.fromEntries(["menuBtn", "catalogUpdatesBtn", "catalogUpdatesDialog", "catalogUpdatesContent", "catalogUpdatesStatus", "catalogUpdatesRefreshBtn"].map((id) => [id, document.getElementById(id)]));
+      let openCurrentProduct;
+      if (new URLSearchParams(location.search).has('detail')) {
+        const [{createManufacturerBagComparisonDialogController}, {I18N}, {escapeHtml}] = await Promise.all([
+          import('../../src/ui/manufacturer-bag-comparison-dialog.js'), import('../../src/data/i18n.js'), import('../../src/utils/html.js')
+        ]);
+        document.body.insertAdjacentHTML('beforeend', '<dialog id="bagCatalogProductDetailDialog"><form method="dialog" class="dialog-card manufacturer-bag-product-detail-dialog-card"><header><h2 id="bagCatalogProductDetailTitle"></h2><button value="cancel" aria-label="Close details">×</button></header><div id="bagCatalogProductDetailBody" class="manufacturer-bag-product-detail-body"></div></form></dialog>');
+        const detailRefs=Object.fromEntries(['bagCatalogProductDetailDialog','bagCatalogProductDetailTitle','bagCatalogProductDetailBody'].map(id=>[id,document.getElementById(id)]));
+        const language=document.documentElement.lang;
+        const detail=createManufacturerBagComparisonDialogController({refs:detailRefs,catalog:[{id:'current-model',brand:'ORTLIEB',name:'Current Frame Pack',volume:4,weight:200,description:{en:'Current published description',ru:'Текущее опубликованное описание'},variants:[{sku:'F9973',volume:4,available:true}]}],escapeHtml,language:()=>language,t:(key,params={})=>(I18N[language][key]||key).replace(/\{([^}]+)\}/g,(_,key)=>params[key]??''),openModalDialog:dialog=>dialog.showModal()});
+        changes[2].productId='current-model';
+        openCurrentProduct=async(id,{canOpen})=>canOpen()&&detail.openDetail(id);
+        refs.catalogUpdatesDialog.close(); refs.catalogUpdatesDialog.showModal();
+      }
       const controller = createManufacturerCatalogReviewDialogController({
+        openCurrentProduct,
         refs,
         fetchScans: async () => structuredClone(data),
-        saveDecision: async ({ changeId, decision, note }) => Object.assign(changes.find((item) => item.id === changeId), { decision, decisionNote: note }),
+        saveDecision: async ({ changeId, decision, note, photoSelection }) => {
+          const change=changes.find(item=>item.id===changeId);
+          if(photoSelection){const proposed=change.after?.sourceImageUrls||[];photoSelection={...photoSelection,retainedUrls:photoSelection.selectedUrls.filter(url=>!proposed.includes(url)),excludedUrls:proposed.filter(url=>!photoSelection.selectedUrls.includes(url))};
+            data.photoExceptions=decision==='approved'&&(photoSelection.retainedUrls.length||photoSelection.excludedUrls.length)?[{...photoSelection,productId:'current-model',productName:change.productName,manufacturer:change.manufacturer,note,reviewedAt:new Date().toISOString()}]:[];}
+          return Object.assign(change,{decision,decisionNote:note,photoSelection});
+        },
         canOpen: () => true,
         openModalDialog: (dialog) => { if (!dialog.open) dialog.showModal(); },
       });

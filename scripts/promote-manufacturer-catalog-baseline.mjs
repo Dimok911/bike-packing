@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.js";
 import { assertManufacturerBagCatalogSkuModels } from "../src/data/manufacturer-bag-catalog-variants.js";
 import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
+import { assertPublishableManufacturerGalleries } from "./manufacturer-catalog/gallery-preservation.mjs";
 import { readManufacturerCatalogImport } from "./validate-manufacturer-catalog-import.mjs";
 
 const args = new Map();
@@ -76,6 +77,7 @@ export function manufacturerCatalogBaselineEntries(existingEntries, report, manu
     if (!Array.isArray(entry.imageAssetPaths) || !entry.imageAssetPaths.length) {
       throw new Error(`Baseline catalog entry has no image assets: ${id}`);
     }
+    assertPublishableManufacturerGalleries([entry]);
     byId.set(id, entry);
     counts[manufacturerId] += 1;
   });

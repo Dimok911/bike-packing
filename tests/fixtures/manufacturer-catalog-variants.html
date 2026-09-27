@@ -1,7 +1,7 @@
 <!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Catalog variants</title><link rel="stylesheet" href="../../styles.css"></head><body>
 <dialog id="bagCatalogDialog"><div class="dialog-card manufacturer-catalog-dialog-card">
 <header><h2 id="bagCatalogTitle"></h2></header><div class="manufacturer-catalog-toolbar"><button id="bagCatalogBackBtn"></button><input id="bagCatalogSearch" type="search"><p id="bagCatalogPath"></p><p id="bagCatalogAdminNotice"></p></div>
-<div id="bagCatalogBrands"></div><div id="bagCatalogResults"></div></div></dialog>
+<div id="bagCatalogBrands" class="manufacturer-brand-picker"></div><div id="bagCatalogResults" class="manufacturer-catalog-results"></div></div></dialog>
 <script type="module">
 import { createManufacturerBagCatalogDialogController } from '../../src/ui/manufacturer-bag-catalog-dialog.js';
 import { MANUFACTURER_BAG_CATALOG_BRANDS as brands, MANUFACTURER_BAG_CATALOG_FAMILIES as families, MANUFACTURER_BAG_CATALOG_CATEGORIES as categories } from '../../src/data/manufacturer-bag-catalog-meta.js';
@@ -16,6 +16,11 @@ const catalog = [
  {id:'old-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Older model',catalogPublishedAt:'',sourceCheckedAt:date(0),firstImportedAt:date(1)},
  {id:'other-brand',brand:'Arkel',family:'bikepacking',category:'frame',name:'Recent Arkel',catalogPublishedAt:date(2)},
 ];
+if (new URLSearchParams(location.search).has('empty-photo')) catalog.push({
+ id:'topeak-aero',brand:'Topeak',family:'bikepacking',category:'saddle',name:'AERO WEDGE PACK 0.41 L',sku:'TOPEAK-78',volume:0.41,weight:85,
+ imageUrls:[],sourceImageUrls:[],unassignedImageCount:4,imageVariantSource:'manufacturer',mounting:'Nylon straps / Buckle',material:'1200 denier polyester',
+ description:{ru:'Подседельная сумка Topeak.',en:'Topeak saddle bag.'}
+});
 const refs = Object.fromEntries([...document.querySelectorAll('[id]')].map((el)=>[el.id,el]));
 createManufacturerBagCatalogDialogController({refs,catalog,catalogIndex:catalog,brands,families,categories,language:()=>language,escapeHtml,
  t:(key,params={})=>(I18N[language][key]||key).replace(/\{([^}]+)\}/g,(_,key)=>params[key]??''),onSelect:async()=>{}}).open();

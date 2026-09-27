@@ -11,6 +11,7 @@ export async function saveManufacturerCatalogDecision(apiFetch, {
   changeId,
   decision,
   note = "",
+  photoSelection,
   timeoutMs,
 } = {}) {
   if (typeof apiFetch !== "function") throw new Error("apiFetch is required");
@@ -19,7 +20,7 @@ export async function saveManufacturerCatalogDecision(apiFetch, {
     `/bike-packing/admin/catalog-scans/${encodeURIComponent(scanId)}/changes/${encodeURIComponent(changeId)}`,
     {
       method: "PATCH",
-      body: JSON.stringify({ decision, note }),
+      body: JSON.stringify({ decision, note, ...(photoSelection ? { photoSelection } : {}) }),
       timeoutMs,
       silentErrors: true,
     }

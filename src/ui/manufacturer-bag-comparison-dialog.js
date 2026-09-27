@@ -466,13 +466,15 @@ export function createManufacturerBagComparisonDialogController({
     detailPhotoGalleryBinding = bindGalleries(refs.bagCatalogProductDetailBody);
   }
 
-  function openDetail(id) {
-    const entry = catalogRows().find((row) => row.id === id);
-    if (!entry || !refs?.bagCatalogProductDetailDialog) return;
+  function openEntry(entry) {
+    if (!entry || !refs?.bagCatalogProductDetailDialog) return false;
     closeFilterPanel();
     renderDetail(entry);
     openModalDialog(refs.bagCatalogProductDetailDialog);
+    return true;
   }
+
+  function openDetail(id) { return openEntry(catalogRows().find(row => row.id === id)); }
 
   function open(categoryId) {
     category = String(categoryId || "");
@@ -516,5 +518,5 @@ export function createManufacturerBagComparisonDialogController({
   globalThis.visualViewport?.addEventListener?.("resize", positionFilterPanel);
   globalThis.visualViewport?.addEventListener?.("scroll", positionFilterPanel);
 
-  return { open, openDetail, render };
+  return { open, openDetail, openEntry, render };
 }

@@ -41,6 +41,7 @@ const CATALOG_COMPARE_FIELDS = Object.freeze([
   "sourceUrl",
   "sourceImageUrl",
   "sourceImageUrls",
+  "imageReviewRequired",
 ]);
 
 const cloneJson = (value) => value == null ? null : JSON.parse(JSON.stringify(value));
@@ -59,6 +60,7 @@ const productEvidence = (entry) => ({
   brand: String(entry?.brand || ""),
   sourceUrl: String(entry?.sourceUrl || ""),
   sourceCheckedAt: String(entry?.sourceCheckedAt || ""),
+  ...(entry?.imageReviewRequired ? { imageReviewRequired: true, imageReviewReason: String(entry.imageReviewReason || ""), imageGalleryPreserved: Boolean(entry.imageGalleryPreserved) } : {}),
   ...Object.fromEntries(CATALOG_COMPARE_FIELDS.map((field) => [field, cloneJson(entry?.[field])])),
 });
 
