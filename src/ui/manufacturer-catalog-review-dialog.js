@@ -470,6 +470,22 @@ export function createManufacturerCatalogReviewDialogController({
   let timer = null;
   let accessEpoch = 0;
   let allowed = false;
+  const dialogDocument = refs?.catalogUpdatesDialog?.ownerDocument;
+  const dialogWindow = dialogDocument?.defaultView;
+  const pageHeading = dialogDocument?.querySelector('.topbar h1');
+  const syncDialogHeight = () => {
+    const dialog = refs?.catalogUpdatesDialog;
+    if (!dialog?.open || !pageHeading) return;
+    const bottom = pageHeading.getBoundingClientRect().bottom;
+    // Keep a useful margin when the underlying page was scrolled past its heading.
+    const gap = bottom >= 12 ? bottom : 70;
+    dialog.style.setProperty('--catalog-review-edge-gap', gap + 'px');
+  };
+  dialogWindow?.addEventListener('resize', syncDialogHeight);
+  if (pageHeading && dialogWindow?.ResizeObserver) {
+    const headingResize = new dialogWindow.ResizeObserver(syncDialogHeight);
+    headingResize.observe(pageHeading);
+  }
   const noteDrafts = new Map();
   const photoDrafts = new Map();
   const noteExpanded = new Map();
@@ -664,6 +680,7 @@ export function createManufacturerCatalogReviewDialogController({
       return;
     }
     openModalDialog?.(refs?.catalogUpdatesDialog);
+    syncDialogHeight();
     await refresh();
   };
 
@@ -779,6 +796,7 @@ export function createManufacturerCatalogReviewDialogController({
   });
   refs?.menuBtn?.addEventListener("click", checkForUpdates);
   syncVisibility();
+  syncDialogHeight();
 
   return { open, refresh, syncVisibility, checkForUpdates };
 }

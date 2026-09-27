@@ -75,6 +75,9 @@
           after:{sourceImageUrls:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")],sourceImageUrl:image("frame-pack-12.jpg")},
           fields:[{field:"sourceImageUrls",before:[image("frame-pack-10.jpg"),image("frame-pack-11.jpg")],after:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")]}]});
       }
+      if (new URLSearchParams(location.search).has('heading')) {
+        document.body.insertAdjacentHTML('afterbegin', '<main class="app"><header class="topbar"><div><h1>Сборы в велопоход — эксперимент</h1></div></header></main>');
+      }
       const refs = Object.fromEntries(["menuBtn", "catalogUpdatesBtn", "catalogUpdatesDialog", "catalogUpdatesContent", "catalogUpdatesStatus", "catalogUpdatesRefreshBtn"].map((id) => [id, document.getElementById(id)]));
       let openCurrentProduct;
       if (new URLSearchParams(location.search).has('detail')) {

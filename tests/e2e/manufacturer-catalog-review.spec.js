@@ -187,13 +187,13 @@ test('saving a decision retains neighboring cards and drafts without another ful
   await expect(page.locator('#catalogUpdatesBtn')).toHaveAttribute('data-review-count','5');
 });
 
-async function openReviewFixture(page) {
+async function openReviewFixture(page, query = '') {
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.hostname !== 'bike-packing.localhost' || !(url.pathname === '/tests/fixtures/manufacturer-catalog-review.html' || url.pathname === '/styles.css' || /^\/src\/[a-z0-9/.-]+\.js$/i.test(url.pathname))) return route.abort();
     return route.fulfill({ contentType: url.pathname.endsWith('.html') ? 'text/html' : url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: await readFile(resolve('.' + url.pathname), 'utf8') });
   });
-  await page.goto('/tests/fixtures/manufacturer-catalog-review.html');
+  await page.goto('/tests/fixtures/manufacturer-catalog-review.html' + query);
   await expect(page.locator('[data-change-id]')).toHaveCount(7);
 }
 
@@ -238,19 +238,27 @@ test('review comments collapse and preserve text and disclosure state through fi
   await expect(note).toHaveValue('My review comment');
 });
 
-test('review dialog leaves 100 pixel margins at the user viewport and on taller screens', async ({ page }) => {
+test('review dialog aligns below the page heading with symmetric margins', async ({ page }) => {
   await page.setViewportSize({ width: 2560, height: 1215 });
-  await openReviewFixture(page);
+  await openReviewFixture(page, '?heading=1');
   const dialog = page.locator('#catalogUpdatesDialog');
   await dialog.evaluate(el => { el.close(); el.showModal(); });
   for (const viewport of [{ width: 2560, height: 1215 }, { width: 1920, height: 1440 }]) {
     await page.setViewportSize(viewport);
+    const heading = await page.locator('.topbar h1').boundingBox();
+    const gap = heading.y + heading.height;
+    await expect.poll(async () => Math.abs((await dialog.boundingBox()).y - gap)).toBeLessThanOrEqual(1);
     const bounds = await dialog.boundingBox();
-    expect(Math.round(bounds.height)).toBe(viewport.height - 200);
-    expect(Math.round(bounds.y)).toBe(100);
-    expect(Math.round(viewport.height - bounds.y - bounds.height)).toBe(100);
+    expect(Math.abs(viewport.height - bounds.y - bounds.height - gap)).toBeLessThanOrEqual(1);
     expect(Math.round(bounds.width)).toBe(1500);
+    expect(bounds.height).toBeGreaterThan(1000);
   }
+  // A wrapped heading must resize the open dialog too.
+  await page.locator('.topbar h1').evaluate(el => { el.style.maxWidth = '350px'; });
+  await expect.poll(async () => {
+    const heading = await page.locator('.topbar h1').boundingBox();
+    return Math.abs((await dialog.boundingBox()).y - heading.y - heading.height);
+  }).toBeLessThanOrEqual(1);
   await page.setViewportSize({ width: 1280, height: 600 });
   expect(Math.round((await dialog.boundingBox()).height)).toBe(576);
   await page.setViewportSize({ width: 390, height: 700 });
