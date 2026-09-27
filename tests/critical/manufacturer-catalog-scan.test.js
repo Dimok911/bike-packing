@@ -796,3 +796,22 @@ test("CRITICAL catalog scan: an official Shopify redirect and matching SKU prese
     return '<link rel="canonical" href="https://other.test/products/top-tube-rear">';
   } }), /still responds/);
 });
+
+
+test('Restrap weights follow named sizes, independently of variant order and shipping grams', () => {
+  const build = (body_html, variants) => buildRestrapCatalogEntry({product:{handle:'race-hydration-vest',title:'Race Hydration Vest',tags:['7.5L'],body_html,variants,images:[{src:'https://cdn.shopify.com/s/files/1/vest.jpg'}]}});
+  for (const [small, large] of [[368,380],[588,600]]) {
+    const details = '<p>Weight - (without bladder)</p><p>Small/Medium - '+small+'g<br>Large/XL - '+large+'g</p><p>Bladder weight 146g</p>';
+    const variants = [{title:'Large/XL',sku:'L',grams:615},{title:'Small/Medium',sku:'S',grams:601}];
+    for (const ordered of [variants, [...variants].reverse()]) {
+      const entry=build(details,ordered);
+      assert.deepEqual(Object.fromEntries(entry.variants.map(v=>[v.sku,v.weight])),{L:large,S:small});
+      assert.deepEqual(entry.weightOptions,[small,large]);
+    }
+  }
+  const lightweight=build('Lightweight vest without a weight specification.',[{title:'Small/Medium',grams:366},{title:'Large/XL',grams:376}]);
+  assert.deepEqual(lightweight.variants.map(v=>v.weight),[366,376]);
+  assert.equal(lightweight.variantWeightsAuthoritative,false);
+  const ambiguous=build('Weight - 368g / 380g',[{title:'Small/Medium',grams:601},{title:'Large/XL',grams:615}]);
+  assert.deepEqual(ambiguous.variants.map(v=>v.weight),[0,0], 'Unlabeled official alternatives must not be assigned by array position');
+});

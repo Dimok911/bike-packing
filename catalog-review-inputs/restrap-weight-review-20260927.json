@@ -1,0 +1,731 @@
+{
+  "schemaVersion": 1,
+  "id": "catalog-restrap-weight-review-20260927",
+  "scannedAt": "2026-09-27T17:20:47.864Z",
+  "status": "complete",
+  "manufacturers": [
+    {
+      "id": "restrap",
+      "name": "Restrap",
+      "status": "complete",
+      "sourceCount": 3,
+      "productCount": 3,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "products": 3,
+    "added": 0,
+    "changed": 3,
+    "missing": 0,
+    "unchanged": 0,
+    "errors": 0
+  },
+  "changes": [
+    {
+      "id": "restrap:weight-correction:restrap-lightweight-race-hydration-vest",
+      "manufacturerId": "restrap",
+      "manufacturer": "Restrap",
+      "productId": "restrap-lightweight-race-hydration-vest",
+      "productName": "Lightweight Race Hydration Vest (4 Litres)",
+      "type": "changed",
+      "sourceUrl": "https://restrap.com/products/lightweight-race-hydration-vest",
+      "fields": [],
+      "before": {
+        "id": "restrap-lightweight-race-hydration-vest",
+        "name": "Lightweight Race Hydration Vest (4 Litres)",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/lightweight-race-hydration-vest",
+        "sourceCheckedAt": "2026-09-01",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 4,
+        "volumeOptions": [
+          4
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 366,
+        "weightOptions": [
+          366,
+          376
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_LHV_SMD_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_LHV_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 4,
+            "weight": 366,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_LHV_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 4,
+            "weight": 376,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Lightweight Race Hydration Vest (4 Litres) is a Restrap backpack in 4 L. Technical data is normalized from the official product page.",
+          "ru": "Рюкзак Restrap объёмом 4 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "When your only goal is to ride from A-B in the fastest time possible, your priorities are aerodynamics, comfort, weight and to be able to access fuel as ergonomically as possible. The Restrap Lightweight Hydration Vest is built without compromise. READ MORE\nStripped back weight, no compromise to function. Building on our award winning Race Hydration Vest, but reducing the overall capacity of the vest, we have improved its breathability, reduced its weight; but kept all the features that made the original so popular. \nWorking with UCI gravel race winners, FKT setters and one-day specialists, what was initially an exercise in cutting back weight from the classic Race Hydration Vest became a ground-up redesign. \nMinimalist construction\nThe lightweight mesh construction features four stretch pockets on the front, an underarm stretch pocket on each side. That full stretch construction means complete freedom of movement while on the bike. Minimalist elastic chest retention can be adjusted and even unclipped with one hand; ready for fast changes at feedzones. \nThe rear includes a hydration bladder sleeve (bladder included). Hose routing can be run over either shoulder, with a magnetic clip to hold the hose in place when not in use. And because even on the shortest races, conditions can change, there’s a stretch rear pocket for an emergency layer. We’ve included reflective detailing to increase visibility at night. \nFitting\nThe Lightweight Race Hydration Vest comes in two sizes: \nS/M – chest sizes between 80 and 100cm – t-shirt size XS to M\nL/XL – chest size between 100 and 12cm – t-shirt size M to XXL",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest.jpg?v=1780043881&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest2.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest3.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest4.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest5.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest6.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest7.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest8.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest9.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest10.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest11.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest12.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest13.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest14.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest15.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest16.jpg?v=1780043880&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest17.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest18.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest19.jpg?v=1780043882&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest21.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest22.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest23.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest24.jpg?v=1780043881&width=700"
+        ]
+      },
+      "after": {
+        "id": "restrap-lightweight-race-hydration-vest",
+        "name": "Lightweight Race Hydration Vest (4 Litres)",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/lightweight-race-hydration-vest",
+        "sourceCheckedAt": "2026-09-27",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 4,
+        "volumeOptions": [
+          4
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 366,
+        "weightOptions": [
+          366,
+          376
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_LHV_LXL_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_LHV_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 4,
+            "weight": 366,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_LHV_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 4,
+            "weight": 376,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Lightweight Race Hydration Vest (4 Litres) is a Restrap backpack in 4 L. Specifications are from the manufacturer's official product page.",
+          "ru": "Рюкзак Restrap объёмом 4 L. Характеристики взяты с официальной страницы производителя."
+        },
+        "manufacturerDetails": "When your only goal is to ride from A-B in the fastest time possible, your priorities are aerodynamics, comfort, weight and to be able to access fuel as ergonomically as possible. The Restrap Lightweight Hydration Vest is built without compromise. READ MORE\nStripped back weight, no compromise to function. Building on our award winning Race Hydration Vest, but reducing the overall capacity of the vest, we have improved its breathability, reduced its weight; but kept all the features that made the original so popular. \nWorking with UCI gravel race winners, FKT setters and one-day specialists, what was initially an exercise in cutting back weight from the classic Race Hydration Vest became a ground-up redesign. \nMinimalist construction\nThe lightweight mesh construction features four stretch pockets on the front, an underarm stretch pocket on each side. That full stretch construction means complete freedom of movement while on the bike. Minimalist elastic chest retention can be adjusted and even unclipped with one hand; ready for fast changes at feedzones. \nThe rear includes a hydration bladder sleeve (bladder included). Hose routing can be run over either shoulder, with a magnetic clip to hold the hose in place when not in use. And because even on the shortest races, conditions can change, there’s a stretch rear pocket for an emergency layer. We’ve included reflective detailing to increase visibility at night. \nFitting\nThe Lightweight Race Hydration Vest comes in two sizes: \nS/M – chest sizes between 80 and 100cm – t-shirt size XS to M\nL/XL – chest size between 100 and 12cm – t-shirt size M to XXL",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest.jpg?v=1780043881&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest2.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest3.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest4.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest5.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest6.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest7.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest8.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest9.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest10.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest11.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest12.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest13.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest14.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest15.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest16.jpg?v=1780043880&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest17.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest18.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest19.jpg?v=1780043882&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest21.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest22.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest23.jpg?v=1780043881&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/LightweightRaceHydrationVest24.jpg?v=1780043881&width=700"
+        ],
+        "catalogReviewScope": "correction",
+        "catalogReviewCorrection": true,
+        "catalogWeightMappingCorrection": true
+      }
+    },
+    {
+      "id": "restrap:weight-correction:restrap-race-hydration-vest",
+      "manufacturerId": "restrap",
+      "manufacturer": "Restrap",
+      "productId": "restrap-race-hydration-vest",
+      "productName": "Race Hydration Vest",
+      "type": "changed",
+      "sourceUrl": "https://restrap.com/products/race-hydration-vest",
+      "fields": [
+        {
+          "field": "variants",
+          "before": [
+            {
+              "sku": "RS_HYD_LXL_BLK",
+              "title": "Large/XL",
+              "color": "",
+              "volume": 7.5,
+              "weight": 368,
+              "mounting": "Shoulder straps",
+              "available": true
+            },
+            {
+              "sku": "RS_HYD_SMD_BLK",
+              "title": "Small/Medium",
+              "color": "",
+              "volume": 7.5,
+              "weight": 380,
+              "mounting": "Shoulder straps",
+              "available": true
+            }
+          ],
+          "after": [
+            {
+              "sku": "RS_HYD_LXL_BLK",
+              "title": "Large/XL",
+              "color": "",
+              "volume": 7.5,
+              "weight": 380,
+              "mounting": "Shoulder straps",
+              "available": true
+            },
+            {
+              "sku": "RS_HYD_SMD_BLK",
+              "title": "Small/Medium",
+              "color": "",
+              "volume": 7.5,
+              "weight": 368,
+              "mounting": "Shoulder straps",
+              "available": true
+            }
+          ]
+        }
+      ],
+      "before": {
+        "id": "restrap-race-hydration-vest",
+        "name": "Race Hydration Vest",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/race-hydration-vest",
+        "sourceCheckedAt": "2026-09-01",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 7.5,
+        "volumeOptions": [
+          7.5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 368,
+        "weightOptions": [
+          368,
+          380
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_HYD_LXL_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_HYD_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 7.5,
+            "weight": 368,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_HYD_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 7.5,
+            "weight": 380,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Race Hydration Vest is a Restrap backpack in 7.5 L. Technical data is normalized from the official product page.",
+          "ru": "Рюкзак Restrap объёмом 7.5 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introducing our Race Hydration Vest, a comfortable and practical way to carry fluids and nutrition while riding long distances or out into the unknown. Made with a focus on functionality, the Race Hydration Vest is designed specifically around fuelling on the bike. The high placement on the back ensures maximum comfort in the riding position and compatibility with jersey pockets, allowing for easy access to essentials while on the move. It has been developed to adopt a genuine unisex design, ensuring comfort for individuals across all genders and body types. READ MORE \nThe Race Hydration Vest prioritizes comfort with three points of adjustment – sides, shoulders, and chest. The chest retention system offers five points of adjustment, featuring stretch webbing, an integrated whistle for safety, and an easy on and off clip system that is glove-friendly. Equipped with a 2L bladder, the pack features an expandable internal lining for superior bladder fitment, eliminating any discomfort during extended rides. The back of the pack has two stretch mesh drop pockets that will easily hold two extra bottles and webbing loops that can be used for carabiner attachment for other items, such as race trackers. The front of the pack features easy-to-reach stretch mesh pockets ideal for carrying a water bottle and snacks. Also featured is an expandable zip pocket with a key clip inside, for quick access to valuables. The ambidextrous bladder routing system and adjustable magnetic keeper clip allows users to choose exactly where they want to route the drinking tube and store it when not in use. The inclusion of reflective zip pulls, logos, and webbing detailing enhances visibility from all angles, aiding safety during low-light conditions. A light loop also allows attachment of a clip-on light. Available in two sizes: Small/Medium & Large/XL Weight - (without bladder) Small/Medium - 368g Large/XL - 380g Bladder weight 146g Capacity - 5.5L with 2L Bladder Capacity (7.5L total)",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest2_3562ebfa-d3b9-4281-b190-c014a79ee556.jpg?v=1753260149&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest2_3562ebfa-d3b9-4281-b190-c014a79ee556.jpg?v=1753260149&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest_b44bff9b-cfaf-479e-afb5-63a81ef787ce.jpg?v=1753260158&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest5_d2b39917-14fe-4b51-b8f9-654173c2e467.jpg?v=1753260158&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest3_24bb433d-a092-47af-aea1-6221c031d720.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest4_be2d6a8e-119f-4a3a-9121-7a143980c573.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest6_60a463b4-5462-4ee3-a015-6be11e6ce60d.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest7_2e6e92ad-8d22-492f-804a-1522e3be12bf.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest8_45df5d96-ee98-4478-900b-74182c33479f.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest9_4c96925c-5566-4d20-8004-665053f7cf60.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest10_c0d9f752-848f-40db-92dc-c8d156e7ef6e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest11_18b35837-21b2-484c-bbdb-e1bc71ce1c12.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest12_c9264683-0d77-469a-9c48-48e41933792f.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest13_49b465dd-930e-4ead-8ea8-72fc6c79bf0e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest14_56f04616-d496-4857-b3ac-eb335f5815c8.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest15_4a78e38c-6672-4dd2-98d5-ff272220fbbe.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest16_29d0a75a-bbf2-4141-baa5-3ced91b91651.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest17_9661de13-f334-493f-87a2-730dab24f1ad.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest18_ca5635ad-d1b6-4751-a33e-1aa5f7b4a3af.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest19_bcdc6522-1036-498b-a6e7-2d4290a14972.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest20_37611f91-819e-4d80-bddb-4ed5a747c93e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest21_04ee4dd5-1c7c-44d2-bd1d-86f1d542e877.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest22_d7f3b7cb-df4e-4053-b285-ee8a599df83b.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest23_d72bcacf-32d9-4170-8e65-5ce8cb89bd8a.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest24_cd42c5c6-4f34-4ee2-89a2-dbde23d9a6ae.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest25_a27f1c42-db52-4088-b2ad-074cd44d4a76.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest26_87fdceab-985d-49cc-bfad-dd92da63c199.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest27_cac4d1be-b289-451e-9389-1454e1d5cb30.jpg?v=1713957979&width=700"
+        ]
+      },
+      "after": {
+        "id": "restrap-race-hydration-vest",
+        "name": "Race Hydration Vest",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/race-hydration-vest",
+        "sourceCheckedAt": "2026-09-27",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 7.5,
+        "volumeOptions": [
+          7.5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 368,
+        "weightOptions": [
+          368,
+          380
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_HYD_LXL_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_HYD_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 7.5,
+            "weight": 380,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_HYD_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 7.5,
+            "weight": 368,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Race Hydration Vest is a Restrap backpack in 7.5 L. Specifications are from the manufacturer's official product page.",
+          "ru": "Рюкзак Restrap объёмом 7.5 L. Характеристики взяты с официальной страницы производителя."
+        },
+        "manufacturerDetails": "Introducing our Race Hydration Vest, a comfortable and practical way to carry fluids and nutrition while riding long distances or out into the unknown. Made with a focus on functionality, the Race Hydration Vest is designed specifically around fuelling on the bike. The high placement on the back ensures maximum comfort in the riding position and compatibility with jersey pockets, allowing for easy access to essentials while on the move. It has been developed to adopt a genuine unisex design, ensuring comfort for individuals across all genders and body types. READ MORE \nThe Race Hydration Vest prioritizes comfort with three points of adjustment – sides, shoulders, and chest. The chest retention system offers five points of adjustment, featuring stretch webbing, an integrated whistle for safety, and an easy on and off clip system that is glove-friendly. Equipped with a 2L bladder, the pack features an expandable internal lining for superior bladder fitment, eliminating any discomfort during extended rides. The back of the pack has two stretch mesh drop pockets that will easily hold two extra bottles and webbing loops that can be used for carabiner attachment for other items, such as race trackers. The front of the pack features easy-to-reach stretch mesh pockets ideal for carrying a water bottle and snacks. Also featured is an expandable zip pocket with a key clip inside, for quick access to valuables. The ambidextrous bladder routing system and adjustable magnetic keeper clip allows users to choose exactly where they want to route the drinking tube and store it when not in use. The inclusion of reflective zip pulls, logos, and webbing detailing enhances visibility from all angles, aiding safety during low-light conditions. A light loop also allows attachment of a clip-on light. Available in two sizes: Small/Medium & Large/XL Weight - (without bladder) Small/Medium - 368g Large/XL - 380g Bladder weight 146g Capacity - 5.5L with 2L Bladder Capacity (7.5L total)",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest2_3562ebfa-d3b9-4281-b190-c014a79ee556.jpg?v=1753260149&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest2_3562ebfa-d3b9-4281-b190-c014a79ee556.jpg?v=1753260149&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest_b44bff9b-cfaf-479e-afb5-63a81ef787ce.jpg?v=1753260158&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest5_d2b39917-14fe-4b51-b8f9-654173c2e467.jpg?v=1753260158&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest3_24bb433d-a092-47af-aea1-6221c031d720.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest4_be2d6a8e-119f-4a3a-9121-7a143980c573.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest6_60a463b4-5462-4ee3-a015-6be11e6ce60d.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest7_2e6e92ad-8d22-492f-804a-1522e3be12bf.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest8_45df5d96-ee98-4478-900b-74182c33479f.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest9_4c96925c-5566-4d20-8004-665053f7cf60.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest10_c0d9f752-848f-40db-92dc-c8d156e7ef6e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest11_18b35837-21b2-484c-bbdb-e1bc71ce1c12.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest12_c9264683-0d77-469a-9c48-48e41933792f.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest13_49b465dd-930e-4ead-8ea8-72fc6c79bf0e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest14_56f04616-d496-4857-b3ac-eb335f5815c8.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest15_4a78e38c-6672-4dd2-98d5-ff272220fbbe.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest16_29d0a75a-bbf2-4141-baa5-3ced91b91651.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest17_9661de13-f334-493f-87a2-730dab24f1ad.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest18_ca5635ad-d1b6-4751-a33e-1aa5f7b4a3af.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest19_bcdc6522-1036-498b-a6e7-2d4290a14972.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest20_37611f91-819e-4d80-bddb-4ed5a747c93e.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest21_04ee4dd5-1c7c-44d2-bd1d-86f1d542e877.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest22_d7f3b7cb-df4e-4053-b285-ee8a599df83b.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest23_d72bcacf-32d9-4170-8e65-5ce8cb89bd8a.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest24_cd42c5c6-4f34-4ee2-89a2-dbde23d9a6ae.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest25_a27f1c42-db52-4088-b2ad-074cd44d4a76.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest26_87fdceab-985d-49cc-bfad-dd92da63c199.jpg?v=1713957979&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RaceHydrationVest27_cac4d1be-b289-451e-9389-1454e1d5cb30.jpg?v=1713957979&width=700"
+        ],
+        "catalogReviewScope": "correction",
+        "catalogReviewCorrection": true,
+        "catalogWeightMappingCorrection": true
+      }
+    },
+    {
+      "id": "restrap:weight-correction:restrap-rolltop-hydration-vest",
+      "manufacturerId": "restrap",
+      "manufacturer": "Restrap",
+      "productId": "restrap-rolltop-hydration-vest",
+      "productName": "Rolltop Hydration Vest",
+      "type": "changed",
+      "sourceUrl": "https://restrap.com/products/rolltop-hydration-vest",
+      "fields": [
+        {
+          "field": "variants",
+          "before": [
+            {
+              "sku": "RS_RHY_LXL_BLK",
+              "title": "Large/XL",
+              "color": "",
+              "volume": 14,
+              "weight": 588,
+              "mounting": "Shoulder straps",
+              "available": true
+            },
+            {
+              "sku": "RS_RHY_SMD_BLK",
+              "title": "Small/Medium",
+              "color": "",
+              "volume": 14,
+              "weight": 600,
+              "mounting": "Shoulder straps",
+              "available": true
+            }
+          ],
+          "after": [
+            {
+              "sku": "RS_RHY_LXL_BLK",
+              "title": "Large/XL",
+              "color": "",
+              "volume": 14,
+              "weight": 600,
+              "mounting": "Shoulder straps",
+              "available": true
+            },
+            {
+              "sku": "RS_RHY_SMD_BLK",
+              "title": "Small/Medium",
+              "color": "",
+              "volume": 14,
+              "weight": 588,
+              "mounting": "Shoulder straps",
+              "available": true
+            }
+          ]
+        }
+      ],
+      "before": {
+        "id": "restrap-rolltop-hydration-vest",
+        "name": "Rolltop Hydration Vest",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/rolltop-hydration-vest",
+        "sourceCheckedAt": "2026-09-01",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 14,
+        "volumeOptions": [
+          14
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 588,
+        "weightOptions": [
+          588,
+          600
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_RHY_LXL_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "IP6K6",
+        "waterproofRating": "IP6K6",
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_RHY_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 14,
+            "weight": 588,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_RHY_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 14,
+            "weight": 600,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Rolltop Hydration Vest is a Restrap backpack in 14 L. Technical data is normalized from the official product page.",
+          "ru": "Рюкзак Restrap объёмом 14 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "There are times when it’s more comfortable or practical to carry larger loads on your back. Capitalising on the huge success of our original Race Hydration Vest, the Rolltop Hydration Vest takes the same comfortable structure, accessible front storage pockets and 2L hydration bladder that won us a Design and Innovation Award in 2024, then combines it with a larger capacity, fully waterproof rear.READ MORE\nSuper stable – even when filled to its 14L capacity – the Rolltop Hydration Vest is perfect for the most adventurous bikepacking trips. It is also the ideal companion for big days out in the mountains where being safe means packing the layers, tools and spares for complete self-sufficiency. \nFit \nIn addition to being available in two sizes (S/M and L/XL), the Rolltop Hydration Vest prioritizes comfort with three points of adjustment – sides, shoulders, and chest. This allows flexibility for fitting over layers and changing loads over the course of a long ride. Your load will stay stable, no matter how rough the terrain you are covering.\nThe Race Hydration Vest is a gender neutral design and has been developed with (and tested by) all genders with a range of body shapes.\nCarry what you want – where you want \nThe Vest features stretch pockets on both the front and rear. Store snacks, a multitool or even a soft bottle at the front of the pack, up to a 500ml bottle on the sides and the larger rear stretch pocket is perfect for a waterproof jacket on those days where the weather can’t make up its mind - saving you the effort of opening the rolltop, also keeping the rest of the contents dry. The main compartment is fully lined and 100% waterproof, thanks to its rolltop closure.\nThe front also features an expandable zip pocket with a key clip inside, for quick access to valuables like a phone.\nA water bladder drops into an expandable lining and the shoulder straps feature ambidextrous hose routing. A magnetic keeper clip keeps the hose and bite valve out of the way (but still to hand) when not in use. \nThe inclusion of reflective zip pulls, logos, and webbing detailing enhances visibility from all angles, aiding safety during low-light conditions. A light loop also allows attachment of a clip-on light.\nAvailable in two sizes: Small/Medium & Large/XL\nWeight - (without bladder)\nSmall/Medium - 588g\nLarge/XL - 600g\nBladder weight 146g\nCapacity - 14L with 2L Bladder Capacity",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest.jpg?v=1755161770&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest.jpg?v=1755161770&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_2.jpg?v=1755161837&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_3.jpg?v=1755161851&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RolltopHydrationVest4.jpg?v=1754921855&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_5.jpg?v=1755161868&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_6.jpg?v=1755161906&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_7.jpg?v=1755161919&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_8.jpg?v=1755161941&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_9.jpg?v=1755161953&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_10.jpg?v=1755162474&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_11.jpg?v=1755162566&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_12.jpg?v=1755162584&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_13.jpg?v=1755162600&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_14.jpg?v=1755162616&width=700"
+        ]
+      },
+      "after": {
+        "id": "restrap-rolltop-hydration-vest",
+        "name": "Rolltop Hydration Vest",
+        "brand": "Restrap",
+        "sourceUrl": "https://restrap.com/products/rolltop-hydration-vest",
+        "sourceCheckedAt": "2026-09-27",
+        "family": "carry",
+        "category": "backpack",
+        "volume": 14,
+        "volumeOptions": [
+          14
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 588,
+        "weightOptions": [
+          588,
+          600
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "RS_RHY_LXL_BLK",
+        "color": "",
+        "material": "Restrap technical fabric",
+        "waterproof": "IP6K6",
+        "waterproofRating": "IP6K6",
+        "mounting": "Shoulder straps",
+        "mountingOptions": [
+          "Shoulder straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "RS_RHY_LXL_BLK",
+            "title": "Large/XL",
+            "color": "",
+            "volume": 14,
+            "weight": 600,
+            "mounting": "Shoulder straps",
+            "available": true
+          },
+          {
+            "sku": "RS_RHY_SMD_BLK",
+            "title": "Small/Medium",
+            "color": "",
+            "volume": 14,
+            "weight": 588,
+            "mounting": "Shoulder straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Rolltop Hydration Vest is a Restrap backpack in 14 L. Specifications are from the manufacturer's official product page.",
+          "ru": "Рюкзак Restrap объёмом 14 L. Характеристики взяты с официальной страницы производителя."
+        },
+        "manufacturerDetails": "There are times when it’s more comfortable or practical to carry larger loads on your back. Capitalising on the huge success of our original Race Hydration Vest, the Rolltop Hydration Vest takes the same comfortable structure, accessible front storage pockets and 2L hydration bladder that won us a Design and Innovation Award in 2024, then combines it with a larger capacity, fully waterproof rear.READ MORE\nSuper stable – even when filled to its 14L capacity – the Rolltop Hydration Vest is perfect for the most adventurous bikepacking trips. It is also the ideal companion for big days out in the mountains where being safe means packing the layers, tools and spares for complete self-sufficiency. \nFit \nIn addition to being available in two sizes (S/M and L/XL), the Rolltop Hydration Vest prioritizes comfort with three points of adjustment – sides, shoulders, and chest. This allows flexibility for fitting over layers and changing loads over the course of a long ride. Your load will stay stable, no matter how rough the terrain you are covering.\nThe Race Hydration Vest is a gender neutral design and has been developed with (and tested by) all genders with a range of body shapes.\nCarry what you want – where you want \nThe Vest features stretch pockets on both the front and rear. Store snacks, a multitool or even a soft bottle at the front of the pack, up to a 500ml bottle on the sides and the larger rear stretch pocket is perfect for a waterproof jacket on those days where the weather can’t make up its mind - saving you the effort of opening the rolltop, also keeping the rest of the contents dry. The main compartment is fully lined and 100% waterproof, thanks to its rolltop closure.\nThe front also features an expandable zip pocket with a key clip inside, for quick access to valuables like a phone.\nA water bladder drops into an expandable lining and the shoulder straps feature ambidextrous hose routing. A magnetic keeper clip keeps the hose and bite valve out of the way (but still to hand) when not in use. \nThe inclusion of reflective zip pulls, logos, and webbing detailing enhances visibility from all angles, aiding safety during low-light conditions. A light loop also allows attachment of a clip-on light.\nAvailable in two sizes: Small/Medium & Large/XL\nWeight - (without bladder)\nSmall/Medium - 588g\nLarge/XL - 600g\nBladder weight 146g\nCapacity - 14L with 2L Bladder Capacity",
+        "sourceImageUrl": "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest.jpg?v=1755161770&width=700",
+        "sourceImageUrls": [
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest.jpg?v=1755161770&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_2.jpg?v=1755161837&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_3.jpg?v=1755161851&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/RolltopHydrationVest4.jpg?v=1754921855&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_5.jpg?v=1755161868&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_6.jpg?v=1755161906&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_7.jpg?v=1755161919&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_8.jpg?v=1755161941&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_9.jpg?v=1755161953&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_10.jpg?v=1755162474&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_11.jpg?v=1755162566&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_12.jpg?v=1755162584&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_13.jpg?v=1755162600&width=700",
+          "https://cdn.shopify.com/s/files/1/1308/4941/files/Rolltop_Hydration_Vest_14.jpg?v=1755162616&width=700"
+        ],
+        "catalogReviewScope": "correction",
+        "catalogReviewCorrection": true,
+        "catalogWeightMappingCorrection": true
+      }
+    }
+  ]
+}

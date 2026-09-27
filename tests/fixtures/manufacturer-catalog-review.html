@@ -70,7 +70,7 @@
       if (new URLSearchParams(location.search).has("photos")) data.scans[0].manufacturers.push({id:"tailfin",name:"Tailfin",status:"complete",productCount:1});
       if (new URLSearchParams(location.search).has("gallery")) {
         const image = name => location.origin + "/assets/manufacturer-catalog/ortlieb/" + name;
-        changes.push({id:"ortlieb:changed:gallery-demo",manufacturerId:"ortlieb",manufacturer:"ORTLIEB",productName:"Frame Pack · gallery example",type:"changed",decision:"pending",
+        changes.push({id:"ortlieb:changed:gallery-demo",productId:"current-model",manufacturerId:"ortlieb",manufacturer:"ORTLIEB",productName:"Frame Pack · gallery example",type:"changed",decision:"pending",
           before:{sourceImageUrls:[image("frame-pack-10.jpg"),image("frame-pack-11.jpg")],sourceImageUrl:image("frame-pack-10.jpg")},
           after:{sourceImageUrls:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")],sourceImageUrl:image("frame-pack-12.jpg")},
           fields:[{field:"sourceImageUrls",before:[image("frame-pack-10.jpg"),image("frame-pack-11.jpg")],after:[image("frame-pack-12.jpg"),image("frame-pack-11.jpg")]}]});
@@ -92,12 +92,12 @@
       const controller = createManufacturerCatalogReviewDialogController({
         openCurrentProduct,
         refs,
-        fetchScans: async () => structuredClone(data),
+        fetchScans: async () => { document.body.dataset.catalogFetches = String(Number(document.body.dataset.catalogFetches || 0) + 1); return structuredClone(data); },
         saveDecision: async ({ changeId, decision, note, photoSelection }) => {
           const change=changes.find(item=>item.id===changeId);
-          if(photoSelection){const proposed=change.after?.sourceImageUrls||[];photoSelection={...photoSelection,retainedUrls:photoSelection.selectedUrls.filter(url=>!proposed.includes(url)),excludedUrls:proposed.filter(url=>!photoSelection.selectedUrls.includes(url))};
+          if(photoSelection){const proposed=change.after?.sourceImageUrls||[];photoSelection={...photoSelection,productId:change.productId,productName:change.productName,manufacturer:change.manufacturer,retainedUrls:photoSelection.selectedUrls.filter(url=>!proposed.includes(url)),excludedUrls:proposed.filter(url=>!photoSelection.selectedUrls.includes(url))};
             data.photoExceptions=decision==='approved'&&(photoSelection.retainedUrls.length||photoSelection.excludedUrls.length)?[{...photoSelection,productId:'current-model',productName:change.productName,manufacturer:change.manufacturer,note,reviewedAt:new Date().toISOString()}]:[];}
-          return Object.assign(change,{decision,decisionNote:note,photoSelection});
+          return Object.assign(change,{decision,decisionNote:note,photoSelection,reviewedAt:new Date().toISOString()});
         },
         canOpen: () => true,
         openModalDialog: (dialog) => { if (!dialog.open) dialog.showModal(); },

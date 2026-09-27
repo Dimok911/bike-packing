@@ -164,3 +164,21 @@ for(const language of ['ru','en']){
   await card.locator('[data-catalog-photo-default]').click();await expect(added).toBeChecked();await expect(removed).not.toBeChecked();
  });
 }
+
+
+test('saving a decision retains neighboring cards and drafts without another full download',async({page})=>{
+  const files=new Set(['/tests/fixtures/manufacturer-catalog-review.html','/styles.css','/src/ui/manufacturer-catalog-review-dialog.js','/src/data/manufacturer-catalog-comparison.js','/src/data/manufacturer-catalog-photo-selection.js','/src/utils/html.js','/src/utils/language.js','/src/config/constants.js']);
+  await page.route('**/*',async route=>{const url=new URL(route.request().url());if(url.hostname!=='bike-packing.localhost'||!files.has(url.pathname))return route.abort();return route.fulfill({contentType:url.pathname.endsWith('.html')?'text/html':url.pathname.endsWith('.css')?'text/css':'text/javascript',body:await readFile(resolve('.'+url.pathname),'utf8')});});
+  await page.goto('/tests/fixtures/manufacturer-catalog-review.html');
+  const cards=page.locator('[data-change-id]');await expect(cards).toHaveCount(7);
+  const neighbor=page.locator('[data-change-id="ortlieb:changed:model-2"]');
+  await neighbor.locator('textarea').fill('Preserve this neighboring draft');
+  await neighbor.evaluate(el=>{el.dataset.testIdentity='same-node';});
+  await cards.first().locator('[data-catalog-decision="approved"]').click();
+  await expect(cards).toHaveCount(6);await expect(neighbor).toHaveAttribute('data-test-identity','same-node');
+  await expect(neighbor.locator('textarea')).toHaveValue('Preserve this neighboring draft');
+  await expect(page.locator('body')).toHaveAttribute('data-catalog-fetches','1');
+  await neighbor.locator('[data-catalog-decision="rejected"]').click();
+  await expect(cards).toHaveCount(5);await expect(page.locator('body')).toHaveAttribute('data-catalog-fetches','1');
+  await expect(page.locator('#catalogUpdatesBtn')).toHaveAttribute('data-review-count','5');
+});

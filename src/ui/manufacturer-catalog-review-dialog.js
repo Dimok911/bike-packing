@@ -328,6 +328,7 @@ const renderChange = (change = {}, scanId = "", scannedAt = "") => {
     </header>
     ${explanationPair[0] ? `<p class="catalog-review-publication-state">${escapeHtml(localText(explanationPair[0], explanationPair[1]))}</p>` : ""}
     ${change.after ? `<button type="button" class="ghost" data-catalog-proposed-product>${escapeHtml(localText("After this change", "После изменения"))}</button>` : ""}
+    ${change.after?.catalogWeightMappingCorrection ? `<p class="catalog-review-safety-note">${escapeHtml(localText("Weight-to-size mapping correction in our importer. The manufacturer description has not changed.", "Исправление привязки веса к размеру в нашем обработчике. Описание производителя не менялось."))}</p>` : ""}
     ${change.after?.catalogReviewScope === "photos" ? `<p class="catalog-review-safety-note">${escapeHtml(localText("Photograph processing correction. Manufacturer specifications are unchanged.", "Исправление обработки фотографий. Характеристики производителя здесь не меняются."))}</p>` : ""}
     ${renderComparisonContext(change, scannedAt)}
     ${change.after?.imageReviewRequired ? `<p class="catalog-review-photo-warning catalog-review-safety-note" role="note"><strong>${escapeHtml(localText("Photographs need checking", "Фотографии требуют проверки"))}</strong><br>${escapeHtml(localText("The source did not provide a complete gallery for this size. The proposed photo replacement is held for verification.", "Не удалось полностью сопоставить галерею производителя с этим объёмом. Замена фотографий остановлена до проверки."))}${change.after.imageGalleryPreserved ? `<br>${escapeHtml(localText("Previously saved photographs are retained.", "Ранее сохранённые фотографии оставлены без изменений."))}` : ""}</p>` : ""}
@@ -348,7 +349,7 @@ const renderChange = (change = {}, scanId = "", scannedAt = "") => {
   </article>`;
 };
 
-export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", reviewOnly = true, type = "" } = {}) {
+export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", reviewOnly = true, type = "", summaryOnly = false } = {}) {
   const scans = Array.isArray(data.scans) ? data.scans : [];
   if (!scans.length) {
     return `<div class="catalog-review-empty">
@@ -409,9 +410,38 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
     <p class="catalog-review-results" aria-live="polite">${escapeHtml(localText(`Shown: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "All manufacturers"}`, `Показано записей: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "Все производители"}`))}</p>
     ${rawChanges.length > changes.length ? `<p class="catalog-review-publication-state">${escapeHtml(localText(`Excluded from review: ${rawChanges.length - changes.length} entries with only editorial wording or formatting changes.`, `Исключено из проверки: ${rawChanges.length - changes.length} записей только с изменениями служебных формулировок или оформления.`))}</p>` : ""}
     <section class="catalog-review-changes" aria-label="${escapeHtml(localText("Detected catalog changes", "Найденные изменения каталога"))}">
-      ${filtered.length ? filtered.map((change) => selectedType === "exceptions" ? renderPhotoException(change) : renderChange(change, change.reviewScanId || scan.id, change.reviewScannedAt || scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
+      ${summaryOnly ? "" : filtered.length ? filtered.map((change) => selectedType === "exceptions" ? renderPhotoException(change) : renderChange(change, change.reviewScanId || scan.id, change.reviewScannedAt || scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
     </section>
   `;
+}
+
+// Apply only the acknowledged decision; scan evidence and other cards stay intact.
+export function applyManufacturerCatalogDecision(data, input, result = {}) {
+  const scan = data.scans?.find(scan => scan.id === input.scanId);
+  const change = scan?.changes?.find(change => change.id === input.changeId);
+  if (!change) return false;
+  Object.assign(change, { decision: result.decision || input.decision,
+    decisionNote: result.note ?? result.decisionNote ?? input.note,
+    reviewedAt: result.reviewedAt || new Date().toISOString(),
+    ...((result.photoSelection || input.photoSelection) ? { photoSelection: result.photoSelection || input.photoSelection } : {}) });
+  const candidates = (data.photoExceptions || []).filter(row => row.scanId !== input.scanId || row.changeId !== input.changeId);
+  for (const scan of data.scans || []) for (const row of scan.changes || []) {
+    if (row.decision !== 'approved' || !row.photoSelection) continue;
+    candidates.push({ ...row.photoSelection, productId: row.photoSelection.productId || row.productId,
+      productName: row.photoSelection.productName || row.productName, manufacturer: row.photoSelection.manufacturer || row.manufacturer,
+      scanId: scan.id, changeId: row.id, note: row.decisionNote || '', reviewedAt: row.reviewedAt,
+      publicationState: 'awaiting-publication' });
+  }
+  candidates.sort((a,b) => String(b.reviewedAt || '').localeCompare(String(a.reviewedAt || ''))
+    || String(b.scanId).localeCompare(String(a.scanId)) || String(b.changeId).localeCompare(String(a.changeId)));
+  const seen = new Set();
+  data.photoExceptions = candidates.filter(row => {
+    if (!row.productId || seen.has(row.productId)) return false;
+    seen.add(row.productId); return row.retainedUrls?.length || row.excludedUrls?.length;
+  });
+  for (const scan of data.scans || []) for (const row of scan.changes || [])
+    row.manualPhotoException = data.photoExceptions.find(item => item.productId === row.productId) || null;
+  return true;
 }
 
 export function createManufacturerCatalogReviewDialogController({
@@ -439,6 +469,9 @@ export function createManufacturerCatalogReviewDialogController({
   let allowed = false;
   const noteDrafts = new Map();
   const photoDrafts = new Map();
+  const pendingDecisions = new Set();
+  const savedDecisions = new Map();
+  let decisionRevision = 0;
   const online = () => Boolean(canOpen?.()) && !isForcedOffline?.();
   const rememberNotes = () => refs?.catalogUpdatesContent?.querySelectorAll?.("[data-change-id]").forEach((card) => {
     const key = `${card.dataset.scanId}/${card.dataset.changeId}`;
@@ -447,11 +480,36 @@ export function createManufacturerCatalogReviewDialogController({
     const note = card.querySelector("[data-catalog-note]");
     if (note) noteDrafts.set(`${card.dataset.scanId}/${card.dataset.changeId}`, note.value);
   });
-  const render = () => {
+  const render = (updatedKey = null) => {
     if (!lastData || !refs?.catalogUpdatesContent) return;
-    refs.catalogUpdatesContent.innerHTML = renderManufacturerCatalogReview(lastData, filters);
+    const host = refs.catalogUpdatesContent;
+    const section = host.querySelector?.('.catalog-review-changes');
+    if (updatedKey && section && filters.type !== 'exceptions' && host.ownerDocument) {
+      const scrollTop = host.scrollTop;
+      const summary = host.ownerDocument.createElement('div');
+      summary.innerHTML = renderManufacturerCatalogReview(lastData, { ...filters, summaryOnly: true });
+      for (const selector of ['.catalog-review-summary', '.catalog-review-filters', '.catalog-review-manufacturers', '.catalog-review-results']) {
+        const replacements = summary.querySelectorAll(selector);
+        host.querySelectorAll(selector).forEach((node, index) => node.replaceWith(replacements[index]));
+      }
+      const changes = latestChanges(lastData);
+      const visible = change => (!filters.manufacturer || changeManufacturerKey(change) === filters.manufacturer)
+        && (!filters.reviewOnly || catalogChangeNeedsReview(change)) && matchesReviewType(change, filters.type);
+      section.querySelectorAll('[data-change-id]').forEach(card => {
+        const key = card.dataset.scanId + '/' + card.dataset.changeId;
+        if (key !== updatedKey) return;
+        const change = changes.find(row => row.id === card.dataset.changeId
+          && (row.reviewScanId || latestManufacturerCatalogReviewScan(lastData)?.id) === card.dataset.scanId);
+        if (!change || !visible(change)) card.remove();
+        else card.outerHTML = renderChange(change, card.dataset.scanId, change.reviewScannedAt);
+      });
+      if (!section.querySelector('[data-change-id]')) section.innerHTML = '<p class="catalog-review-empty">'
+        + escapeHtml(localText('No entries match these filters.', 'По выбранным фильтрам записей нет.')) + '</p>';
+      host.scrollTop = scrollTop;
+    } else host.innerHTML = renderManufacturerCatalogReview(lastData, filters);
     refs.catalogUpdatesContent.querySelectorAll?.("[data-change-id]").forEach((card) => {
       const key = `${card.dataset.scanId}/${card.dataset.changeId}`;
+      if (pendingDecisions.has(key)) card.querySelectorAll("button, input, textarea").forEach(item => item.setAttribute("disabled", "disabled"));
       const note = card.querySelector("[data-catalog-note]");
       if (note && noteDrafts.has(key)) note.value = noteDrafts.get(key);
       if (photoDrafts.has(key)) card.querySelectorAll("[data-catalog-photo-url]").forEach(input => { input.checked = photoDrafts.get(key).includes(input.dataset.catalogPhotoUrl); });
@@ -475,8 +533,13 @@ export function createManufacturerCatalogReviewDialogController({
     if (inFlight) return inFlight;
     lastAttempt = now();
     const epoch = accessEpoch;
+    const startedRevision = decisionRevision;
     const request = Promise.resolve().then(fetchScans).then((data) => {
       if (epoch !== accessEpoch || !online()) return null;
+      for (const [key, saved] of savedDecisions) {
+        if (saved.revision > startedRevision) applyManufacturerCatalogDecision(data, saved.input, saved.result);
+        else savedDecisions.delete(key);
+      }
       lastData = data;
       updateBadge();
       return data;
@@ -515,6 +578,8 @@ export function createManufacturerCatalogReviewDialogController({
       lastAttempt = -Infinity;
       noteDrafts.clear();
       photoDrafts.clear();
+      pendingDecisions.clear();
+      savedDecisions.clear();
       filters = { manufacturer: "", reviewOnly: true, type: "" };
       if (refs?.catalogUpdatesContent) refs.catalogUpdatesContent.innerHTML = "";
       refs?.catalogUpdatesDialog?.close?.();
@@ -623,26 +688,47 @@ export function createManufacturerCatalogReviewDialogController({
     if (!button || typeof saveDecision !== "function" || !online()) return;
     const card = button.closest("[data-scan-id][data-change-id]");
     if (!card) return;
+    const key = card.dataset.scanId + "/" + card.dataset.changeId;
+    if (pendingDecisions.has(key)) return;
     rememberNotes();
     const photoInputs = [...card.querySelectorAll("[data-catalog-photo-url]")];
     const photoSelection = photoInputs.length ? catalogPhotoSelection(findChange(card), photoInputs.filter(input => input.checked).map(input => input.dataset.catalogPhotoUrl)) : undefined;
     if (photoSelection && lastData?.photoSelectionSupported !== true) { setStatus(localText("Photo selection is not available on this server yet.", "Сохранение выбора фотографий ещё не подключено на этом сервере."), "error"); return; }
     if (photoSelection && !photoSelection.selectedUrls.length && button.dataset.catalogDecision === "approved" && findChange(card)?.type !== "missing") { setStatus(localText("Select at least one photograph, or reject this update.", "Выберите хотя бы одну фотографию или отклоните это обновление."), "error"); return; }
-    card.querySelectorAll("button, input").forEach((item) => item.setAttribute("disabled", "disabled"));
+    pendingDecisions.add(key);
+    const epoch = accessEpoch;
+    const previous = findChange(card);
+    const reconsideringPhotoApproval = previous?.decision === 'approved' && Boolean(previous.photoSelection);
+    card.querySelectorAll("button, input, textarea").forEach((item) => item.setAttribute("disabled", "disabled"));
     setStatus(localText("Saving review...", "Сохраняю решение..."));
     try {
-      await saveDecision({
+      const input = {
         scanId: card.dataset.scanId,
         changeId: card.dataset.changeId,
         decision: button.dataset.catalogDecision,
         note: card.querySelector("[data-catalog-note]")?.value || "",
         ...(photoSelection ? { photoSelection } : {}),
-      });
-      // An earlier background response must not replace the saved decision.
-      if (inFlight) await inFlight.catch(() => {});
-      await refresh();
+      };
+      const response = await saveDecision(input);
+      if (epoch !== accessEpoch || !canOpen?.()) return;
+      const result = { ...response, reviewedAt: response?.reviewedAt || new Date().toISOString() };
+      savedDecisions.set(key, { input, result, revision: ++decisionRevision });
+      applyManufacturerCatalogDecision(lastData, input, result);
+      pendingDecisions.delete(key);
+      // Preserve edits made in other cards while this request was pending.
+      rememberNotes();
+      updateBadge();
+      render(key);
+      setStatus(localText('Review saved.', 'Решение сохранено.'), 'success');
+      // Reconsidering an old approval can uncover an exception outside the loaded scan history.
+      if (reconsideringPhotoApproval && input.decision !== 'approved')
+        void refresh();
     } catch (error) {
-      card.querySelectorAll("button, input").forEach((item) => item.removeAttribute("disabled"));
+      if (epoch !== accessEpoch || !canOpen?.()) return;
+      pendingDecisions.delete(key);
+      refs.catalogUpdatesContent.querySelectorAll("[data-change-id]").forEach(row => {
+        if (row.dataset.scanId + "/" + row.dataset.changeId === key) row.querySelectorAll("button, input, textarea").forEach(item => item.removeAttribute("disabled"));
+      });
       setStatus(`${localText("Could not save review", "Не удалось сохранить решение")}: ${apiErrorMessage(error)}`, "error");
     }
   };

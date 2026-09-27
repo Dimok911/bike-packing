@@ -447,3 +447,86 @@ test('actual app request boundary permits authorized catalog decisions while ret
   await apiFetch('/bike-packing/admin/catalog-scans');
   assert.equal(calls.length, 4);
 });
+
+
+async function decisionHarness(save, count=2) {
+  const data={scans:[{id:'scan',changes:Array.from({length:count},(_,i)=>({id:String(i),productId:'bag-'+i,type:'changed',fields:[{field:'weight',before:1,after:2}]}))}]};
+  const refs=Object.fromEntries(['catalogUpdatesBtn','catalogUpdatesContent','catalogUpdatesStatus','catalogUpdatesRefreshBtn'].map(key=>[key,fakeElement()]));
+  let allowed=true, offline=false, gets=0, clock=0, fetcher=async()=>structuredClone(data);
+  const cards=data.scans[0].changes.map(change=>{const note={...fakeElement(),value:'draft '+change.id};const button={...fakeElement(),dataset:{catalogDecision:'approved'}};const card={dataset:{scanId:'scan',changeId:change.id},querySelector:()=>note,querySelectorAll:selector=>selector==='[data-catalog-photo-url]'?[]:[button,note]};button.closest=()=>card;return {card,button,note};});
+  refs.catalogUpdatesContent.querySelectorAll=()=>cards.map(row=>row.card);
+  const controller=createManufacturerCatalogReviewDialogController({refs,canOpen:()=>allowed,isForcedOffline:()=>offline,now:()=>clock,schedule:()=>1,cancelSchedule:()=>{},fetchScans:()=>{gets++;return fetcher();},saveDecision:save});
+  await controller.refresh();
+  const click=(index,decision='approved')=>{const {button}=cards[index];button.dataset.catalogDecision=decision;return refs.catalogUpdatesContent.events.get('click')({target:{closest:selector=>selector==='[data-catalog-decision]'?button:null}});};
+  return {refs,cards,data,controller,click,get gets(){return gets;},offline:()=>{offline=true;},logout:()=>{allowed=false;controller.syncVisibility();},fetch:fn=>{fetcher=fn;},advance:()=>{clock+=60000;}};
+}
+
+test('30 sequential review decisions use only the initial full scan download', async()=>{
+  const saves=[];const h=await decisionHarness(async input=>{saves.push(input);return {...input,reviewedAt:'2026-09-27T15:00:00Z'};},30);
+  for(let i=0;i<30;i++)await h.click(i,i%2?'rejected':'approved');
+  assert.equal(saves.length,30);assert.equal(h.gets,1);
+  assert.equal(h.refs.catalogUpdatesBtn.attributes.has('data-review-count'),false);
+  assert.equal(saves[29].note,'draft 29');
+});
+
+test('review waits for acknowledgment, prevents duplicate clicks, and accepts a successful reply after going offline',async()=>{
+  let resolveSave,calls=0;const h=await decisionHarness(()=>{calls++;return new Promise(resolve=>{resolveSave=resolve;});});
+  const saving=h.click(0);await h.click(0);assert.equal(calls,1);
+  assert.equal(h.refs.catalogUpdatesBtn.attributes.get('data-review-count'),'2');
+  assert.equal(h.cards[0].note.attributes.has('disabled'),true);
+  h.offline();resolveSave({decision:'approved'});await saving;
+  assert.equal(h.refs.catalogUpdatesBtn.attributes.get('data-review-count'),'1');assert.equal(h.gets,1);
+});
+
+test('failed review keeps drafts and allows retry without downloading the catalog',async()=>{
+  let fail=true;const h=await decisionHarness(async input=>{if(fail)throw Error('server unavailable');return input;});
+  await h.click(0);assert.match(h.refs.catalogUpdatesStatus.textContent,/server unavailable/);
+  assert.equal(h.cards[0].note.attributes.has('disabled'),false);assert.equal(h.cards[0].note.value,'draft 0');
+  assert.equal(h.refs.catalogUpdatesBtn.attributes.get('data-review-count'),'2');
+  fail=false;await h.click(0);assert.equal(h.gets,1);assert.equal(h.refs.catalogUpdatesBtn.attributes.get('data-review-count'),'1');
+});
+
+test('an older in-flight scan cannot overwrite acknowledged concurrent decisions',async()=>{
+  const resolvers=[];const h=await decisionHarness(input=>new Promise(resolve=>resolvers.push(()=>resolve(input))));
+  let finishFetch;h.fetch(()=>new Promise(resolve=>{finishFetch=resolve;}));h.advance();
+  const refresh=h.controller.refresh();await Promise.resolve();const a=h.click(0),b=h.click(1);
+  resolvers[1]();await b;resolvers[0]();await a;
+  finishFetch(structuredClone(h.data));await refresh;
+  assert.equal(h.refs.catalogUpdatesBtn.attributes.has('data-review-count'),false);assert.equal(h.gets,2);
+});
+
+test('a late decision acknowledgment cannot restore review data after logout',async()=>{
+  let resolveSave;const h=await decisionHarness(()=>new Promise(resolve=>{resolveSave=resolve;}));const saving=h.click(0);
+  h.logout();resolveSave({decision:'approved'});await saving;
+  assert.equal(h.refs.catalogUpdatesContent.innerHTML,'');assert.equal(h.refs.catalogUpdatesBtn.attributes.has('data-review-count'),false);
+});
+
+test('acknowledged photo exceptions update locally and preserve original comparison evidence',async()=>{
+  const {applyManufacturerCatalogDecision}=await import('../../src/ui/manufacturer-catalog-review-dialog.js');
+  const change={id:'one',productId:'bag',before:{weight:1},after:{weight:2},fields:[{field:'weight',before:1,after:2}]};
+  const data={scans:[{id:'scan',changes:[change]}]};const evidence=JSON.stringify([change.before,change.after,change.fields]);
+  const input={scanId:'scan',changeId:'one',decision:'approved',note:'keep old photo'};
+  applyManufacturerCatalogDecision(data,input,{reviewedAt:'2026-09-27T10:00:00Z',photoSelection:{productId:'bag',retainedUrls:['old'],excludedUrls:['new']}});
+  assert.equal(data.photoExceptions.length,1);assert.equal(change.manualPhotoException.note,input.note);
+  applyManufacturerCatalogDecision(data,input,{reviewedAt:'2026-09-27T11:00:00Z',photoSelection:{productId:'bag',retainedUrls:[],excludedUrls:[]}});
+  assert.equal(data.photoExceptions.length,0);assert.equal(change.manualPhotoException,null);
+  assert.equal(JSON.stringify([change.before,change.after,change.fields]),evidence);
+});
+
+
+test('Restrap correction replaces zero weights without hiding unrelated new models or changing saved evidence', async()=>{
+  const {latestManufacturerCatalogReviewScan}=await import('../../src/ui/manufacturer-catalog-review-dialog.js');
+  const report=JSON.parse(readFileSync(resolve('catalog-review-inputs/restrap-weight-review-20260927.json'),'utf8'));
+  const evidence=JSON.stringify(report);
+  const base={id:'original',scannedAt:'2026-09-01T00:00:00Z',manufacturers:[{id:'restrap',name:'Restrap',status:'complete'},{id:'arkel',name:'Arkel',status:'complete'}],changes:[
+    ...report.changes.map(c=>({...c,id:'original-'+c.productId,after:{...c.after,catalogReviewScope:undefined},fields:[{field:'variants',before:c.before.variants,after:c.before.variants.map(v=>({...v,weight:0}))}]})),
+    {id:'new-model',type:'added',manufacturerId:'arkel',productId:'new-model'}]};
+  const data={scans:[report,base]};const combined=latestManufacturerCatalogReviewScan(data);
+  assert.equal(combined.changes.filter(c=>c.type==='added').length,1);
+  const html=renderManufacturerCatalogReview(data);
+  assert.doesNotMatch(html,/data-change-id="original-/);
+  assert.doesNotMatch(html,/data-change-id="restrap:weight-correction:restrap-lightweight-race-hydration-vest"/);
+  assert.match(html,/Исправление привязки веса|Weight-to-size mapping correction/);
+  assert.equal(catalogReviewCount(data),3);
+  assert.equal(JSON.stringify(report),evidence);
+});

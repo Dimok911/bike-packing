@@ -1,0 +1,9 @@
+# Catalog review v1652
+
+Saving a decision applies the server acknowledgment to the cached report and updates counters and the affected card. It no longer downloads every scan and reconstructs neighboring galleries after every approval/rejection. Per-card pending locks, failed-save draft retention, stale GET overlays and account-change guards remain in place. Reconsidering a previously approved photo exception refreshes the server history because an older exception can be outside the 24 loaded scans.
+
+Restrap Race Hydration Vest and Rolltop Hydration Vest descriptions on 2026-09-27 match the descriptions saved in the initial catalog. The old catalog assigned the sorted weight list to reversed Shopify variant order; the later importer emitted zero whenever multiple weights existed. The adapter now maps explicit S/M and L/XL labels to their weights. Lightweight Race has no weight description; its existing per-variant Shopify grams (366/376) remain attached to the matching variant. Shipping grams do not override explicit description weights.
+
+The separate restrap-weight-review-20260927 report corrects those three review entries. The unchanged Lightweight entry disappears from pending review; Race (368/380) and Rolltop (588/600) retain reviewable corrections with an importer explanation. Original reports/decisions and the published product catalog are unchanged; this report does not publish catalog changes.
+
+Focused verification: 30 sequential decisions make one initial full-report request; acknowledgments, concurrent saves, stale fetches, logout, failures and photo exceptions are covered. Browser checks verify neighboring DOM nodes/drafts survive saves and no extra report request occurs. Release validation is recorded against the exact commit in the ignored catalog-release-v1652 directory.

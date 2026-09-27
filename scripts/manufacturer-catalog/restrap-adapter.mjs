@@ -198,14 +198,19 @@ function productColor(variant = {}) {
   return title;
 }
 
-function compactVariants(product = {}, volumes = [], weights = [], mounting = "") {
+function compactVariants(product = {}, volumes = [], weights = [], mounting = "", details = "") {
+  // Match explicit size labels, never the order of Shopify variants or sorted weights.
+  const sizeKey = value => String(value).toLowerCase().replace(/small/g, "s").replace(/medium/g, "m").replace(/large/g, "l").replace(/\s+/g, "");
+  const labeled = new Map([...details.matchAll(/(Small\s*\/\s*Medium|Large\s*\/\s*XL|S\s*\/\s*M|L\s*\/\s*XL)\s*[-:–—]\s*(\d+(?:[.,]\d+)?)\s*g\b/gi)]
+    .map(match => [sizeKey(match[1]), Number(match[2].replace(",", "."))]));
+  const hasOfficialWeight = /(?:product\s+)?weight\s*[-:–—]/i.test(details);
   const source = Array.isArray(product.variants) && product.variants.length ? product.variants : [{}];
   return source.map((variant) => ({
     sku: String(variant.sku || ""),
     title: String(variant.title || "Manufacturer model"),
     color: productColor(variant),
     volume: Number(String(variant.title || "").match(/(\d+(?:\.\d+)?)\s*L\b/i)?.[1]) || (volumes.length === 1 ? volumes[0] : 0),
-    weight: weights.length === 1 ? weights[0] : 0,
+    weight: labeled.get(sizeKey(variant.title)) || (weights.length === 1 ? weights[0] : (!hasOfficialWeight && Number(variant.grams) >= 20 && Number(variant.grams) < 10_000 ? Number(variant.grams) : 0)),
     mounting,
     available: variant.available !== false,
   }));
@@ -239,7 +244,7 @@ export function buildRestrapCatalogEntry({ product = {}, html = "", sourceUrl = 
   const volumes = productVolumes(product, details);
   const weights = productWeights(details, product);
   const weightsAreOfficialSpecs = /(?:product\s+)?weight\s*[-:–—]/i.test(details);
-  const variants = compactVariants(product, volumes, weights, meta.mounting);
+  const variants = compactVariants(product, volumes, weights, meta.mounting, details);
   const availableVariants = variants.filter(({ available }) => available);
   const primaryVariant = [...variants].sort((a, b) => String(a.sku || a.title).localeCompare(String(b.sku || b.title)))[0] || {};
   const images = productImages(product);
