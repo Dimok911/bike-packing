@@ -12414,3 +12414,22 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
     grid-column: span 2;
   }
 }
+
+.manufacturer-new-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid #99c5a9;
+  border-radius: 999px;
+  background: #e5f5eb;
+  color: #185d35;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.manufacturer-brand-choice .manufacturer-new-badge { align-self: center; }
+.catalog-review-variant { padding-block: 8px; border-bottom: 1px solid var(--border, #d5d9de); }
+.catalog-review-variant:last-child { border-bottom: 0; }

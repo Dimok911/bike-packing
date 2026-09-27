@@ -165,6 +165,13 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
     assert.ok(MANUFACTURER_BAG_CATALOG.some(({ category }) => category === id));
   });
   MANUFACTURER_BAG_CATALOG.forEach((entry) => {
+    if (!entry.imageAssetPath) {
+      assert.deepEqual(entry.imageAssetPaths, [], `${entry.id}: no sibling-size fallback`);
+      assert.deepEqual(entry.sourceImageUrls, []);
+      assert.deepEqual(entry.imageUrls, []);
+      assert.ok(entry.imageVariantSource, `${entry.id}: excluded images need recorded evidence`);
+      return;
+    }
     assert.match(entry.imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap|revelate-designs|miss-grape|cyclite|blackburn|topeak|rockgeist)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
     assert.match(entry.sourceImageUrl, /^https:\/\/(?:cdn\.shopify\.com|media\.tailfin\.cc|medias\.apidura\.com|revelatedesigns\.com|missgrape\.net|ed58xxhnoja\.exactdn\.com|cyclite\.cc|vault\.widen\.net|www\.topeak\.com|rockgeist\.com)\//);
     assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca|www\.tailfin\.cc|www\.apidura\.com|restrap\.com|revelatedesigns\.com|missgrape\.net|cyclite\.cc|www\.bellhelmets\.com|www\.topeak\.com|rockgeist\.com)\//);
@@ -244,7 +251,7 @@ test("CRITICAL manufacturer catalog: Topeak keeps current bags, splits volumes, 
   const rows = MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Topeak");
   assert.equal(rows.length, 104);
   assert.equal(new Set(rows.map(({ sourceUrl }) => sourceUrl)).size, 75);
-  assert.equal(rows.reduce((count, entry) => count + entry.imageAssetPaths.length, 0), 374);
+  assert.equal(rows.reduce((count, entry) => count + entry.imageAssetPaths.length, 0), 207);
   assert.ok(!rows.some(({ id }) => /trunklock|rain-cover|phone-dry|pakgo|omni-strap|elementa-strap|freepack/.test(id)));
   assert.deepEqual(rows.find(({ id }) => id === "topeak-1423-backloader-x-10l").weightOptions, [550, 575]);
   assert.deepEqual(rows.find(({ id }) => id === "topeak-1423-backloader-x-15l").weightOptions, [555, 605]);
@@ -257,8 +264,8 @@ test("CRITICAL manufacturer catalog: Rockgeist keeps current bags, model-specifi
   const rows = MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Rockgeist");
   assert.equal(rows.length, 114);
   assert.equal(new Set(rows.map(({ sourceUrl }) => sourceUrl)).size, 69);
-  assert.equal(rows.reduce((count, entry) => count + entry.imageAssetPaths.length, 0), 651);
-  assert.equal(new Set(rows.flatMap(({ imageAssetPaths }) => imageAssetPaths)).size, 440);
+  assert.equal(rows.reduce((count, entry) => count + entry.imageAssetPaths.length, 0), 365);
+  assert.ok(rows.filter((entry) => entry.imageVolumeOptions).every((entry) => entry.imageVolumeOptions.every((scope) => scope.includes(entry.volume))));
   assert.ok(!rows.some(({ id }) => /prototype|extra-mr-fusion|armadillo|replacement|strap|bolt-on-framebag/.test(id)));
   assert.equal(rows.filter(({ category }) => category === "saddle").length, 3);
   assert.deepEqual(rows.filter(({ id }) => id.startsWith("rockgeist-meanwhile-wald-basket-bag-")).map(({ volume }) => volume), [15, 25]);
@@ -623,7 +630,7 @@ test("CRITICAL manufacturer catalog: SKU size models are rows while colors stay 
   assert.deepEqual(large.volumeOptions, [0.8]);
   assert.deepEqual(small.variants.map(({ sku }) => sku), ["F9664", "F9666", "F9665"]);
   assert.deepEqual(large.variants.map(({ sku }) => sku), ["F9674", "F9675"]);
-  assert.equal(manufacturerBagCatalogVariantChoices(small).length, 1);
+  assert.equal(manufacturerBagCatalogVariantChoices(small).length, 3);
   assert.equal(manufacturerBagContainerDraft(small).name, "ORTLIEB Micro-Bag 0.5 L");
 
   MANUFACTURER_BAG_CATALOG.forEach((entry) => {
@@ -691,7 +698,8 @@ test("CRITICAL manufacturer catalog: mounting systems stay in one row and preser
   assert.deepEqual(backRoller.mountingOptions, ["Quick-Lock2.1", "Quick-Lock3.1"]);
   assert.equal(backRoller.mounting, "Quick-Lock2.1 / Quick-Lock3.1");
   assert.equal(backRoller.variants.find(({ sku }) => sku === "F5535").mounting, "Quick-Lock3.1");
-  assert.equal(manufacturerBagCatalogVariantChoices(backRoller).length, 2);
+  assert.equal(manufacturerBagCatalogVariantChoices(backRoller).length, backRoller.variants.length);
+  assert.equal(manufacturerBagCatalogVariantEntry(backRoller, "F5506").material, "PU-coated Cordura (ps55c)");
 });
 
 test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual copy", () => {

@@ -8,6 +8,8 @@ import {
   selectManufacturerCatalogSources,
 } from "../src/data/manufacturer-catalog-sources.js";
 import { recoverShopifyCatalogProducts } from "./manufacturer-catalog/shopify-presence.mjs";
+import { collectOrtliebVariantEvidence, ortliebVariantEvidence } from "./manufacturer-catalog/ortlieb-variant-evidence.mjs";
+import { verifyCatalogAbsences } from "./manufacturer-catalog/absence-evidence.mjs";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
 import {
@@ -72,6 +74,10 @@ async function fetchText(url, attempts = 3, validate = null, acceptLanguage = "e
         },
         signal: controller.signal,
       });
+      if (response.status === 429 && attempt < attempts) {
+        const retrySeconds = Number(response.headers.get("retry-after")) || 30;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(120, Math.max(30, retrySeconds)) * 1000));
+      }
       if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}: ${url}`), { httpStatus: response.status });
       const body = await response.text();
       if (validate && !validate(body)) throw new Error("HTTP 200 did not contain the expected catalog content");
@@ -197,7 +203,7 @@ async function downloadManufacturer(source) {
       errors[source.id].push(String(error?.message || error));
     }
   }
-  const productConcurrency = source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : source.adapter === "topeak-html" ? 8 : 6;
+  const productConcurrency = source.id === "ortlieb" ? 1 : source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : source.adapter === "topeak-html" ? 8 : 6;
   await mapConcurrent([...products.values()], productConcurrency, async (product) => {
     const handle = product.handle;
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
@@ -210,7 +216,12 @@ async function downloadManufacturer(source) {
             : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid
               : source.adapter === "topeak-html" ? topeakProductPageIsValid
                 : source.adapter === "rockgeist-wc-store" ? rockgeistProductPageIsValid : null;
-      await writeFile(pagePath, await fetchSourceText(pageUrl, 3, validate), "utf8");
+      const html = await fetchSourceText(pageUrl, 3, validate);
+      await writeFile(pagePath, html, "utf8");
+      if (source.id === "ortlieb" && ortliebVariantEvidence(html, pageUrl).sku) {
+        const evidence = await collectOrtliebVariantEvidence({ product, html, sourceUrl: pageUrl, fetchText: fetchSourceText });
+        await writeFile(join(pagesDir, source.id, `${handle}.variants.json`), JSON.stringify(evidence), "utf8");
+      }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
       await writeFile(pagePath, "", "utf8");
@@ -249,6 +260,7 @@ try {
   await runBuilder();
   const generatedModule = await import(`${pathToFileURL(generatedPath).href}?scan=${Date.now()}`);
   const generatedEntries = generatedModule.MANUFACTURER_BAG_CATALOG_GENERATED || [];
+  await verifyCatalogAbsences({ approved: MANUFACTURER_BAG_CATALOG, scanned: generatedEntries, sources: activeSources, errors, fetchText });
   const failedIds = new Set(activeSources.filter((source) => errors[source.id].length).map((source) => source.id));
   const scannedEntries = [
     ...generatedEntries.filter((entry) => !failedIds.has(manufacturerIdForEntry(entry))),

@@ -1,0 +1,22 @@
+<!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Catalog variants</title><link rel="stylesheet" href="../../styles.css"></head><body>
+<dialog id="bagCatalogDialog"><div class="dialog-card manufacturer-catalog-dialog-card">
+<header><h2 id="bagCatalogTitle"></h2></header><div class="manufacturer-catalog-toolbar"><button id="bagCatalogBackBtn"></button><input id="bagCatalogSearch" type="search"><p id="bagCatalogPath"></p><p id="bagCatalogAdminNotice"></p></div>
+<div id="bagCatalogBrands"></div><div id="bagCatalogResults"></div></div></dialog>
+<script type="module">
+import { createManufacturerBagCatalogDialogController } from '../../src/ui/manufacturer-bag-catalog-dialog.js';
+import { MANUFACTURER_BAG_CATALOG_BRANDS as brands, MANUFACTURER_BAG_CATALOG_FAMILIES as families, MANUFACTURER_BAG_CATALOG_CATEGORIES as categories } from '../../src/data/manufacturer-bag-catalog-meta.js';
+import { I18N } from '../../src/data/i18n.js';
+import { escapeHtml } from '../../src/utils/html.js';
+const language = new URLSearchParams(location.search).get('lang') || 'ru'; document.documentElement.lang = language;
+const date = (days) => new Date(Date.now() - days * 86400000).toISOString();
+const catalog = [
+ {id:'new-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Back-Roller Pair',volume:20,weight:950,catalogPublishedAt:date(10),variants:[
+  {sku:'F5301',title:'black',color:'black',material:'PD620 / PS490',weight:950,mounting:'Quick-Lock2.1',available:true,sourceUrl:'https://us.ortlieb.com/products/back-roller-20l-pair?variant=45082293829810'},
+  {sku:'F5207',title:'moss green',color:'moss green',material:'PS36C',weight:839,mounting:'Quick-Lock2.1',available:false,sourceUrl:'https://us.ortlieb.com/products/back-roller-20l-pair?variant=47592189034674'}]},
+ {id:'old-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Older model',catalogPublishedAt:date(31)},
+ {id:'other-brand',brand:'Arkel',family:'bikepacking',category:'frame',name:'Recent Arkel',catalogPublishedAt:date(2)},
+];
+const refs = Object.fromEntries([...document.querySelectorAll('[id]')].map((el)=>[el.id,el]));
+createManufacturerBagCatalogDialogController({refs,catalog,catalogIndex:catalog,brands,families,categories,language:()=>language,escapeHtml,
+ t:(key,params={})=>(I18N[language][key]||key).replace(/\{([^}]+)\}/g,(_,key)=>params[key]??''),onSelect:async()=>{}}).open();
+</script></body></html>

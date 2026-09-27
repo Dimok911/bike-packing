@@ -1,4 +1,4 @@
-import { catalogValuesEqual } from "./manufacturer-catalog-comparison.js";
+import { catalogValuesEqual, catalogRepresentativeOnly } from "./manufacturer-catalog-comparison.js";
 
 const CATALOG_COMPARE_FIELDS = Object.freeze([
   "name",
@@ -106,7 +106,7 @@ export function compareManufacturerCatalogSnapshots(approvedEntries = [], scanne
       return;
     }
     const fields = CATALOG_COMPARE_FIELDS
-      .filter((field) => !catalogValuesEqual(field, before?.[field], after?.[field]))
+      .filter((field) => !catalogValuesEqual(field, before?.[field], after?.[field]) && !catalogRepresentativeOnly(field, before, after))
       .map((field) => ({ field, before: cloneJson(before?.[field]), after: cloneJson(after?.[field]) }));
     if (!fields.length) {
       unchanged += 1;

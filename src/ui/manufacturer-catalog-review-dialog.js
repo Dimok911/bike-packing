@@ -1,6 +1,6 @@
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
-import { catalogChangesForReview } from "../data/manufacturer-catalog-comparison.js";
+import { catalogChangesForReview, catalogVariantChanges } from "../data/manufacturer-catalog-comparison.js";
 
 const isEnglish = () => currentDocumentLanguage() === "en";
 const localText = (en, ru) => isEnglish() ? en : ru;
@@ -26,6 +26,12 @@ const DECISION_TEXT = Object.freeze({
 });
 
 const FIELD_TEXT = Object.freeze({
+  sku: ["SKU", "Артикул"],
+  color: ["Color", "Цвет"],
+  material: ["Material", "Материал"],
+  title: ["Variant", "Вариант"],
+  weightOptions: ["Weight options", "Варианты веса"],
+  volumeOptions: ["Volume options", "Варианты объёма"],
   name: ["Name", "Название"],
   family: ["Model family", "Семейство"],
   category: ["Category", "Категория"],
@@ -154,7 +160,9 @@ const renderFieldChanges = (fields = []) => {
   return `<dl class="catalog-review-fields">${fields.map((item) => `
     <div>
       <dt>${escapeHtml(fieldLabel(item.field))}</dt>
-      <dd>${renderInlineDiff(item.before, item.after)}</dd>
+      <dd>${item.field === "variants" && Array.isArray(item.before) && Array.isArray(item.after)
+        ? catalogVariantChanges(item.before, item.after).map((variant) => `<div class="catalog-review-variant"><strong>${escapeHtml(variant.key)}</strong> — ${escapeHtml(variant.type === "added" ? localText("New variant", "Новый вариант") : variant.type === "missing" ? localText("Variant not found in this scan", "Вариант не найден в этой проверке") : localText("Variant changed", "Изменения варианта"))}${variant.type === "changed" ? renderFieldChanges(variant.fields) : `<p>${escapeHtml(formatValue(variant.after || variant.before))}</p>`}</div>`).join("")
+        : renderInlineDiff(item.before, item.after)}</dd>
     </div>
   `).join("")}</dl>`;
 };

@@ -85,7 +85,7 @@ export function manufacturerCatalogBaselineEntries(existingEntries, report, manu
   return assertManufacturerBagCatalogSkuModels([...byId.values()]);
 }
 
-function generatedCatalogSource(entries, checkedAt) {
+export function generatedCatalogSource(entries, checkedAt) {
   const imageDeclarations = entries.map((entry) => {
     const paths = Array.isArray(entry.imageAssetPaths) && entry.imageAssetPaths.length
       ? entry.imageAssetPaths

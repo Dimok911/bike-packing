@@ -205,8 +205,8 @@ function compactVariants(product = {}, volumes = [], weights = [], mounting = ""
     sku: String(variant.sku || ""),
     title: String(variant.title || "Manufacturer model"),
     color: productColor(variant),
-    volume: volumes[0] || 0,
-    weight: alignedWeights[index] || weights[0] || 0,
+    volume: Number(String(variant.title || "").match(/(\d+(?:\.\d+)?)\s*L\b/i)?.[1]) || (volumes.length === 1 ? volumes[0] : 0),
+    weight: Number(variant.grams) > 0 ? Number(variant.grams) : (weights.length === 1 ? weights[0] : 0),
     mounting,
     available: variant.available !== false,
   }));
@@ -242,7 +242,7 @@ export function buildRestrapCatalogEntry({ product = {}, html = "", sourceUrl = 
   const weightsAreOfficialSpecs = /(?:product\s+)?weight\s*[-:–—]/i.test(details);
   const variants = compactVariants(product, volumes, weights, meta.mounting);
   const availableVariants = variants.filter(({ available }) => available);
-  const primaryVariant = availableVariants[0] || variants[0] || {};
+  const primaryVariant = [...variants].sort((a, b) => String(a.sku || a.title).localeCompare(String(b.sku || b.title)))[0] || {};
   const images = productImages(product);
   if (!images.length) throw new Error(`Missing Restrap product images: ${handle}`);
   const imageAssetPaths = images.map((imageUrl, index) =>

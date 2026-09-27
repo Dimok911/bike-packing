@@ -228,7 +228,7 @@ export function buildCycliteCatalogEntry({ html = "", sourceUrl = "", checkedAt 
   );
   const variants = compactVariants(schema, name, volumes[0] || 0, weights[0] || 0, meta.mounting);
   const availableVariants = variants.filter(({ available }) => available);
-  const primaryVariant = availableVariants[0] || variants[0] || {};
+  const primaryVariant = [...variants].sort((a, b) => String(a.sku || a.title).localeCompare(String(b.sku || b.title)))[0] || {};
   const volumeSummary = volumes.length ? `${volumes.join(" / ")} L` : "";
   const waterproof = /\bweatherproof\b/i.test(`${schema.description || ""} ${details}`) ? "Weatherproof" : "";
   url.search = "";

@@ -1,3 +1,5 @@
+import { selectManufacturerSkuImages } from "../data/manufacturer-catalog-image-variants.js";
+
 function searchableCatalogValue(value) {
   if (Array.isArray(value)) return value.map(searchableCatalogValue).join(" ");
   if (value && typeof value === "object") return Object.values(value).map(searchableCatalogValue).join(" ");
@@ -151,9 +153,9 @@ export function manufacturerBagCatalogVariantChoices(entry) {
     const volume = Number(variant?.volume || entry?.volume || 0);
     const mounting = String(variant?.mounting || entry?.mounting || "").trim();
     const setKind = manufacturerBagCatalogVariantSetKind(entry, variant);
-    const key = `${volume}|${mounting}|${setKind}`;
+    const key = variant.sku || `${variant.title}|${volume}|${mounting}|${setKind}`;
     const current = choices.get(key);
-    if (!current || (!current.available && variant?.available)) {
+    if (!current) {
       choices.set(key, { ...variant, volume, mounting, setKind });
     }
   });
@@ -189,7 +191,7 @@ export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
   const setQuantity = manufacturerBagCatalogSetQuantity({ ...entry, soldAsSet: selected.setKind === "pair" });
   const specificationsPerBag = manufacturerBagCatalogPerBagSpecifications(entry) && selected.setKind === "pair";
   const selectedWeight = weightIsPlausible ? variantWeight : referenceWeight;
-  return {
+  return selectManufacturerSkuImages({
     ...entry,
     sku: String(selected.sku || entry.sku || ""),
     variant: String(selected.title || entry.variant || ""),
@@ -198,6 +200,8 @@ export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
     volume,
     volumeOptions: [volume].filter((value) => value > 0),
     color: String(selected.color || entry.color || ""),
+    material: selected.material ?? entry.material,
+    sourceUrl: selected.sourceUrl || entry.sourceUrl,
     mounting,
     mountingOptions: mounting ? [mounting] : [],
     soldAsSet: selected.setKind === "pair",
@@ -214,8 +218,8 @@ export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
       totalWeightOptions: [selectedWeight * setQuantity].filter((value) => value > 0)
     } : {}),
     available: selected.available !== false,
-    dimensions: samePrimarySize ? entry.dimensions : {}
-  };
+    dimensions: selected.dimensions || (samePrimarySize ? entry.dimensions : {})
+  }, selected.sku);
 }
 
 export function normalizeManufacturerBagCatalogOverride(value) {

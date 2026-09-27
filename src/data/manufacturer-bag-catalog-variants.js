@@ -1,3 +1,5 @@
+import { selectManufacturerVariantImages } from "./manufacturer-catalog-image-variants.js";
+
 const FIXED_VOLUMES_BY_SOURCE_ID = new Map([
   ["ortlieb-accessory-pack", [3.5]],
   ["ortlieb-atrack-bike", [25]],
@@ -181,7 +183,7 @@ function splitEntry(entry, group, groups) {
     : `${formatNumber(volume)} L${soldAsSet ? " Pair" : ""}`;
   const nameSuffix = group.separateVolumes || group.separateSetKinds ? volumeNameSuffix : "";
   const variants = group.variants;
-  const primaryVariant = variants.find(({ available }) => available) || variants[0] || {};
+  const primaryVariant = [...variants].sort((a, b) => String(a.sku || a.title).localeCompare(String(b.sku || b.title)))[0] || {};
   const modelWeightOptions = groupWeightOptions(entry, group, groups);
   const perBagWeightOptions = specificationsPerBag
     ? positiveNumbers(modelWeightOptions.map((value) => value / quantity))
@@ -218,6 +220,7 @@ function splitEntry(entry, group, groups) {
     volume,
     volumeOptions: [volume],
     color: String(primaryVariant.color || ""),
+    ...(variants.every((v) => v.material) ? { material: [...new Set(variants.map((v) => v.material))].sort().join(" / ") } : {}),
     mounting: mountingOptions.join(" / ") || entry.mounting,
     mountingOptions,
     soldAsSet,
@@ -262,7 +265,8 @@ export function splitManufacturerBagCatalogSkuModels(catalog = []) {
   return (Array.isArray(catalog) ? catalog : []).flatMap((rawEntry) => {
     const entry = fixedVolumeEntry(rawEntry);
     const groups = manufacturerBagCatalogSkuModelGroups(entry);
-    return groups.length ? groups.map((group) => splitEntry(entry, group, groups)) : [entry];
+    return (groups.length ? groups.map((group) => splitEntry(entry, group, groups)) : [entry])
+      .map(selectManufacturerVariantImages);
   });
 }
 

@@ -7,6 +7,8 @@ import {
   splitManufacturerBagCatalogSkuModels
 } from "../src/data/manufacturer-bag-catalog-variants.js";
 import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
+import { annotateManufacturerImageVariants } from "./manufacturer-catalog/image-variants.mjs";
+import { ortliebVariantEvidence } from "./manufacturer-catalog/ortlieb-variant-evidence.mjs";
 import {
   buildTailfinCatalogEntry,
   tailfinCatalogTargets,
@@ -367,7 +369,9 @@ function variantMounting(variant = {}, tags = []) {
     if (/\bqls\b/.test(text)) return "Quick-LockS";
     return "";
   };
-  return mountingFrom(variant.title) || mountingFrom((tags || []).join(" "));
+  const explicit = mountingFrom(variant.title);
+  const options = [...new Set((tags || []).map(mountingFrom).filter(Boolean))];
+  return explicit || (options.length === 1 ? options[0] : "");
 }
 
 function genericMounting(brand, category, tags = []) {
@@ -463,11 +467,20 @@ async function normalizeProduct({ brandKey, product }) {
   const pagePath = join(pagesDir, brandKey, `${product.handle}.html`);
   const html = await readFile(pagePath, "utf8");
   const specs = brandKey === "ortlieb" ? extractOrtliebSpecs(html) : extractArkelSpecs(html);
-  const variants = (product.variants || []).map((variant) => compactVariant(variant, product));
-  const primaryVariant = variants.find((variant) => variant.available && variant.weight > 0)
-    || variants.find((variant) => variant.available)
-    || variants[0]
-    || {};
+  let variantEvidence = [];
+  if (brandKey === "ortlieb") {
+    try { variantEvidence = JSON.parse(await readFile(join(pagesDir, brandKey, `${product.handle}.variants.json`), "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  const selectedPage = brandKey === "ortlieb" ? ortliebVariantEvidence(html, `https://us.ortlieb.com/products/${product.handle}`) : null;
+  const variants = (product.variants || []).map((variant) => {
+    const details = variantEvidence.find((item) => item.sku === variant.sku)
+      || (selectedPage?.sku === variant.sku ? selectedPage : null);
+    const compact = compactVariant(variant, product);
+    return details ? { ...compact, ...details, volume: compact.volume || details.volume,
+      evidenceCheckedAt: checkedAt } : compact;
+  });
+  const primaryVariant = [...variants].sort((a, b) => String(a.sku || a.title).localeCompare(String(b.sku || b.title)))[0] || {};
   const fixedVolumes = manufacturerBagCatalogFixedVolumes(`${brandKey}-${product.handle}`);
   const variantVolumes = uniqueNumbers(variants.map((variant) => variant.volume));
   const volumeOptions = variantVolumes.length
@@ -511,7 +524,7 @@ async function normalizeProduct({ brandKey, product }) {
   const availableVariants = variants.filter((variant) => variant.available);
   const waterproof = specs.waterproof
     || ((product.tags || []).some((tag) => String(tag).toLowerCase() === "waterproof") ? "Waterproof" : "");
-  return {
+  return annotateManufacturerImageVariants({
     id: `${brandKey}-${product.handle}`,
     brand,
     provider: brandKey === "ortlieb" ? "ortlieb.com" : "arkel.ca",
@@ -545,7 +558,7 @@ async function normalizeProduct({ brandKey, product }) {
     dimensions,
     color: primaryVariant.color || "",
     waterproof,
-    material: productMaterial(brandKey, product, primaryVariant, specs),
+    material: variantEvidence.length ? [...new Set(variants.map((v) => v.material).filter(Boolean))].sort().join(" / ") : productMaterial(brandKey, product, primaryVariant, specs),
     mounting: mountingOptions.join(" / "),
     mountingOptions,
     soldAsSet,
@@ -565,7 +578,7 @@ async function normalizeProduct({ brandKey, product }) {
       ...(product.tags || []),
       product.handle.replace(/-/g, " ")
     ])]
-  };
+  }, { html, product: { ...product, catalogVariantEvidence: variantEvidence } });
 }
 
 async function readProducts(fileName) {
@@ -628,72 +641,76 @@ for (const product of [...ortliebByHandle.values()].sort((left, right) => left.t
 for (const product of arkelProducts.sort((left, right) => left.title.localeCompare(right.title))) {
   entries.push(await normalizeProduct({ brandKey: "arkel", product }));
 }
+function addEntry(build, options) {
+  const product = options.product || (options.json ? JSON.parse(options.json) : {});
+  entries.push(annotateManufacturerImageVariants(build(options), { ...options, product }));
+}
 for (const target of tailfinTargets) {
-  entries.push(buildTailfinCatalogEntry({
+  addEntry(buildTailfinCatalogEntry, {
     html: await readFile(join(pagesDir, "tailfin", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of apiduraTargets) {
-  entries.push(buildApiduraCatalogEntry({
+  addEntry(buildApiduraCatalogEntry, {
     product: target,
     html: await readFile(join(pagesDir, "apidura", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of restrapTargets) {
-  entries.push(buildRestrapCatalogEntry({
+  addEntry(buildRestrapCatalogEntry, {
     product: target,
     html: await readFile(join(pagesDir, "restrap", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of revelateTargets) {
-  entries.push(buildRevelateCatalogEntry({
+  addEntry(buildRevelateCatalogEntry, {
     html: await readFile(join(pagesDir, "revelate-designs", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of missGrapeTargets) {
-  entries.push(buildMissGrapeCatalogEntry({
+  addEntry(buildMissGrapeCatalogEntry, {
     product: target,
     html: await readFile(join(pagesDir, "miss-grape", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of cycliteTargets) {
-  entries.push(buildCycliteCatalogEntry({
+  addEntry(buildCycliteCatalogEntry, {
     html: await readFile(join(pagesDir, "cyclite", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of blackburnTargets) {
-  entries.push(buildBlackburnCatalogEntry({
+  addEntry(buildBlackburnCatalogEntry, {
     html: await readFile(join(pagesDir, "blackburn", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of topeakTargets) {
-  entries.push(buildTopeakCatalogEntry({
+  addEntry(buildTopeakCatalogEntry, {
     target,
     html: await readFile(join(pagesDir, "topeak", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
-  }));
+  });
 }
 for (const target of rockgeistTargets) {
-  entries.push(buildRockgeistCatalogEntry({
+  addEntry(buildRockgeistCatalogEntry, {
     target,
     json: await readFile(join(pagesDir, "rockgeist", `${target.handle}.html`), "utf8"),
     checkedAt,
-  }));
+  });
 }
 
 const normalizedEntries = assertManufacturerBagCatalogSkuModels(splitManufacturerBagCatalogSkuModels(entries));
@@ -733,6 +750,8 @@ if (approvedCatalogPath) {
         imageAssetPaths: [...freshEntry.imageAssetPaths],
         sourceImageUrl: freshEntry.sourceImageUrl,
         sourceImageUrls: [...freshEntry.sourceImageUrls],
+        imageVolumeOptions: freshEntry.imageVolumeOptions,
+        imageVariantSource: freshEntry.imageVariantSource,
         imagesCheckedAt: checkedAt
       };
     });

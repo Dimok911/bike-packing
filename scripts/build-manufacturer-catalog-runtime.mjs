@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MANUFACTURER_BAG_CATALOG_GENERATED } from "../src/data/manufacturer-bag-catalog.generated.js";
+import { readFile } from "node:fs/promises";
+const publicationHistory = JSON.parse(await readFile(new URL("../src/data/manufacturer-catalog-publication-history.json", import.meta.url), "utf8"));
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = resolve(rootDir, "src/data/manufacturer-catalog-runtime");
@@ -30,7 +32,8 @@ const omittedRuntimeFields = new Set([
 ]);
 
 function runtimeEntry(entry) {
-  return Object.fromEntries(Object.entries(entry).filter(([key]) => !omittedRuntimeFields.has(key)));
+  return { ...Object.fromEntries(Object.entries(entry).filter(([key]) => !omittedRuntimeFields.has(key))),
+    catalogPublishedAt: publicationHistory[entry.id]?.date || "" };
 }
 
 function assetExpression(assetPath) {
@@ -57,9 +60,11 @@ const index = MANUFACTURER_BAG_CATALOG_GENERATED.map(({ id, brand, family, categ
   family,
   category
 }));
+const dates = [...new Set(index.map(({ id }) => publicationHistory[id]?.date || ""))];
+const dateIndices = index.map(({ id }) => dates.indexOf(publicationHistory[id]?.date || ""));
 await writeFile(
   resolve(outputDir, "index.generated.js"),
-  `export const MANUFACTURER_BAG_CATALOG_INDEX=${JSON.stringify(index)};\n`,
+  `const DATES=${JSON.stringify(dates)};const DATE_INDICES=${JSON.stringify(dateIndices)};\nexport const MANUFACTURER_BAG_CATALOG_INDEX=${JSON.stringify(index)}.map((entry,i)=>({...entry,catalogPublishedAt:DATES[DATE_INDICES[i]]}));\n`,
   "utf8"
 );
 

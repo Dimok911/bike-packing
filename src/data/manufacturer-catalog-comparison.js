@@ -3,7 +3,8 @@
 const EDITORIAL_SUFFIX = /(?:^|\s)(?:Technical data is normalized from the official product page\.|Specifications are from the manufacturer's official product page\.|Характеристики нормализованы по официальной карточке товара\.|Характеристики взяты с официальной страницы производителя\.)\s*$/u;
 
 export function catalogDescriptionForComparison(value) {
-  if (typeof value === "string") return value.replace(EDITORIAL_SUFFIX, "").trim();
+  if (typeof value === "string") return value.replace(EDITORIAL_SUFFIX, "").trim()
+    .replace(/^Задний панир (ORTLIEB|Arkel) объёмом /u, "Панир $1 объёмом ");
   if (Array.isArray(value)) return value.map(catalogDescriptionForComparison);
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, catalogDescriptionForComparison(item)]));
@@ -20,15 +21,57 @@ const stableValue = (value) => {
 
 export function catalogValuesEqual(field, before, after) {
   if (before == null && after == null) return true;
-  const comparable = (value) => stableValue(field === "description" ? catalogDescriptionForComparison(value) : value);
+  const comparable = (value) => {
+    if (field === "description") value = catalogDescriptionForComparison(value);
+    if (field === "sku" && typeof value === "string") value = value.trim().toUpperCase();
+    if (field === "material" && typeof value === "string") value = value.replace(/\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+\b/gi, (code) => code.toUpperCase());
+    if (field === "variants" && Array.isArray(value)) value = value.map((variant) => {
+      // Provenance belongs to evidence, not the manufacturer-change diff.
+      const { id, sourceUrl, sourceImageUrls, evidenceCheckedAt, ...data } = variant;
+      return { ...data, sku: String(data.sku || "").trim().toUpperCase(), ...(data.material ? { material: data.material.replace(/\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+\b/gi, (code) => code.toUpperCase()) } : {}) };
+    }).sort((a, b) => catalogVariantKey(a).localeCompare(catalogVariantKey(b)));
+    if (/Options$/.test(field) && Array.isArray(value)) value = [...value].sort();
+    return stableValue(value);
+  };
   return JSON.stringify(comparable(before)) === JSON.stringify(comparable(after));
+}
+
+export const catalogVariantKey = (variant = {}) => String(variant.sku || variant.title || "").trim().toUpperCase();
+
+export function catalogVariantChanges(before = [], after = []) {
+  const left = new Map(before.map((v) => [catalogVariantKey(v), v]));
+  const right = new Map(after.map((v) => [catalogVariantKey(v), v]));
+  return [...new Set([...left.keys(), ...right.keys()])].sort().flatMap((key) => {
+    const old = left.get(key), next = right.get(key);
+    if (old && next && catalogValuesEqual("variants", [old], [next])) return [];
+    const fields = old && next ? [...new Set([...Object.keys(old), ...Object.keys(next)])]
+      .filter((field) => !["id", "sourceUrl", "sourceImageUrls", "evidenceCheckedAt"].includes(field) && !catalogValuesEqual(field, old[field], next[field]))
+      .map((field) => ({ field, before: old[field], after: next[field] })) : [];
+    return [{ key, type: !old ? "added" : !next ? "missing" : "changed", before: old, after: next, fields }];
+  });
+}
+
+export function catalogRepresentativeOnly(field, before, after) {
+  if (!["sku", "color", "weight", "weightOptions", "material"].includes(field) || !before || !after || before.sku === after.sku) return false;
+  const old = before.variants?.find((v) => v.sku === before.sku);
+  const next = after.variants?.find((v) => v.sku === after.sku);
+  const retainedOld = after.variants?.find((v) => v.sku === before.sku);
+  const retainedNext = before.variants?.find((v) => v.sku === after.sku);
+  if (!old || !next || !retainedOld || !retainedNext) return false;
+  if (["sku", "color"].includes(field)) return field === "sku" || (before.color === old.color && after.color === next.color);
+  const variantField = field === "weightOptions" ? "weight" : field;
+  const represented = (entry, variant) => catalogValuesEqual(field, entry[field], field === "weightOptions" ? [variant.weight] : variant[variantField]);
+  return represented(before, old) && represented(after, next)
+    && catalogValuesEqual(variantField, old[variantField], retainedOld[variantField])
+    && catalogValuesEqual(variantField, next[variantField], retainedNext[variantField]);
 }
 
 // Also clean already saved scans, without changing their evidence or decisions.
 export function catalogChangesForReview(changes = []) {
   return changes.flatMap((change) => {
     if (change.type !== "changed" || !change.fields?.length) return [change];
-    const fields = change.fields.filter((item) => !catalogValuesEqual(item.field, item.before, item.after))
+    const fields = change.fields.filter((item) => !catalogValuesEqual(item.field, item.before, item.after)
+      && !catalogRepresentativeOnly(item.field, change.before, change.after))
       .map((item) => item.field === "description" ? {
         ...item,
         before: catalogDescriptionForComparison(item.before),
