@@ -11139,3 +11139,6 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .trip-backdrop-controls button { font-size: 12px; white-space: nowrap; }
 .visual-default-legend { flex-basis: 100%; padding: 4px 8px; color: var(--muted); font-size: 11px; }
 .admin-visual-control.is-visible { max-height: calc(100dvh - 20px); overflow-y: auto; }
+
+.admin-visual-control.is-visible { width: min(760px, calc(100vw - 20px)); padding-right: 42px; }
+.admin-visual-close { position: absolute; right: 3px; top: 3px; width: 36px; min-height: 36px; }

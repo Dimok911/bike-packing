@@ -3815,6 +3815,13 @@ function setupPackingVisualStyleQuickControl() {
     setPackingVisualStyle(button.dataset.packingVisualStyle);
   });
   setupLayoutPhotoViewControl(control, localText, isAdminSession);
+  const closeViewOptions = document.createElement("button");
+  closeViewOptions.type = "button";
+  closeViewOptions.className = "admin-visual-close icon-button";
+  closeViewOptions.textContent = "×";
+  closeViewOptions.setAttribute("aria-label", localText("Close view options", "Закрыть варианты вида"));
+  closeViewOptions.addEventListener("click", () => setPackingVisualStylePanelVisible(false));
+  control.append(closeViewOptions);
   document.body.append(control);
 }
 
