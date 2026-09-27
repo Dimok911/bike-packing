@@ -32,7 +32,7 @@ jobs:
         with:
           # Live scans use the verified published Experiment catalog and adapters.
           # Advance this pin only after the next catalog publication passes verification.
-          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.review_report_path == '')) && '1de62c54879da8da31662b9c50b58206579973b2' || github.ref }}
+          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.review_report_path == '')) && 'a53c3266f6394d291618ad125090201c4c6099da' || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
