@@ -3803,7 +3803,8 @@ function setupPackingVisualStyleQuickControl() {
       type="button"
       class="admin-visual-option"
       data-packing-visual-style="${escapeHtml(option.value)}"
-      title="${escapeHtml(option.label)}"
+      ${option.value === PACKING_VISUAL_STYLE_PRIMARY ? 'data-visual-default="true"' : ""}
+      title="${escapeHtml(option.label + (option.value === PACKING_VISUAL_STYLE_PRIMARY ? localText(" · Default for everyone", " · По умолчанию для всех") : ""))}"
       aria-label="${escapeHtml(option.label)}"
       aria-pressed="${normalizePackingVisualStyle(packingVisualStyle) === option.value ? "true" : "false"}"
     >${escapeHtml(packingVisualStyleButtonLabel(option))}</button>

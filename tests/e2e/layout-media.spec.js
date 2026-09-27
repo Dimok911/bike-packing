@@ -148,7 +148,7 @@ test('photo introduction: admin variants, description placement and horizontal o
   await page.evaluate(async () => {
     const {setupLayoutPhotoViewControl,createLayoutPhotoSummary}=await import('/__testsrc/src/ui/layout-photo-summary.js');
     const root=document.createElement('section');root.id='intro-fixture';root.style.width='340px';
-    root.innerHTML='<div data-options></div><div data-intro><section class="layout-photo-summary" data-photos></section><section id="layoutDescriptionSummary">Описание поездки</section></div>';
+    root.innerHTML='<div data-options></div><div data-intro class="layout-introduction"><section class="layout-photo-summary" data-photos></section><section id="layoutDescriptionSummary">Описание поездки</section></div>';
     document.body.prepend(root);
     let admin=true;
     setupLayoutPhotoViewControl(root.querySelector('[data-options]'),(en,ru)=>ru,()=>admin);
@@ -159,6 +159,13 @@ test('photo introduction: admin variants, description placement and horizontal o
   });
   const root=page.locator('#intro-fixture');
   const photos=root.locator('[data-photos]');
+  await expect(root.locator('[data-layout-photo-view="grid"]')).toHaveAttribute('data-visual-default','true');
+  await expect(root.locator('[data-trip-backdrop="photo"]')).toHaveValue('32');
+  await root.locator('[data-trip-backdrop="photo"]').evaluate(el=>{el.value='68';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  expect(await root.locator('[data-intro]').evaluate(el=>el.style.getPropertyValue('--trip-backdrop-photo'))).toBe('0.68');
+  await expect(root.locator('[data-backdrop-output="photo"]')).toHaveText('68%');
+  await page.evaluate(()=>window.introFixture.render());
+  expect(await root.locator('[data-intro]').evaluate(el=>el.style.getPropertyValue('--trip-backdrop-photo'))).toBe('0.68');
   for (const variant of ['strip','hero','grid']) {
     await root.locator(`[data-layout-photo-view="${variant}"]`).click();
     await expect(photos).toHaveAttribute('data-photo-view',variant);
@@ -167,12 +174,12 @@ test('photo introduction: admin variants, description placement and horizontal o
   expect(await list.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
   expect(await list.evaluate(el=>{el.scrollLeft=el.scrollWidth;return el.scrollLeft>0;})).toBe(true);
   expect(await photos.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
-  await root.locator('[data-layout-description-position="above"]').click();
-  expect(await root.locator('[data-intro]').evaluate(el=>el.firstElementChild.id)).toBe('layoutDescriptionSummary');
+  expect(await root.locator('[data-intro]').evaluate(el=>el.lastElementChild.id)).toBe('layoutDescriptionSummary');
   await root.locator('[data-layout-photo-view="hidden"]').click();
   await expect(photos).toBeHidden();
   await expect(root.locator('#layoutDescriptionSummary')).toBeVisible();
   await page.evaluate(()=>window.introFixture.guest());
+  expect(await root.locator('[data-intro]').evaluate(el=>el.style.getPropertyValue('--trip-backdrop-photo'))).toBe('0.32');
   await expect(photos).toBeVisible();
   await expect(photos).toHaveAttribute('data-photo-view','grid');
   expect(await root.locator('[data-intro]').evaluate(el=>el.lastElementChild.id)).toBe('layoutDescriptionSummary');
@@ -269,9 +276,9 @@ test('trips: legacy migration, independent stories, count, paging, reload, cance
   await page.locator('#saveEditedLayoutBtn').click();
   await expect(page.locator('#layoutEditDialog')).toBeHidden();
   await expect(page.locator('#layoutSelect option:checked')).toHaveText('Общая укладка (2 поездки)');
-  await expect(page.locator('[data-layout-trip-navigation] strong')).toHaveText('По озёрам');
+  await expect(page.locator('[data-layout-trip-navigation] option:checked')).toHaveText('По озёрам');
   await page.locator('[data-trip-next]').click();
-  await expect(page.locator('[data-layout-trip-navigation] strong')).toHaveText('Лесные выходные');
+  await expect(page.locator('[data-layout-trip-navigation] option:checked')).toHaveText('Лесные выходные');
   await expect(page.locator('#layoutDescriptionSummary')).toHaveText('Ночёвка в лесу');
   await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(0);
   await expect(page.locator('#layoutPhotoSummary a')).toHaveAttribute('href','https://youtu.be/forest');
@@ -395,4 +402,40 @@ test('trip videos, separate notes and stable scrolling card', async ({page,isMob
   expect(record.trips[0].videoUrls).toEqual(['https://youtu.be/first','https://youtu.be/third']);
   expect(record.trips[0].privateNotes).toBe('Личная заметка');
   expect(record.trips[0].publishNotes).toBe(true);
+});
+
+
+test('trip video thumbnails open a lazy player below photos with compact navigation', async ({page,isMobile}) => {
+  await prepareIsolatedRussianGuest(page);
+  await page.route('https://i.ytimg.com/**', route=>route.fulfill({status:404,body:''}));
+  await page.route('https://www.youtube-nocookie.com/embed/**', route=>route.fulfill({contentType:'text/html',body:'<p>Test player</p>'}));
+  await openApp(page);await createEmptyLayout(page,'Видео поездки');
+  const id=await page.locator('#layoutSelect').inputValue();
+  await page.evaluate(id=>{
+    const key='bike-packing-prototype-state-v1';const state=JSON.parse(localStorage.getItem(key));
+    state.layouts[id].trips=[{id:'video-trip',name:'Очень длинное название поездки с велосипедом и сумками',notes:'Описание после видео',videoUrls:['https://youtu.be/M7lc1UVf-VE?t=1m2s','https://www.youtube.com/shorts/abcdefghijk','https://example.com/video'],photos:[]}];
+    localStorage.setItem(key,JSON.stringify(state));
+  },id);
+  await page.reload();await waitForApp(page);await page.locator('#layoutSelect').selectOption(id);
+  const card=page.locator('#layoutIntroduction');
+  const videos=card.locator('.layout-summary-videos');
+  await expect(videos.locator('.layout-video-card')).toHaveCount(3);
+  await expect(videos.locator('img').first()).toHaveAttribute('src','https://i.ytimg.com/vi/M7lc1UVf-VE/hqdefault.jpg');
+  await expect(videos.locator('img').first()).toBeHidden();
+  await expect(page.locator('.trip-video-dialog')).toHaveCount(0);
+  const dimensions=await card.evaluate(card=>({header:card.querySelector('.layout-introduction-header').getBoundingClientRect().height,overflow:card.scrollWidth>card.clientWidth+1,videos:card.querySelector('.layout-summary-videos').getBoundingClientRect().bottom,description:card.querySelector('#layoutDescriptionSummary').getBoundingClientRect().top}));
+  expect(dimensions.header).toBeLessThanOrEqual(66);expect(dimensions.overflow).toBe(false);expect(dimensions.description).toBeGreaterThan(dimensions.videos);
+  if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
+  await videos.locator('.layout-video-card').first().click();
+  const player=page.locator('.trip-video-dialog');
+  await expect(player).toBeVisible();
+  await expect(player.locator('iframe')).toHaveAttribute('src',/youtube-nocookie.com\/embed\/M7lc1UVf-VE.*start=62/);
+  await expect(player.locator('.trip-video-external')).toHaveAttribute('href','https://youtu.be/M7lc1UVf-VE?t=1m2s');
+  await player.getByRole('button',{name:'Закрыть видео'}).click();
+  await expect(player).toHaveCount(0);
+  await expect(page.locator('body')).not.toHaveClass(/modal-scroll-locked/);
+  await videos.locator('.layout-video-card').nth(1).click();await page.keyboard.press('Escape');
+  await expect(player).toHaveCount(0);
+  await expect(videos.locator('.layout-video-card').nth(2)).toHaveAttribute('href','https://example.com/video');
+  await card.screenshot({path:`test-results/v1621-trip-videos-${isMobile?'mobile':'desktop'}.png`});
 });

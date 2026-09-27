@@ -1,0 +1,74 @@
+import { escapeHtml } from "../utils/html.js";
+
+export function tripVideoPreview(value) {
+  try {
+    const url = new URL(value);
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return null;
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    let id = "";
+    if (host === "youtu.be") id = url.pathname.split("/")[1];
+    else if (["youtube.com", "m.youtube.com", "youtube-nocookie.com"].includes(host)) {
+      id = url.pathname === "/watch" ? url.searchParams.get("v") : url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/]+)/)?.[1];
+    }
+    const youtube = /^[\w-]{11}$/.test(id || "");
+    const time = url.searchParams.get("start") || url.searchParams.get("t") || "";
+    const parts = time.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+    const start = /^\d+$/.test(time) ? Number(time) : parts ? Number(parts[1] || 0) * 3600 + Number(parts[2] || 0) * 60 + Number(parts[3] || 0) : 0;
+    return { url: url.href, provider: youtube ? "YouTube" : host, thumbnail: youtube ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "",
+      embed: youtube ? `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&rel=0${start > 0 && Number.isSafeInteger(start) ? `&start=${start}` : ""}` : "" };
+  } catch { return null; }
+}
+
+export function renderTripVideoCards(urls, localText) {
+  if (!urls.length) return "";
+  const title = localText("Videos", "Видео");
+  return `<section class="layout-summary-videos" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong><div class="layout-video-summary-list">${urls.map((url, index) => {
+    const video = tripVideoPreview(url);
+    if (!video) return "";
+    const name = localText(`Video ${index + 1}`, `Видео ${index + 1}`);
+    return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
+      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
+      <span class="layout-video-caption"><span>${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span></a>`;
+  }).join("")}</div></section>`;
+}
+
+// Bike Packing trip UI: the shared photo gallery is not involved in video playback.
+export function bindTripVideoCards(host, localText) {
+  let player = null;
+  let opener = null;
+  const closePlayer = () => {
+    if (!player) return;
+    const dialog = player;
+    player = null;
+    dialog.querySelector("iframe")?.remove();
+    if (dialog.open) dialog.close();
+    dialog.remove();
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  };
+  const onClick = event => {
+    const link = event.target.closest("[data-trip-video-play]");
+    if (!link || !host.contains(link) || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const video = tripVideoPreview(link.href);
+    if (!video?.embed) return;
+    event.preventDefault();
+    closePlayer();
+    opener = link;
+    const dialog = document.createElement("dialog");
+    player = dialog;
+    dialog.className = "trip-video-dialog";
+    dialog.setAttribute("aria-label", link.getAttribute("aria-label"));
+    dialog.innerHTML = `<div class="trip-video-player-header"><strong>${escapeHtml(link.getAttribute("aria-label"))}</strong><button type="button" class="icon-button" aria-label="${escapeHtml(localText("Close video", "Закрыть видео"))}">×</button></div><iframe title="${escapeHtml(link.getAttribute("aria-label"))}" src="${escapeHtml(video.embed)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe><a class="trip-video-external" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Open on YouTube", "Открыть на YouTube"))} ↗</a>`;
+    dialog.querySelector("button").addEventListener("click", closePlayer);
+    dialog.addEventListener("cancel", event => { event.preventDefault(); closePlayer(); });
+    dialog.addEventListener("close", () => { if (player === dialog) closePlayer(); });
+    document.body.append(dialog);
+    dialog.showModal();
+  };
+  const onImageError = event => {
+    if (event.target.matches?.("[data-trip-video-thumbnail]")) event.target.hidden = true;
+  };
+  host.addEventListener("click", onClick);
+  host.addEventListener("error", onImageError, true);
+  host.querySelectorAll("[data-trip-video-thumbnail]").forEach(image => { if (image.complete && !image.naturalWidth) image.hidden = true; });
+  return { destroy() { closePlayer(); host.removeEventListener("click", onClick); host.removeEventListener("error", onImageError, true); } };
+}

@@ -3164,12 +3164,10 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   const trips = layoutTripsSnapshot(state.layouts?.[layoutId]);
   const tripIndex = Math.max(0, trips.findIndex(trip => trip.id === selectedLayoutTrips.get(layoutId)));
   const trip = trips[tripIndex];
-  const media = layoutMediaSnapshot(trip);
   const storageKey = scopedLocalStorageKey(LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY);
   const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
   const title = localText("Trips", "Поездки");
   const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
-  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(trip?.notes) ? localText("Description", "Описание") : "", media.videoUrls.length ? localText(`Videos: ${media.videoUrls.length}`, `Видео: ${media.videoUrls.length}`) : ""].filter(Boolean).join(" · ");
   const header = document.querySelector("#layoutIntroductionHeader");
   header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(trips.length ? `${tripIndex + 1} / ${trips.length}` : "")}</span></div>
     <div class="layout-notes-actions">
@@ -3188,12 +3186,14 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
     navigation = document.createElement("div");
     navigation.className = "layout-trip-navigation";
     navigation.dataset.layoutTripNavigation = "";
-    document.querySelector("#layoutIntroductionContent").before(navigation);
+    header.querySelector(".layout-notes-actions").before(navigation);
   }
-  navigation.hidden = collapsed || !trip;
-  navigation.innerHTML = trip ? `<div class="layout-trip-heading"><strong>${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}</strong><small>${escapeHtml(details)}</small></div>
+  navigation.hidden = !trip;
+  navigation.innerHTML = trip ? `<div class="layout-trip-heading"><strong title="${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}">${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}</strong></div>
     ${trips.length > 1 ? `<div class="layout-trip-controls"><button type="button" class="ghost" data-trip-prev aria-label="${escapeHtml(localText("Previous trip", "Предыдущая поездка"))}" ${tripIndex === 0 ? "disabled" : ""}>←</button><select aria-label="${escapeHtml(localText("Choose trip", "Выбрать поездку"))}">${trips.map((entry, index) => `<option value="${index}" ${index === tripIndex ? "selected" : ""}>${escapeHtml(tripDisplayName(entry, index, uiLanguage))}</option>`).join("")}</select><button type="button" class="ghost" data-trip-next aria-label="${escapeHtml(localText("Next trip", "Следующая поездка"))}" ${tripIndex === trips.length - 1 ? "disabled" : ""}>→</button></div>` : ""}` : "";
   const selectTrip = index => { if (trips[index]) { selectedLayoutTrips.set(layoutId, trips[index].id); renderSummary(); document.querySelector("#layoutIntroductionContent").scrollTop = 0; } };
+  const tripHeading = navigation.querySelector(".layout-trip-heading");
+  if (tripHeading) tripHeading.hidden = trips.length > 1;
   navigation.querySelector("select")?.addEventListener("change", event => selectTrip(Number(event.target.value)));
   navigation.querySelector("[data-trip-prev]")?.addEventListener("click", () => selectTrip(tripIndex - 1));
   navigation.querySelector("[data-trip-next]")?.addEventListener("click", () => selectTrip(tripIndex + 1));
