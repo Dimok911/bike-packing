@@ -68,3 +68,27 @@ test("every manufacturer requires direct absence evidence before proposing missi
     assert.equal(errors.custom.length, status === 404 ? 0 : 1);
   }
 });
+
+test("initial catalog import never becomes new; only later published additions start the 30-day period", async () => {
+  const { recordManufacturerCatalogPublication } = await import("../../scripts/update-manufacturer-publication-history.mjs");
+  const now = "2026-09-27T12:00:00Z";
+  const existing = [{ id: "existing", sourceCheckedAt: now }];
+  const initial = recordManufacturerCatalogPublication({}, existing, { initialBaseline: true });
+  assert.deepEqual(initial, { existing: { baseline: true } });
+  assert.deepEqual(recordManufacturerCatalogPublication(initial, existing), initial);
+  const next = [...existing, { id: "actually-new", sourceCheckedAt: now }];
+  assert.throws(() => recordManufacturerCatalogPublication(initial, next), /explicit --published-at/);
+  const published = recordManufacturerCatalogPublication(initial, next, { publishedAt: now });
+  assert.deepEqual(published.existing, { baseline: true });
+  assert.equal(isRecentManufacturerModel({ catalogPublishedAt: published["actually-new"].publishedAt }, Date.parse(now)), true);
+  assert.deepEqual(recordManufacturerCatalogPublication(published, next, { publishedAt: "2026-10-01" }), published);
+});
+
+test("runtime baseline rows never inherit import or scan timestamps as publication dates", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { MANUFACTURER_BAG_CATALOG_INDEX: index } = await import("../../src/data/manufacturer-catalog-runtime/index.generated.js");
+  const history = JSON.parse(await readFile(new URL("../../src/data/manufacturer-catalog-publication-history.json", import.meta.url), "utf8"));
+  const baseline = index.filter(row => history[row.id]?.baseline);
+  assert.ok(baseline.length > 0);
+  assert.ok(baseline.every(row => !row.catalogPublishedAt && !isRecentManufacturerModel(row)));
+});

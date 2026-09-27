@@ -1,2606 +1,1868 @@
 {
   "ortlieb-accessory-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-atrack-bike": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-back-roller-20l": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-back-roller-core": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-back-roller-20l-pair": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-back-roller-plus": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-back-roller-35l-mesh-pocket-pair": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-bike-packer": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-bike-packer-plus": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-commuter-bag-urban": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-dry-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-fork-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-frame-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-frame-pack-rc": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-frame-pack-rc-toptube": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-frame-pack-toptube": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-fuel-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-gravel-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-gravel-pack-single": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-handlebar-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-handlebar-pack-flex": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-handlebar-pack-plus": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-handlebar-pack-qr": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-micro-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-office-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-pedal-mate": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-rack-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-saddle-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-seat-pack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-seat-pack-qr": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-sport-packer": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-sport-roller-14-5l": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-sport-roller-core": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-sport-roller-pair": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-toptube-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-trunk-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-trunk-bag-rc": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-twin-city-urban": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-ultimate": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-up-town": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-up-town-rack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-vario-20l": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-vario-26l": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-vario-lite": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-velo-shopper": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-velo-sling": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "ortlieb-velo-sling-flex": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-bb-packer-handlebar-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-bug-2-0-pannier-backpack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-burrito-handlebar-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-commuter-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-dolphin-16l-waterproof-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-dolphin-24l-waterproof-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-dry-lites-saddle-bags": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-gt-18-classic-touring-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-gt-18bp-convertible-backpack-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-gt-54-classic-touring-panniers": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-handlebar-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-haul-it-versatile-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-heavy-duty-tote-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-le-petit-handlebar-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-metropolitan-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-metropolitan-waterproof-rolltop-backpack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-mont-royal-sling-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-orca-panniers": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-orca-city-backpack-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-rollpacker-front-bikepacking-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-rollpacker-bikepacking-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-saddle-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-seatpacker-seat-bag-hanger-kit": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-shopper-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-signature-bb-handlebar-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-signature-d-rolltop-backpack": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-signature-h-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-signature-m-waterproof-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-signature-v-urban-pannier": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-t-28-classic-touring-panniers": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-t-42-classic-touring-panniers": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-top-tube-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-tailrider-trunk-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-tailrider-rolltop-trunk-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-water-resistant-frame-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-waterproof-frame-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-wellington-messenger-bag": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-exp-waterproof-top-tube-1l-copy": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
-  },
-  "arkel-exp-waterproof-top-tube-1l": {
-    "date": "2026-08-29T15:18:30+03:00",
-    "commit": "c3dc77fc683d65ede13a44887e06eee8957d1166"
+    "baseline": true
   },
   "ortlieb-dry-pack-12l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-dry-pack-16l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-fork-pack-4-1l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-fork-pack-5-8l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-6l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-rc-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-rc-6l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-rc-toptube-3l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-rc-toptube-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-toptube-3l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-frame-pack-toptube-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "ortlieb-fuel-pack": {
+    "baseline": true
+  },
+  "ortlieb-gravel-pack": {
+    "baseline": true
+  },
+  "ortlieb-gravel-pack-single": {
+    "baseline": true
   },
   "ortlieb-handlebar-pack-9l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-handlebar-pack-15l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-handlebar-pack-flex-9l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-handlebar-pack-flex-15l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "ortlieb-handlebar-pack-plus": {
+    "baseline": true
+  },
+  "ortlieb-handlebar-pack-qr": {
+    "baseline": true
   },
   "ortlieb-micro-bag-0-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-micro-bag-0-8l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "ortlieb-office-bag": {
+    "baseline": true
+  },
+  "ortlieb-pedal-mate": {
+    "baseline": true
   },
   "ortlieb-rack-pack-24l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-rack-pack-31l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-saddle-bag-1-6l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-saddle-bag-4-1l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-seat-pack-11l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-seat-pack-16-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-seat-pack-qr-7-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-seat-pack-qr-13l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "ortlieb-sport-packer": {
+    "baseline": true
+  },
+  "ortlieb-sport-roller-14-5l": {
+    "baseline": true
+  },
+  "ortlieb-sport-roller-core": {
+    "baseline": true
+  },
+  "ortlieb-sport-roller-pair": {
+    "baseline": true
+  },
+  "ortlieb-toptube-bag": {
+    "baseline": true
+  },
+  "ortlieb-trunk-bag": {
+    "baseline": true
+  },
+  "ortlieb-trunk-bag-rc": {
+    "baseline": true
+  },
+  "ortlieb-twin-city-urban": {
+    "baseline": true
   },
   "ortlieb-ultimate-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-ultimate-6-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "ortlieb-up-town": {
+    "baseline": true
+  },
+  "ortlieb-up-town-rack": {
+    "baseline": true
+  },
+  "ortlieb-vario-20l": {
+    "baseline": true
+  },
+  "ortlieb-vario-26l": {
+    "baseline": true
+  },
+  "ortlieb-vario-lite": {
+    "baseline": true
+  },
+  "ortlieb-velo-shopper": {
+    "baseline": true
+  },
+  "ortlieb-velo-sling": {
+    "baseline": true
   },
   "ortlieb-velo-sling-flex-2-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "ortlieb-velo-sling-flex-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-bb-packer-handlebar-bag": {
+    "baseline": true
+  },
+  "arkel-bug-2-0-pannier-backpack": {
+    "baseline": true
   },
   "arkel-burrito-handlebar-bag-2l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-burrito-handlebar-bag-4-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-commuter-urban-pannier": {
+    "baseline": true
   },
   "arkel-dolphin-16l-waterproof-pannier-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-dolphin-16l-waterproof-pannier-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-dolphin-24l-waterproof-pannier-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-dolphin-24l-waterproof-pannier-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-dry-lites-saddle-bags-28l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-dry-lites-saddle-bags-36l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage-7l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-gt-18-classic-touring-pannier-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-gt-18-classic-touring-pannier-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-gt-18bp-convertible-backpack-pannier": {
+    "baseline": true
+  },
+  "arkel-gt-54-classic-touring-panniers": {
+    "baseline": true
   },
   "arkel-handlebar-bag-7-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-handlebar-bag-9l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-haul-it-versatile-pannier": {
+    "baseline": true
+  },
+  "arkel-heavy-duty-tote-bag": {
+    "baseline": true
+  },
+  "arkel-le-petit-handlebar-bag": {
+    "baseline": true
+  },
+  "arkel-metropolitan-urban-pannier": {
+    "baseline": true
+  },
+  "arkel-metropolitan-waterproof-rolltop-backpack": {
+    "baseline": true
+  },
+  "arkel-mont-royal-sling-bag": {
+    "baseline": true
   },
   "arkel-orca-panniers-12-5l-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-orca-panniers-12-5l-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-orca-panniers-17-5l-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-orca-panniers-17-5l-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-orca-panniers-22-5l-pair": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-orca-panniers-22-5l-single": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-orca-city-backpack-pannier": {
+    "baseline": true
   },
   "arkel-rollpacker-front-bikepacking-bag-15l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-rollpacker-front-bikepacking-bag-20l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-rollpacker-bikepacking-bag-15l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-rollpacker-bikepacking-bag-20l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-saddle-bag": {
+    "baseline": true
   },
   "arkel-seatpacker-seat-bag-hanger-kit-9l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-seatpacker-seat-bag-hanger-kit-15l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-shopper-urban-pannier": {
+    "baseline": true
+  },
+  "arkel-signature-bb-handlebar-bag": {
+    "baseline": true
+  },
+  "arkel-signature-d-rolltop-backpack": {
+    "baseline": true
+  },
+  "arkel-signature-h-urban-pannier": {
+    "baseline": true
+  },
+  "arkel-signature-m-waterproof-urban-pannier": {
+    "baseline": true
+  },
+  "arkel-signature-v-urban-pannier": {
+    "baseline": true
+  },
+  "arkel-t-28-classic-touring-panniers": {
+    "baseline": true
+  },
+  "arkel-t-42-classic-touring-panniers": {
+    "baseline": true
+  },
+  "arkel-top-tube-bag": {
+    "baseline": true
+  },
+  "arkel-tailrider-trunk-bag": {
+    "baseline": true
+  },
+  "arkel-tailrider-rolltop-trunk-bag": {
+    "baseline": true
   },
   "arkel-water-resistant-frame-bag-2-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-water-resistant-frame-bag-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-water-resistant-frame-bag-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-waterproof-frame-bag-2-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-waterproof-frame-bag-4l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-waterproof-frame-bag-5l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-wellington-messenger-bag-6l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-wellington-messenger-bag-16l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
   },
   "arkel-wellington-messenger-bag-24l": {
-    "date": "2026-08-30T19:44:00+03:00",
-    "commit": "512766343ad74fe13d55c414b9a49082c88d1ef3"
+    "baseline": true
+  },
+  "arkel-exp-waterproof-top-tube-1l-copy": {
+    "baseline": true
+  },
+  "arkel-exp-waterproof-top-tube-1l": {
+    "baseline": true
   },
   "apidura-aero-bolt-on-long-top-tube-module": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-aero-bolt-on-top-tube-module": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-aero-frame-module-1-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-aero-frame-module-1-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-aero-frame-module-2-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-aero-top-tube-module": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-apidura-bombtrack-frame-pack-2-4l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-apidura-x-canyon-frame-pack-2-4l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-apidura-x-canyon-frame-pack-4-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-apidura-x-canyon-handlebar-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-accessory-pocket": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-downtube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-food-pouch-0-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-food-pouch-1-2l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-frame-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-frame-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-full-frame-pack-2-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-full-frame-pack-4l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-full-frame-pack-6l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-handlebar-pack-11l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-handlebar-pack-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-long-top-tube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-rear-top-tube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-saddle-pack-10l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-saddle-pack-4-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-saddle-pack-6l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-backcountry-top-tube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-city-handlebar-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-bolt-on-top-tube-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-cargo-cage-pack-1-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-cargo-cage-pack-3-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-downtube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-ebike-charger-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-frame-pack-2-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-frame-pack-3-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-frame-pack-4-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-frame-pack-5-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-front-accessory-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-front-rack-pack-20l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-front-rack-pack-30l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-full-frame-pack-10l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-full-frame-pack-4-6l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-full-frame-pack-6-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-full-frame-pack-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-handlebar-pack-14l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-handlebar-pack-9l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-saddle-pack-13l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-saddle-pack-16l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-saddle-pack-9l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-stem-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-tool-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-top-tube-pack-0-6l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-expedition-top-tube-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-maap-x-apidura-frame-pack-1l-v2": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-maap-x-apidura-frame-pack-4l-v2": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-maap-x-apidura-handlebar-pack-9l-v2": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-maap-x-apidura-saddle-pack-7l-v2": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-aerobar-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-bolt-on-top-tube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-frame-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-frame-pack-2-4l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-frame-pack-4l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-handlebar-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-long-top-tube-pack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-saddle-pack-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-saddle-pack-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-saddle-pack-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-top-tube-pack-0-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "apidura-racing-top-tube-pack-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-bag-system-12-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-bag-system-14-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-bag-system-18-9l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-bag-system-9-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-11l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-15l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-bag-11l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-bag-15l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-bar-cage-bag-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-cage-packs-1-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-cage-packs-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-cage-packs-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-cargopack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-cargopack-top-bag": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-downtube-packs-1-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-downtube-packs-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-fork-packs-10l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-fork-packs-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-2-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-3-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-4-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-5-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-half-frame-bag-6-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-long-top-tube-bag-1-6l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-long-top-tube-bag-2-2l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-long-top-tube-bag-3l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-mini-panniers-10l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-mini-panniers-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-panniers-16l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-panniers-22l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-rear-top-tube-bag-0-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-rear-top-tube-bag-0-9l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-speedpack": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-speedpack-top-bag": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-top-tube-bag-0-8l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-top-tube-bag-1-1l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-top-tube-bag-1-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-wedge-frame-bag-1-9l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-wedge-frame-bag-2-7l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
-  },
-  "tailfin-wedge-frame-bag-3-5l": {
-    "date": "2026-08-30T23:58:35+03:00",
-    "commit": "9ff160defe009a2505476a77d40ae4b833253e00"
+    "baseline": true
   },
   "apidura-apidura-x-canyon-bolt-on-top-tube-pack": {
-    "date": "2026-08-31T00:33:42+03:00",
-    "commit": "e3b2a9339ad98e02f00c5b2053429b436627a62b"
+    "baseline": true
+  },
+  "apidura-apidura-x-canyon-frame-pack-2-4l": {
+    "baseline": true
+  },
+  "apidura-apidura-x-canyon-frame-pack-4-5l": {
+    "baseline": true
+  },
+  "apidura-apidura-x-canyon-handlebar-pack": {
+    "baseline": true
   },
   "apidura-apidura-x-canyon-saddle-pack": {
-    "date": "2026-08-31T00:33:42+03:00",
-    "commit": "e3b2a9339ad98e02f00c5b2053429b436627a62b"
+    "baseline": true
+  },
+  "apidura-backcountry-accessory-pocket": {
+    "baseline": true
+  },
+  "apidura-backcountry-downtube-pack": {
+    "baseline": true
+  },
+  "apidura-backcountry-food-pouch-0-8l": {
+    "baseline": true
+  },
+  "apidura-backcountry-food-pouch-1-2l": {
+    "baseline": true
+  },
+  "apidura-backcountry-frame-pack-1l": {
+    "baseline": true
+  },
+  "apidura-backcountry-frame-pack": {
+    "baseline": true
+  },
+  "apidura-backcountry-full-frame-pack-2-5l": {
+    "baseline": true
+  },
+  "apidura-backcountry-full-frame-pack-4l": {
+    "baseline": true
+  },
+  "apidura-backcountry-full-frame-pack-6l": {
+    "baseline": true
+  },
+  "apidura-backcountry-handlebar-pack-11l": {
+    "baseline": true
+  },
+  "apidura-backcountry-handlebar-pack-7l": {
+    "baseline": true
+  },
+  "apidura-backcountry-long-top-tube-pack": {
+    "baseline": true
+  },
+  "apidura-backcountry-rear-top-tube-pack": {
+    "baseline": true
+  },
+  "apidura-backcountry-saddle-pack-10l": {
+    "baseline": true
+  },
+  "apidura-backcountry-saddle-pack-4-5l": {
+    "baseline": true
+  },
+  "apidura-backcountry-saddle-pack-6l": {
+    "baseline": true
+  },
+  "apidura-backcountry-top-tube-pack": {
+    "baseline": true
+  },
+  "apidura-city-handlebar-pack": {
+    "baseline": true
+  },
+  "apidura-expedition-bolt-on-top-tube-pack-1l": {
+    "baseline": true
+  },
+  "apidura-expedition-cargo-cage-pack-1-5l": {
+    "baseline": true
+  },
+  "apidura-expedition-cargo-cage-pack-3-5l": {
+    "baseline": true
+  },
+  "apidura-expedition-downtube-pack": {
+    "baseline": true
+  },
+  "apidura-expedition-ebike-charger-pack": {
+    "baseline": true
+  },
+  "apidura-expedition-frame-pack-2-8l": {
+    "baseline": true
+  },
+  "apidura-expedition-frame-pack-3-8l": {
+    "baseline": true
+  },
+  "apidura-expedition-frame-pack-4-3l": {
+    "baseline": true
+  },
+  "apidura-expedition-frame-pack-5-7l": {
+    "baseline": true
+  },
+  "apidura-expedition-front-accessory-pack": {
+    "baseline": true
+  },
+  "apidura-expedition-front-rack-pack-20l": {
+    "baseline": true
+  },
+  "apidura-expedition-front-rack-pack-30l": {
+    "baseline": true
+  },
+  "apidura-expedition-full-frame-pack-10l": {
+    "baseline": true
+  },
+  "apidura-expedition-full-frame-pack-4-6l": {
+    "baseline": true
+  },
+  "apidura-expedition-full-frame-pack-6-8l": {
+    "baseline": true
+  },
+  "apidura-expedition-full-frame-pack-8l": {
+    "baseline": true
+  },
+  "apidura-expedition-handlebar-pack-14l": {
+    "baseline": true
+  },
+  "apidura-expedition-handlebar-pack-9l": {
+    "baseline": true
+  },
+  "apidura-expedition-saddle-pack-13l": {
+    "baseline": true
+  },
+  "apidura-expedition-saddle-pack-16l": {
+    "baseline": true
+  },
+  "apidura-expedition-saddle-pack-9l": {
+    "baseline": true
+  },
+  "apidura-expedition-stem-pack": {
+    "baseline": true
+  },
+  "apidura-expedition-tool-pack-1l": {
+    "baseline": true
+  },
+  "apidura-expedition-top-tube-pack-0-6l": {
+    "baseline": true
+  },
+  "apidura-expedition-top-tube-pack-1l": {
+    "baseline": true
+  },
+  "apidura-maap-x-apidura-frame-pack-1l-v2": {
+    "baseline": true
+  },
+  "apidura-maap-x-apidura-frame-pack-4l-v2": {
+    "baseline": true
+  },
+  "apidura-maap-x-apidura-handlebar-pack-9l-v2": {
+    "baseline": true
+  },
+  "apidura-maap-x-apidura-saddle-pack-7l-v2": {
+    "baseline": true
+  },
+  "apidura-racing-aerobar-pack": {
+    "baseline": true
+  },
+  "apidura-racing-bolt-on-top-tube-pack": {
+    "baseline": true
+  },
+  "apidura-racing-frame-pack-1l": {
+    "baseline": true
+  },
+  "apidura-racing-frame-pack-2-4l": {
+    "baseline": true
+  },
+  "apidura-racing-frame-pack-4l": {
+    "baseline": true
+  },
+  "apidura-racing-handlebar-pack": {
+    "baseline": true
+  },
+  "apidura-racing-long-top-tube-pack": {
+    "baseline": true
+  },
+  "apidura-racing-saddle-pack-3l": {
+    "baseline": true
+  },
+  "apidura-racing-saddle-pack-5l": {
+    "baseline": true
+  },
+  "apidura-racing-saddle-pack-7l": {
+    "baseline": true
+  },
+  "apidura-racing-top-tube-pack-0-5l": {
+    "baseline": true
+  },
+  "apidura-racing-top-tube-pack-1l": {
+    "baseline": true
+  },
+  "tailfin-bar-bag-system-12-5l": {
+    "baseline": true
+  },
+  "tailfin-bar-bag-system-14-7l": {
+    "baseline": true
+  },
+  "tailfin-bar-bag-system-18-9l": {
+    "baseline": true
+  },
+  "tailfin-bar-bag-system-9-1l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-11l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-15l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-8l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-bag-11l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-bag-15l": {
+    "baseline": true
+  },
+  "tailfin-bar-cage-bag-8l": {
+    "baseline": true
+  },
+  "tailfin-cage-packs-1-7l": {
+    "baseline": true
+  },
+  "tailfin-cage-packs-3l": {
+    "baseline": true
+  },
+  "tailfin-cage-packs-5l": {
+    "baseline": true
+  },
+  "tailfin-cargopack": {
+    "baseline": true
+  },
+  "tailfin-cargopack-top-bag": {
+    "baseline": true
+  },
+  "tailfin-downtube-packs-1-7l": {
+    "baseline": true
+  },
+  "tailfin-downtube-packs-3l": {
+    "baseline": true
+  },
+  "tailfin-fork-packs-10l": {
+    "baseline": true
+  },
+  "tailfin-fork-packs-5l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-2-3l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-3l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-3-8l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-4-5l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-5-3l": {
+    "baseline": true
+  },
+  "tailfin-half-frame-bag-6-5l": {
+    "baseline": true
+  },
+  "tailfin-long-top-tube-bag-1-6l": {
+    "baseline": true
+  },
+  "tailfin-long-top-tube-bag-2-2l": {
+    "baseline": true
+  },
+  "tailfin-long-top-tube-bag-3l": {
+    "baseline": true
+  },
+  "tailfin-mini-panniers-10l": {
+    "baseline": true
+  },
+  "tailfin-mini-panniers-5l": {
+    "baseline": true
+  },
+  "tailfin-panniers-16l": {
+    "baseline": true
+  },
+  "tailfin-panniers-22l": {
+    "baseline": true
+  },
+  "tailfin-rear-top-tube-bag-0-8l": {
+    "baseline": true
+  },
+  "tailfin-rear-top-tube-bag-0-9l": {
+    "baseline": true
+  },
+  "tailfin-speedpack": {
+    "baseline": true
+  },
+  "tailfin-speedpack-top-bag": {
+    "baseline": true
+  },
+  "tailfin-top-tube-bag-0-8l": {
+    "baseline": true
+  },
+  "tailfin-top-tube-bag-1-1l": {
+    "baseline": true
+  },
+  "tailfin-top-tube-bag-1-5l": {
+    "baseline": true
+  },
+  "tailfin-wedge-frame-bag-1-9l": {
+    "baseline": true
+  },
+  "tailfin-wedge-frame-bag-2-7l": {
+    "baseline": true
+  },
+  "tailfin-wedge-frame-bag-3-5l": {
+    "baseline": true
   },
   "restrap-aero-race-top-tube-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-bar-pack": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-bolt-on-top-tube-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-canister-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-custom-frame-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-fork-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-frame-bag-large": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-frame-bag-medium": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-frame-bag-small": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-full-frame-bag-large": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-full-frame-bag-medium": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-full-frame-bag-small": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-holster-bar-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-holster-bar-bag-plus": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-lightweight-race-hydration-vest": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-aero-bar-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-bar-bag-drop-bar": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-bar-bag-flat-bar": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-frame-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-frame-bag-large": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-hydration-vest": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-musette": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-saddle-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-stem-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-top-tube-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-top-tube-bag-long": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-race-top-tube-bag-short": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-rear-top-tube-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-restrap-large-pannier": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-rolltop-backpack-22l": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-rolltop-backpack-40l": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-rolltop-canister-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-rolltop-hydration-vest": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-saddle-bag-14-litres": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-saddle-bag-18-litres": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-saddle-bag-holster-dry-bag-8-litres-black-black": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-saddle-pack-2-5l": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-saddle-pack-4-5l": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-small-pannier": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-stem-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-switch-pannier-10-litres-1": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-switch-pannier-5-litres": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-switch-top-bag-15l": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-tool-pouch": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-top-tube-bag": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "restrap-utility-hip-pack": {
-    "date": "2026-09-02T00:14:53+03:00",
-    "commit": "18f60cbfd1f050d2d5c07c4d249d5808ea6df8ff"
+    "baseline": true
   },
   "revelate-designs-alpinedopp": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-b-a-t": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-burrote": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-campamocha": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-choss-2-7l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-choss-4l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-cranny": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-denali-action-tote": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-egress-pocket": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-extended-play-1-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-extended-play-2l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-gastank": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-hopper": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-jerrycan": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-joey-downtube-bag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-mag-tank": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-mag-tank-fasttrack": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-magtank": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-magtank2000": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-mountainfeedbag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-nanopanniers": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-nook": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-pitchfork": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-polecat": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-portage-panniers-10l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-portage-panniers-14l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-portage-panniers-18l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-pronghorn-7-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-pronghorn-11l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-pronghorn-23l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ranger-6l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ranger-7-3l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ranger-8-6l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ranger-10l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-rifter-4-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-rifter-5-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-rifter-7l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-rifter-8-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ripio-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ripio-6-3l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ripio-7-7l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ripio-9l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-rohn-rack-bag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-saltyroll": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-sandur-2l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-sandur-3l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-scrambler-pocket": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-shrew": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-skedaddle-bag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-speedbag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-spinelock10": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-spinelock16": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-stoat": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-sweetroll": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-tangleframebag-3l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-tangleframebag-3-5l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-tangleframebag-4l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-tangleframebag-6l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-terrapin8l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-terrapinsystem14l": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-toolcash": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ultra-joey-downtube-bag": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "revelate-designs-ultra-shrew": {
-    "date": "2026-09-02T22:59:08+03:00",
-    "commit": "5c173e62b0cbe0351b63ef0790da256af4f6debd"
+    "baseline": true
   },
   "miss-grape-big-node-road": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-big-node-2h-road": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-bud": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-cluster-13-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-cluster-2-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-cluster-20-wp": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-cluster-7-wp": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-custom-frame-bags": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-internode-2-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-internode-3-copia": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-internode-4-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-internode-5-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-internode-6-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-moon": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-moon-ic": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-node-2h": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-node-2h-2": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-node": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-node-2": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-tendril-10-7": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-tendril-4-10-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-trunk-16-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-trunk6-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-trunk-8-waterproof": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "miss-grape-trunk-aero-bar": {
-    "date": "2026-09-04T13:31:30+03:00",
-    "commit": "1ca1073ef8f5cd97867cb6b722f07b6b900a205a"
+    "baseline": true
   },
   "cyclite-food-pouch-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-fork-bag-01-single": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-fork-bag-01-pair": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-frame-bag-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-frame-bag-large-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-frame-bag-small-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-frame-bag-xt-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-full-frame-bag-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-handle-bar-aero-bag-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-handle-bar-bag-nano-01": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-handle-bar-roll-bag-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-saddle-bag-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-saddle-bag-nano-01": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-saddle-bag-small-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-top-tube-bag-03": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-top-tube-bag-large-02": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "cyclite-top-tube-bag-nano-01": {
-    "date": "2026-09-04T16:02:51+03:00",
-    "commit": "c3330557523cc4d7538073de59a97c8ce9062129"
+    "baseline": true
   },
   "blackburn-grid-handlebar-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-grid-large-seat-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-grid-medium-seat-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-grid-sl-frame-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-local-grocery-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-local-plus-top-tube-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-local-rear-pannier": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-local-saddle-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-local-trunk-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-carryall-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-corner-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-elite-cargo-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-frame-bag-large": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-frame-bag-medium": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-frame-bag-small": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-seat-pack-dry-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "blackburn-outpost-top-tube-bag": {
-    "date": "2026-09-04T16:48:40+03:00",
-    "commit": "6c81e8cd16b093eb91b18a531c72235db997b50e"
+    "baseline": true
   },
   "topeak-129-aero-wedge-pack-0-41l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
-  },
-  "topeak-130-aero-wedge-pack-0-41l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-129-aero-wedge-pack-0-66l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
-  },
-  "topeak-130-aero-wedge-pack-0-66l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-129-aero-wedge-pack-1-31l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
-  },
-  "topeak-130-aero-wedge-pack-1-31l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-129-aero-wedge-pack-1-97l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
+  },
+  "topeak-130-aero-wedge-pack-0-41l": {
+    "baseline": true
+  },
+  "topeak-130-aero-wedge-pack-0-66l": {
+    "baseline": true
+  },
+  "topeak-130-aero-wedge-pack-1-31l": {
+    "baseline": true
   },
   "topeak-130-aero-wedge-pack-1-97l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1743-aero-wedge-pack-dx-0-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1743-aero-wedge-pack-dx-0-9l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-969-backloader-10l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-969-backloader-15l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-969-backloader-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1423-backloader-x-10l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1423-backloader-x-15l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1301-barloader": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1637-bento-pack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1283-burrito-pack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1627-burrito-pack-slim": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-796-cagepack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1140-cagepack-xl": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1315-compact-handlebar-bag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1630-dynapack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1631-dynapack-dx": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-686-dynawedge": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1451-e-xplorer-trunkbag-mtx-2-0": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1844-elementa-dry-barbag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1625-elementa-gearbag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1624-elementa-gearbag-ex": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1592-elementa-seatbag-0-2l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1592-elementa-seatbag-0-3l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1592-elementa-seatbag-0-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1332-escape-pod-l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1331-escape-pod-m": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1330-escape-pod-s": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1709-escape-pod-plus": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1710-escape-pod-plus-with-tube-cube": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1726-escape-toolpod": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1551-fastfuel-bag-bolt-on": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1552-fastfuel-bag-essential": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1712-fastfuel-drybag-ii": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1636-fastfuel-tri-station": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-855-fastfuel-tribag-0-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-855-fastfuel-tribag-0-7l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1289-fastfuel-tribox": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1746-fork-drybag-4l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1300-freeloader": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1290-frontloader": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-787-fuel-tank-0-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-787-fuel-tank-0-75l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-967-midloader-3l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-967-midloader-4-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-967-midloader-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1842-midloader-drybag-2l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1842-midloader-drybag-3l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1842-midloader-drybag-4-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-359-mondopack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-360-mondopack-hydro": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1691-mtm-trunkbag-dxp": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1692-mtm-trunkbag-ex": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1689-mts-trunkbag-dxp": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1690-mts-trunkbag-ex": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-857-mtx-trunkbag-dx": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1686-mtx-trunkbag-dx-mtx-2-0": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-122-mtx-trunkbag-dxp": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1685-mtx-trunkbag-dxp-mtx-2-0": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-859-mtx-trunkbag-ex": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1688-mtx-trunkbag-ex-mtx-2-0": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-858-mtx-trunkbag-exp": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1687-mtx-trunkbag-exp-mtx-2-0": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1327-pannier-drybag-16l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1327-pannier-drybag-24l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-120-propack-0-3l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-120-propack-0-43l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1744-qr-fork-drybag-5-8l-bolt-on": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1845-rackloader-drybag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-366-sidekick-stw-wedge-pack": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-367-sidekick-wedge-pack-0-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-367-sidekick-wedge-pack-0-75l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-363-survival-tool-wedge-ii": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-966-toploader": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1711-toploader-drybag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1843-toploader-dryshell": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1316-tourguide-handlebar-bag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1317-tourguide-handlebar-bag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1318-tourguide-handlebar-bag-dx": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-365-tri-drybag-0-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-365-tri-drybag-0-72l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-277-tribag-all-weather-0-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-277-tribag-all-weather-0-72l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1550-tubular-barbag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1621-tubular-barbag-slim": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1815-tubular-barbag-slim": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-1911-u-shell-drybag-10l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-687-weatherproof-dynawedge-0-35l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-687-weatherproof-dynawedge-0-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-328-wedge-drybag": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-329-wedge-drybag-0-6l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-329-wedge-drybag-1l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-329-wedge-drybag-1-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-361-wedge-pack-ii-0-5l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-361-wedge-pack-ii-0-8l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-361-wedge-pack-ii-1-25l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "topeak-361-wedge-pack-ii-1-65l": {
-    "date": "2026-09-04T17:23:51+03:00",
-    "commit": "4ea7a13e3d1487d4946d75f017d44439ff2956db"
+    "baseline": true
   },
   "rockgeist-barjam-cradle": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-cache-top-tube-bag-bolt-on": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-cache-top-tube-bag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-crust-evasion-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-crust-stupid-tourist-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-jones-bag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-dumpling-hip-pack": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-ecopak-custom-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-esker-hayduke": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-esker-lorax-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-fairlight-faran-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-foxglove": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-gondola": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-gravel-10-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-gravel-12l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-gravel-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-honeypot": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-horton-front-pouch": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-ibis-exie-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-ibis-ripley-framebags": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-jones-lwb-52hz-waterproof-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-jones-lwb-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-rove-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-rove-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-rove-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-rove-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-kona-sutra-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-konasutra-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-konasutra-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-konasutra-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-konasutra-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-unit-x-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-unit-x-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-unit-x-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-kona-unit-x-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-kona-unit-x-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-marin-pine-mountain-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-meanwhile-wald-basket-bag-15l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-meanwhile-wald-basket-bag-25l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-microwave-panniers": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-mountain-11l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-mountain-6l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-mountain-7l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-mountain-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-mr-fusion-seat-pack": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-neuhaus-hummingbird-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-waterproof-handlebar-bag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-nordest-sardinha-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-off-road-tour-52hz-waterproof-framebag-10-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-off-road-tour-52hz-waterproof-framebag-12l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-off-road-tour-52hz-waterproof-framebag-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-otso-fenrir-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-pivot-trail-429": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-revel-wayward-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-rocky-mountain-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-cutthroat-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-cutthroat-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-cutthroat-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-cutthroat-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-fargo-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-fargo-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-fargo-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-salsa-fargo-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-salsa-journeyman-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-santa-cruz-5010": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-santa-cruz-bronson": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-santa-cruz-chameleon-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-santa-cruz-hightower": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-santa-cruz-megatower": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-santa-cruz-nomad": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-santa-cruz-tallboy": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-specialized-epic-world-cup-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-stooge-dirt-tracker-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-stooge-mk-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-bridgeclub-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-bridgeclub-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-bridgeclub-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-bridgeclub-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ecr-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ecr-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ecr-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ecr-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surly-grappler-52hz-waterproof-framebag-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surly-grappler-52hz-waterproof-framebag-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surly-grappler-52hz-waterproof-framebag-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surly-grappler-52hz-waterproof-framebag-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surly-ghost-grappler-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-surly-karate-monkey-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-surly-karate-monkey-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-surly-karate-monkey-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-surly-karate-monkey-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surlykrampus-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surlykrampus-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surlykrampus-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-surlykrampus-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ogre-12-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ogre-14-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ogre-6-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-surly-ogre-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-titus-silk-road-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-trail-52hz-waterproof-framebag-10-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-trail-52hz-waterproof-framebag-12l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-trail-52hz-waterproof-framebag-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-transition-sentinel": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-transition-smuggler": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-52hz-waterproof-framebag-transition-spur": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-trek-checkpoint-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-ultra-pe-custom-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-ultra-pe-dry-bag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-viral-derive-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-wedge-52hz-waterproof-framebag-10-5l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-wedge-52hz-waterproof-framebag-12l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-wedge-52hz-waterproof-framebag-9l": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   },
   "rockgeist-x-pac-custom-framebag": {
-    "date": "2026-09-04T18:38:15+03:00",
-    "commit": "f07ad267d2dbb0c8e1d973028209c41cfae845db"
+    "baseline": true
   }
 }

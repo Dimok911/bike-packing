@@ -793,7 +793,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-accessory-pack-19515.jpg?v=1750865174&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         3.5
@@ -1049,7 +1048,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-r7100-front.jpg?v=1764346136&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         25
@@ -1430,7 +1428,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f5542-front.jpg?v=1767105857&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -1642,7 +1639,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-back-roller-core-3281.jpg?v=1737540983&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -2112,7 +2108,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f5207-pair.jpg?v=1756188186&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -2741,7 +2736,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f5536-front.jpg?v=1743087915&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         23
@@ -3153,7 +3147,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f5256-pair.jpg?v=1767105872&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["ortlieb-back-roller-35l-mesh-pocket-pair"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["ortlieb-back-roller-35l-mesh-pocket-pair"][0] || ""
   },
@@ -3342,7 +3335,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-bike-packer-09558.jpg?v=1743758532&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -3637,7 +3629,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f2704-detail-3.jpg?v=1743758559&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         21
@@ -3877,7 +3868,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-commuter-bag-urban-05572.jpg?v=1743758586&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -4158,7 +4148,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-dry-pack-08640.jpg?v=1743087941&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12
@@ -4430,7 +4419,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-dry-pack-08640.jpg?v=1743087941&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         16
@@ -4702,7 +4690,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-fork-pack-ortliebgravel0810.jpg?v=1753261478&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4.1
@@ -5031,7 +5018,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/f999501-fork-pack-5-8l-cyber-blue-pink-front-01.webp?v=1784195790&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5.8
@@ -5287,7 +5273,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-18438.jpg?v=1737542277&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -5454,7 +5439,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-18438.jpg?v=1737542277&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -5623,7 +5607,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-15678.jpg?v=1737542296&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -5802,7 +5785,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-15678.jpg?v=1737542296&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -6012,7 +5994,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-toptube-18938.jpg?v=1737542331&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -6278,7 +6259,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-toptube-18938.jpg?v=1737542331&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -6562,7 +6542,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/f994603-frame-pack-3l-zip-cyber-blue-pink-front-01.webp?v=1784195776&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -6829,7 +6808,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-frame-pack-toptube-19807.jpg?v=1737542362&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -7100,7 +7078,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-fuel-pack-18938.jpg?v=1737542383&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         1
@@ -7360,7 +7337,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9997-pair.jpg?v=1767105893&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         14.5
@@ -7560,7 +7536,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/f999002-gravel-pack-14-5l-cyber-pink-front-01.webp?v=1784195783&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         14.5
@@ -7809,7 +7784,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/f993303-handlebar-pack-9l-cyber-blue-pink-front-01.webp?v=1784195767&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -8072,7 +8046,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-handlebar-pack-rue8370.jpg?v=1737542509&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15
@@ -8301,7 +8274,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9920-front.jpg?v=1767105909&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -8445,7 +8417,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9928-detail-2.jpg?v=1737542532&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15
@@ -8661,7 +8632,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-handlebar-pack-plus-17207.jpg?v=1737542554&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         11
@@ -8926,7 +8896,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-handlebar-pack-qr-12707.jpg?v=1737542573&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         11
@@ -9162,7 +9131,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9665-front.jpg?v=1767105916&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         0.5
@@ -9321,7 +9289,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9675-front.jpg?v=1767105916&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         0.8
@@ -9544,7 +9511,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f70971-front.jpg?v=1750865252&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         21
@@ -9783,7 +9749,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-pedal-mate-10848.jpg?v=1737542931&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         16
@@ -10095,7 +10060,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-rack-pack-44676.jpg?v=1740986977&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         24
@@ -10558,7 +10522,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-rack-pack-44676.jpg?v=1740986977&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         31
@@ -10937,7 +10900,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-saddle-bag-13392.jpg?v=1741882411&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         1.6
@@ -11187,7 +11149,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9485-front.jpg?v=1750865267&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4.1
@@ -11469,7 +11430,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-seat-pack-19743.jpg?v=1737543226&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         11
@@ -11771,7 +11731,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/f990502-seat-pack-16-5l-cyber-blue-pink-front-01.webp?v=1784195763&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         16.5
@@ -12028,7 +11987,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9907-front.jpg?v=1767105923&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         7.5
@@ -12178,7 +12136,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f9903-detail-4.jpg?v=1737543250&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         13
@@ -12495,7 +12452,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f4905-pair.jpg?v=1737543467&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         15
@@ -12936,7 +12892,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f6154-front.jpg?v=1750865282&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         14.5
@@ -13359,7 +13314,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-sport-roller-core-03.jpg?v=1737543524&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         14.5
@@ -13763,7 +13717,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f6104-pair.jpg?v=1737543542&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         14.5
@@ -14238,7 +14191,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-toptube-bag-07266.jpg?v=1741882434&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         1.5
@@ -14502,7 +14454,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f8240-detail-2.jpg?v=1737543683&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         12
@@ -14703,7 +14654,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f8520-front.jpg?v=1737543708&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         12
@@ -14887,7 +14837,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-twin-city-urban-06657.jpg?v=1737543728&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -15256,7 +15205,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f3682-front.jpg?v=1743758796&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5
@@ -15780,7 +15728,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f3463-front.jpg?v=1750865298&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         6.5
@@ -16149,7 +16096,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f79904-front.jpg?v=1737543966&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         17.5
@@ -16360,7 +16306,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f79403-front.jpg?v=1737543949&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         17.5
@@ -16693,7 +16638,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f7753-front.jpg?v=1742480465&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -17169,7 +17113,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f7758-front.jpg?v=1743088008&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         26
@@ -17703,7 +17646,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-vario-lite-0887.jpg?v=1753707277&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         26
@@ -18042,7 +17984,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-velo-shopper-04360.jpg?v=1743760946&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         18
@@ -18285,7 +18226,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-velo-sling-08334.jpg?v=1766400963&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -18521,7 +18461,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f3273-front.jpg?v=1767024239&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2.5
@@ -18643,7 +18582,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0686/4021/1122/files/productimage-f3275-front.jpg?v=1767024239&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5
@@ -18758,7 +18696,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_BB-Packer-dimensions_b6f692a7-a9d3-4a22-83b9-2a5453d74361.jpg?v=1752253402&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-bb-packer-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-bb-packer-handlebar-bag"][0] || ""
   },
@@ -18867,7 +18804,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_BUG_Pannier_Backpack_Side_Mesh_Pocket_Waterbottle_c0da08be-345c-4083-8d66-bf921afac1af.jpg?v=1786140443&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-bug-2-0-pannier-backpack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-bug-2-0-pannier-backpack"][0] || ""
   },
@@ -19000,7 +18936,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/240417_Arkel_Shoot_Studio_Garage_Orford_Anthony-159.jpg?v=1737401499&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2
@@ -19155,7 +19090,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/BURRITO_4_5L_xpac_stealth_grey-web.jpg?v=1737460416&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4.5
@@ -19298,7 +19232,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-commuter-pannier.jpg?v=1761157902&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-commuter-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-commuter-urban-pannier"][0] || ""
   },
@@ -19400,7 +19333,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Dolphin_32_Black-6.jpg?v=1735622533&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-16l-waterproof-pannier-pair"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-16l-waterproof-pannier-pair"][0] || ""
   },
@@ -19488,7 +19420,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Dolphin_32_Black-6.jpg?v=1735622533&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-16l-waterproof-pannier-single"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-16l-waterproof-pannier-single"][0] || ""
   },
@@ -19600,7 +19531,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Dolphin_32_Black-6_85b14f8a-6bbb-47bf-8f2c-84ac046f5e98.jpg?v=1735622536&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-24l-waterproof-pannier-pair"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-24l-waterproof-pannier-pair"][0] || ""
   },
@@ -19698,7 +19628,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Dolphin_32_Black-6_85b14f8a-6bbb-47bf-8f2c-84ac046f5e98.jpg?v=1735622536&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-24l-waterproof-pannier-single"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-dolphin-24l-waterproof-pannier-single"][0] || ""
   },
@@ -19781,7 +19710,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-black-28-l-pair-dry-lites-waterproof-bags-39404382650617.jpg?v=1735622531&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         28,
@@ -19875,7 +19803,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-black-28-l-pair-dry-lites-waterproof-bags-39465898508537.jpg?v=1735622530&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         28,
@@ -20013,7 +19940,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Forkpacker_5L_7L-gris.jpg?v=1760553763&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -20171,7 +20097,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Forkpacker_5L_7L-gris.jpg?v=1760553763&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -20326,7 +20251,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-gt-18.jpg?v=1757364629&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18-classic-touring-pannier-pair"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18-classic-touring-pannier-pair"][0] || ""
   },
@@ -20435,7 +20359,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-gt-18.jpg?v=1757364629&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18-classic-touring-pannier-single"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18-classic-touring-pannier-single"][0] || ""
   },
@@ -20548,7 +20471,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-gt-18_2ca042b3-881f-4143-abdb-54430e36248b.jpg?v=1757364844&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18bp-convertible-backpack-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-18bp-convertible-backpack-pannier"][0] || ""
   },
@@ -20664,7 +20586,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/dimensions-GT-54_91fcf9bd-8bb4-4672-a37c-bc929c7108a1.jpg?v=1756926598&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-54-classic-touring-panniers"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-gt-54-classic-touring-panniers"][0] || ""
   },
@@ -20740,7 +20661,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Bike_Bags-3_1800x1800_48244f58-6959-4139-ba3a-e7b5151cd1c7.jpg?v=1771957094&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         7.5,
@@ -20824,7 +20744,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Bike_Bags-3_1800x1800_48244f58-6959-4139-ba3a-e7b5151cd1c7.jpg?v=1771957094&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         7.5,
@@ -20935,7 +20854,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/haul-it-from-arkel-web-13.jpg?v=1775675503&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-haul-it-versatile-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-haul-it-versatile-pannier"][0] || ""
   },
@@ -21094,7 +21012,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/Tote-Bags-Turquoise.png?v=1658840672&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-heavy-duty-tote-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-heavy-duty-tote-bag"][0] || ""
   },
@@ -21232,7 +21149,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/240417_Arkel_Shoot_Studio_Garage_Orford_Anthony-301-2.jpg?v=1755739481&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-le-petit-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-le-petit-handlebar-bag"][0] || ""
   },
@@ -21364,7 +21280,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-metropolitan-urban-pannier-with-laptop-padded-pouch_12of54.jpg?v=1773538055&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-metropolitan-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-metropolitan-urban-pannier"][0] || ""
   },
@@ -21485,7 +21400,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/DSCF0023_copy_ebdda47d-a822-4ed9-968b-ef9f05bd8e7e.jpg?v=1760977847&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-metropolitan-waterproof-rolltop-backpack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-metropolitan-waterproof-rolltop-backpack"][0] || ""
   },
@@ -21610,7 +21524,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Mont_Royal_Urban-290_1.jpg?v=1774534866&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-mont-royal-sling-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-mont-royal-sling-bag"][0] || ""
   },
@@ -21723,7 +21636,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -21830,7 +21742,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -21957,7 +21868,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -22064,7 +21974,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -22191,7 +22100,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -22298,7 +22206,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_ORCA2_Red_FrontView_shoulderstrap_3b737b7d-7c39-46b0-9627-16207c44719a.jpg?v=1755204219&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         12.5,
@@ -22414,7 +22321,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Orca_City_Backpack_Pannier_rack.jpg?v=1785254814&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-orca-city-backpack-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-orca-city-backpack-pannier"][0] || ""
   },
@@ -22513,7 +22419,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/rollpacker_handlebarbag_up_OCEAN_BLUE_FRONT.jpg?v=1769617359&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15,
@@ -22627,7 +22532,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/Rollpacker-25-Side.png?v=1756413474&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15,
@@ -22739,7 +22643,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Rollpacker_OCEAN_BLUE_REAR.jpg?v=1763992586&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15,
@@ -22852,7 +22755,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_Rollpacker_OCEAN_BLUE_REAR.jpg?v=1763992586&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         15,
@@ -22995,7 +22897,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Saddle_Angle_Arkel-2-stealth_grey.jpg?v=1756830246&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-saddle-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-saddle-bag"][0] || ""
   },
@@ -23127,7 +23028,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-seatpacker-9-stealth_grey.jpg?v=1764357000&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         9,
@@ -23282,7 +23182,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-seatpacker-stealth_grey.jpg?v=1764357000&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         9,
@@ -23477,7 +23376,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Shopper_dimensions.jpg?v=1772564844&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-shopper-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-shopper-urban-pannier"][0] || ""
   },
@@ -23603,7 +23501,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_BikeBags_BB-Square-Bike.jpg?v=1762785130&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-bb-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-bb-handlebar-bag"][0] || ""
   },
@@ -23743,7 +23640,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Shoot_Studio_240822-42.jpg?v=1761142812&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-d-rolltop-backpack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-d-rolltop-backpack"][0] || ""
   },
@@ -23870,7 +23766,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/arkel-waterproof-signature-h-pannier-straps-with-x-tack-for-durability_1d3c93ca-2f6d-4eb4-a77e-5dda39ea8709.jpg?v=1762788143&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-h-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-h-urban-pannier"][0] || ""
   },
@@ -24013,7 +23908,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-signature-m-waterproof-urban-pannier-40341671969017_1800x1800_d11f1fba-b7db-4bf9-8d72-ffb47d44be34.jpg?v=1775074660&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-m-waterproof-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-m-waterproof-urban-pannier"][0] || ""
   },
@@ -24175,7 +24069,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/arkel-waterproof-signature-v-pannier-with-padded-laptop-pouch-and-organizer.jpg?v=1762785968&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-v-urban-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-signature-v-urban-pannier"][0] || ""
   },
@@ -24282,7 +24175,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-t-28.jpg?v=1757365594&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-t-28-classic-touring-panniers"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-t-28-classic-touring-panniers"][0] || ""
   },
@@ -24389,7 +24281,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/products/dimensions-t-42.jpg?v=1756927047&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-t-42-classic-touring-panniers"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-t-42-classic-touring-panniers"][0] || ""
   },
@@ -24542,7 +24433,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL-dessin_technique-TACO_6_trous.jpg?v=1778775019&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-top-tube-bag"][0] || ""
   },
@@ -24663,7 +24553,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Tailrider2_dimensions.png?v=1775676992&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-tailrider-trunk-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-tailrider-trunk-bag"][0] || ""
   },
@@ -24760,7 +24649,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Tailrider_roll_op_on_share_bike.jpg?v=1773064547&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-tailrider-rolltop-trunk-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-tailrider-rolltop-trunk-bag"][0] || ""
   },
@@ -24858,7 +24746,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Water_Resistant_Frame_Bag-allMOUNTAIN.jpg?v=1764862745&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2.5,
@@ -24973,7 +24860,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame_Bags_Water_Resistant-4.jpg?v=1764862745&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2.5,
@@ -25088,7 +24974,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame_Bags_Water_Resistant-2.jpg?v=1764862745&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2.5,
@@ -25182,7 +25067,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-waterproof-frame-bag-42513219715321.jpg?v=1735622557&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         2.5
@@ -25266,7 +25150,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-xpac-black-2-5-l-waterproof-frame-bag-42513219682553_1.jpg?v=1781705383&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -25350,7 +25233,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Waterproof_Frame_Bag_Large_bb538fcb-c350-4a13-ac6d-4e1851bd46a5.jpg?v=1735622557&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         5
@@ -25456,7 +25338,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Wellington_Messenger_bag_6L_front_view_Stealth_Grey_1.jpg?v=1774536684&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -25568,7 +25449,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Wellington_Messenger_bag_24L_Black_TableTop_side_view.jpg?v=1774536684&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         16,
@@ -25683,7 +25563,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_Wellington_Messenger_bag_24L_Black_TableTop_side_view.jpg?v=1774536684&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-30T19:44:00+03:00",
     "imageVolumeOptions": [
       [
         16,
@@ -25791,7 +25670,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/XP_Top_tube_bag_Rear_bottom_and_strap_view_1.jpg?v=1780338121&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-exp-waterproof-top-tube-1l-copy"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-exp-waterproof-top-tube-1l-copy"][0] || ""
   },
@@ -25898,7 +25776,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_XP_Top_Tube_bags_Front_Rear.jpg?v=1779739938&width=700"
     ],
     "imagesCheckedAt": "2026-08-30",
-    "catalogPublishedAt": "2026-08-29T15:18:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["arkel-exp-waterproof-top-tube-1l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["arkel-exp-waterproof-top-tube-1l"][0] || ""
   },
@@ -25983,7 +25860,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "aero bolt on long top tube module",
       "Aero Bolt-On Long Top Tube Module"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-bolt-on-long-top-tube-module"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-bolt-on-long-top-tube-module"][0] || ""
   },
@@ -26072,7 +25948,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "aero bolt on top tube module",
       "Aero Bolt-On Top Tube Module"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-bolt-on-top-tube-module"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-bolt-on-top-tube-module"][0] || ""
   },
@@ -26145,7 +26020,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-aero-frame-module"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.1
@@ -26232,7 +26106,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-aero-frame-module"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.5
@@ -26331,7 +26204,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-aero-frame-module"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.8
@@ -26430,7 +26302,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "aero top tube module",
       "Aero Top Tube Module"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-top-tube-module"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-aero-top-tube-module"][0] || ""
   },
@@ -26507,7 +26378,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura bombtrack frame pack 2 4l",
       "Apidura + Bombtrack Frame Pack (2.4L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-bombtrack-frame-pack-2-4l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-bombtrack-frame-pack-2-4l"][0] || ""
   },
@@ -26604,7 +26474,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura x canyon bolt on top tube pack",
       "Apidura x Canyon Bolt-On Top Tube Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-31T00:33:42+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-bolt-on-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-bolt-on-top-tube-pack"][0] || ""
   },
@@ -26687,7 +26556,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-apidura-x-canyon-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.4
@@ -26790,7 +26658,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-apidura-x-canyon-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.5
@@ -26891,7 +26758,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura x canyon handlebar pack",
       "Apidura x Canyon Handlebar Pack (2L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-handlebar-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-handlebar-pack"][0] || ""
   },
@@ -26988,7 +26854,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura x canyon saddle pack",
       "Apidura x Canyon Saddle Pack (5L)"
     ],
-    "catalogPublishedAt": "2026-08-31T00:33:42+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-saddle-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-apidura-x-canyon-saddle-pack"][0] || ""
   },
@@ -27079,7 +26944,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry accessory pocket",
       "Backcountry Accessory Pocket (4L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-accessory-pocket"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-accessory-pocket"][0] || ""
   },
@@ -27166,7 +27030,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry downtube pack",
       "Backcountry Downtube Pack (1.8L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-downtube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-downtube-pack"][0] || ""
   },
@@ -27249,7 +27112,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-food-pouch"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         0.8
@@ -27366,7 +27228,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-food-pouch"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         0.8,
@@ -27497,7 +27358,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry frame pack 1l",
       "Backcountry Frame Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-frame-pack-1l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-frame-pack-1l"][0] || ""
   },
@@ -27584,7 +27444,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry frame pack",
       "Backcountry Frame Pack (2L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-frame-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-frame-pack"][0] || ""
   },
@@ -27665,7 +27524,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.5
@@ -27768,7 +27626,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -27875,7 +27732,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -27985,7 +27841,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-handlebar-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         11
@@ -28106,7 +27961,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-handlebar-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         7
@@ -28228,7 +28082,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry long top tube pack",
       "Backcountry Long Top Tube Pack (1.8L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-long-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-long-top-tube-pack"][0] || ""
   },
@@ -28317,7 +28170,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry rear top tube pack",
       "Backcountry Rear Top Tube Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-rear-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-rear-top-tube-pack"][0] || ""
   },
@@ -28402,7 +28254,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         10
@@ -28511,7 +28362,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.5
@@ -28622,7 +28472,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-backcountry-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -28736,7 +28585,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "backcountry top tube pack",
       "Backcountry Top Tube Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-backcountry-top-tube-pack"][0] || ""
   },
@@ -28827,7 +28675,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "city handlebar pack",
       "City Handlebar Pack (2L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-city-handlebar-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-city-handlebar-pack"][0] || ""
   },
@@ -28914,7 +28761,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition bolt on top tube pack 1l",
       "Expedition Bolt-On Top Tube Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-bolt-on-top-tube-pack-1l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-bolt-on-top-tube-pack-1l"][0] || ""
   },
@@ -28999,7 +28845,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-cargo-cage-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.5
@@ -29111,7 +28956,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-cargo-cage-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.5,
@@ -29229,7 +29073,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition downtube pack",
       "Expedition Downtube Pack (1.5L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-downtube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-downtube-pack"][0] || ""
   },
@@ -29316,7 +29159,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition ebike charger pack",
       "Expedition E-Bike Charger Pack (1.6L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-ebike-charger-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-ebike-charger-pack"][0] || ""
   },
@@ -29399,7 +29241,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.8
@@ -29509,7 +29350,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.8,
@@ -29619,7 +29459,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.8,
@@ -29729,7 +29568,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.8,
@@ -29851,7 +29689,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition front accessory pack",
       "Expedition Front Accessory Pack (3.5L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-front-accessory-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-front-accessory-pack"][0] || ""
   },
@@ -29942,7 +29779,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-front-rack-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         20
@@ -30069,7 +29905,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-front-rack-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         20,
@@ -30188,7 +30023,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.6,
@@ -30301,7 +30135,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.6
@@ -30414,7 +30247,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.6,
@@ -30527,7 +30359,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-full-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4.6,
@@ -30654,7 +30485,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-handlebar-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         9,
@@ -30802,7 +30632,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-handlebar-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -30943,7 +30772,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         9,
@@ -31072,7 +30900,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         9,
@@ -31201,7 +31028,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -31328,7 +31154,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition stem pack",
       "Expedition Stem Pack (1.3L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-stem-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-stem-pack"][0] || ""
   },
@@ -31417,7 +31242,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "expedition tool pack 1l",
       "Expedition Tool Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-tool-pack-1l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-expedition-tool-pack-1l"][0] || ""
   },
@@ -31498,7 +31322,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-top-tube-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         0.6
@@ -31597,7 +31420,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-expedition-top-tube-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1
@@ -31700,7 +31522,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "maap x apidura frame pack 1l v2",
       "MAAP x Apidura Frame Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-frame-pack-1l-v2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-frame-pack-1l-v2"][0] || ""
   },
@@ -31787,7 +31608,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "maap x apidura frame pack 4l v2",
       "MAAP x Apidura Frame Pack (4L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-frame-pack-4l-v2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-frame-pack-4l-v2"][0] || ""
   },
@@ -31872,7 +31692,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "maap x apidura handlebar pack 9l v2",
       "MAAP x Apidura Handlebar Pack (9L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-handlebar-pack-9l-v2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-handlebar-pack-9l-v2"][0] || ""
   },
@@ -31959,7 +31778,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "maap x apidura saddle pack 7l v2",
       "MAAP x Apidura Saddle Pack (7L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-saddle-pack-7l-v2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-maap-x-apidura-saddle-pack-7l-v2"][0] || ""
   },
@@ -32052,7 +31870,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "racing aerobar pack",
       "Racing Aerobar Pack (2.5L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-aerobar-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-aerobar-pack"][0] || ""
   },
@@ -32143,7 +31960,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "racing bolt on top tube pack",
       "Racing Bolt-On Top Tube Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-bolt-on-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-bolt-on-top-tube-pack"][0] || ""
   },
@@ -32234,7 +32050,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "racing frame pack 1l",
       "Racing Frame Pack (1L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-frame-pack-1l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-frame-pack-1l"][0] || ""
   },
@@ -32319,7 +32134,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         2.4
@@ -32430,7 +32244,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-frame-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         4
@@ -32548,7 +32361,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "racing handlebar pack",
       "Racing Handlebar Pack (2L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-handlebar-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-handlebar-pack"][0] || ""
   },
@@ -32637,7 +32449,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "racing long top tube pack",
       "Racing Long Top Tube Pack (2L)"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-long-top-tube-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["apidura-racing-long-top-tube-pack"][0] || ""
   },
@@ -32722,7 +32533,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -32829,7 +32639,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5
@@ -32933,7 +32742,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-saddle-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         7
@@ -33039,7 +32847,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-top-tube-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         0.5
@@ -33150,7 +32957,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "apidura-racing-top-tube-pack"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1
@@ -33246,7 +33052,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-bag-system"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 21,
@@ -33318,7 +33123,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-bag-system"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 21,
@@ -33390,7 +33194,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-bag-system"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 21,
@@ -33462,7 +33265,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-bag-system"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 21,
@@ -33534,7 +33336,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 16,
@@ -33606,7 +33407,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 16,
@@ -33678,7 +33478,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 16,
@@ -33750,7 +33549,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -33822,7 +33620,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -33894,7 +33691,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-bar-cage-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -33974,7 +33770,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-cage-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.7
@@ -34064,7 +33859,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-cage-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -34154,7 +33948,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-cage-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5
@@ -34270,7 +34063,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cargopack",
       "CargoPack"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["tailfin-cargopack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["tailfin-cargopack"][0] || ""
   },
@@ -34377,7 +34169,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cargopack top bag",
       "CargoPack Rack Top Bag"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["tailfin-cargopack-top-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["tailfin-cargopack-top-bag"][0] || ""
   },
@@ -34454,7 +34245,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-downtube-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         1.7
@@ -34544,7 +34334,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-downtube-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         3
@@ -34630,7 +34419,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-fork-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -34711,7 +34499,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-fork-packs"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -34788,7 +34575,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -34860,7 +34646,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -34932,7 +34717,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -35004,7 +34788,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -35076,7 +34859,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -35148,7 +34930,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-half-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -35220,7 +35001,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-long-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 20,
@@ -35292,7 +35072,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-long-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 20,
@@ -35364,7 +35143,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-long-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 20,
@@ -35440,7 +35218,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-mini-panniers"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -35521,7 +35298,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-mini-panniers"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -35610,7 +35386,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-panniers"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [
       [
         16
@@ -35698,7 +35473,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-panniers"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 11,
@@ -35770,7 +35544,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-rear-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -35842,7 +35615,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-rear-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -35946,7 +35718,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "speedpack",
       "SpeedPack"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["tailfin-speedpack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["tailfin-speedpack"][0] || ""
   },
@@ -36029,7 +35800,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "speedpack top bag",
       "SpeedPack Rack Top Bag"
     ],
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["tailfin-speedpack-top-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["tailfin-speedpack-top-bag"][0] || ""
   },
@@ -36098,7 +35868,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 14,
@@ -36170,7 +35939,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 14,
@@ -36242,7 +36010,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-top-tube-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 14,
@@ -36314,7 +36081,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-wedge-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 15,
@@ -36386,7 +36152,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-wedge-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 15,
@@ -36458,7 +36223,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tailfin-wedge-frame-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-08-30T23:58:35+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 15,
@@ -36561,7 +36325,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "aero race top tube bag",
       "Aero Race Top Tube Bag (0.6 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-aero-race-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-aero-race-top-tube-bag"][0] || ""
   },
@@ -36729,7 +36492,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "vegan",
       "Bar Pack (10 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-bar-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-bar-pack"][0] || ""
   },
@@ -36828,7 +36590,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "yellowteam",
       "Bolt-on Top Tube Bag (0.8 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-bolt-on-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-bolt-on-top-tube-bag"][0] || ""
   },
@@ -36965,7 +36726,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "yellowteam",
       "Canister Bag (1.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-canister-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-canister-bag"][0] || ""
   },
@@ -37377,7 +37137,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "custom frame bag",
       "Custom Frame Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-custom-frame-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-custom-frame-bag"][0] || ""
   },
@@ -37469,7 +37228,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "vegan",
       "Fork Bag (5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-fork-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-fork-bag"][0] || ""
   },
@@ -37571,7 +37329,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag large",
       "Frame Bag - Large (4.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-large"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-large"][0] || ""
   },
@@ -37670,7 +37427,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag medium",
       "Frame Bag - Medium (3.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-medium"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-medium"][0] || ""
   },
@@ -37767,7 +37523,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag small",
       "Frame bag - Small (2.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-small"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-frame-bag-small"][0] || ""
   },
@@ -37866,7 +37621,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "full frame bag large",
       "Full Frame Bag - Large (9 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-large"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-large"][0] || ""
   },
@@ -37965,7 +37719,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "full frame bag medium",
       "Full Frame Bag - Medium (7.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-medium"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-medium"][0] || ""
   },
@@ -38064,7 +37817,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "full frame bag small",
       "Full Frame Bag - Small (6 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-small"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-full-frame-bag-small"][0] || ""
   },
@@ -38158,7 +37910,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "holster bar bag",
       "Holster Bar Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-holster-bar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-holster-bar-bag"][0] || ""
   },
@@ -38260,7 +38011,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "holster bar bag plus",
       "Holster Bar Bag Plus"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-holster-bar-bag-plus"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-holster-bar-bag-plus"][0] || ""
   },
@@ -38389,7 +38139,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "lightweight race hydration vest",
       "Lightweight Race Hydration Vest (4 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-lightweight-race-hydration-vest"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-lightweight-race-hydration-vest"][0] || ""
   },
@@ -38485,7 +38234,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race aero bar bag",
       "Race Bar Bag - Aero"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-aero-bar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-aero-bar-bag"][0] || ""
   },
@@ -38579,7 +38327,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race bar bag drop bar",
       "Race Bar Bag - Drop Bar"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-bar-bag-drop-bar"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-bar-bag-drop-bar"][0] || ""
   },
@@ -38675,7 +38422,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race bar bag flat bar",
       "Race Bar Bag - Flat Bar"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-bar-bag-flat-bar"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-bar-bag-flat-bar"][0] || ""
   },
@@ -38769,7 +38515,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race frame bag",
       "Race Frame Bag - Small (3 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-frame-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-frame-bag"][0] || ""
   },
@@ -38867,7 +38612,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race frame bag large",
       "Race Frame Bag - Large (4.2 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-frame-bag-large"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-frame-bag-large"][0] || ""
   },
@@ -39004,7 +38748,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race hydration vest",
       "Race Hydration Vest"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-hydration-vest"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-hydration-vest"][0] || ""
   },
@@ -39117,7 +38860,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race musette",
       "Race Musette (3 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-musette"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-musette"][0] || ""
   },
@@ -39211,7 +38953,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race saddle bag",
       "Race Saddle Bag (7 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-saddle-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-saddle-bag"][0] || ""
   },
@@ -39314,7 +39055,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race stem bag",
       "Race Stem Bag (1.1 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-stem-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-stem-bag"][0] || ""
   },
@@ -39411,7 +39151,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race top tube bag",
       "Race Top Tube Bag (1.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag"][0] || ""
   },
@@ -39504,7 +39243,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race top tube bag long",
       "Race Top Tube Bag - Long (2 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag-long"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag-long"][0] || ""
   },
@@ -39594,7 +39332,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "race top tube bag short",
       "Race Top Tube Bag - Short (1.2 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag-short"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-race-top-tube-bag-short"][0] || ""
   },
@@ -39691,7 +39428,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rear top tube bag",
       "Rear Top Tube Bag (0.8 Litre)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-rear-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-rear-top-tube-bag"][0] || ""
   },
@@ -39807,7 +39543,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "restrap large pannier",
       "Pannier - Large (22 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-restrap-large-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-restrap-large-pannier"][0] || ""
   },
@@ -39933,7 +39668,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rolltop backpack 22l",
       "Rolltop Backpack (22 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-backpack-22l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-backpack-22l"][0] || ""
   },
@@ -40059,7 +39793,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rolltop backpack 40l",
       "Rolltop Backpack (40 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-backpack-40l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-backpack-40l"][0] || ""
   },
@@ -40155,7 +39888,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rolltop canister bag",
       "Rolltop Canister Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-canister-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-canister-bag"][0] || ""
   },
@@ -40267,7 +39999,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rolltop hydration vest",
       "Rolltop Hydration Vest"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-hydration-vest"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-rolltop-hydration-vest"][0] || ""
   },
@@ -40395,7 +40126,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag 14 litres",
       "Saddle Bag (14 litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-14-litres"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-14-litres"][0] || ""
   },
@@ -40514,7 +40244,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag 18 litres",
       "Saddle Bag (18 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-18-litres"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-18-litres"][0] || ""
   },
@@ -40646,7 +40375,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag holster dry bag 8 litres black black",
       "Saddle Bag (8 litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-holster-dry-bag-8-litres-black-black"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-bag-holster-dry-bag-8-litres-black-black"][0] || ""
   },
@@ -40780,7 +40508,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle pack 2 5l",
       "Saddle Pack (2.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-pack-2-5l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-pack-2-5l"][0] || ""
   },
@@ -40916,7 +40643,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle pack 4 5l",
       "Saddle Pack (4.5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-pack-4-5l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-saddle-pack-4-5l"][0] || ""
   },
@@ -41030,7 +40756,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "small pannier",
       "Pannier - Small (13 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-small-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-small-pannier"][0] || ""
   },
@@ -41134,7 +40859,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "waterproof",
       "Stem Bag (1.1 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-stem-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-stem-bag"][0] || ""
   },
@@ -41229,7 +40953,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "switch pannier 10 litres 1",
       "Switch Pannier (10 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-pannier-10-litres-1"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-pannier-10-litres-1"][0] || ""
   },
@@ -41325,7 +41048,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "switch pannier 5 litres",
       "Switch Pannier (5 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-pannier-5-litres"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-pannier-5-litres"][0] || ""
   },
@@ -41437,7 +41159,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "switch top bag 15l",
       "Switch Top Bag (15 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-top-bag-15l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-switch-top-bag-15l"][0] || ""
   },
@@ -41573,7 +41294,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "tool pouch",
       "Tool Pouch (0.6 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-tool-pouch"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-tool-pouch"][0] || ""
   },
@@ -41672,7 +41392,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "yellowteam",
       "Top Tube Bag (0.8 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-top-tube-bag"][0] || ""
   },
@@ -41805,7 +41524,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "utility hip pack",
       "Utility Hip Pack (6 Litres)"
     ],
-    "catalogPublishedAt": "2026-09-02T00:14:53+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["restrap-utility-hip-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["restrap-utility-hip-pack"][0] || ""
   },
@@ -41893,7 +41611,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "alpinedopp",
       "Alpine Dopp"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-alpinedopp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-alpinedopp"][0] || ""
   },
@@ -41979,7 +41696,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "b a t",
       "B.A.T. Tote Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-b-a-t"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-b-a-t"][0] || ""
   },
@@ -42092,7 +41808,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "burrote",
       "Burrote"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-burrote"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-burrote"][0] || ""
   },
@@ -42208,7 +41923,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "campamocha",
       "Campamocha"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-campamocha"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-campamocha"][0] || ""
   },
@@ -42294,7 +42008,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-choss"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         2.7,
@@ -42388,7 +42101,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-choss"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         2.7,
@@ -42498,7 +42210,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cranny",
       "Cranny Frame Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-cranny"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-cranny"][0] || ""
   },
@@ -42597,7 +42308,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "denali action tote",
       "Revelate x Adrift Prints Denali Action Tote"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-denali-action-tote"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-denali-action-tote"][0] || ""
   },
@@ -42733,7 +42443,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "egress pocket",
       "Egress Pocket"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-egress-pocket"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-egress-pocket"][0] || ""
   },
@@ -42811,7 +42520,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-extended-play"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         1.5
@@ -42896,7 +42604,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-extended-play"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         2
@@ -42993,7 +42700,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "gastank",
       "Gas Tank"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-gastank"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-gastank"][0] || ""
   },
@@ -43104,7 +42810,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "hopper",
       "Hopper Frame Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-hopper"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-hopper"][0] || ""
   },
@@ -43213,7 +42918,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "jerrycan",
       "Jerrycan ®"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-jerrycan"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-jerrycan"][0] || ""
   },
@@ -43339,7 +43043,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "joey downtube bag",
       "Joey Downtube Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-joey-downtube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-joey-downtube-bag"][0] || ""
   },
@@ -43439,7 +43142,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "mag tank",
       "Mag-Tank"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mag-tank"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mag-tank"][0] || ""
   },
@@ -43531,7 +43233,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "mag tank fasttrack",
       "Mag-Tank FastTrack"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mag-tank-fasttrack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mag-tank-fasttrack"][0] || ""
   },
@@ -43637,7 +43338,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "magtank",
       "Legacy Mag-Tank ™"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-magtank"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-magtank"][0] || ""
   },
@@ -43739,7 +43439,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "magtank2000",
       "Mag-Tank ™ 2000"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-magtank2000"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-magtank2000"][0] || ""
   },
@@ -43823,7 +43522,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "mountainfeedbag",
       "Mountain Feedbag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mountainfeedbag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-mountainfeedbag"][0] || ""
   },
@@ -43934,7 +43632,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "nanopanniers",
       "Nano Panniers"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-nanopanniers"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-nanopanniers"][0] || ""
   },
@@ -44034,7 +43731,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "nook",
       "Nook Frame Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-nook"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-nook"][0] || ""
   },
@@ -44124,7 +43820,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "pitchfork",
       "Pitchfork Aerobar System"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-pitchfork"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-pitchfork"][0] || ""
   },
@@ -44225,7 +43920,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "polecat",
       "Polecat"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-polecat"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-polecat"][0] || ""
   },
@@ -44338,7 +44032,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "totalWeightOptions": [
       800
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         10,
@@ -44482,7 +44175,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "totalWeightOptions": [
       900
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         10,
@@ -44612,7 +44304,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "totalWeightOptions": [
       990
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         10,
@@ -44710,7 +44401,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-pronghorn"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -44787,7 +44477,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-pronghorn"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -44864,7 +44553,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-pronghorn"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 17,
@@ -44944,7 +44632,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ranger"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         6,
@@ -45031,7 +44718,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ranger"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         6,
@@ -45118,7 +44804,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ranger"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         6,
@@ -45205,7 +44890,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ranger"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         6,
@@ -45292,7 +44976,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-rifter"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         4.5,
@@ -45379,7 +45062,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-rifter"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         4.5,
@@ -45466,7 +45148,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-rifter"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         4.5,
@@ -45553,7 +45234,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-rifter"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         4.5,
@@ -45640,7 +45320,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ripio"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -45727,7 +45406,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ripio"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -45814,7 +45492,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ripio"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -45901,7 +45578,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-ripio"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         5,
@@ -46005,7 +45681,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rohn rack bag",
       "Rohn Rack Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-rohn-rack-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-rohn-rack-bag"][0] || ""
   },
@@ -46097,7 +45772,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saltyroll",
       "Saltyroll"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-saltyroll"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-saltyroll"][0] || ""
   },
@@ -46183,7 +45857,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-sandur"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         2,
@@ -46277,7 +45950,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-sandur"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         2,
@@ -46381,7 +46053,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "scrambler pocket",
       "Scrambler Pocket"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-scrambler-pocket"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-scrambler-pocket"][0] || ""
   },
@@ -46470,7 +46141,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "shrew",
       "Shrew"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-shrew"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-shrew"][0] || ""
   },
@@ -46593,7 +46263,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "skedaddle bag",
       "Skedaddle Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-skedaddle-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-skedaddle-bag"][0] || ""
   },
@@ -46736,7 +46405,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "speedbag",
       "Speedbag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-speedbag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-speedbag"][0] || ""
   },
@@ -46833,7 +46501,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "spinelock10",
       "Spinelock ™ 10L"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-spinelock10"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-spinelock10"][0] || ""
   },
@@ -46922,7 +46589,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "spinelock16",
       "Spinelock ™ 16L"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-spinelock16"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-spinelock16"][0] || ""
   },
@@ -47023,7 +46689,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "stoat",
       "Stoat Seat Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-stoat"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-stoat"][0] || ""
   },
@@ -47125,7 +46790,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "sweetroll",
       "Sweetroll ®"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-sweetroll"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-sweetroll"][0] || ""
   },
@@ -47202,7 +46866,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-tangleframebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         3,
@@ -47289,7 +46952,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-tangleframebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         3,
@@ -47376,7 +47038,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-tangleframebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         3,
@@ -47463,7 +47124,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revelate-designs-tangleframebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageVolumeOptions": [
       [
         3,
@@ -47574,7 +47234,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "terrapin8l",
       "Terrapin ® System 8L"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-terrapin8l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-terrapin8l"][0] || ""
   },
@@ -47675,7 +47334,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "terrapinsystem14l",
       "Terrapin ® System 14L"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-terrapinsystem14l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-terrapinsystem14l"][0] || ""
   },
@@ -47782,7 +47440,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "toolcash",
       "ToolCash"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-toolcash"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-toolcash"][0] || ""
   },
@@ -47875,7 +47532,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ultra joey downtube bag",
       "Ultra Joey Downtube Bag"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-ultra-joey-downtube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-ultra-joey-downtube-bag"][0] || ""
   },
@@ -47960,7 +47616,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ultra shrew",
       "Ultra Shrew"
     ],
-    "catalogPublishedAt": "2026-09-02T22:59:08+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-ultra-shrew"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["revelate-designs-ultra-shrew"][0] || ""
   },
@@ -48048,7 +47703,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/big-node-road-5.jpg",
       "assets/manufacturer-catalog/miss-grape/big-node-road-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-big-node-road"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-big-node-road"][0] || ""
   },
@@ -48138,7 +47792,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/big-node-2h-road-6.jpg",
       "assets/manufacturer-catalog/miss-grape/big-node-2h-road-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-big-node-2h-road"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-big-node-2h-road"][0] || ""
   },
@@ -48227,7 +47880,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/bud-6.jpg",
       "assets/manufacturer-catalog/miss-grape/bud-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-bud"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-bud"][0] || ""
   },
@@ -48320,7 +47972,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/cluster-13-waterproof-8.jpg",
       "assets/manufacturer-catalog/miss-grape/cluster-13-waterproof-9.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-13-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-13-waterproof"][0] || ""
   },
@@ -48410,7 +48061,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/cluster-2-waterproof-5.jpg",
       "assets/manufacturer-catalog/miss-grape/cluster-2-waterproof-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-2-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-2-waterproof"][0] || ""
   },
@@ -48503,7 +48153,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/cluster-20-wp-8.jpg",
       "assets/manufacturer-catalog/miss-grape/cluster-20-wp-9.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-20-wp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-20-wp"][0] || ""
   },
@@ -48599,7 +48248,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/cluster-7-wp-9.jpg",
       "assets/manufacturer-catalog/miss-grape/cluster-7-wp-10.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-7-wp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-cluster-7-wp"][0] || ""
   },
@@ -48695,7 +48343,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/custom-frame-bags-13.jpg",
       "assets/manufacturer-catalog/miss-grape/custom-frame-bags-14.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-custom-frame-bags"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-custom-frame-bags"][0] || ""
   },
@@ -48786,7 +48433,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/internode-2-waterproof-6.jpg",
       "assets/manufacturer-catalog/miss-grape/internode-2-waterproof-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-2-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-2-waterproof"][0] || ""
   },
@@ -48875,7 +48521,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/internode-3-copia-5.jpg",
       "assets/manufacturer-catalog/miss-grape/internode-3-copia-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-3-copia"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-3-copia"][0] || ""
   },
@@ -48959,7 +48604,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/internode-4-waterproof-5.jpg",
       "assets/manufacturer-catalog/miss-grape/internode-4-waterproof-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-4-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-4-waterproof"][0] || ""
   },
@@ -49047,7 +48691,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/internode-5-waterproof-7.jpg",
       "assets/manufacturer-catalog/miss-grape/internode-5-waterproof-8.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-5-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-5-waterproof"][0] || ""
   },
@@ -49133,7 +48776,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/internode-6-waterproof-6.png",
       "assets/manufacturer-catalog/miss-grape/internode-6-waterproof-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-6-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-internode-6-waterproof"][0] || ""
   },
@@ -49224,7 +48866,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/moon-7.jpg",
       "assets/manufacturer-catalog/miss-grape/moon-8.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-moon"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-moon"][0] || ""
   },
@@ -49313,7 +48954,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/moon-ic-6.jpg",
       "assets/manufacturer-catalog/miss-grape/moon-ic-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-moon-ic"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-moon-ic"][0] || ""
   },
@@ -49403,7 +49043,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/node-2h-7.jpg",
       "assets/manufacturer-catalog/miss-grape/node-2h-8.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2h"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2h"][0] || ""
   },
@@ -49489,7 +49128,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/node-2h-2-5.jpg",
       "assets/manufacturer-catalog/miss-grape/node-2h-2-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2h-2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2h-2"][0] || ""
   },
@@ -49575,7 +49213,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/node-5.jpg",
       "assets/manufacturer-catalog/miss-grape/node-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node"][0] || ""
   },
@@ -49661,7 +49298,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/node-2-5.jpg",
       "assets/manufacturer-catalog/miss-grape/node-2-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-node-2"][0] || ""
   },
@@ -49752,7 +49388,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/tendril-10-7-6.jpg",
       "assets/manufacturer-catalog/miss-grape/tendril-10-7-7.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-tendril-10-7"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-tendril-10-7"][0] || ""
   },
@@ -49845,7 +49480,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/tendril-4-10-waterproof-7.jpg",
       "assets/manufacturer-catalog/miss-grape/tendril-4-10-waterproof-8.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-tendril-4-10-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-tendril-4-10-waterproof"][0] || ""
   },
@@ -49939,7 +49573,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/trunk-16-waterproof-8.jpg",
       "assets/manufacturer-catalog/miss-grape/trunk-16-waterproof-9.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-16-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-16-waterproof"][0] || ""
   },
@@ -50030,7 +49663,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/trunk6-waterproof-7.jpg",
       "assets/manufacturer-catalog/miss-grape/trunk6-waterproof-8.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk6-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk6-waterproof"][0] || ""
   },
@@ -50124,7 +49756,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/trunk-8-waterproof-8.jpg",
       "assets/manufacturer-catalog/miss-grape/trunk-8-waterproof-9.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-8-waterproof"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-8-waterproof"][0] || ""
   },
@@ -50217,7 +49848,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/miss-grape/trunk-aero-bar-8.jpg",
       "assets/manufacturer-catalog/miss-grape/trunk-aero-bar-9.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T13:31:30+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-aero-bar"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["miss-grape-trunk-aero-bar"][0] || ""
   },
@@ -50315,7 +49945,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "food pouch 02",
       "FOOD POUCH / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-food-pouch-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-food-pouch-02"][0] || ""
   },
@@ -50439,7 +50068,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cyclite-fork-bag-01"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-fork-bag-01-single"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-fork-bag-01-single"][0] || ""
   },
@@ -50563,7 +50191,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "totalWeightOptions": [
       448
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-fork-bag-01-pair"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-fork-bag-01-pair"][0] || ""
   },
@@ -50664,7 +50291,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag 02",
       "FRAME BAG / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-02"][0] || ""
   },
@@ -50765,7 +50391,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag large 02",
       "FRAME BAG LARGE / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-large-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-large-02"][0] || ""
   },
@@ -50862,7 +50487,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag small 02",
       "FRAME BAG SMALL / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-small-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-small-02"][0] || ""
   },
@@ -50974,7 +50598,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "frame bag xt 02",
       "FRAME BAG XT / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-xt-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-frame-bag-xt-02"][0] || ""
   },
@@ -51053,7 +50676,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "full frame bag 02",
       "FULL FRAME BAG / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-full-frame-bag-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-full-frame-bag-02"][0] || ""
   },
@@ -51158,7 +50780,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "handle bar aero bag 02",
       "HANDLE BAR AERO BAG / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-aero-bag-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-aero-bag-02"][0] || ""
   },
@@ -51256,7 +50877,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "handle bar bag nano 01",
       "HANDLE BAR BAG NANO / 01"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-bag-nano-01"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-bag-nano-01"][0] || ""
   },
@@ -51354,7 +50974,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "handle bar roll bag 02",
       "HANDLE BAR ROLL BAG / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-roll-bag-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-handle-bar-roll-bag-02"][0] || ""
   },
@@ -51448,7 +51067,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag 02",
       "SADDLE BAG / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-02"][0] || ""
   },
@@ -51542,7 +51160,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag nano 01",
       "SADDLE BAG NANO / 01"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-nano-01"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-nano-01"][0] || ""
   },
@@ -51640,7 +51257,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "saddle bag small 02",
       "SADDLE BAG SMALL / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-small-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-saddle-bag-small-02"][0] || ""
   },
@@ -51743,7 +51359,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "top tube bag 03",
       "TOP TUBE BAG / 03"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-03"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-03"][0] || ""
   },
@@ -51846,7 +51461,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "top tube bag large 02",
       "TOP TUBE BAG LARGE / 02"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-large-02"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-large-02"][0] || ""
   },
@@ -51946,7 +51560,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "top tube bag nano 01",
       "TOP TUBE BAG NANO / 01"
     ],
-    "catalogPublishedAt": "2026-09-04T16:02:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-nano-01"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-nano-01"][0] || ""
   },
@@ -52035,7 +51648,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "grid handlebar bag",
       "Grid Handlebar Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-handlebar-bag"][0] || ""
   },
@@ -52114,7 +51726,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "grid large seat bag",
       "Grid Large Seat Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-large-seat-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-large-seat-bag"][0] || ""
   },
@@ -52191,7 +51802,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "grid medium seat bag",
       "Grid Medium Seat Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-medium-seat-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-medium-seat-bag"][0] || ""
   },
@@ -52273,7 +51883,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "grid sl frame bag",
       "Grid SL Frame Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-sl-frame-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-sl-frame-bag"][0] || ""
   },
@@ -52349,7 +51958,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "local grocery bag",
       "Local Grocery Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-grocery-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-grocery-bag"][0] || ""
   },
@@ -52426,7 +52034,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "local plus top tube bag",
       "Local Plus Top Tube Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-plus-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-plus-top-tube-bag"][0] || ""
   },
@@ -52502,7 +52109,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "local rear pannier",
       "Local Rear Pannier"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-rear-pannier"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-rear-pannier"][0] || ""
   },
@@ -52576,7 +52182,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "local saddle bag",
       "Local Saddle Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-saddle-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-saddle-bag"][0] || ""
   },
@@ -52653,7 +52258,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "local trunk bag",
       "Local Trunk Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-trunk-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-trunk-bag"][0] || ""
   },
@@ -52730,7 +52334,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost carryall bag",
       "Outpost Carryall Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-carryall-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-carryall-bag"][0] || ""
   },
@@ -52804,7 +52407,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost corner bag",
       "Outpost Corner Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-corner-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-corner-bag"][0] || ""
   },
@@ -52903,7 +52505,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost elite cargo bag",
       "Outpost Elite Cargo Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-elite-cargo-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-elite-cargo-bag"][0] || ""
   },
@@ -52975,7 +52576,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost frame bag large",
       "Outpost Frame Bag Large"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-large"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-large"][0] || ""
   },
@@ -53052,7 +52652,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost frame bag medium",
       "Outpost Frame Bag Medium"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-medium"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-medium"][0] || ""
   },
@@ -53132,7 +52731,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost frame bag small",
       "Outpost Frame Bag Small"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-small"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-small"][0] || ""
   },
@@ -53214,7 +52812,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost seat pack dry bag",
       "Outpost Seat Pack & Dry Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-seat-pack-dry-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-seat-pack-dry-bag"][0] || ""
   },
@@ -53299,7 +52896,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "outpost top tube bag",
       "Outpost Top Tube Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T16:48:40+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-top-tube-bag"][0] || ""
   },
@@ -53369,7 +52965,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53442,7 +53037,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53515,7 +53109,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53588,7 +53181,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53661,7 +53253,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53734,7 +53325,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53807,7 +53397,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53880,7 +53469,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -53953,7 +53541,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -54026,7 +53613,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -54109,7 +53695,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-969-backloader-10l"],
@@ -54185,7 +53770,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "imageAssetPaths": [
       "assets/manufacturer-catalog/topeak/969-backloader.png"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [
       [
         15
@@ -54271,7 +53855,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-969-backloader-6l"],
@@ -54353,7 +53936,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -54436,7 +54018,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -54525,7 +54106,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1301-barloader-4.jpg",
       "assets/manufacturer-catalog/topeak/1301-barloader-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1301-barloader"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1301-barloader"][0] || ""
   },
@@ -54605,7 +54185,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1637-bento-pack.png",
       "assets/manufacturer-catalog/topeak/1637-bento-pack-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1637-bento-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1637-bento-pack"][0] || ""
   },
@@ -54689,7 +54268,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1283-burrito-pack-4.jpg",
       "assets/manufacturer-catalog/topeak/1283-burrito-pack-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1283-burrito-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1283-burrito-pack"][0] || ""
   },
@@ -54771,7 +54349,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1627-burrito-pack-slim-3.jpg",
       "assets/manufacturer-catalog/topeak/1627-burrito-pack-slim-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1627-burrito-pack-slim"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1627-burrito-pack-slim"][0] || ""
   },
@@ -54862,7 +54439,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/796-cagepack-4.jpg",
       "assets/manufacturer-catalog/topeak/796-cagepack-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-796-cagepack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-796-cagepack"][0] || ""
   },
@@ -54955,7 +54531,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1140-cagepack-xl-5.jpg",
       "assets/manufacturer-catalog/topeak/1140-cagepack-xl-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1140-cagepack-xl"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1140-cagepack-xl"][0] || ""
   },
@@ -55041,7 +54616,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1315-compact-handlebar-bag-4.jpg",
       "assets/manufacturer-catalog/topeak/1315-compact-handlebar-bag-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1315-compact-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1315-compact-handlebar-bag"][0] || ""
   },
@@ -55123,7 +54697,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1630-dynapack-2.jpg",
       "assets/manufacturer-catalog/topeak/1630-dynapack-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1630-dynapack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1630-dynapack"][0] || ""
   },
@@ -55207,7 +54780,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1631-dynapack-dx-3.jpg",
       "assets/manufacturer-catalog/topeak/1631-dynapack-dx-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1631-dynapack-dx"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1631-dynapack-dx"][0] || ""
   },
@@ -55285,7 +54857,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/686-dynawedge.png",
       "assets/manufacturer-catalog/topeak/686-dynawedge-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-686-dynawedge"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-686-dynawedge"][0] || ""
   },
@@ -55369,7 +54940,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1451-e-xplorer-trunkbag-mtx-2-0-3.jpg",
       "assets/manufacturer-catalog/topeak/1451-e-xplorer-trunkbag-mtx-2-0-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1451-e-xplorer-trunkbag-mtx-2-0"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1451-e-xplorer-trunkbag-mtx-2-0"][0] || ""
   },
@@ -55448,7 +55018,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "imageAssetPaths": [
       "assets/manufacturer-catalog/topeak/1844-elementa-dry-barbag.png"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1844-elementa-dry-barbag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1844-elementa-dry-barbag"][0] || ""
   },
@@ -55534,7 +55103,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1625-elementa-gearbag-4.jpg",
       "assets/manufacturer-catalog/topeak/1625-elementa-gearbag-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1625-elementa-gearbag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1625-elementa-gearbag"][0] || ""
   },
@@ -55618,7 +55186,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1624-elementa-gearbag-ex-3.jpg",
       "assets/manufacturer-catalog/topeak/1624-elementa-gearbag-ex-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1624-elementa-gearbag-ex"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1624-elementa-gearbag-ex"][0] || ""
   },
@@ -55697,7 +55264,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -55779,7 +55345,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -55852,7 +55417,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -55933,7 +55497,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1332-escape-pod-l-2.jpg",
       "assets/manufacturer-catalog/topeak/1332-escape-pod-l-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1332-escape-pod-l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1332-escape-pod-l"][0] || ""
   },
@@ -56011,7 +55574,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1331-escape-pod-m-2.jpg",
       "assets/manufacturer-catalog/topeak/1331-escape-pod-m-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1331-escape-pod-m"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1331-escape-pod-m"][0] || ""
   },
@@ -56089,7 +55651,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1330-escape-pod-s-2.jpg",
       "assets/manufacturer-catalog/topeak/1330-escape-pod-s-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1330-escape-pod-s"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1330-escape-pod-s"][0] || ""
   },
@@ -56165,7 +55726,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1709-escape-pod-plus.png",
       "assets/manufacturer-catalog/topeak/1709-escape-pod-plus-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1709-escape-pod-plus"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1709-escape-pod-plus"][0] || ""
   },
@@ -56243,7 +55803,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1710-escape-pod-plus-with-tube-cube-2.jpg",
       "assets/manufacturer-catalog/topeak/1710-escape-pod-plus-with-tube-cube-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1710-escape-pod-plus-with-tube-cube"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1710-escape-pod-plus-with-tube-cube"][0] || ""
   },
@@ -56324,7 +55883,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1726-escape-toolpod-3.jpg",
       "assets/manufacturer-catalog/topeak/1726-escape-toolpod-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1726-escape-toolpod"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1726-escape-toolpod"][0] || ""
   },
@@ -56406,7 +55964,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1551-fastfuel-bag-bolt-on-2.jpg",
       "assets/manufacturer-catalog/topeak/1551-fastfuel-bag-bolt-on-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1551-fastfuel-bag-bolt-on"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1551-fastfuel-bag-bolt-on"][0] || ""
   },
@@ -56492,7 +56049,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1552-fastfuel-bag-essential-4.jpg",
       "assets/manufacturer-catalog/topeak/1552-fastfuel-bag-essential-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1552-fastfuel-bag-essential"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1552-fastfuel-bag-essential"][0] || ""
   },
@@ -56572,7 +56128,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1712-fastfuel-drybag-ii.png",
       "assets/manufacturer-catalog/topeak/1712-fastfuel-drybag-ii-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1712-fastfuel-drybag-ii"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1712-fastfuel-drybag-ii"][0] || ""
   },
@@ -56652,7 +56207,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1636-fastfuel-tri-station.png",
       "assets/manufacturer-catalog/topeak/1636-fastfuel-tri-station-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1636-fastfuel-tri-station"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1636-fastfuel-tri-station"][0] || ""
   },
@@ -56722,7 +56276,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -56795,7 +56348,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -56882,7 +56434,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1289-fastfuel-tribox-3.jpg",
       "assets/manufacturer-catalog/topeak/1289-fastfuel-tribox-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1289-fastfuel-tribox"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1289-fastfuel-tribox"][0] || ""
   },
@@ -56964,7 +56515,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1746-fork-drybag-4l-2.jpg",
       "assets/manufacturer-catalog/topeak/1746-fork-drybag-4l-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1746-fork-drybag-4l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1746-fork-drybag-4l"][0] || ""
   },
@@ -57044,7 +56594,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1300-freeloader-3.jpg",
       "assets/manufacturer-catalog/topeak/1300-freeloader-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1300-freeloader"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1300-freeloader"][0] || ""
   },
@@ -57143,7 +56692,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1290-frontloader-5.jpg",
       "assets/manufacturer-catalog/topeak/1290-frontloader-6.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1290-frontloader"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1290-frontloader"][0] || ""
   },
@@ -57213,7 +56761,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -57286,7 +56833,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -57369,7 +56915,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57442,7 +56987,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57525,7 +57069,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 2,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57598,7 +57141,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57671,7 +57213,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57744,7 +57285,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -57829,7 +57369,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/359-mondopack-2.jpg",
       "assets/manufacturer-catalog/topeak/359-mondopack-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-359-mondopack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-359-mondopack"][0] || ""
   },
@@ -57911,7 +57450,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/360-mondopack-hydro-2.jpg",
       "assets/manufacturer-catalog/topeak/360-mondopack-hydro-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-360-mondopack-hydro"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-360-mondopack-hydro"][0] || ""
   },
@@ -57993,7 +57531,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1691-mtm-trunkbag-dxp-4.jpg",
       "assets/manufacturer-catalog/topeak/1691-mtm-trunkbag-dxp-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1691-mtm-trunkbag-dxp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1691-mtm-trunkbag-dxp"][0] || ""
   },
@@ -58077,7 +57614,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1692-mtm-trunkbag-ex-3.jpg",
       "assets/manufacturer-catalog/topeak/1692-mtm-trunkbag-ex-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1692-mtm-trunkbag-ex"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1692-mtm-trunkbag-ex"][0] || ""
   },
@@ -58155,7 +57691,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1689-mts-trunkbag-dxp-2.jpg",
       "assets/manufacturer-catalog/topeak/1689-mts-trunkbag-dxp-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1689-mts-trunkbag-dxp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1689-mts-trunkbag-dxp"][0] || ""
   },
@@ -58235,7 +57770,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1690-mts-trunkbag-ex.png",
       "assets/manufacturer-catalog/topeak/1690-mts-trunkbag-ex-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1690-mts-trunkbag-ex"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1690-mts-trunkbag-ex"][0] || ""
   },
@@ -58313,7 +57847,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/857-mtx-trunkbag-dx-2.jpg",
       "assets/manufacturer-catalog/topeak/857-mtx-trunkbag-dx-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-857-mtx-trunkbag-dx"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-857-mtx-trunkbag-dx"][0] || ""
   },
@@ -58391,7 +57924,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1686-mtx-trunkbag-dx-mtx-2-0-2.jpg",
       "assets/manufacturer-catalog/topeak/1686-mtx-trunkbag-dx-mtx-2-0-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1686-mtx-trunkbag-dx-mtx-2-0"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1686-mtx-trunkbag-dx-mtx-2-0"][0] || ""
   },
@@ -58471,7 +58003,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/122-mtx-trunkbag-dxp-3.jpg",
       "assets/manufacturer-catalog/topeak/122-mtx-trunkbag-dxp-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-122-mtx-trunkbag-dxp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-122-mtx-trunkbag-dxp"][0] || ""
   },
@@ -58549,7 +58080,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1685-mtx-trunkbag-dxp-mtx-2-0-2.jpg",
       "assets/manufacturer-catalog/topeak/1685-mtx-trunkbag-dxp-mtx-2-0-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1685-mtx-trunkbag-dxp-mtx-2-0"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1685-mtx-trunkbag-dxp-mtx-2-0"][0] || ""
   },
@@ -58631,7 +58161,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/859-mtx-trunkbag-ex-2.jpg",
       "assets/manufacturer-catalog/topeak/859-mtx-trunkbag-ex-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-859-mtx-trunkbag-ex"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-859-mtx-trunkbag-ex"][0] || ""
   },
@@ -58711,7 +58240,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1688-mtx-trunkbag-ex-mtx-2-0.png",
       "assets/manufacturer-catalog/topeak/1688-mtx-trunkbag-ex-mtx-2-0-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1688-mtx-trunkbag-ex-mtx-2-0"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1688-mtx-trunkbag-ex-mtx-2-0"][0] || ""
   },
@@ -58793,7 +58321,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/858-mtx-trunkbag-exp-2.jpg",
       "assets/manufacturer-catalog/topeak/858-mtx-trunkbag-exp-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-858-mtx-trunkbag-exp"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-858-mtx-trunkbag-exp"][0] || ""
   },
@@ -58873,7 +58400,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1687-mtx-trunkbag-exp-mtx-2-0-3.jpg",
       "assets/manufacturer-catalog/topeak/1687-mtx-trunkbag-exp-mtx-2-0-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1687-mtx-trunkbag-exp-mtx-2-0"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1687-mtx-trunkbag-exp-mtx-2-0"][0] || ""
   },
@@ -58943,7 +58469,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 6,
@@ -59016,7 +58541,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 6,
@@ -59089,7 +58613,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -59162,7 +58685,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -59247,7 +58769,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1744-qr-fork-drybag-5-8l-bolt-on-2.jpg",
       "assets/manufacturer-catalog/topeak/1744-qr-fork-drybag-5-8l-bolt-on-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1744-qr-fork-drybag-5-8l-bolt-on"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1744-qr-fork-drybag-5-8l-bolt-on"][0] || ""
   },
@@ -59330,7 +58851,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1845-rackloader-drybag-2.jpg",
       "assets/manufacturer-catalog/topeak/1845-rackloader-drybag-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1845-rackloader-drybag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1845-rackloader-drybag"][0] || ""
   },
@@ -59416,7 +58936,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/366-sidekick-stw-wedge-pack-4.jpg",
       "assets/manufacturer-catalog/topeak/366-sidekick-stw-wedge-pack-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-366-sidekick-stw-wedge-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-366-sidekick-stw-wedge-pack"][0] || ""
   },
@@ -59486,7 +59005,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -59559,7 +59077,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -59646,7 +59163,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/363-survival-tool-wedge-ii-3.jpg",
       "assets/manufacturer-catalog/topeak/363-survival-tool-wedge-ii-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-363-survival-tool-wedge-ii"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-363-survival-tool-wedge-ii"][0] || ""
   },
@@ -59742,7 +59258,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/966-toploader-4.jpg",
       "assets/manufacturer-catalog/topeak/966-toploader-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-966-toploader"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-966-toploader"][0] || ""
   },
@@ -59822,7 +59337,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1711-toploader-drybag.png",
       "assets/manufacturer-catalog/topeak/1711-toploader-drybag-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1711-toploader-drybag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1711-toploader-drybag"][0] || ""
   },
@@ -59906,7 +59420,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1843-toploader-dryshell-3.jpg",
       "assets/manufacturer-catalog/topeak/1843-toploader-dryshell-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1843-toploader-dryshell"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1843-toploader-dryshell"][0] || ""
   },
@@ -59992,7 +59505,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1316-tourguide-handlebar-bag-4.jpg",
       "assets/manufacturer-catalog/topeak/1316-tourguide-handlebar-bag-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1316-tourguide-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1316-tourguide-handlebar-bag"][0] || ""
   },
@@ -60078,7 +59590,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1317-tourguide-handlebar-bag-4.jpg",
       "assets/manufacturer-catalog/topeak/1317-tourguide-handlebar-bag-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1317-tourguide-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1317-tourguide-handlebar-bag"][0] || ""
   },
@@ -60165,7 +59676,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1318-tourguide-handlebar-bag-dx-4.jpg",
       "assets/manufacturer-catalog/topeak/1318-tourguide-handlebar-bag-dx-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1318-tourguide-handlebar-bag-dx"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1318-tourguide-handlebar-bag-dx"][0] || ""
   },
@@ -60235,7 +59745,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -60308,7 +59817,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -60381,7 +59889,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -60454,7 +59961,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -60546,7 +60052,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1550-tubular-barbag-3.jpg",
       "assets/manufacturer-catalog/topeak/1550-tubular-barbag-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1550-tubular-barbag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1550-tubular-barbag"][0] || ""
   },
@@ -60628,7 +60133,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1621-tubular-barbag-slim-4.jpg",
       "assets/manufacturer-catalog/topeak/1621-tubular-barbag-slim-5.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1621-tubular-barbag-slim"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1621-tubular-barbag-slim"][0] || ""
   },
@@ -60706,7 +60210,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1815-tubular-barbag-slim-2.jpg",
       "assets/manufacturer-catalog/topeak/1815-tubular-barbag-slim-3.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1815-tubular-barbag-slim"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1815-tubular-barbag-slim"][0] || ""
   },
@@ -60791,7 +60294,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/1911-u-shell-drybag-10l-3.jpg",
       "assets/manufacturer-catalog/topeak/1911-u-shell-drybag-10l-4.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-1911-u-shell-drybag-10l"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-1911-u-shell-drybag-10l"][0] || ""
   },
@@ -60861,7 +60363,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -60934,7 +60435,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 3,
@@ -61030,7 +60530,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "assets/manufacturer-catalog/topeak/328-wedge-drybag.png",
       "assets/manufacturer-catalog/topeak/328-wedge-drybag-2.jpg"
     ],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["topeak-328-wedge-drybag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["topeak-328-wedge-drybag"][0] || ""
   },
@@ -61100,7 +60599,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -61173,7 +60671,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -61246,7 +60743,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -61319,7 +60815,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -61392,7 +60887,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -61465,7 +60959,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -61538,7 +61031,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "variantCount": 1,
     "imageAssetPath": "",
     "imageAssetPaths": [],
-    "catalogPublishedAt": "2026-09-04T17:23:51+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -61634,7 +61126,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "barjam cradle",
       "BarJam Cradle"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-barjam-cradle"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-barjam-cradle"][0] || ""
   },
@@ -61720,7 +61211,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cache top tube bag bolt on",
       "Cache Top Tube Bag | Bolt On, Stock"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-cache-top-tube-bag-bolt-on"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-cache-top-tube-bag-bolt-on"][0] || ""
   },
@@ -61808,7 +61298,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "cache top tube bag",
       "Cache Top Tube Bag | Velcro Stock"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-cache-top-tube-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-cache-top-tube-bag"][0] || ""
   },
@@ -61891,7 +61380,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "crust evasion framebag",
       "Crust Evasion Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-crust-evasion-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-crust-evasion-framebag"][0] || ""
   },
@@ -61974,7 +61462,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "crust stupid tourist framebag",
       "Crust Stupid Tourist Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-crust-stupid-tourist-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-crust-stupid-tourist-framebag"][0] || ""
   },
@@ -62061,7 +61548,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "jones bag",
       "Dr. Jones Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-bag"][0] || ""
   },
@@ -62161,7 +61647,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "dumpling hip pack",
       "Dumpling Hip Pack"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-dumpling-hip-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-dumpling-hip-pack"][0] || ""
   },
@@ -62242,7 +61727,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ecopak custom framebag",
       "ECOPAK™ Custom Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ecopak-custom-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ecopak-custom-framebag"][0] || ""
   },
@@ -62342,7 +61826,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag esker hayduke",
       "Esker Hayduke (Steel) – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-esker-hayduke"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-esker-hayduke"][0] || ""
   },
@@ -62423,7 +61906,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "esker lorax framebag",
       "Esker Lorax Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-esker-lorax-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-esker-lorax-framebag"][0] || ""
   },
@@ -62504,7 +61986,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "fairlight faran framebag",
       "Fairlight Faran Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-fairlight-faran-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-fairlight-faran-framebag"][0] || ""
   },
@@ -62589,7 +62070,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "foxglove",
       "Foxglove Saddlebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-foxglove"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-foxglove"][0] || ""
   },
@@ -62693,7 +62173,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "gondola",
       "Gondola Dropper Post Saddlebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-gondola"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-gondola"][0] || ""
   },
@@ -62762,7 +62241,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-gravel"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 8,
@@ -62834,7 +62312,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-gravel"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 8,
@@ -62937,7 +62414,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-gravel"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -63031,7 +62507,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "honeypot",
       "Honeypot Feedbags"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-honeypot"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-honeypot"][0] || ""
   },
@@ -63118,7 +62593,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "horton front pouch",
       "Horton Front Pouch"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-horton-front-pouch"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-horton-front-pouch"][0] || ""
   },
@@ -63201,7 +62675,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ibis exie framebag",
       "Ibis Exie Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ibis-exie-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ibis-exie-framebag"][0] || ""
   },
@@ -63284,7 +62757,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ibis ripley framebags",
       "Ibis Ripley Framebags"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ibis-ripley-framebags"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ibis-ripley-framebags"][0] || ""
   },
@@ -63382,7 +62854,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "jones lwb 52hz waterproof framebag",
       "Jones LWB – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-lwb-52hz-waterproof-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-lwb-52hz-waterproof-framebag"][0] || ""
   },
@@ -63461,7 +62932,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "jones lwb framebag",
       "Jones LWB Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-lwb-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-jones-lwb-framebag"][0] || ""
   },
@@ -63530,7 +63000,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-rove"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -63602,7 +63071,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-rove"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -63710,7 +63178,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-rove"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -63782,7 +63249,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-rove"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -63868,7 +63334,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "kona sutra framebag",
       "Kona Sutra (LTD) Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-kona-sutra-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-kona-sutra-framebag"][0] || ""
   },
@@ -63937,7 +63402,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-konasutra"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64009,7 +63473,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-konasutra"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64117,7 +63580,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-konasutra"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64189,7 +63651,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-konasutra"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64261,7 +63722,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-unit-x"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64333,7 +63793,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-unit-x"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64432,7 +63891,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-unit-x"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64504,7 +63962,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-kona-unit-x"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -64588,7 +64045,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "kona unit x framebag",
       "Kona Unit X Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-kona-unit-x-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-kona-unit-x-framebag"][0] || ""
   },
@@ -64669,7 +64125,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "marin pine mountain framebag",
       "Marin Pine Mountain Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-marin-pine-mountain-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-marin-pine-mountain-framebag"][0] || ""
   },
@@ -64833,7 +64288,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-meanwhile-wald-basket-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         15
@@ -64910,7 +64364,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-meanwhile-wald-basket-bag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 7,
@@ -65011,7 +64464,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "microwave panniers",
       "Microwave Panniers (pair)"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-microwave-panniers"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-microwave-panniers"][0] || ""
   },
@@ -65080,7 +64532,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-mountain"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 10,
@@ -65192,7 +64643,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-mountain"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         6
@@ -65268,7 +64718,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-mountain"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 10,
@@ -65340,7 +64789,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-mountain"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 10,
@@ -65424,7 +64872,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "mr fusion seat pack",
       "Mr. Fusion Seat Pack"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-mr-fusion-seat-pack"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-mr-fusion-seat-pack"][0] || ""
   },
@@ -65507,7 +64954,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "neuhaus hummingbird framebag",
       "Neuhaus Hummingbird Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-neuhaus-hummingbird-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-neuhaus-hummingbird-framebag"][0] || ""
   },
@@ -65592,7 +65038,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "waterproof handlebar bag",
       "Nigel Handlebar Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-waterproof-handlebar-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-waterproof-handlebar-bag"][0] || ""
   },
@@ -65673,7 +65118,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "nordest sardinha framebag",
       "Nordest Sardinha Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-nordest-sardinha-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-nordest-sardinha-framebag"][0] || ""
   },
@@ -65742,7 +65186,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-off-road-tour-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -65814,7 +65257,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-off-road-tour-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 5,
@@ -65945,7 +65387,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-off-road-tour-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -66048,7 +65489,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "otso fenrir framebag",
       "Otso Fenrir Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-otso-fenrir-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-otso-fenrir-framebag"][0] || ""
   },
@@ -66135,7 +65575,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag pivot trail 429",
       "Pivot Trail 429 – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-pivot-trail-429"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-pivot-trail-429"][0] || ""
   },
@@ -66216,7 +65655,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "revel wayward framebag",
       "Revel Wayward Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-revel-wayward-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-revel-wayward-framebag"][0] || ""
   },
@@ -66299,7 +65737,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rocky mountain framebag",
       "Rocky Mountain Element Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-rocky-mountain-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-rocky-mountain-framebag"][0] || ""
   },
@@ -66368,7 +65805,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-cutthroat"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 7,
@@ -66440,7 +65876,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-cutthroat"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 7,
@@ -66552,7 +65987,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-cutthroat"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         6.5
@@ -66628,7 +66062,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-cutthroat"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 7,
@@ -66700,7 +66133,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-fargo"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -66772,7 +66204,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-fargo"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -66880,7 +66311,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-fargo"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -66952,7 +66382,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-salsa-fargo"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -67036,7 +66465,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "salsa journeyman framebag",
       "Salsa Journeyman Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-salsa-journeyman-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-salsa-journeyman-framebag"][0] || ""
   },
@@ -67125,7 +66553,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag santa cruz 5010",
       "Santa Cruz 5010 – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-5010"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-5010"][0] || ""
   },
@@ -67214,7 +66641,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag santa cruz bronson",
       "Santa Cruz Bronson – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-bronson"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-bronson"][0] || ""
   },
@@ -67295,7 +66721,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "santa cruz chameleon framebag",
       "Santa Cruz Chameleon Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-santa-cruz-chameleon-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-santa-cruz-chameleon-framebag"][0] || ""
   },
@@ -67384,7 +66809,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag santa cruz hightower",
       "Santa Cruz Hightower – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-hightower"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-hightower"][0] || ""
   },
@@ -67473,7 +66897,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof santa cruz megatower",
       "Santa Cruz Megatower – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-santa-cruz-megatower"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-santa-cruz-megatower"][0] || ""
   },
@@ -67562,7 +66985,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag santa cruz nomad",
       "Santa Cruz Nomad – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-nomad"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-nomad"][0] || ""
   },
@@ -67651,7 +67073,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag santa cruz tallboy",
       "Santa Cruz Tallboy – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-tallboy"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-santa-cruz-tallboy"][0] || ""
   },
@@ -67734,7 +67155,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "specialized epic world cup framebag",
       "Specialized Epic World Cup Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-specialized-epic-world-cup-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-specialized-epic-world-cup-framebag"][0] || ""
   },
@@ -67817,7 +67237,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "stooge dirt tracker framebag",
       "Stooge Dirt Tracker Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-stooge-dirt-tracker-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-stooge-dirt-tracker-framebag"][0] || ""
   },
@@ -67898,7 +67317,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "stooge mk framebag",
       "Stooge MK Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-stooge-mk-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-stooge-mk-framebag"][0] || ""
   },
@@ -67967,7 +67385,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-bridgeclub"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -68039,7 +67456,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-bridgeclub"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -68147,7 +67563,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-bridgeclub"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -68219,7 +67634,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-bridgeclub"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 1,
@@ -68291,7 +67705,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ecr"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -68363,7 +67776,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ecr"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -68471,7 +67883,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ecr"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -68543,7 +67954,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ecr"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 4,
@@ -68615,7 +68025,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surly-grappler-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -68687,7 +68096,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surly-grappler-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -68795,7 +68203,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surly-grappler-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -68867,7 +68274,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surly-grappler-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -68951,7 +68357,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "surly ghost grappler framebag",
       "Surly Grappler Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-surly-ghost-grappler-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-surly-ghost-grappler-framebag"][0] || ""
   },
@@ -69020,7 +68425,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-surly-karate-monkey"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69092,7 +68496,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-surly-karate-monkey"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69191,7 +68594,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-surly-karate-monkey"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69263,7 +68665,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-surly-karate-monkey"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69335,7 +68736,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surlykrampus"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69407,7 +68807,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surlykrampus"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69506,7 +68905,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surlykrampus"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69578,7 +68976,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-surlykrampus"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69650,7 +69047,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ogre"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69722,7 +69118,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ogre"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69830,7 +69225,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ogre"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69902,7 +69296,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-52hz-waterproof-framebag-surly-ogre"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 2,
@@ -69988,7 +69381,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "titus silk road framebag",
       "Titus Silk Road Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-titus-silk-road-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-titus-silk-road-framebag"][0] || ""
   },
@@ -70057,7 +69449,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-trail-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 6,
@@ -70129,7 +69520,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-trail-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 6,
@@ -70247,7 +69637,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-trail-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -70350,7 +69739,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag transition sentinel",
       "Transition Sentinel – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-sentinel"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-sentinel"][0] || ""
   },
@@ -70439,7 +69827,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag transition smuggler",
       "Transition Smuggler – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-smuggler"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-smuggler"][0] || ""
   },
@@ -70528,7 +69915,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "52hz waterproof framebag transition spur",
       "Transition Spur – 52Hz Waterproof Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-spur"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-52hz-waterproof-framebag-transition-spur"][0] || ""
   },
@@ -70611,7 +69997,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "trek checkpoint framebag",
       "Trek Checkpoint Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-trek-checkpoint-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-trek-checkpoint-framebag"][0] || ""
   },
@@ -70704,7 +70089,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ultra pe custom framebag",
       "Ultra-PE Custom Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ultra-pe-custom-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ultra-pe-custom-framebag"][0] || ""
   },
@@ -70793,7 +70177,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "ultra pe dry bag",
       "Ultra-PE Dry Bag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ultra-pe-dry-bag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-ultra-pe-dry-bag"][0] || ""
   },
@@ -70876,7 +70259,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "viral derive framebag",
       "Viral Derive Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-viral-derive-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-viral-derive-framebag"][0] || ""
   },
@@ -70945,7 +70327,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-wedge-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -71017,7 +70398,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-wedge-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [],
     "imageVariantSource": "manufacturer-image-metadata",
     "unassignedImageCount": 12,
@@ -71120,7 +70500,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "rockgeist-wedge-52hz-waterproof-framebag"
     ],
     "nameIncludesVolume": true,
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageVolumeOptions": [
       [
         9
@@ -71216,7 +70595,6 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
       "x pac custom framebag",
       "X-Pac® Custom Framebag"
     ],
-    "catalogPublishedAt": "2026-09-04T18:38:15+03:00",
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-x-pac-custom-framebag"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["rockgeist-x-pac-custom-framebag"][0] || ""
   }

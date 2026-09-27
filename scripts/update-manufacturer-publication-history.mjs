@@ -1,21 +1,29 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { MANUFACTURER_BAG_CATALOG_GENERATED } from "../src/data/manufacturer-bag-catalog.generated.js";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-// Run as part of preparing publication, never from catalog:scan. Historical
-// dates use the first committed addition in the already published ancestry.
-const path = "src/data/manufacturer-catalog-publication-history.json";
-const history = await readFile(path, "utf8").then(JSON.parse).catch(() => ({}));
-if (process.argv.includes("--backfill-published-history")) {
-  const commits = execFileSync("git", ["log", "--reverse", "--format=%H %aI", "--", "src/data/manufacturer-bag-catalog.generated.js"], { encoding: "utf8" }).trim().split("\n");
-  for (const line of commits) {
-    const [commit, date] = line.split(" ");
-    const source = execFileSync("git", ["show", `${commit}:src/data/manufacturer-bag-catalog.generated.js`], { encoding: "utf8", maxBuffer: 30 * 1024 * 1024 });
-    for (const match of source.matchAll(/"id":\s*"([^"]+)"/g)) history[match[1]] ||= { date, commit };
+// Only approved catalog entries belong here. Scanning never writes this ledger.
+export function recordManufacturerCatalogPublication(history, entries, { initialBaseline = false, publishedAt = "" } = {}) {
+  const next = { ...history };
+  for (const entry of entries) {
+    if (Object.hasOwn(next, entry.id)) continue;
+    if (initialBaseline) { next[entry.id] = { baseline: true }; continue; }
+    const time = Date.parse(publishedAt);
+    if (!Number.isFinite(time)) throw new Error("New approved models require an explicit --published-at date; import and scan dates are not publication dates");
+    next[entry.id] = { publishedAt: new Date(time).toISOString() };
   }
+  return next;
 }
-const now = new Date().toISOString();
-for (const entry of MANUFACTURER_BAG_CATALOG_GENERATED) {
-  history[entry.id] ||= history[entry.sourceProductId] || { date: now };
+
+async function main() {
+  const path = "src/data/manufacturer-catalog-publication-history.json";
+  const history = await readFile(path, "utf8").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return {}; throw error; });
+  const { MANUFACTURER_BAG_CATALOG_GENERATED: entries } = await import("../src/data/manufacturer-bag-catalog.generated.js");
+  const dateArg = process.argv.indexOf("--published-at");
+  const next = recordManufacturerCatalogPublication(history, entries, {
+    initialBaseline: process.argv.includes("--initialize-baseline"),
+    publishedAt: dateArg < 0 ? "" : process.argv[dateArg + 1],
+  });
+  await writeFile(path, JSON.stringify(next, null, 2) + "\n");
 }
-await writeFile(path, JSON.stringify(history, null, 2) + "\n");
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await main();

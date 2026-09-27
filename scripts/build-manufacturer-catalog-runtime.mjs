@@ -33,7 +33,7 @@ const omittedRuntimeFields = new Set([
 
 function runtimeEntry(entry) {
   return { ...Object.fromEntries(Object.entries(entry).filter(([key]) => !omittedRuntimeFields.has(key))),
-    catalogPublishedAt: publicationHistory[entry.id]?.date || "" };
+    catalogPublishedAt: publicationHistory[entry.id]?.publishedAt || "" };
 }
 
 function assetExpression(assetPath) {
@@ -60,8 +60,8 @@ const index = MANUFACTURER_BAG_CATALOG_GENERATED.map(({ id, brand, family, categ
   family,
   category
 }));
-const dates = [...new Set(index.map(({ id }) => publicationHistory[id]?.date || ""))];
-const dateIndices = index.map(({ id }) => dates.indexOf(publicationHistory[id]?.date || ""));
+const dates = [...new Set(index.map(({ id }) => publicationHistory[id]?.publishedAt || ""))];
+const dateIndices = index.map(({ id }) => dates.indexOf(publicationHistory[id]?.publishedAt || ""));
 await writeFile(
   resolve(outputDir, "index.generated.js"),
   `const DATES=${JSON.stringify(dates)};const DATE_INDICES=${JSON.stringify(dateIndices)};\nexport const MANUFACTURER_BAG_CATALOG_INDEX=${JSON.stringify(index)}.map((entry,i)=>({...entry,catalogPublishedAt:DATES[DATE_INDICES[i]]}));\n`,

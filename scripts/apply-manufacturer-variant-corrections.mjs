@@ -27,7 +27,7 @@ for (const group of Map.groupBy(MANUFACTURER_BAG_CATALOG_GENERATED, (entry) => e
   const familyVariants = [...new Map(group.flatMap((row) => row.variants || []).map((v) => [`${v.sku}|${v.volume}`, v])).values()];
   for (const original of group) {
     const { imageUrl, imageUrls, ...entry } = original;
-    let corrected = { ...entry, catalogPublishedAt: publication[entry.id]?.date || "" };
+    let corrected = { ...entry, catalogPublishedAt: publication[entry.id]?.publishedAt || "" };
     if (brand === "ortlieb" && evidence.length) {
       corrected.variants = entry.variants.map((variant) => {
         const details = evidence.find((v) => v.sku === variant.sku);

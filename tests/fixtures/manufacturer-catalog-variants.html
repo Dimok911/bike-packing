@@ -13,7 +13,7 @@ const catalog = [
  {id:'new-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Back-Roller Pair',volume:20,weight:950,catalogPublishedAt:date(10),variants:[
   {sku:'F5301',title:'black',color:'black',material:'PD620 / PS490',weight:950,mounting:'Quick-Lock2.1',available:true,sourceUrl:'https://us.ortlieb.com/products/back-roller-20l-pair?variant=45082293829810'},
   {sku:'F5207',title:'moss green',color:'moss green',material:'PS36C',weight:839,mounting:'Quick-Lock2.1',available:false,sourceUrl:'https://us.ortlieb.com/products/back-roller-20l-pair?variant=47592189034674'}]},
- {id:'old-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Older model',catalogPublishedAt:date(31)},
+ {id:'old-bag',brand:'ORTLIEB',family:'panniers',category:'pannier',name:'Older model',catalogPublishedAt:'',sourceCheckedAt:date(0),firstImportedAt:date(1)},
  {id:'other-brand',brand:'Arkel',family:'bikepacking',category:'frame',name:'Recent Arkel',catalogPublishedAt:date(2)},
 ];
 const refs = Object.fromEntries([...document.querySelectorAll('[id]')].map((el)=>[el.id,el]));
