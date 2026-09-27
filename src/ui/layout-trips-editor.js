@@ -1,3 +1,4 @@
+import { createLayoutDraftPhotoUploads } from "../sync/layout-draft-photo-uploads.js";
 import { createLayoutMediaEditor } from "./layout-media-editor.js";
 import { layoutTripsSnapshot, layoutTripsSignature, tripDisplayName } from "../state/layout-trips.js";
 import { loadNoteFields, readNoteFields } from "./rich-note-content.js";
@@ -17,9 +18,10 @@ export function createLayoutTripsEditor(options) {
   const publishNotes = privateField.querySelector("[data-trip-publish-notes]");
   const mediaField = dialog.querySelector("[data-layout-media-editor]");
   const empty = host.querySelector("[data-trips-empty]");
+  let uploads = null;
   let trips = [];
   let active = -1;
-  const media = createLayoutMediaEditor({ ...options, getLimit: () => Math.max(0, options.getLimit() - trips.reduce((total, trip, index) => total + (index === active ? 0 : trip.photos.length), 0)), onChange: () => { updateBusy(); onChange(); } });
+  const media = createLayoutMediaEditor({ ...options, onPhotoAdded: photo => { photo.tripId = trips[active]?.id; return uploads?.add(photo); }, getLimit: () => Math.max(0, options.getLimit() - trips.reduce((total, trip, index) => total + (index === active ? 0 : trip.photos.length), 0)), onChange: () => { updateBusy(); onChange(); } });
   const language = () => localText("en", "ru");
   function updateBusy() {
     for (const control of [select, add, remove]) control.disabled = media.isBusy();
@@ -71,7 +73,17 @@ export function createLayoutTripsEditor(options) {
   name.addEventListener("input", () => { flush(); renderChoices(); onChange(); });
   return {
     open(layout, selectedId) {
+      uploads?.close();
       trips = layoutTripsSnapshot(layout);
+      const scope = options.getUploadScope?.();
+      uploads = options.uploadPhotos ? createLayoutDraftPhotoUploads({
+        layoutId: layout.id,
+        getTrips: () => { flush(); return [...trips]; },
+        getSavedLayout: () => options.getSavedLayout(layout.id),
+        isCurrentScope: () => options.getUploadScope?.() === scope,
+        uploadPhotos: options.uploadPhotos,
+        onProgress: () => { media.refreshUploads(); onChange(); }
+      }) : null;
       host.querySelector("[data-trips-label]").textContent = localText("Trips", "Поездки");
       host.querySelector("[data-trip-name-label]").textContent = localText("Trip name", "Название поездки");
       select.setAttribute("aria-label", localText("Edit trip", "Редактируемая поездка"));
@@ -89,6 +101,6 @@ export function createLayoutTripsEditor(options) {
     validate: () => !trips.length || media.validate(),
     addFiles: files => trips.length ? media.addFiles(files) : Promise.resolve(),
     sessionToken: media.sessionToken,
-    close: layout => { media.close(layout); trips = []; active = -1; }
+    close: layout => { uploads?.close(); uploads = null; media.close(layout); trips = []; active = -1; }
   };
 }

@@ -1,3 +1,4 @@
+import { syncLayoutPhotoUpload } from "./src/sync/layout-draft-photo-uploads.js";
 import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "./src/sync/photo-upload-queue.js";
 import { findEntityPhotoForUpload, syncPhotoRecordFromUpload } from "./src/vendor/vniipo-photo-upload-engine.js";
 import { hasPendingLocalPhotos, retainLocalPhotoUploads } from "./src/sync/local-photo-state.js";
@@ -6112,12 +6113,13 @@ async function apiFetch(path, options = {}) {
 }
 
 async function apiUploadFormData(path, options = {}) {
+  const { connectionFailureMode = "auto", ...requestOptions } = options;
   try {
-    const response = await apiUploadFormDataRequest(path, options, { isForcedOffline });
+    const response = await apiUploadFormDataRequest(path, requestOptions, { isForcedOffline });
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
-    if (!isForcedOffline() && isNetworkError(error)) {
+    if (!isForcedOffline() && isNetworkError(error) && shouldReportConnectionFailure({ mode: connectionFailureMode, method: "POST" })) {
       connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
     }
     throw error;
@@ -6356,12 +6358,23 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     photo,
     entityType,
     dropMissingRemotePhoto,
-    onPhotoProgress,
+    onPhotoProgress: (updatedPhoto, progress) => {
+      if (getPhotoCacheScope() !== uploadPhotoCacheScopeKey) return;
+      const key = { layout: "layouts", item: "items", container: "containers" }[entityType];
+      (entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(state[key]?.[entity.id], updatedPhoto);
+      onPhotoProgress?.(updatedPhoto, progress);
+    },
     retryTemporaryUploadFailure,
     apiFetch,
     apiUploadFormData,
     getCachedPhoto: (id) => getCachedPhoto(id, uploadPhotoCacheScopeKey),
-    putCachedPhoto: (record) => putCachedPhoto(record, uploadPhotoCacheScopeKey),
+    putCachedPhoto: (record) => {
+      const key = { layout: "layouts", item: "items", container: "containers" }[entityType];
+      const retained = findEntityPhotoForUpload(state[key]?.[entity.id], photo);
+      // An uploaded draft has not entered the saved state yet. Remote-cache
+      // pruning must not discard its local bytes before the user presses Save.
+      return putCachedPhoto(retained ? record : { ...record, namespace: "local-draft", cachePurpose: "local-draft" }, uploadPhotoCacheScopeKey);
+    },
     registerCachedPhotoRecord: (task, record) => {
       if (photoObjectUrls.currentScope() !== uploadPhotoCacheScopeKey) return;
       photoObjectUrls.setRecord(task, record);

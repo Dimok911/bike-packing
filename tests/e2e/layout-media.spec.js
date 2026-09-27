@@ -531,3 +531,54 @@ test('trip thumbnail strip accepts a native horizontal touch gesture over images
   await expect(page.locator('.photo-lightbox[open]')).toHaveCount(0);
   await cdp.detach();
 });
+
+
+test('trip photos start uploading in the open editor and finish after save across picker batches',async({page,browserName})=>{
+  test.skip(browserName==='webkit','Persistent WebKit storage is verified separately');
+  const {readFile}=await import('node:fs/promises');const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page);await openApp(page);
+  await page.route('**/__testsrc/**',async route=>{const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});});
+  await page.evaluate(async()=>{
+    const {createLayoutTripsEditor}=await import('/__testsrc/src/ui/layout-trips-editor.js');
+    const {applyLayoutTrips}=await import('/__testsrc/src/state/layout-trips.js');
+    const {createItemPhotoFromFile,getCachedPhoto,putCachedPhoto,deleteCachedPhoto}=await import('/__testsrc/src/sync/photos.js');
+    const {renderPhotoGalleryHtml,bindPhotoGalleries,createDemandDrivenPhotoPreviewLoader}=await import('/__testsrc/src/ui/photo-gallery.js');
+    const {createPhotoObjectUrlRegistry}=await import('/__testsrc/src/ui/photo-object-url-registry.js');
+    const {uploadPhotoToPath}=await import('/__testsrc/src/sync/photo-upload-flow.js');
+    const dialog=document.querySelector('#layoutEditDialog').cloneNode(true);document.body.replaceChildren(dialog);
+    const registry=createPhotoObjectUrlRegistry();registry.activateScope('guest');
+    const loader=createDemandDrivenPhotoPreviewLoader({photoObjectUrls:registry,getScopeKey:()=> 'guest'});
+    const layout={id:'draft-upload-layout',trips:[{id:'trip',name:'Trip'}],photos:[]};
+    let release;const gate=new Promise(resolve=>{release=resolve;});const uploads=[];const started=[];const bodySizes=[];
+    const editor=createLayoutTripsEditor({dialog,createPhoto:createItemPhotoFromFile,deleteCachedPhoto,renderGallery:renderPhotoGalleryHtml,
+      bindGalleries:root=>bindPhotoGalleries(root,{photoObjectUrls:registry,photoPreviewLoader:loader}),getSavedLayout:()=>layout,getUploadScope:()=> 'guest',
+      uploadPhotos:options=>{
+        const photo=options.photos[0];
+        const pending=uploadPhotoToPath({path:'/test/photos',listId:'fixture',entity:options.entity,entityType:'layout',photo,getCachedPhoto,putCachedPhoto,
+          apiFetch:async()=>({}),onPhotoProgress:options.onPhotoProgress,
+          apiUploadFormData:async(path,request)=>{started.push(photo.id);bodySizes.push(request.body.get('file').size);request.onUploadProgress(24);await gate;return {photo:{id:photo.id,url:`https://example.test/${photo.id}/file`,thumbUrl:`https://example.test/${photo.id}/thumb`}};}
+        }).finally(options.onAfterUpload);uploads.push(pending);return pending;
+      },onChange(){},getLimit:()=>100,localText:(en,ru)=>ru,showToast:message=>{throw Error(message);}});
+    editor.open(layout);dialog.showModal();
+    window.immediateFixture={started,bodySizes,layout,save(){applyLayoutTrips(layout,editor.snapshot());editor.close(layout);dialog.close();},async finish(){release();await Promise.all(uploads);return layout.photos;}};
+  });
+  const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=180;c.getContext('2d').fillRect(0,0,320,180);return c.toDataURL().split(',')[1];}),'base64');
+  // A valid image with a large trailing payload checks that original bytes are
+  // materialized but only the prepared image is sent to the upload transport.
+  const large=Buffer.concat([png,Buffer.alloc(7_300_000)]);
+  const input=page.locator('[data-layout-media-editor] input[type=file]').first();
+  await input.setInputFiles({name:'large-original.png',mimeType:'image/png',buffer:large});
+  await expect.poll(()=>page.evaluate(()=>window.immediateFixture.started.length)).toBe(1);
+  await expect(page.locator('#layoutEditDialog')).toBeVisible();
+  await expect(page.locator('.photo-upload-progress span')).toContainText(['24']);
+  expect(await page.evaluate(()=>window.immediateFixture.bodySizes[0])).toBeLessThan(900*1024);
+  await input.setInputFiles({name:'next.png',mimeType:'image/png',buffer:png});
+  await expect.poll(()=>page.evaluate(()=>window.immediateFixture.started.length)).toBe(2);
+  await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(2);
+  await page.locator('[data-layout-photo-caption]').first().fill('First caption');
+  expect(await page.evaluate(()=>window.immediateFixture.layout.photos.length)).toBe(0);
+  await page.evaluate(()=>window.immediateFixture.save());
+  const photos=await page.evaluate(()=>window.immediateFixture.finish());
+  expect(photos).toHaveLength(2);expect(photos.every(photo=>photo.status==='synced'&&photo.url)).toBe(true);
+  expect(photos[0].caption).toBe('First caption');expect(photos[0].tripId).toBe('trip');
+});

@@ -182,3 +182,36 @@ test("trip snapshots retain live upload progress without serializing transient f
   assert.equal(layoutMediaSnapshot(trip).photos[0].uploadProgress,45);
   assert.equal(JSON.stringify(trip).includes('uploadProgress'),false);
 });
+
+
+test("trip draft upload follows edits, save and live-record replacement without losing its first photo", async () => {
+  const {createLayoutDraftPhotoUploads}=await import('../../src/sync/layout-draft-photo-uploads.js');
+  const first={id:'first',localId:'first',status:'pending',caption:'',tripId:'t'};
+  let trips=[{id:'t',photos:[first]}];let saved={id:'layout',photos:[]};let request;
+  const session=createLayoutDraftPhotoUploads({layoutId:'layout',getTrips:()=>[...trips],getSavedLayout:()=>saved,uploadPhotos:options=>{request=options;}});
+  await session.add(first);
+  assert.equal(request.shouldUploadPhoto(first),true);
+  assert.deepEqual(saved.photos,[]);
+  trips=structuredClone(trips);trips[0].photos[0].caption='New caption';
+  Object.assign(first,{status:'uploading'});Object.defineProperty(first,'uploadProgress',{value:24,configurable:true,writable:true});
+  request.onPhotoProgress(first);
+  assert.equal(trips[0].photos[0].uploadProgress,24);
+  assert.equal(trips[0].photos[0].caption,'New caption');
+  saved={id:'layout',photos:trips[0].photos.map(p=>({...p}))};session.close();trips=[];
+  assert.equal(request.shouldUploadPhoto(first),true);
+  saved=structuredClone(saved);
+  Object.assign(first,{status:'synced',url:'/first',thumbUrl:'/first-thumb'});delete first.uploadProgress;
+  request.onPhotoProgress(first);
+  assert.equal(saved.photos[0].url,'/first');assert.equal(saved.photos[0].caption,'New caption');
+  assert.equal(saved.photos[0].uploadProgress,undefined);
+  saved.photos=[];assert.equal(request.shouldUploadPhoto(first),false);
+});
+
+test("discarded trip drafts and changed accounts never attach late uploads", async()=>{
+  const {createLayoutDraftPhotoUploads}=await import('../../src/sync/layout-draft-photo-uploads.js');
+  let current=true;const saved={id:'layout',photos:[]};const photo={id:'a',localId:'a',status:'pending'};let request;
+  const session=createLayoutDraftPhotoUploads({layoutId:'layout',getTrips:()=>[{photos:[photo]}],getSavedLayout:()=>saved,isCurrentScope:()=>current,uploadPhotos:options=>{request=options;}});
+  await session.add(photo);current=false;assert.equal(request.shouldUploadPhoto(photo),false);
+  current=true;session.close();assert.equal(request.shouldUploadPhoto(photo),false);
+  photo.url='/late';request.onPhotoProgress(photo);assert.deepEqual(saved.photos,[]);
+});

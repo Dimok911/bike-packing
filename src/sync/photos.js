@@ -1,3 +1,4 @@
+import { detachPhotoCacheRecordBlobs } from "./photo-cache-write.js";
 import { createPhotoFromFile, resolveUploadedPhotoByContentHash as resolvePhotoHash } from "../vendor/vniipo-photo-upload-engine.js";
 export { materializeSelectedPhotoFile, resizeImageFile, imageFileDimensions, paintImageOnJpegCanvas, loadImageBitmap, isGifImageFile, isSvgImageFile, selectedPhotoMimeType, clonePhotoUploadBlob, sha256BlobHex, applyPendingPhotoUploadRetry } from "../vendor/vniipo-photo-upload-engine.js";
 import {
@@ -218,8 +219,9 @@ export async function photoDbStore(mode, callback, { openDb = openPhotoDb } = {}
   });
 }
 
-export function putCachedPhoto(record, scopeKey = activePhotoCacheScopeKey) {
-  return photoDbStore("readwrite", (store) => store.put(photoCacheRecordForStorage(record, scopeKey)));
+export async function putCachedPhoto(record, scopeKey = activePhotoCacheScopeKey) {
+  const detached = await detachPhotoCacheRecordBlobs(record);
+  return photoDbStore("readwrite", (store) => store.put(photoCacheRecordForStorage(detached, scopeKey)));
 }
 
 export async function getCachedPhoto(id, scopeKey = activePhotoCacheScopeKey) {

@@ -1,3 +1,5 @@
+import { getPhotoCacheScope } from "../sync/photos.js";
+import { syncLayoutPhotoUpload } from "../sync/layout-draft-photo-uploads.js";
 import { createLayoutPhotoSummary } from "../ui/layout-photo-summary.js";
 import { openPhotoLightbox } from "../ui/photo-gallery.js";
 import { layoutMediaSnapshot } from "../state/layout-media.js";
@@ -6901,6 +6903,9 @@ function openLayoutEditDialog() {
   if (!layoutMediaEditor) layoutMediaEditor = createLayoutTripsEditor({
     dialog: refs.layoutEditDialog,
     createPhoto: createItemPhotoFromFile,
+    uploadPhotos: uploadDialogDraftPhotos,
+    getSavedLayout: id => state.layouts?.[id],
+    getUploadScope: getPhotoCacheScope,
     deleteCachedPhoto,
     renderGallery: renderPhotoGalleryHtml,
     bindGalleries: (root) => bindPhotoGalleries(root, {
@@ -8683,8 +8688,8 @@ async function uploadDialogDraftPhotos({
               onPhotoProgress,
               retryTemporaryUploadFailure,
               scheduleProgressRender: () => {
-                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
-                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                const savedRecord = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if ((entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(savedRecord, candidate)) {
                   schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
                 }
               }
@@ -8714,8 +8719,8 @@ async function uploadDialogDraftPhotos({
               onPhotoProgress,
               retryTemporaryUploadFailure,
               scheduleProgressRender: () => {
-                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
-                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                const savedRecord = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if ((entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(savedRecord, candidate)) {
                   schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
                 }
               }
@@ -8735,7 +8740,8 @@ async function uploadDialogDraftPhotos({
     runtime.photoUploadInFlight = false;
     onAfterUpload();
   }
-  if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(entity, photo))) saveState();
+  const savedEntity = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+  if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(savedEntity, photo))) saveState();
   return true;
 }
 

@@ -1,7 +1,8 @@
+import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
 import { escapeHtml } from "../utils/html.js";
 import { layoutMediaSnapshot, layoutMediaSignature, normalizeLayoutVideoUrl } from "../state/layout-media.js";
 
-export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto, renderGallery, bindGalleries, onChange, getLimit, localText, showToast }) {
+export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto, renderGallery, bindGalleries, onChange, getLimit, localText, showToast, onPhotoAdded = () => {} }) {
   const host = dialog.querySelector("[data-layout-media-editor]");
   const list = host.querySelector("[data-layout-media-list]");
   const input = host.querySelector("input[type=file]");
@@ -74,6 +75,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
         <label><span>${escapeHtml(localText("Caption", "Подпись"))} ${index + 1}</span>
           <input data-layout-photo-caption maxlength="2000" value="${escapeHtml(photo.caption || "")}" />
         </label>
+        <p data-layout-photo-error hidden role="status"></p>
         <div class="layout-media-photo-actions">
           <button type="button" class="ghost" data-layout-photo-move="-1" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(localText("Move photo earlier", "Переместить фото раньше"))}">←</button>
           <button type="button" class="ghost" data-layout-photo-move="1" ${index === photos.length - 1 ? "disabled" : ""} aria-label="${escapeHtml(localText("Move photo later", "Переместить фото позже"))}">→</button>
@@ -86,6 +88,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
       if (image) image.alt = photos[index].caption || "";
     });
     galleryBinding = bindGalleries(list);
+    refreshUploads();
   }
   list.addEventListener("input", (event) => {
     if (!event.target.matches("[data-layout-photo-caption]")) return;
@@ -136,8 +139,11 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
           await deleteCachedPhoto(photo.localId || photo.id);
           return;
         }
+        photo.caption = "";
         created.push(photo);
-        draft.photos.push({ ...photo, caption: "" });
+        draft.photos.push(photo);
+        // Start each prepared file immediately, without waiting for the next picker or Save.
+        Promise.resolve(onPhotoAdded(photo)).catch(() => {});
       }
     } catch (error) {
       showToast(localText(`Could not add photo: ${error.message}`, `Не удалось добавить фото: ${error.message}`), "error");
@@ -153,9 +159,20 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
       }
     }
   }
+  function refreshUploads() {
+      updatePhotoGallerySources(list, draft.photos);
+      [...list.querySelectorAll("[data-photo-gallery]")].forEach((gallery, index) => updatePhotoGalleryUploadProgress(gallery, [draft.photos[index]]));
+      [...list.querySelectorAll("[data-layout-photo-error]")].forEach((element, index) => {
+        const photo = draft.photos[index];
+        element.textContent = ["error", "missing-local-file"].includes(photo?.status) ? photo.error || localText("Could not upload photo.", "Не удалось загрузить фото.") : "";
+        element.hidden = !element.textContent;
+      });
+      galleryBinding?.refresh?.();
+    }
   return {
     addFiles,
     sessionToken: () => session,
+    refreshUploads,
     open(layout, { preserveCreated = false } = {}) {
       document.addEventListener("keydown", guardGalleryEscape, true);
       session++;
