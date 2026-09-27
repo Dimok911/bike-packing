@@ -1887,6 +1887,9 @@ export async function openPhotoLightbox(sourceImage, {
   bindImageInteractions = (targetImage) => {
     if (boundLightboxImages.has(targetImage)) return;
     boundLightboxImages.add(targetImage);
+    // Native image dragging cancels the pointer stream used for mouse panning.
+    targetImage.draggable = false;
+    targetImage.addEventListener("dragstart", (event) => event.preventDefault());
     const refreshAutoSize = () => {
       settleImagePresentation(targetImage);
     };

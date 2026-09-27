@@ -632,3 +632,46 @@ test("saved trip item and bag galleries keep every recent upload badge", async (
     await expect(page.locator("#"+id+" .photo-upload-progress")).toHaveCount(0);
   }
 });
+
+test("layout choice aligns colored trip counts and supports selection and keyboard", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  for (const name of ["Короткая", "Очень длинное название укладки для проверки столбца", "Без поездок"]) await createEmptyLayout(page, name);
+  await page.evaluate(() => {
+    const key="bike-packing-prototype-state-v1";
+    const state=JSON.parse(localStorage.getItem(key));
+    for (const layout of Object.values(state.layouts)) {
+      if (layout.name==="Короткая") layout.trips=[{id:"a"},{id:"b"}];
+      if (layout.name.startsWith("Очень длинное")) layout.trips=[{id:"a"}];
+    }
+    localStorage.setItem(key,JSON.stringify(state));
+  });
+  await page.reload(); await waitForApp(page);
+  const trigger=page.locator(".layout-choice-trigger");
+  await trigger.click();
+  const list=page.locator(".layout-choice-list");
+  const short=list.getByRole("option").filter({hasText:"Короткая"});
+  const long=list.getByRole("option").filter({hasText:"Очень длинное"});
+  await expect(short.locator(".has-trips")).toHaveText("2");
+  await expect(long.locator(".has-trips")).toHaveText("1");
+  const a=await short.locator(".has-trips").boundingBox();
+  const b=await long.locator(".has-trips").boundingBox();
+  expect(a.x).toBeCloseTo(b.x,0);
+  await short.click();
+  await expect(list).toBeHidden();
+  await expect(trigger.locator(".layout-choice-name")).toHaveText("Короткая");
+  await expect(page.locator("#layoutSelect option:checked")).toContainText("Короткая");
+  await trigger.press("ArrowDown");
+  await expect(list).toBeVisible();
+  await trigger.press("End");
+  await trigger.press("Enter");
+  await expect(list).toBeHidden();
+  await expect(trigger.locator(".layout-choice-name")).toHaveText("Без поездок");
+  await expect(trigger.locator(".has-trips")).toHaveCount(0);
+  await trigger.click();
+  await trigger.press("Escape");
+  await expect(list).toBeHidden();
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await trigger.click();
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+  await page.screenshot({path:"ftp-upload/v1627/layout-choices-"+test.info().project.name+".png"});
+});

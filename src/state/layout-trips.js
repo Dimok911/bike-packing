@@ -28,11 +28,16 @@ export function tripDisplayName(trip, index = 0, language = "ru") {
   return String(trip?.name || "").trim() || (language === "en" ? `Trip ${index + 1}` : `Поездка ${index + 1}`);
 }
 
-export function layoutTripCountLabel(layout, language = "ru") {
+export function layoutTripCount(layout) {
   const payload = layout?.statePayload;
   const source = payload?.layouts ? payload.layouts[payload.activeLayoutId] || Object.values(payload.layouts)[0] : layout;
   const records = Array.isArray(source?.trips) ? source.trips.filter(trip => trip && typeof trip === "object").length : 0;
   const count = records || (source?.photos?.length || normalizeLayoutNotes(source?.notes) || layoutVideoUrls(source).length ? 1 : 0);
+  return count;
+}
+
+export function layoutTripCountLabel(layout, language = "ru") {
+  const count = layoutTripCount(layout);
   if (!count) return "";
   if (language === "en") return `${count} ${count === 1 ? "trip" : "trips"}`;
   const word = count % 100 >= 11 && count % 100 <= 14 ? "поездок" : count % 10 === 1 ? "поездка" : count % 10 >= 2 && count % 10 <= 4 ? "поездки" : "поездок";

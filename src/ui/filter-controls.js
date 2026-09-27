@@ -2,7 +2,8 @@ import {
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG
 } from "../config/constants.js";
-import { layoutTripCountLabel } from "../state/layout-trips.js";
+import { renderLayoutChoiceMenu } from "./layout-choice-menu.js";
+import { layoutTripCount, layoutTripCountLabel } from "../state/layout-trips.js";
 import { orderedLayouts } from "../state/layout-order.js";
 import { publicTemplateOptionAccess } from "../public/public-template-availability.js";
 
@@ -244,12 +245,12 @@ export function renderFilterControls({
     ...publicOptions.map(option => {
       const source = Object.values(state.layouts || {}).find(layout => publicLayoutChoiceForLayout(layout) === option[0])
         || publicLayouts.find(layout => `shared:${layout.id}` === option[0] || demoTemplateChoiceForEntry(layout) === option[0]);
-      return [option[0], withTrips(option[1], source), ...option.slice(2)];
+      return [option[0], withTrips(option[1], source), option[2], option[3], { label: option[1], count: layoutTripCount(source), description: layoutTripCountLabel(source, uiLanguage) }];
     }),
     ...personalLayouts.map((layout) => [
       layout.id,
       withTrips(`${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`, layout),
-      "personal"
+      "personal", false, { label: `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`, count: layoutTripCount(layout), description: layoutTripCountLabel(layout, uiLanguage) }
     ])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
@@ -263,6 +264,7 @@ export function renderFilterControls({
   refs.layoutSelect.title = selectedPublicReadonly
     ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
+  renderLayoutChoiceMenu(refs.layoutSelect, layoutOptions, uiLanguage);
   const sharedLayoutView = isSharedLayoutView();
   refs.newLayoutBtn.textContent = sharedLayoutView
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))

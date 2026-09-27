@@ -159,3 +159,28 @@ for (const target of ["image", "navigation control"]) {
     } finally { await session.detach(); }
   });
 }
+
+for (const hasTouch of [false, true]) test.describe("mouse pan " + (hasTouch ? "hybrid" : "desktop"), () => {
+  test.use({ hasTouch });
+  test("zoomed image follows a full mouse drag without native cancellation", async ({ page }) => {
+    await openGallery(page);
+    await page.mouse.move(960, 540);
+    await page.mouse.wheel(0, -500);
+    await expect.poll(async () => (await imageTransform(page)).scale).toBeGreaterThan(1.5);
+    const before = await imageTransform(page);
+    await page.evaluate(() => {
+      window.panEvents = [];
+      for (const type of ["dragstart", "pointercancel", "pointerup"]) {
+        document.querySelector(".photo-lightbox").addEventListener(type, event => window.panEvents.push(event.type), true);
+      }
+    });
+    await page.mouse.down();
+    await page.mouse.move(1100, 610, { steps: 14 });
+    const after = await imageTransform(page);
+    expect(after.x - before.x).toBeCloseTo(140, 0);
+    expect(after.y - before.y).toBeCloseTo(70, 0);
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.panEvents)).toEqual(["pointerup"]);
+    await expect(page.locator("dialog.photo-lightbox")).toBeVisible();
+  });
+});
