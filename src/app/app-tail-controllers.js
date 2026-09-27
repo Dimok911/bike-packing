@@ -820,7 +820,7 @@ async function applyManufacturerBagCatalogSelection(entry) {
 }
 
 function isEnglishUi() {
-  return normalizeUiLanguage(uiLanguage) === "en";
+  return normalizeUiLanguage(ctx.getUiLanguage?.() ?? uiLanguage) === "en";
 }
 
 function localText(en, ru) {

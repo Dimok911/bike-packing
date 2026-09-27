@@ -1890,6 +1890,7 @@ const appTailRuntime = {
   set suppressNextFilterJump(value) { suppressNextFilterJump = value; }
 };
 const appTailControllerDeps = {
+  getUiLanguage: () => uiLanguage,
   runtime: appTailRuntime,
   adminTemplateUiEnabled,
   adminTemplatePhotoFormEnabled, adminTemplatePhotoEditFormEnabled, adminTemplatePhotoReplaceFormEnabled, adminTemplatePhotoFormContext,
