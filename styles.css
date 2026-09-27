@@ -1357,11 +1357,15 @@ button.filter-active.filter-no-results {
 }
 
 .rich-note-toolbar {
+  /* Keep the row in flow so focusing a note never shifts the form. */
+  visibility: hidden;
+  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 6px;
 }
+.note-field:focus-within .rich-note-toolbar { visibility: visible; pointer-events: auto; }
 .rich-note-toolbar button {
   min-width: 36px;
   min-height: 36px;

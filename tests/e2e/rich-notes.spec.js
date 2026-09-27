@@ -318,6 +318,7 @@ test('existing links can be edited through visible fields in layout, item and ba
     await save(page,saveButton,isMobile);
     await page.reload(); await waitForApp(page);
     await open();
+    await page.locator(`#${id}Rich`).focus();
     await activate(page.locator(`#${dialog} .note-field:has(#${id}) [data-note-command="edit-link"]`),isMobile);
     const panel=page.locator(`#${dialog} .note-field:has(#${id}) .rich-note-link-panel`);
     await expect(panel.locator('[data-note-edit-link]')).toHaveCount(2);
@@ -339,4 +340,46 @@ test('existing links can be edited through visible fields in layout, item and ba
     await expect(page.locator(`#${id}Rich strong`)).toHaveText('Первая');
     await activate(page.locator(`#${dialog} header button[value="cancel"]`),isMobile);
   }
+});
+
+
+test('formatting controls follow focus without moving either trip field', async ({page,isMobile}) => {
+  await fixture(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await activate(page.locator('[data-trip-add]'),isMobile);
+  const description=page.locator('.note-field:has(#layoutEditNotes)');
+  const notes=page.locator('.note-field:has(#layoutTripNotes)');
+  const toolbar=description.locator('.rich-note-toolbar');
+  const notesToolbar=notes.locator('.rich-note-toolbar');
+  const geometry=()=>page.evaluate(()=>{
+    return ['layoutEditNotes','layoutTripNotes'].map(id=>{
+      const el=document.getElementById(id);const field=el.closest('.note-field');
+      return [field.offsetTop,field.offsetHeight,el.offsetHeight];
+    });
+  });
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeHidden();
+  await page.waitForTimeout(350); // Finish the dialog opening animation before measuring focus changes.
+  const before=await geometry();
+  await activate(page.locator('#layoutEditNotes'),isMobile);
+  await expect(toolbar).toBeVisible();await expect(notesToolbar).toBeHidden();
+  expect(await geometry()).toEqual(before);
+  // Keyboard navigation into the toolbar also keeps it visible.
+  await page.locator('#layoutEditNotes').press('Shift+Tab');
+  await expect(toolbar).toBeVisible();
+  await activate(page.locator('#layoutTripNotes'),isMobile);
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeVisible();
+  expect(await geometry()).toEqual(before);
+  await activate(notesToolbar.locator('[data-note-command="link"]'),isMobile);
+  const panel=notes.locator('.rich-note-link-panel');
+  await expect(panel).toBeVisible();await expect(notesToolbar).toBeVisible();
+  await panel.locator('[data-note-link-field="text"]').fill('Ссылка');
+  await panel.locator('[data-note-link-field="url"]').fill('https://example.com/trip');
+  await activate(panel.getByRole('button',{name:'Отмена',exact:true}),isMobile);
+  await expect(notesToolbar).toBeVisible();
+  await activate(page.locator('#layoutEditName'),isMobile);
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeHidden();
+  expect(await geometry()).toEqual(before);
+  await expect(page.locator('#layoutEditNotes')).toHaveValue('');
+  await expect(page.locator('#layoutTripNotes')).toHaveValue('');
+  await page.screenshot({path:`test-results/v1618-toolbar-idle-${isMobile?'mobile':'desktop'}.png`});
 });
