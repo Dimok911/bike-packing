@@ -1,5 +1,7 @@
 const MAX_SAVED_LAYOUTS = 200;
 
+export const LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY = "bike-packing-layout-introduction-collapse-v1";
+
 export const LAYOUT_NOTES_COLLAPSE_STORAGE_KEY = "bike-packing-layout-notes-collapse-v1";
 
 export function isLayoutNotesCollapsed(storageKey, layoutId, storage = globalThis.localStorage) {

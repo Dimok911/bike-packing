@@ -1,6 +1,6 @@
 import { createLayoutPhotoSummary } from "../ui/layout-photo-summary.js";
 import { openPhotoLightbox } from "../ui/photo-gallery.js";
-import { applyLayoutMedia } from "../state/layout-media.js";
+import { applyLayoutMedia, layoutMediaSnapshot } from "../state/layout-media.js";
 import { createLayoutMediaEditor } from "../ui/layout-media-editor.js";
 import { bindPhotoDropZone } from "../ui/photo-drop-zone.js";
 import { createRichNoteEditor } from "../ui/rich-note-editor.js";
@@ -29,7 +29,7 @@ import {
 import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "../sync/photo-upload-queue.js";
 import {
   isLayoutNotesCollapsed,
-  LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
+  LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY,
   setLayoutNotesCollapsed
 } from "../ui/layout-notes-collapse.js";
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
@@ -3144,40 +3144,9 @@ function metric(value, label) {
 }
 
 function layoutNotesSummaryHtml() {
-  const layoutId = state.activeLayoutId || "";
-  const notes = normalizeLayoutNotes(state.layouts?.[layoutId]?.notes);
-  if (!notes) return "";
-  const storageKey = scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY);
-  const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
-  const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
-  const editLabel = t("tooltips.edit");
-  return `
-    <div class="layout-notes-summary ${collapsed ? "collapsed" : ""}">
-      <div class="layout-notes-header">
-        <strong>${escapeHtml(t("layout.notesTitle"))}</strong>
-        <div class="layout-notes-actions">
-          ${canManageActiveLayout() ? `
-            <button
-              type="button"
-              class="edit-button layout-notes-edit-button"
-              data-edit-layout-notes
-              aria-label="${escapeHtml(editLabel)}"
-              title="${escapeHtml(editLabel)}"
-            ><span aria-hidden="true">&#9998;</span></button>
-          ` : ""}
-          <button
-            type="button"
-            class="layout-notes-collapse-button"
-            data-toggle-layout-notes="${escapeHtml(layoutId)}"
-            aria-expanded="${String(!collapsed)}"
-            aria-label="${escapeHtml(`${t("layout.notesTitle")}: ${toggleLabel}`)}"
-            title="${escapeHtml(toggleLabel)}"
-          ><span class="layout-notes-chevron" aria-hidden="true"></span></button>
-        </div>
-      </div>
-      <div class="layout-notes-content note-content" ${collapsed ? "hidden" : ""}>${renderNoteContent(notes, state.layouts?.[layoutId]?.notesHtml)}</div>
-    </div>
-  `;
+  const layout = state.layouts?.[state.activeLayoutId];
+  const notes = normalizeLayoutNotes(layout?.notes);
+  return notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
 }
 
 function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
@@ -3185,18 +3154,33 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   if (!host) return;
   const intro = document.querySelector("#layoutIntroduction");
   const description = document.querySelector("#layoutDescriptionSummary");
-  intro.hidden = !visible;
-  description.innerHTML = visible ? layoutNotesSummaryHtml() : "";
-  description.hidden = !description.childElementCount;
-  description.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", event => {
-    const button = event.currentTarget;
-    setLayoutNotesCollapsed(scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY), button.dataset.toggleLayoutNotes || "", button.getAttribute("aria-expanded") === "true");
+  const layoutId = state.activeLayoutId || "";
+  const media = layoutMediaSnapshot(state.layouts?.[layoutId]);
+  const storageKey = scopedLocalStorageKey(LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY);
+  const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
+  const title = localText("About this layout", "Об укладке");
+  const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
+  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(state.layouts?.[layoutId]?.notes) ? localText("Description", "Описание") : "", media.videoUrl ? localText("Video", "Видео") : ""].filter(Boolean).join(" · ");
+  const header = document.querySelector("#layoutIntroductionHeader");
+  header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(details)}</span></div>
+    <div class="layout-notes-actions">
+      ${canManageActiveLayout() ? `<button type="button" class="edit-button layout-notes-edit-button" data-edit-layout-notes aria-label="${escapeHtml(t("tooltips.edit"))}" title="${escapeHtml(t("tooltips.edit"))}"><span aria-hidden="true">&#9998;</span></button>` : ""}
+      <button type="button" class="layout-introduction-toggle" data-toggle-layout-introduction aria-controls="layoutIntroductionContent" aria-expanded="${String(!collapsed)}" aria-label="${escapeHtml(`${title}: ${toggleLabel}`)}"><span>${escapeHtml(toggleLabel)}</span><span class="layout-notes-chevron" aria-hidden="true"></span></button>
+    </div>`;
+  intro.classList.toggle("collapsed", collapsed);
+  document.querySelector("#layoutIntroductionContent").hidden = collapsed;
+  header.querySelector("[data-toggle-layout-introduction]").addEventListener("click", () => {
+    setLayoutNotesCollapsed(storageKey, layoutId, !collapsed);
     renderSummary();
   });
-  description.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
+  header.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
+  intro.hidden = !visible || !details;
+  description.innerHTML = visible ? layoutNotesSummaryHtml() : "";
+  description.hidden = !description.childElementCount;
   if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
     host,
     canChoose: isAdminSession,
+    onVisibilityChange: (visible) => { intro.hidden = !visible || (host.hidden && description.hidden); },
     renderGallery: renderPhotoGalleryHtml,
     bindGalleries: (root) => bindPhotoGalleries(root, {
       ...photoGalleryBindingOptions(),

@@ -10983,3 +10983,28 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 .rich-note-link-choices { display: grid; gap: 6px; max-height: 220px; overflow-y: auto; min-width: 0; }
 .rich-note-link-choices button { display: grid; gap: 3px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .rich-note-link-choices small { color: var(--muted); font-weight: normal; }
+
+/* One rhythm between page sections; tighter spacing inside the layout introduction. */
+.app { --layout-section-gap: 16px; }
+.app > .layout-introduction, .app > .summary, .app > .tabs-row { margin-top: var(--layout-section-gap); }
+.layout-introduction { margin-bottom: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.layout-introduction-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; }
+.layout-introduction-title { min-width: 0; }
+.layout-introduction-title > strong { display: block; color: var(--ink); font-size: 14px; }
+.layout-introduction-title > span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.layout-introduction-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 10px; border: 0; background: transparent; color: var(--muted); box-shadow: none; font-size: 12px; }
+.layout-introduction.collapsed .layout-notes-chevron { transform: rotate(45deg) translate(-2px, -2px); }
+.layout-introduction-content { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.layout-introduction-content[hidden] { display: none; }
+.layout-introduction .layout-photo-summary { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.layout-introduction #layoutDescriptionSummary { margin: 0; }
+.layout-introduction .layout-notes-content { padding: 0; }
+.layout-introduction .layout-photo-summary-heading { margin: 0; }
+.layout-introduction .layout-photo-summary-heading > strong { display: none; }
+.layout-introduction .layout-photo-summary-heading:has(a) { margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .app { --layout-section-gap: 12px; }
+  .layout-introduction-header { padding: 8px 12px; gap: 6px; }
+  .layout-introduction-content { padding: 0 12px 12px; }
+  .layout-introduction-toggle { min-height: 44px; }
+}

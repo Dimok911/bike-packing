@@ -85,7 +85,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await expect(page.locator('#packingVisualStyleControl')).toBeHidden();
   await expect(summary).toHaveAttribute('data-photo-view','grid');
   const description = page.locator('#layoutDescriptionSummary');
-  await expect(description).toContainText('Описание и заметки к укладке');
+  await expect(page.locator('#layoutIntroductionTitle')).toHaveText('Об укладке');
   await expect(description).toContainText('Заметки сохраняются');
   expect(await description.evaluate(el => el.previousElementSibling.id)).toBe('layoutPhotoSummary');
   await page.evaluate(() => {
@@ -193,9 +193,24 @@ test('shared link opens photos and rich description together without editing con
   await expect.poll(()=>photos.locator('img').evaluate(img=>img.complete && img.naturalWidth>0)).toBe(true);
   await expect(description.locator('strong').last()).toHaveText('Два дня');
   await expect(description.locator('a')).toHaveAttribute('href','https://example.com/route');
-  await expect(description.locator('[data-edit-layout-notes]')).toHaveCount(0);
+  await expect(page.locator('#layoutIntroduction [data-edit-layout-notes]')).toHaveCount(0);
   await expect(page.locator('#packingVisualStyleControl')).toBeHidden();
   const positions=await page.evaluate(()=>['layoutPhotoSummary','layoutDescriptionSummary','summary'].map(id=>document.getElementById(id).getBoundingClientRect().top));
   expect(positions[0]).toBeLessThan(positions[1]); expect(positions[1]).toBeLessThan(positions[2]);
-  await page.screenshot({path:`test-results/v1614-shared-description-${test.info().project.name}.png`});
+  const fold=page.locator('[data-toggle-layout-introduction]');
+  await expect(fold).toHaveAttribute('aria-expanded','true');
+  const spacing=await page.evaluate(()=>{
+    const controls=document.querySelector('.controls').getBoundingClientRect();
+    const intro=document.querySelector('#layoutIntroduction').getBoundingClientRect();
+    const summary=document.querySelector('#summary').getBoundingClientRect();
+    return [intro.top-controls.bottom,summary.top-intro.bottom];
+  });
+  expect(spacing[0]).toBeGreaterThanOrEqual(12);
+  expect(Math.abs(spacing[0]-spacing[1])).toBeLessThan(1);
+  await fold.click();await expect(photos).toBeHidden();await expect(description).toBeHidden();
+  await page.reload();await waitForApp(page);
+  await expect(fold).toHaveAttribute('aria-expanded','false');
+  await expect(photos).toBeHidden();await expect(description).toBeHidden();
+  await fold.click();await expect(photos).toBeVisible();await expect(description).toBeVisible();
+  await page.screenshot({path:`test-results/v1615-shared-description-${test.info().project.name}.png`});
 });

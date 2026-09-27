@@ -71,7 +71,7 @@ function descriptionPosition(canChoose) {
   return "below";
 }
 
-export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, localText, canChoose = () => false }) {
+export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, localText, canChoose = () => false, onVisibilityChange = () => {} }) {
   let version = 0;
   let binding = null;
   let signature = "";
@@ -89,6 +89,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
     view = canChoose() ? event.detail : "grid";
     host.dataset.photoView = view;
     host.hidden = !isVisible || view === "hidden" || !host.childElementCount;
+    onVisibilityChange(isVisible);
   });
   return {
     async render(layout, visible) {
@@ -99,6 +100,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const media = layoutMediaSnapshot(layout);
       const next = JSON.stringify([visible, layout?.id, media]);
       host.hidden = !visible || view === "hidden" || (!media.photos.length && !media.videoUrl);
+      onVisibilityChange(visible);
       if (next === signature) return;
       signature = next;
       const token = ++version;
@@ -117,6 +119,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       });
       binding = bindGalleries(host);
       host.hidden = view === "hidden";
+      onVisibilityChange(visible);
     }
   };
 }
