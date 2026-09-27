@@ -693,8 +693,10 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
         if (before.name !== trip.name) rows.push(localText(`Trip name: ${tripDisplayName(before, index, language)} → ${title}`, `Название поездки: ${tripDisplayName(before, index, language)} → ${title}`));
         const photoFields = photos => photos.map(photo => [photo.id, photo.caption || ""]);
         if (!snapshotsEqual(photoFields(before.photos), photoFields(trip.photos))) rows.push(localText(`Photos in “${title}” changed (${before.photos.length} → ${trip.photos.length})`, `Изменены фотографии в «${title}» (${before.photos.length} → ${trip.photos.length})`));
-        if (before.videoUrl !== trip.videoUrl) rows.push(localText(`Video in “${title}”: ${before.videoUrl || "—"} → ${trip.videoUrl || "—"}`, `Видео в «${title}»: ${before.videoUrl || "—"} → ${trip.videoUrl || "—"}`));
+        if (!snapshotsEqual(before.videoUrls, trip.videoUrls)) rows.push(localText(`Videos in “${title}”: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`, `Видео в «${title}»: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`));
       }
+      if (Boolean(before?.publishNotes) !== Boolean(trip.publishNotes)) rows.push(localText(`Notes in “${title}”: ${trip.publishNotes ? "published" : "hidden from publication"}`, `Заметки в «${title}»: ${trip.publishNotes ? "видны в публикации" : "скрыты из публикации"}`));
+      if ((before?.privateNotes || "") !== (trip.privateNotes || "") || (before?.privateNotesHtml || "") !== (trip.privateNotesHtml || "")) rows.push({ text: localText(`Notes of “${title}”`, `Заметки «${title}»`), note: { before: { text: before?.privateNotes || "", html: before?.privateNotesHtml || "" }, after: { text: trip.privateNotes || "", html: trip.privateNotesHtml || "" } } });
       if (before?.notes !== trip.notes || before?.notesHtml !== trip.notesHtml) rows.push({ text: localText(`Description of “${title}”`, `Описание «${title}»`), note: { before: { text: before?.notes || "", html: before?.notesHtml || "" }, after: { text: trip.notes, html: trip.notesHtml } } });
     }
   } else if (!snapshotsEqual(beforeValue?.[noteKey], afterValue?.[noteKey]) || !snapshotsEqual(beforeValue?.[htmlKey], afterValue?.[htmlKey])) {

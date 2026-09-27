@@ -239,8 +239,8 @@ test('layout notes support formatting, named links, reload and discard', async (
   await activate(page.locator('[data-trip-add]'),isMobile);
   await paste(page.locator('#layoutEditNotes'), '<p><strong>Проверить</strong> перед поездкой</p>');
   await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
-  await activate(page.locator('#layoutEditDialog [data-note-command="link"]'),isMobile);
-  const panel=page.locator('#layoutEditDialog .rich-note-link-panel');
+  await activate(page.locator('#layoutEditDialog .note-field:has(#layoutEditNotes) [data-note-command="link"]'),isMobile);
+  const panel=page.locator('#layoutEditDialog .note-field:has(#layoutEditNotes) .rich-note-link-panel');
   await panel.locator('[data-note-link-field="text"]').fill('Инструкция');
   await panel.locator('[data-note-link-field="url"]').fill('https://example.com/manual');
   await panel.locator('[data-note-link-field="url"]').blur();
@@ -305,6 +305,7 @@ test('existing links can be edited through visible fields in layout, item and ba
   await fixture(page);
   const cases = [
     ['layoutEditNotes', 'layoutEditDialog', '#editLayoutBtn', '#saveEditedLayoutBtn'],
+    ['layoutTripNotes', 'layoutEditDialog', '#editLayoutBtn', '#saveEditedLayoutBtn'],
     ['itemNote', 'itemDialog', '[data-item-id="notesItem"] .item-title-hitarea', '#saveItemBtn'],
     ['rootContainerNote', 'rootContainerDialog', '[data-root-container-id="notesBag"] .container-title', '#saveRootContainerBtn']
   ];
@@ -317,8 +318,8 @@ test('existing links can be edited through visible fields in layout, item and ba
     await save(page,saveButton,isMobile);
     await page.reload(); await waitForApp(page);
     await open();
-    await activate(page.locator(`#${dialog} [data-note-command="edit-link"]`),isMobile);
-    const panel=page.locator(`#${dialog} .rich-note-link-panel`);
+    await activate(page.locator(`#${dialog} .note-field:has(#${id}) [data-note-command="edit-link"]`),isMobile);
+    const panel=page.locator(`#${dialog} .note-field:has(#${id}) .rich-note-link-panel`);
     await expect(panel.locator('[data-note-edit-link]')).toHaveCount(2);
     await activate(panel.locator('[data-note-edit-link]').nth(1),isMobile);
     await expect(panel.locator('[data-note-link-field="text"]')).toHaveValue('Вторая');

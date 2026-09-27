@@ -129,3 +129,26 @@ test("trip edits enter history with rich description data and names", () => {
   assert.match(JSON.stringify(diff),/Название поездки/);
   assert.match(JSON.stringify(diff),/Описание «Weekend»/);
 });
+
+
+test("multiple videos migrate from the old URL, preserve order and reject unsafe schemes", () => {
+  const legacy={id:"l",trips:[{id:"t",videoUrl:"https://youtu.be/old",notes:"Description"}]};
+  const trips=layoutTripsSnapshot(legacy);
+  assert.deepEqual(trips[0].videoUrls,["https://youtu.be/old"]);
+  trips[0].videoUrls.push("https://youtu.be/second");
+  applyLayoutTrips(legacy,trips);
+  assert.deepEqual(layoutTripsSnapshot(compactLayoutForEntitySync(legacy))[0].videoUrls,["https://youtu.be/old","https://youtu.be/second"]);
+  assert.deepEqual(layoutMediaSnapshot({videoUrls:["javascript:alert(1)","https://example.org/video"]}).videoUrls,["https://example.org/video"]);
+  assert.deepEqual(layoutMediaSnapshot({videoUrls:[],videoUrl:"https://youtu.be/old"}).videoUrls,[]);
+});
+test("private notes and publication opt-in survive editing, synchronization and copies separately from descriptions", () => {
+  const layout={id:"a",trips:[{id:"t",notes:"Description",privateNotes:"Private",privateNotesHtml:"<b>Private</b>",publishNotes:false}]};
+  const trips=layoutTripsSnapshot(layout);
+  trips[0].publishNotes=true;applyLayoutTrips(layout,trips);
+  const copy=createManagedLayoutCopyRecord({id:"b",sourceLayout:compactLayoutForEntitySync(layout)});
+  assert.equal(copy.trips[0].notes,"Description");
+  assert.equal(copy.trips[0].privateNotes,"Private");
+  assert.equal(copy.trips[0].privateNotesHtml,"<b>Private</b>");
+  assert.equal(copy.trips[0].publishNotes,true);
+  assert.equal(layoutTripsSnapshot({trips:[{id:"t",notes:"Old description"}]})[0].publishNotes,false);
+});

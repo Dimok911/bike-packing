@@ -12,6 +12,9 @@ export function createLayoutTripsEditor(options) {
   const name = host.querySelector("[data-trip-name]");
   const notes = dialog.querySelector("#layoutEditNotes");
   const noteField = notes.closest(".note-field");
+  const privateField = dialog.querySelector("[data-trip-private-field]");
+  const privateNotes = dialog.querySelector("#layoutTripNotes");
+  const publishNotes = privateField.querySelector("[data-trip-publish-notes]");
   const mediaField = dialog.querySelector("[data-layout-media-editor]");
   const empty = host.querySelector("[data-trips-empty]");
   let trips = [];
@@ -24,13 +27,14 @@ export function createLayoutTripsEditor(options) {
   function flush() {
     if (!trips[active]) return;
     const fields = readNoteFields(notes);
-    Object.assign(trips[active], { name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot() });
+    const privateFields = readNoteFields(privateNotes);
+    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot() });
   }
   function renderChoices() {
     select.replaceChildren(...trips.map((trip, index) => new Option(tripDisplayName(trip, index, language()), String(index))));
     select.value = String(active);
     select.hidden = remove.hidden = nameField.hidden = !trips.length;
-    noteField.hidden = mediaField.hidden = !trips.length;
+    noteField.hidden = privateField.hidden = mediaField.hidden = !trips.length;
     noteField.setAttribute("aria-hidden", String(!trips.length));
     empty.hidden = Boolean(trips.length);
     updateBusy();
@@ -41,6 +45,8 @@ export function createLayoutTripsEditor(options) {
     name.value = trip?.name || "";
     name.placeholder = tripDisplayName(trip, Math.max(0, active), language());
     loadNoteFields(notes, { note: trip?.notes, noteHtml: trip?.notesHtml });
+    loadNoteFields(privateNotes, { note: trip?.privateNotes, noteHtml: trip?.privateNotesHtml });
+    publishNotes.checked = trip?.publishNotes === true;
     media.open(trip, { preserveCreated });
     renderChoices();
   }
@@ -72,7 +78,9 @@ export function createLayoutTripsEditor(options) {
       add.textContent = localText("Add trip", "Добавить поездку");
       remove.textContent = localText("Delete trip", "Удалить поездку");
       empty.textContent = localText("Add a trip to tell its story and attach photos. The gear list is shared by all trips.", "Добавьте поездку: её описание, фотографии и видео. Состав вещей общий для всех поездок.");
-      dialog.querySelector("#layoutEditNotesLabel").textContent = localText("Trip description and notes", "Описание и заметки к поездке");
+      dialog.querySelector("#layoutEditNotesLabel").textContent = localText("Trip description", "Описание поездки");
+      dialog.querySelector("#layoutTripNotesLabel").textContent = localText("Trip notes", "Заметки к поездке");
+      privateField.querySelector("[data-trip-publish-notes-label]").textContent = localText("Show notes in the shared publication", "Показывать заметки в публикации по ссылке");
       show(trips.length ? Math.max(0, trips.findIndex(trip => trip.id === selectedId)) : -1, false);
     },
     snapshot: () => { flush(); return trips; },

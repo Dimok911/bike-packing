@@ -9129,6 +9129,7 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     ...(sourceLayout.trips ? { trips: clone(sourceLayout.trips) } : {}),
     ...(sourceLayout.notes ? { notes: sourceLayout.notes, notesHtml: sourceLayout.notesHtml || "" } : {}),
     ...(sourceLayout.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
+    ...(sourceLayout.videoUrls ? { videoUrls: clone(sourceLayout.videoUrls) } : {}),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),

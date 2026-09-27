@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1616" />
+    <link rel="stylesheet" href="./styles.css?v=1617" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -580,9 +580,16 @@
           <label data-trip-name-field><span data-trip-name-label>Название поездки</span><input data-trip-name maxlength="200" /></label>
         </section>
         <div class="note-field">
-          <label id="layoutEditNotesLabel" for="layoutEditNotes">Trip description and notes</label>
+          <label id="layoutEditNotesLabel" for="layoutEditNotes">Trip description</label>
           <textarea id="layoutEditNotes" rows="4"></textarea>
         </div>
+        <section data-trip-private-field>
+          <div class="note-field">
+            <label id="layoutTripNotesLabel" for="layoutTripNotes">Заметки к поездке</label>
+            <textarea id="layoutTripNotes" rows="4"></textarea>
+          </div>
+          <label class="checkbox-row"><input type="checkbox" data-trip-publish-notes /><span data-trip-publish-notes-label>Показывать заметки в публикации</span></label>
+        </section>
         <section data-layout-media-editor class="layout-media-editor">
           <label>
             <span data-layout-photos-label>Фотографии</span>
@@ -597,11 +604,11 @@
           <small data-layout-drop-hint>Также можно перетащить фотографии сюда</small>
           <p data-layout-media-status role="status" aria-live="polite"></p>
           <div data-layout-media-list class="layout-media-list"></div>
-          <label>
-            <span data-layout-video-label>Ссылка на видео</span>
-            <input data-layout-video type="url" placeholder="https://www.youtube.com/watch?v=…" />
-          </label>
-          <a data-layout-video-link target="_blank" rel="noopener noreferrer" hidden>Открыть видео</a>
+          <section class="layout-video-editor">
+            <strong data-layout-videos-label>Видео поездки</strong>
+            <div data-layout-videos></div>
+            <button type="button" class="ghost" data-layout-add-video>Добавить видео</button>
+          </section>
         </section>
         <label id="layoutLockedLabel" class="checkbox-row">
           <input id="layoutLocked" type="checkbox" />
@@ -902,6 +909,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1616" type="module"></script>
+    <script src="./app.js?v=1617" type="module"></script>
   </body>
 </html>

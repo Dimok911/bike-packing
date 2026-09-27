@@ -99,18 +99,18 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       arrangeDescription();
       const media = layoutMediaSnapshot(layout);
       const next = JSON.stringify([visible, layout?.id, media]);
-      host.hidden = !visible || view === "hidden" || (!media.photos.length && !media.videoUrl);
+      host.hidden = !visible || view === "hidden" || (!media.photos.length && !media.videoUrls.length);
       onVisibilityChange(visible);
       if (next === signature) return;
       signature = next;
       const token = ++version;
       binding?.destroy(); binding = null;
       host.replaceChildren();
-      if (!visible || (!media.photos.length && !media.videoUrl)) return;
+      if (!visible || (!media.photos.length && !media.videoUrls.length)) return;
       const galleries = await Promise.all(media.photos.map(photo => renderGallery([photo], { className: "layout-summary-thumbnail" })));
       if (token !== version) return;
       host.dataset.photoView = view;
-      host.innerHTML = `<header class="layout-photo-summary-heading"><strong>${escapeHtml(localText("Trip photos", "Фото поездки"))}${media.photos.length ? ` · ${media.photos.length}` : ""}</strong>${media.videoUrl ? `<a href="${escapeHtml(media.videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Watch video", "Смотреть видео"))} ↗</a>` : ""}</header>
+      host.innerHTML = `<header class="layout-photo-summary-heading"><strong>${escapeHtml(localText("Trip photos", "Фото поездки"))}${media.photos.length ? ` · ${media.photos.length}` : ""}</strong>${media.videoUrls.length ? `<div class="layout-summary-videos">${media.videoUrls.map((url, index) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Watch video", "Смотреть видео"))}${media.videoUrls.length > 1 ? ` ${index + 1}` : ""} ↗</a>`).join("")}</div>` : ""}</header>
         <div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`;
       host.querySelectorAll("[data-photo-open]").forEach((button, index) => {
         const caption = media.photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`);

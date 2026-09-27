@@ -424,6 +424,7 @@ export function createAppTailControllers(ctx) {
   createRichNoteEditor(refs.itemNote);
   createRichNoteEditor(refs.rootContainerNote);
   createRichNoteEditor(refs.layoutEditNotes);
+  createRichNoteEditor(document.querySelector("#layoutTripNotes"));
 
   let itemStockLocationsDraft = null;
   const stockLocationsDialog = createStockLocationsDialog({
@@ -3147,7 +3148,11 @@ const selectedLayoutTrips = new Map();
 
 function layoutNotesSummaryHtml(layout) {
   const notes = normalizeLayoutNotes(layout?.notes);
-  return notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
+  const privateNotes = normalizeLayoutNotes(layout?.privateNotes);
+  const canShowNotes = !isReadOnlyStateScope() || layout?.publishNotes === true;
+  const description = notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
+  const notesSection = privateNotes && canShowNotes ? `<section class="trip-notes-summary"><header><strong>${escapeHtml(localText("Notes", "Заметки"))}</strong>${!isReadOnlyStateScope() ? `<small>${escapeHtml(layout?.publishNotes ? localText("Visible in publication", "Видны в публикации") : localText("Not published", "Не публикуются"))}</small>` : ""}</header><div class="note-content">${renderNoteContent(privateNotes, layout?.privateNotesHtml)}</div></section>` : "";
+  return description + notesSection;
 }
 
 function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
@@ -3164,7 +3169,7 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
   const title = localText("Trips", "Поездки");
   const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
-  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(trip?.notes) ? localText("Description", "Описание") : "", media.videoUrl ? localText("Video", "Видео") : ""].filter(Boolean).join(" · ");
+  const details = [media.photos.length ? localText(`${media.photos.length} photos`, `Фото: ${media.photos.length}`) : "", normalizeLayoutNotes(trip?.notes) ? localText("Description", "Описание") : "", media.videoUrls.length ? localText(`Videos: ${media.videoUrls.length}`, `Видео: ${media.videoUrls.length}`) : ""].filter(Boolean).join(" · ");
   const header = document.querySelector("#layoutIntroductionHeader");
   header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(trips.length ? `${tripIndex + 1} / ${trips.length}` : "")}</span></div>
     <div class="layout-notes-actions">
@@ -3188,7 +3193,7 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   navigation.hidden = collapsed || !trip;
   navigation.innerHTML = trip ? `<div class="layout-trip-heading"><strong>${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}</strong><small>${escapeHtml(details)}</small></div>
     ${trips.length > 1 ? `<div class="layout-trip-controls"><button type="button" class="ghost" data-trip-prev aria-label="${escapeHtml(localText("Previous trip", "Предыдущая поездка"))}" ${tripIndex === 0 ? "disabled" : ""}>←</button><select aria-label="${escapeHtml(localText("Choose trip", "Выбрать поездку"))}">${trips.map((entry, index) => `<option value="${index}" ${index === tripIndex ? "selected" : ""}>${escapeHtml(tripDisplayName(entry, index, uiLanguage))}</option>`).join("")}</select><button type="button" class="ghost" data-trip-next aria-label="${escapeHtml(localText("Next trip", "Следующая поездка"))}" ${tripIndex === trips.length - 1 ? "disabled" : ""}>→</button></div>` : ""}` : "";
-  const selectTrip = index => { if (trips[index]) { selectedLayoutTrips.set(layoutId, trips[index].id); renderSummary(); } };
+  const selectTrip = index => { if (trips[index]) { selectedLayoutTrips.set(layoutId, trips[index].id); renderSummary(); document.querySelector("#layoutIntroductionContent").scrollTop = 0; } };
   navigation.querySelector("select")?.addEventListener("change", event => selectTrip(Number(event.target.value)));
   navigation.querySelector("[data-trip-prev]")?.addEventListener("click", () => selectTrip(tripIndex - 1));
   navigation.querySelector("[data-trip-next]")?.addEventListener("click", () => selectTrip(tripIndex + 1));
@@ -6902,7 +6907,7 @@ function openLayoutEditDialog() {
       ...photoGalleryBindingOptions(),
       openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
     }),
-    confirmRemove: (name) => askConfirmDialog({ title: localText("Delete trip?", "Удалить поездку?"), text: localText(`Delete “${name}” with its description and photos? The gear list stays the same.`, `Удалить «${name}» вместе с описанием и фотографиями? Состав вещей сохранится.`), okText: t("buttons.delete"), cancelText: t("buttons.cancel"), tone: "danger" }),
+    confirmRemove: (name) => askConfirmDialog({ title: localText("Delete trip?", "Удалить поездку?"), text: localText(`Delete “${name}” with its description and photos? The gear list stays the same.`, `Удалить «${name}» вместе с описанием и фотографиями? Состав вещей сохранится.`), okText: localText("Delete trip", "Удалить поездку"), cancelText: t("buttons.cancel"), tone: "danger" }),
     onChange: updateLayoutEditSaveState,
     getLimit: () => usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit()),
     localText,

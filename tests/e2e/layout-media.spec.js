@@ -4,7 +4,11 @@ import { prepareIsolatedRussianGuest, openApp, createEmptyLayout, waitForApp } f
 test("layout photos: captions, reorder, fullscreen, persistence, discard and video validation", async ({ page, browserName }) => {
   test.setTimeout(60000);
   const navigatePhoto = async (direction) => {
-    if (browserName !== 'webkit') return page.locator(direction > 0 ? '.photo-lightbox-next' : '.photo-lightbox-prev').click();
+    if (browserName !== 'webkit') {
+      await expect.poll(()=>page.locator('.photo-lightbox-image').evaluateAll(images=>images.some(image=>image.complete && image.naturalWidth>0))).toBe(true);
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      return page.locator(direction > 0 ? '.photo-lightbox-next' : '.photo-lightbox-prev').click();
+    }
     await page.evaluate(async direction => {
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const track=document.querySelector('.photo-lightbox-track');
@@ -183,6 +187,8 @@ test('shared link opens photos and rich description together without editing con
   const photo={id:'shared-photo',url:'https://example.com/shared-bike.svg',thumbUrl:'https://example.com/shared-bike.svg',caption:'Велосипед с сумками',width:320,height:180,status:'synced'};
   const payload={locations:[],categories:[],containers:{},items:{},layouts:{trip:{id:'trip',name:'Поездка на выходные',rootContainerIds:[],notes:'Два дня на велосипеде. Маршрут',notesHtml:'<p><strong>Два дня</strong> на велосипеде. <a href="https://example.com/route">Маршрут</a></p>',photos:[photo],videoUrl:'https://youtu.be/example'}},activeLayoutId:'trip'};
   payload.layouts.trip.trips=[{id:'first',name:'Первая поездка',notes:payload.layouts.trip.notes,notesHtml:payload.layouts.trip.notesHtml,videoUrl:payload.layouts.trip.videoUrl},{id:'second',name:'Вторая поездка',notes:'Новая поездка с тем же набором вещей'}];
+  payload.layouts.trip.trips[0].privateNotes='Секретная заметка';payload.layouts.trip.trips[0].publishNotes=false;
+  payload.layouts.trip.trips[1].privateNotes='Публичная заметка';payload.layouts.trip.trips[1].publishNotes=true;
   payload.layouts.trip.photos[0].tripId='first';
   delete payload.layouts.trip.notes; delete payload.layouts.trip.notesHtml; delete payload.layouts.trip.videoUrl;
   await page.route('**/bike-packing/lists/intro-test',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({list:{id:'intro-test',visibility:'shared',title:'Поездка на выходные',payload}})}));
@@ -198,8 +204,10 @@ test('shared link opens photos and rich description together without editing con
   await expect(description.locator('strong').last()).toHaveText('Два дня');
   await expect(description.locator('a')).toHaveAttribute('href','https://example.com/route');
   await expect(page.locator('#layoutIntroduction [data-edit-layout-notes]')).toHaveCount(0);
+  await expect(description).not.toContainText('Секретная заметка');
   await page.locator('[data-trip-next]').click();
   await expect(description).toContainText('Новая поездка с тем же набором вещей');
+  await expect(description).toContainText('Публичная заметка');
   await expect(photos).toBeHidden();
   await page.locator('[data-trip-prev]').click();
   await expect(photos).toBeVisible();
@@ -281,6 +289,7 @@ test('trips: legacy migration, independent stories, count, paging, reload, cance
   await expect(page.locator('#layoutDescriptionSummary')).toHaveText('Ночёвка в лесу');
   await page.locator('#editLayoutBtn').click();
   await page.locator('[data-trip-remove]').click();
+  await expect(page.locator('#confirmOkBtn')).toHaveText('Удалить поездку');
   await page.locator('#confirmOkBtn').click();
   await expect(page.locator('[data-layout-trips-editor] option')).toHaveCount(1);
   await page.locator('#saveEditedLayoutBtn').click();
@@ -335,4 +344,55 @@ test('new photos survive switching trip drafts and save, while discarded additio
   await page.locator('#layoutEditDialog header button').click();await page.locator('#confirmCancelBtn').click();
   await expect(page.locator('#layoutSelect option:checked')).toHaveText('Фотографии разных поездок (2 поездки)');
   await page.locator('#editLayoutBtn').click();await expect(page.locator('[data-layout-trips-editor] option')).toHaveCount(2);
+});
+
+
+test('trip videos, separate notes and stable scrolling card', async ({page,isMobile})=>{
+  test.setTimeout(90000);
+  await prepareIsolatedRussianGuest(page);await openApp(page);await createEmptyLayout(page,'Поездки и заметки');
+  const id=await page.locator('#layoutSelect').inputValue();
+  const blur=async()=>{await page.evaluate(()=>document.activeElement?.blur());await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);};
+  await page.locator('#editLayoutBtn').click();await page.locator('[data-trip-add]').click();
+  await page.locator('[data-trip-name]').fill('Длинная поездка');
+  await page.locator('#layoutEditNotes').fill(Array.from({length:40},(_,i)=>`Описание маршрута, строка ${i+1}`).join('\n'));
+  await page.locator('#layoutTripNotes').fill('Личная заметка');
+  await expect(page.locator('[data-trip-publish-notes]')).not.toBeChecked();
+  await page.locator('[data-layout-video]').fill('https://youtu.be/first');await blur();
+  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').nth(1).fill('https://youtu.be/second');await blur();
+  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').nth(2).fill('javascript:alert(1)');await blur();
+  await page.locator('#saveEditedLayoutBtn').click();await expect(page.locator('#layoutEditDialog')).toBeVisible();
+  await page.locator('[data-layout-video]').nth(2).fill('https://youtu.be/third');await blur();
+  await page.locator('[data-trip-add]').click();await page.locator('[data-trip-name]').fill('Короткая поездка');
+  await page.locator('#layoutEditNotes').fill('Один день');await page.locator('#layoutTripNotes').fill('Заметка для публикации');
+  await page.locator('[data-trip-publish-notes]').check();await blur();
+  await page.locator('#saveEditedLayoutBtn').click();
+  const card=page.locator('#layoutIntroduction');const content=page.locator('#layoutIntroductionContent');
+  await expect(page.locator('#layoutPhotoSummary a')).toHaveCount(3);
+  await expect(page.locator('.trip-notes-summary')).toContainText('Не публикуются');
+  const geometry=()=>page.evaluate(()=>({height:document.querySelector('#layoutIntroduction').getBoundingClientRect().height,summary:document.querySelector('#summary').getBoundingClientRect().top-document.querySelector('#layoutIntroduction').getBoundingClientRect().top}));
+  await page.waitForTimeout(350); // Let the editor closing transition settle before measuring.
+  const first=await geometry();
+  expect(await content.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await content.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+  expect(await content.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  await page.locator('[data-trip-next]').click();
+  await expect(page.locator('.trip-notes-summary')).toContainText('Видны в публикации');
+  for(const [key,value] of Object.entries(await geometry())) expect(value).toBeCloseTo(first[key],0);
+  expect(await content.evaluate(el=>el.scrollTop)).toBe(0);
+  await page.locator('[data-trip-prev]').click();for(const [key,value] of Object.entries(await geometry())) expect(value).toBeCloseTo(first[key],0);
+  await card.screenshot({path:`test-results/v1617-trip-card-${isMobile?'mobile':'desktop'}.png`});
+  await page.reload();await waitForApp(page);await page.locator('#layoutSelect').selectOption(id);
+  await expect(page.locator('#layoutPhotoSummary a')).toHaveCount(3);
+  await page.locator('#editLayoutBtn').click();
+  await expect(page.locator('#layoutTripNotes')).toHaveValue('Личная заметка');
+  await expect(page.locator('[data-trip-publish-notes]')).not.toBeChecked();
+  await page.locator('[data-layout-remove-video]').nth(1).click();
+  await expect(page.locator('[data-layout-video]').nth(1)).toHaveValue('https://youtu.be/third');
+  await page.locator('[data-trip-publish-notes]').check();await blur();await page.locator('#saveEditedLayoutBtn').click();
+  await expect(page.locator('#layoutPhotoSummary a')).toHaveCount(2);
+  await expect(page.locator('.trip-notes-summary')).toContainText('Видны в публикации');
+  const record=await page.evaluate(id=>JSON.parse(localStorage.getItem('bike-packing-prototype-state-v1')).layouts[id],id);
+  expect(record.trips[0].videoUrls).toEqual(['https://youtu.be/first','https://youtu.be/third']);
+  expect(record.trips[0].privateNotes).toBe('Личная заметка');
+  expect(record.trips[0].publishNotes).toBe(true);
 });

@@ -8,10 +8,10 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   const addButton = host.querySelector("[data-layout-add-photos]");
   const camera = host.querySelector("[data-layout-camera]");
   addButton.addEventListener("click", () => input.click());
-  const video = host.querySelector("[data-layout-video]");
-  const videoLink = host.querySelector("[data-layout-video-link]");
+  const videos = host.querySelector("[data-layout-videos]");
+  const addVideo = host.querySelector("[data-layout-add-video]");
   const status = host.querySelector("[data-layout-media-status]");
-  let draft = { photos: [], videoUrl: "" };
+  let draft = { photos: [], videoUrl: "", videoUrls: [] };
   let session = 0;
   let renderVersion = 0;
   let busy = false;
@@ -24,13 +24,44 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   };
 
   function changed() { onChange(); }
-  function updateVideoLink() {
+  function updateVideoLink(row) {
+    const video = row.querySelector("[data-layout-video]");
+    const videoLink = row.querySelector("[data-layout-video-link]");
     const url = normalizeLayoutVideoUrl(video.value);
     video.setCustomValidity(video.value.trim() && !url ? localText("Enter an HTTP or HTTPS video link.", "Введите ссылку на видео, начинающуюся с http:// или https://.") : "");
     videoLink.hidden = !url;
     if (url) videoLink.href = url;
     else videoLink.removeAttribute("href");
   }
+  function renderVideos() {
+    if (!draft.videoUrls.length) draft.videoUrls = [""];
+    videos.innerHTML = draft.videoUrls.map((url, index) => `<div class="layout-video-row" data-layout-video-index="${index}">
+      <label><span>${escapeHtml(localText(`Video link ${index + 1}`, `Ссылка на видео ${index + 1}`))}</span><input data-layout-video type="url" placeholder="https://www.youtube.com/watch?v=…" value="${escapeHtml(url)}" /></label>
+      <button type="button" class="ghost danger" data-layout-remove-video aria-label="${escapeHtml(localText(`Remove video ${index + 1}`, `Удалить видео ${index + 1}`))}">${escapeHtml(localText("Remove", "Удалить"))}</button>
+      <a data-layout-video-link target="_blank" rel="noopener noreferrer" hidden>${escapeHtml(localText("Open video", "Открыть видео"))}</a>
+    </div>`).join("");
+    videos.querySelectorAll("[data-layout-video-index]").forEach(updateVideoLink);
+  }
+  videos.addEventListener("input", event => {
+    if (!event.target.matches("[data-layout-video]")) return;
+    const row = event.target.closest("[data-layout-video-index]");
+    draft.videoUrls[Number(row.dataset.layoutVideoIndex)] = event.target.value;
+    draft.videoUrl = draft.videoUrls[0] || "";
+    updateVideoLink(row);
+    changed();
+  });
+  videos.addEventListener("click", event => {
+    const remove = event.target.closest("[data-layout-remove-video]");
+    if (!remove) return;
+    const index = Number(remove.closest("[data-layout-video-index]").dataset.layoutVideoIndex);
+    draft.videoUrls.splice(index, 1);
+    draft.videoUrl = draft.videoUrls[0] || "";
+    renderVideos(); changed();
+  });
+  addVideo.addEventListener("click", () => {
+    draft.videoUrls.push(""); renderVideos();
+    videos.querySelector("[data-layout-video-index]:last-child input").focus();
+  });
   async function render() {
     const version = ++renderVersion;
     const photos = [...draft.photos];
@@ -73,11 +104,6 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
       [draft.photos[index], draft.photos[next]] = [draft.photos[next], draft.photos[index]];
     }
     render();
-    changed();
-  });
-  video.addEventListener("input", () => {
-    draft.videoUrl = video.value;
-    updateVideoLink();
     changed();
   });
   input.addEventListener("change", async () => {
@@ -144,18 +170,17 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
       host.querySelector(".photo-paste-hint").textContent = localText("Paste photo or URL from clipboard", "Вставить фото или URL из буфера");
       host.querySelector("[data-layout-drop-hint]").textContent = localText("You can also drop photos here", "Также можно перетащить фотографии сюда");
       status.textContent = "";
-      video.value = draft.videoUrl;
       host.querySelector("[data-layout-photos-label]").textContent = localText("Photos", "Фотографии");
       input.setAttribute("aria-label", localText("Add layout photos", "Добавить фотографии укладки"));
-      host.querySelector("[data-layout-video-label]").textContent = localText("Video link", "Ссылка на видео");
-      videoLink.textContent = localText("Open video", "Открыть видео");
-      updateVideoLink();
+      host.querySelector("[data-layout-videos-label]").textContent = localText("Trip videos", "Видео поездки");
+      addVideo.textContent = localText("Add video", "Добавить видео");
+      renderVideos();
       render();
     },
     snapshot: () => draft,
     signature: () => layoutMediaSignature(draft),
     isBusy: () => busy,
-    validate: () => { updateVideoLink(); return video.reportValidity() && !busy; },
+    validate: () => { videos.querySelectorAll("[data-layout-video-index]").forEach(updateVideoLink); return [...videos.querySelectorAll("[data-layout-video]")].every(video => video.reportValidity()) && !busy; },
     close(savedLayout) {
       document.removeEventListener("keydown", guardGalleryEscape, true);
       session++;
@@ -167,7 +192,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
         if (!retained.has(photo.localId || photo.id)) Promise.resolve(deleteCachedPhoto(photo.localId || photo.id)).catch(() => {});
       }
       created = [];
-      draft = { photos: [], videoUrl: "" };
+      draft = { photos: [], videoUrl: "", videoUrls: [] };
       list.innerHTML = "";
       busy = false;
     }

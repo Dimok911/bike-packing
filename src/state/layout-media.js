@@ -1,7 +1,7 @@
 import { normalizeItemPhotos } from "./item-photos.js";
 
 export function hasLayoutMedia(layout) {
-  return Boolean(layout?.trips?.length || (Array.isArray(layout?.photos) && layout.photos.length) || normalizeLayoutVideoUrl(layout?.videoUrl));
+  return Boolean(layout?.trips?.length || (Array.isArray(layout?.photos) && layout.photos.length) || layoutVideoUrls(layout).length);
 }
 
 export function normalizeLayoutVideoUrl(value) {
@@ -13,18 +13,24 @@ export function normalizeLayoutVideoUrl(value) {
   } catch { return ""; }
 }
 
+export function layoutVideoUrls(media) {
+  const values = Array.isArray(media?.videoUrls) ? media.videoUrls : [media?.videoUrl];
+  return values.map(normalizeLayoutVideoUrl).filter(Boolean);
+}
+
 export function layoutMediaSnapshot(layout) {
   const record = { photos: (Array.isArray(layout?.photos) ? layout.photos : []).filter((photo) => photo && typeof photo === "object").map((photo) => ({ ...photo })) };
   return {
     photos: normalizeItemPhotos(record),
-    videoUrl: normalizeLayoutVideoUrl(layout?.videoUrl)
+    videoUrl: layoutVideoUrls(layout)[0] || "",
+    videoUrls: layoutVideoUrls(layout)
   };
 }
 
 export function layoutMediaSignature(media) {
   return JSON.stringify({
     photos: (media?.photos || []).map((photo) => [photo.localId || photo.id, photo.caption || ""]),
-    videoUrl: String(media?.videoUrl || "").trim()
+    videoUrls: (Array.isArray(media?.videoUrls) ? media.videoUrls : [media?.videoUrl]).map(value => String(value || "").trim()).filter(Boolean)
   });
 }
 
@@ -40,6 +46,8 @@ export function applyLayoutMedia(layout, media) {
   });
   if (next.photos.length) layout.photos = next.photos;
   else delete layout.photos;
+  if (next.videoUrls.length) layout.videoUrls = next.videoUrls;
+  else delete layout.videoUrls;
   if (next.videoUrl) layout.videoUrl = next.videoUrl;
   else delete layout.videoUrl;
   return true;
