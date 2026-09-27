@@ -27,12 +27,19 @@ const omittedRuntimeFields = new Set([
   "imageUrl",
   "imageUrls",
   "imagesCheckedAt",
+  "imageReviewApproval",
   "sourceImageUrl",
   "sourceImageUrls"
 ]);
 
+function runtimeValue(value) {
+  if (Array.isArray(value)) return value.map(runtimeValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).filter(([key]) => !omittedRuntimeFields.has(key)).map(([key, item]) => [key, runtimeValue(item)]));
+  return value;
+}
+
 function runtimeEntry(entry) {
-  return { ...Object.fromEntries(Object.entries(entry).filter(([key]) => !omittedRuntimeFields.has(key))),
+  return { ...runtimeValue(entry),
     catalogPublishedAt: publicationHistory[entry.id]?.publishedAt || "" };
 }
 
