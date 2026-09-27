@@ -3813,7 +3813,7 @@ function setupPackingVisualStyleQuickControl() {
     if (!button) return;
     setPackingVisualStyle(button.dataset.packingVisualStyle);
   });
-  setupLayoutPhotoViewControl(control, localText);
+  setupLayoutPhotoViewControl(control, localText, isAdminSession);
   document.body.append(control);
 }
 
@@ -3825,6 +3825,7 @@ function syncPackingVisualStyleControls() {
   });
   const control = document.querySelector("#packingVisualStyleControl");
   control?.classList.toggle("is-visible", canOpenAdminPublishedEdit() && packingVisualStylePanelVisible);
+  control?.syncLayoutIntroductionPreferences?.();
   if (refs.visualStyleMenuBtn) {
     refs.visualStyleMenuBtn.hidden = !canOpenAdminPublishedEdit();
     refs.visualStyleMenuBtn.classList.toggle("active", packingVisualStylePanelVisible);

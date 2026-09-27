@@ -3183,8 +3183,20 @@ function layoutNotesSummaryHtml() {
 function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   const host = document.querySelector("#layoutPhotoSummary");
   if (!host) return;
+  const intro = document.querySelector("#layoutIntroduction");
+  const description = document.querySelector("#layoutDescriptionSummary");
+  intro.hidden = !visible;
+  description.innerHTML = visible ? layoutNotesSummaryHtml() : "";
+  description.hidden = !description.childElementCount;
+  description.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", event => {
+    const button = event.currentTarget;
+    setLayoutNotesCollapsed(scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY), button.dataset.toggleLayoutNotes || "", button.getAttribute("aria-expanded") === "true");
+    renderSummary();
+  });
+  description.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
   if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
     host,
+    canChoose: isAdminSession,
     renderGallery: renderPhotoGalleryHtml,
     bindGalleries: (root) => bindPhotoGalleries(root, {
       ...photoGalleryBindingOptions(),
@@ -3197,15 +3209,7 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
 
 function renderSummaryContent(metrics) {
   renderLayoutPhotoSummary();
-  refs.summary.innerHTML = `${metrics.join("")}${layoutNotesSummaryHtml()}`;
-  refs.summary.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    const layoutId = button.dataset.toggleLayoutNotes || "";
-    const collapsed = button.getAttribute("aria-expanded") === "true";
-    setLayoutNotesCollapsed(scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY), layoutId, collapsed);
-    renderSummary();
-  });
-  refs.summary.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
+  refs.summary.innerHTML = metrics.join("");
 }
 
 function isSharedLayoutView() {

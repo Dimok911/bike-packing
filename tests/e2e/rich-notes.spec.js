@@ -297,3 +297,43 @@ test('history renders safe formatted before/after notes and exact layout quantit
   expect(await page.evaluate(()=>window.historyXss)).toBeUndefined();
   await result.screenshot({path:'test-results/v1613-history-formatted.png'});
 });
+
+
+test('existing links can be edited through visible fields in layout, item and bag notes', async ({page,isMobile}) => {
+  test.setTimeout(60000);
+  await fixture(page);
+  const cases = [
+    ['layoutEditNotes', 'layoutEditDialog', '#editLayoutBtn', '#saveEditedLayoutBtn'],
+    ['itemNote', 'itemDialog', '[data-item-id="notesItem"] .item-title-hitarea', '#saveItemBtn'],
+    ['rootContainerNote', 'rootContainerDialog', '[data-root-container-id="notesBag"] .container-title', '#saveRootContainerBtn']
+  ];
+  for (const [id,dialog,trigger,saveButton] of cases) {
+    const open = () => activate(id === 'rootContainerNote' ? page.getByRole('heading',{name:'Сумка',exact:true}) : page.locator(trigger),isMobile);
+    await open();
+    await page.locator(`#${id}`).fill('');
+    await paste(page.locator(`#${id}`), '<p><a href="https://example.com/first"><strong>Первая</strong></a> и <a href="https://example.com/second">Вторая</a></p>');
+    await save(page,saveButton,isMobile);
+    await page.reload(); await waitForApp(page);
+    await open();
+    await activate(page.locator(`#${dialog} [data-note-command="edit-link"]`),isMobile);
+    const panel=page.locator(`#${dialog} .rich-note-link-panel`);
+    await expect(panel.locator('[data-note-edit-link]')).toHaveCount(2);
+    await activate(panel.locator('[data-note-edit-link]').nth(1),isMobile);
+    await expect(panel.locator('[data-note-link-field="text"]')).toHaveValue('Вторая');
+    await expect(panel.locator('[data-note-link-field="url"]')).toHaveValue('https://example.com/second');
+    await panel.locator('[data-note-link-field="text"]').fill('Новая подпись');
+    await panel.locator('[data-note-link-field="url"]').fill('https://example.com/updated');
+    await page.evaluate(()=>document.activeElement?.blur());
+    await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+    await activate(panel.getByRole('button',{name:'Сохранить ссылку',exact:true}),isMobile);
+    await expect(page.locator(`#${id}Rich a`)).toHaveCount(2);
+    await expect(page.locator(`#${id}Rich a`).nth(1)).toHaveText('Новая подпись');
+    await save(page,saveButton,isMobile);
+    await page.reload(); await waitForApp(page);
+    await open();
+    await expect(page.locator(`#${id}Rich a`).nth(1)).toHaveAttribute('href','https://example.com/updated');
+    await expect(page.locator(`#${id}Rich a`).first()).toHaveText('Первая');
+    await expect(page.locator(`#${id}Rich strong`)).toHaveText('Первая');
+    await activate(page.locator(`#${dialog} header button[value="cancel"]`),isMobile);
+  }
+});

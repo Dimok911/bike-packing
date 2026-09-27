@@ -2,20 +2,22 @@ import { escapeHtml } from "../utils/html.js";
 import { layoutMediaSnapshot } from "../state/layout-media.js";
 
 const STORAGE_KEY = "bike-packing-layout-photo-view-v1";
+const POSITION_KEY = "bike-packing-layout-description-position-v1";
 const VIEWS = [
   ["strip", "А", "Photo strip", "Лента миниатюр"],
   ["hero", "Б", "Featured photo", "Первое фото крупнее"],
-  ["grid", "В", "Photo grid", "Компактная сетка"],
+  ["grid", "В", "Compact photos", "Компактные фотографии"],
   ["hidden", "—", "Hide photos", "Скрыть фотографии"]
 ];
-export function layoutPhotoView() {
+export function layoutPhotoView(canChoose = false) {
+  if (!canChoose) return "grid";
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return VIEWS.some(([key]) => key === value) ? value : "strip";
-  } catch { return "strip"; }
+    return VIEWS.some(([key]) => key === value) ? value : "grid";
+  } catch { return "grid"; }
 }
 
-export function setupLayoutPhotoViewControl(control, localText) {
+export function setupLayoutPhotoViewControl(control, localText, canChoose = () => false) {
   if (!control || control.querySelector(".layout-photo-view-control")) return;
   const group = document.createElement("span");
   group.className = "layout-photo-view-control";
@@ -29,29 +31,71 @@ export function setupLayoutPhotoViewControl(control, localText) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  sync(layoutPhotoView());
+  sync(layoutPhotoView(canChoose()));
   group.addEventListener("click", event => {
     const button = event.target.closest("[data-layout-photo-view]");
-    if (!button) return;
+    if (!button || !canChoose()) return;
     try { localStorage.setItem(STORAGE_KEY, button.dataset.layoutPhotoView); } catch { /* UI remains usable without storage. */ }
     sync(button.dataset.layoutPhotoView);
     document.dispatchEvent(new CustomEvent("layout-photo-view-change", { detail: button.dataset.layoutPhotoView }));
   });
   control.append(group);
+  const positionGroup = document.createElement("span");
+  positionGroup.className = "layout-photo-view-control";
+  positionGroup.setAttribute("role", "group");
+  positionGroup.setAttribute("aria-label", localText("Description position", "Расположение описания"));
+  positionGroup.innerHTML = `<span>${escapeHtml(localText("Description", "Описание"))}:</span>${[
+    ["above", localText("Above photos", "Над фото")], ["below", localText("Below photos", "Под фото")]
+  ].map(([key, label]) => `<button type="button" class="admin-visual-option" data-layout-description-position="${key}">${escapeHtml(label)}</button>`).join("")}`;
+  const syncPosition = () => positionGroup.querySelectorAll("button").forEach(button => {
+    const active = button.dataset.layoutDescriptionPosition === descriptionPosition(canChoose());
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  positionGroup.addEventListener("click", event => {
+    const button = event.target.closest("[data-layout-description-position]");
+    if (!button || !canChoose()) return;
+    try { localStorage.setItem(POSITION_KEY, button.dataset.layoutDescriptionPosition); } catch { /* Optional preference. */ }
+    syncPosition();
+    document.dispatchEvent(new Event("layout-description-position-change"));
+  });
+  syncPosition();
+  control.append(positionGroup);
+  control.syncLayoutIntroductionPreferences = () => { sync(layoutPhotoView(canChoose())); syncPosition(); };
 }
 
-export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, localText }) {
+function descriptionPosition(canChoose) {
+  if (canChoose) {
+    try { if (localStorage.getItem(POSITION_KEY) === "above") return "above"; } catch { /* Default below photos. */ }
+  }
+  return "below";
+}
+
+export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, localText, canChoose = () => false }) {
   let version = 0;
   let binding = null;
   let signature = "";
-  let view = layoutPhotoView();
+  let view = layoutPhotoView(canChoose());
+  let isVisible = false;
+  const arrangeDescription = () => {
+    const intro = host.parentElement;
+    const description = intro.querySelector("#layoutDescriptionSummary");
+    if (!description) return;
+    if (descriptionPosition(canChoose()) === "above") intro.insertBefore(description, host);
+    else intro.append(description);
+  };
+  document.addEventListener("layout-description-position-change", arrangeDescription);
   document.addEventListener("layout-photo-view-change", event => {
-    view = event.detail;
+    view = canChoose() ? event.detail : "grid";
     host.dataset.photoView = view;
-    host.hidden = view === "hidden" || !host.childElementCount;
+    host.hidden = !isVisible || view === "hidden" || !host.childElementCount;
   });
   return {
     async render(layout, visible) {
+      isVisible = visible;
+      view = layoutPhotoView(canChoose());
+      host.dataset.photoView = view;
+      arrangeDescription();
       const media = layoutMediaSnapshot(layout);
       const next = JSON.stringify([visible, layout?.id, media]);
       host.hidden = !visible || view === "hidden" || (!media.photos.length && !media.videoUrl);

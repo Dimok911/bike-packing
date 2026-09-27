@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1613" />
+    <link rel="stylesheet" href="./styles.css?v=1614" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -117,7 +117,10 @@
         </div>
       </section>
 
-      <section class="layout-photo-summary auth-required" id="layoutPhotoSummary" aria-label="Фото укладки" hidden></section>
+      <div class="layout-introduction auth-required" id="layoutIntroduction" hidden>
+        <section class="layout-photo-summary" id="layoutPhotoSummary" aria-label="Фото укладки" hidden></section>
+        <section id="layoutDescriptionSummary" hidden></section>
+      </div>
       <section class="summary auth-required" id="summary"></section>
 
       <div class="tabs-row auth-required">
@@ -568,7 +571,7 @@
           <select id="layoutEditLanguage"></select>
         </label>
         <div class="note-field">
-          <label id="layoutEditNotesLabel" for="layoutEditNotes">Notes</label>
+          <label id="layoutEditNotesLabel" for="layoutEditNotes">Layout description and notes</label>
           <textarea id="layoutEditNotes" rows="4"></textarea>
         </div>
         <section data-layout-media-editor class="layout-media-editor">
@@ -890,6 +893,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1613" type="module"></script>
+    <script src="./app.js?v=1614" type="module"></script>
   </body>
 </html>
