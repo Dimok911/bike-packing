@@ -175,21 +175,25 @@ function Receive-HttpsFile([string]$url, [string]$localPath, [int]$attempts = 5)
   throw "HTTPS verification failed after $attempts attempts."
 }
 
-function Assert-PublicBuild([string]$baseUrl, [string]$temporaryDirectory, [string]$cacheBuster) {
+function Assert-PublicBuild([string]$baseUrl, [string]$temporaryDirectory, [string]$cacheBuster, [string[]]$Files = @("index.html", "app.js", "release-contract.json", "styles.css", "sw.js")) {
   $publicBase = $baseUrl.TrimEnd("/")
-  foreach ($relative in @("index.html", "app.js", "release-contract.json", "styles.css", "sw.js")) {
+  foreach ($relative in $Files) {
     $publicPath = Join-Path $temporaryDirectory $relative
     Receive-HttpsFile "${publicBase}/${relative}?release=$cacheBuster" $publicPath
     Assert-FilesEqual (Join-Path $ArtifactRoot $relative) $publicPath "HTTPS/$relative"
   }
-  $publicHtml = Get-Content -LiteralPath (Join-Path $temporaryDirectory "index.html") -Raw
-  $publicSw = Get-Content -LiteralPath (Join-Path $temporaryDirectory "sw.js") -Raw
-  if ($publicHtml -notmatch ('app\.js\?v=' + [regex]::Escape($script:versionNumber)) -or
-      $publicHtml -notmatch ('styles\.css\?v=' + [regex]::Escape($script:versionNumber))) {
-    throw "HTTPS index.html does not expose the expected asset version."
+  if ($Files -contains "index.html") {
+    $publicHtml = Get-Content -LiteralPath (Join-Path $temporaryDirectory "index.html") -Raw
+    if ($publicHtml -notmatch ('app\.js\?v=' + [regex]::Escape($script:versionNumber)) -or
+        $publicHtml -notmatch ('styles\.css\?v=' + [regex]::Escape($script:versionNumber))) {
+      throw "HTTPS index.html does not expose the expected asset version."
+    }
   }
-  if ($publicSw -notmatch ('bike-packing-prototype-' + [regex]::Escape($ExpectedVersion))) {
-    throw "HTTPS sw.js does not expose the expected cache version."
+  if ($Files -contains "sw.js") {
+    $publicSw = Get-Content -LiteralPath (Join-Path $temporaryDirectory "sw.js") -Raw
+    if ($publicSw -notmatch ('bike-packing-prototype-' + [regex]::Escape($ExpectedVersion))) {
+      throw "HTTPS sw.js does not expose the expected cache version."
+    }
   }
 }
 
@@ -282,7 +286,12 @@ if ($IncrementalManifest) {
       Receive-FtpFile "$stageRemotePath/$relative" $verified
       Assert-FilesEqual $candidate $verified "staging/$relative"
     }
-    Assert-PublicBuild $stagePublicUrl (Join-Path $temporaryRoot "stage-https") "$safeVersion-$timestamp"
+    Assert-PublicBuild $stagePublicUrl (Join-Path $temporaryRoot "stage-https") "$safeVersion-$timestamp" -Files @($plan.path)
+    # Unchanged application files stay on production; verify them there before activation.
+    $unchangedFiles = @($allowed | Where-Object { $_ -notin $plan.path })
+    if ($unchangedFiles.Count) {
+      Assert-PublicBuild $PublicUrl (Join-Path $temporaryRoot "unchanged-https") "$safeVersion-$timestamp" -Files $unchangedFiles
+    }
     # Create empty backup destinations; never rename an application directory.
     $createCode = Invoke-CurlConfig -Ftps -Lines @("silent", "show-error", "fail", (Curl-Line "user" $credential), (Curl-Line "url" $ftpAccountRootUrl), (Curl-Line "output" "NUL"), (Curl-Line "quote" "MKD $backupRemotePath"), (Curl-Line "quote" "MKD $failedRemotePath"))
     if ($createCode -ne 0) { throw "Could not prepare backup directories." }
@@ -305,6 +314,7 @@ if ($IncrementalManifest) {
       Receive-HttpsFile "$($PublicUrl.TrimEnd('/'))/${relative}?release=$safeVersion-$timestamp" $verified
       Assert-FilesEqual (Join-Path $ArtifactRoot $relative) $verified "HTTPS/$relative"
     }
+    Assert-PublicBuild $PublicUrl (Join-Path $temporaryRoot "complete-https") "$safeVersion-$timestamp"
     [pscustomobject]@{ Version=$ExpectedVersion; UploadedFiles=$plan.path; RemoteBackup="/$backupRemotePath/"; FtpSha256="verified"; ProductionHttps="verified"; PhotographsTransferred=0 } | ConvertTo-Json
   } catch {
     $originalError = $_
