@@ -45,7 +45,7 @@ async function fetchText(url, attempts = 3) {
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const response = await fetch(url, {
-        headers: { "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)" },
+        headers: { "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)", ...(new URL(url).hostname === "arkel.ca" ? { "accept-language": "" } : {}) },
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
