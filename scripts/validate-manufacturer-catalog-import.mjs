@@ -43,10 +43,12 @@ export function validateManufacturerCatalogImport(report) {
   if (Number(report.schemaVersion) !== 1) throw new Error("Catalog report schemaVersion must be 1");
   requiredText(report.id, "Catalog report id");
   if (!Number.isFinite(new Date(String(report.scannedAt || "")).getTime())) throw new Error("Catalog report scannedAt is invalid");
-  if (report.status !== "complete") throw new Error("A manually imported catalog report must be complete");
+  if (!["complete", "partial"].includes(report.status)) throw new Error("Catalog report status must be complete or partial");
   const manufacturers = Array.isArray(report.manufacturers) ? report.manufacturers : [];
   if (!manufacturers.length) throw new Error("Catalog report manufacturers are required");
   const manufacturerIds = new Set();
+  const incompleteIds = new Set();
+  let errorCount = 0;
   manufacturers.forEach((manufacturer) => {
     const id = requiredText(manufacturer?.id, "Manufacturer id").toLowerCase();
     if (!MANUFACTURER_HOSTS[id]) throw new Error(`Unsupported manufacturer: ${id}`);
@@ -66,6 +68,7 @@ export function validateManufacturerCatalogImport(report) {
     changeIds.add(id);
     const manufacturerId = requiredText(change?.manufacturerId, `${id} manufacturerId`).toLowerCase();
     if (!manufacturerIds.has(manufacturerId)) throw new Error(`${id} references an unscanned manufacturer`);
+    if (incompleteIds.has(manufacturerId)) throw new Error(`${id} proposes changes from incomplete evidence`);
     if (!CHANGE_TYPES.has(change.type)) throw new Error(`${id} has an invalid change type`);
     counts[change.type] += 1;
     assertOfficialSource({ ...change, id, manufacturerId });
@@ -73,7 +76,8 @@ export function validateManufacturerCatalogImport(report) {
   for (const type of CHANGE_TYPES) {
     if (Number(report.summary?.[type]) !== counts[type]) throw new Error(`Catalog summary ${type} count does not match changes`);
   }
-  if (Number(report.summary?.errors || 0) !== 0) throw new Error("Catalog report summary contains scan errors");
+  if (Number(report.summary?.errors || 0) !== errorCount) throw new Error("Catalog report scan error count does not match evidence");
+  if (report.status !== (errorCount ? "partial" : "complete")) throw new Error("Catalog report must be complete when all manufacturers are complete");
   return { id: report.id, manufacturers: manufacturers.length, products: Number(report.summary?.products || 0), changes: changes.length, ...counts };
 }
 

@@ -504,6 +504,9 @@ test("CRITICAL catalog scan: checked imports accept only complete official manuf
     }],
   };
   assert.equal(validateManufacturerCatalogImport(report).changes, 1);
+  const partial = { ...report, status: "partial", manufacturers: [...report.manufacturers, { id: "arkel", status: "partial", errors: ["HTTP 403"] }], summary: { ...report.summary, errors: 1 } };
+  assert.equal(validateManufacturerCatalogImport(partial).changes, 1);
+  assert.throws(() => validateManufacturerCatalogImport({ ...partial, changes: [{ ...report.changes[0], manufacturerId: "arkel" }] }), /incomplete evidence/);
   assert.throws(
     () => validateManufacturerCatalogImport({ ...report, changes: [{ ...report.changes[0], sourceUrl: "https://example.test/frame-pack/" }] }),
     /does not match apidura/
