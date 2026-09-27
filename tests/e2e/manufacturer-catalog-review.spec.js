@@ -260,10 +260,11 @@ test('a deferred card stays in place instead of advancing the list', async ({ pa
   const card = page.locator('[data-change-id="ortlieb:changed:model-0"]');
   const button = card.locator('[data-catalog-decision="deferred"]');
   await button.scrollIntoViewIfNeeded();
-  const before = await card.evaluate(el => el.getBoundingClientRect().top);
+  const cardOffset = () => card.evaluate(el => el.getBoundingClientRect().top - el.closest('.catalog-updates-content').getBoundingClientRect().top);
+  const before = await cardOffset();
   await button.click();
   await expect(card.locator('.catalog-review-decision')).toHaveClass(/decision-deferred/);
-  const after = await card.evaluate(el => el.getBoundingClientRect().top);
+  const after = await cardOffset();
   expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
   await expect(page.locator('[data-change-id]')).toHaveCount(7);
 });
