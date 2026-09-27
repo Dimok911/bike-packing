@@ -31,6 +31,8 @@ export function catalogValuesEqual(field, before, after) {
       const { id, sourceUrl, sourceImageUrls, evidenceCheckedAt, ...data } = variant;
       return { ...data, sku: String(data.sku || "").trim().toUpperCase(), ...(data.material ? { material: data.material.replace(/\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+\b/gi, (code) => code.toUpperCase()) } : {}) };
     }).sort((a, b) => catalogVariantKey(a).localeCompare(catalogVariantKey(b)));
+    // The first photograph is the cover; rearranging the remaining gallery is not a content change.
+    if (field === "sourceImageUrls" && Array.isArray(value)) value = [value[0], [...new Set(value)].sort()];
     if (/Options$/.test(field) && Array.isArray(value)) value = [...value].sort();
     return stableValue(value);
   };

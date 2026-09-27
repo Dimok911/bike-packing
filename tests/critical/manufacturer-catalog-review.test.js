@@ -382,3 +382,30 @@ test('matching corrections replace only affected records and preserve unrelated 
  assert.equal(result.changes[1].decisionNote,'Check the black SKU');
  assert.equal(JSON.stringify([correction,base]),original);
 });
+
+
+test('gallery reordering keeps the cover significant but does not create empty photo reviews', async () => {
+  const { catalogValuesEqual, catalogChangesForReview } = await import('../../src/data/manufacturer-catalog-comparison.js');
+  const urls = ['front', 'back', 'detail'].map(name => 'https://photos.test/' + name + '.jpg');
+  const reordered = [urls[0], urls[2], urls[1]];
+  assert.equal(catalogValuesEqual('sourceImageUrls', urls, reordered), true);
+  assert.equal(catalogValuesEqual('sourceImageUrls', urls, [urls[1], urls[0], urls[2]]), false);
+  assert.equal(catalogValuesEqual('sourceImageUrls', urls, urls.slice(0, 2)), false);
+  assert.equal(catalogValuesEqual('sourceImageUrls', urls, [...urls, 'https://photos.test/new.jpg']), false);
+  const change = { id: 'vario', manufacturerId: 'ortlieb', type: 'changed', before: { sourceImageUrls: urls }, after: { sourceImageUrls: reordered }, fields: [{ field: 'sourceImageUrls', before: urls, after: reordered }] };
+  const original = JSON.stringify(change);
+  assert.deepEqual(catalogChangesForReview([change]), []);
+  const mixed = { ...change, fields: [...change.fields, { field: 'volume', before: 26, after: 22 }] };
+  const data = { scans: [{ changes: [mixed] }] };
+  assert.equal(catalogReviewCount(data), 1);
+  const photoHtml = renderManufacturerCatalogReview(data, { type: 'photos' });
+  assert.doesNotMatch(photoHtml, /data-change-id="vario"/);
+  const html = renderManufacturerCatalogReview(data);
+  assert.match(html, /data-change-id="vario"/);
+  assert.doesNotMatch(html, /catalog-review-photo-selection/);
+  const cover = { ...change, after: { sourceImageUrls: [urls[1], urls[0], urls[2]] }, fields: [{ field: 'sourceImageUrls', before: urls, after: [urls[1], urls[0], urls[2]] }] };
+  const coverHtml = renderManufacturerCatalogReview({ scans: [{ changes: [cover] }] }, { type: 'photos' });
+  assert.match(coverHtml, /data-change-id="vario"/);
+  assert.match(coverHtml, /Новая обложка|New cover/);
+  assert.equal(JSON.stringify(change), original);
+});
