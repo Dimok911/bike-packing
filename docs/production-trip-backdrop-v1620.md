@@ -23,3 +23,7 @@ Published 2026-09-27 UTC. FTPS staging and public HTTPS hashes verified. Backup:
 Live v1620 shows the trip's loaded 520px thumbnail as its backdrop. Desktop card remains 360px tall; at 390px viewport it is 400px tall with no horizontal document overflow. Screenshots confirm readable links, headings and captions. Main-card fullscreen gallery successfully advances to photo 2. The previous editor-gallery arrow issue also persists in live Chrome: the second-image marker remained unset after the automation click timed out. It is not a backdrop regression and is retained here as an unresolved existing limitation. No trip data was edited or saved, and the original user tab was preserved. Temporary viewport override was reset and verification tab closed.
 
 Screenshots in primary project: test-results/v1620-trip-backdrop.png and test-results/v1620-trip-backdrop-mobile.png. Evidence: ftp-upload/v1620/{critical,source,browser,final-browser,baseline,build,publication}.log and production-comparison.json.
+
+## Owner verification correction
+
+After publication the owner tested editor-gallery paging manually and confirmed that it works normally. The automation observation above is not a confirmed gallery defect; its earlier description as an unresolved product limitation is withdrawn. No change to the shared standard gallery is requested or needed.
