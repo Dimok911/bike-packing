@@ -77,6 +77,33 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   let signature = "";
   let view = layoutPhotoView(canChoose());
   let isVisible = false;
+  const card = host.closest(".layout-introduction");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layout-trip-backdrop";
+  backdrop.setAttribute("aria-hidden", "true");
+  backdrop.hidden = true;
+  const backgroundPhoto = document.createElement("img");
+  backgroundPhoto.alt = "";
+  backdrop.append(backgroundPhoto);
+  card?.prepend(backdrop);
+  const clearBackdrop = () => {
+    backdrop.hidden = true;
+    backgroundPhoto.removeAttribute("src");
+  };
+  const syncBackdrop = () => {
+    const photo = host.querySelector("[data-photo-open] img");
+    if (!isVisible || view === "hidden" || !photo?.complete || !photo.naturalWidth) {
+      clearBackdrop();
+      return;
+    }
+    // Reuse the already loaded thumbnail, including local/offline object URLs.
+    // Decorative artwork never requests a separate full-resolution photograph.
+    const source = photo.currentSrc || photo.src;
+    if (backgroundPhoto.getAttribute("src") !== source) backgroundPhoto.src = source;
+    backdrop.hidden = false;
+  };
+  host.addEventListener("load", syncBackdrop, true);
+  host.addEventListener("error", syncBackdrop, true);
   const arrangeDescription = () => {
     const intro = host.parentElement;
     const description = intro.querySelector("#layoutDescriptionSummary");
@@ -89,6 +116,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
     view = canChoose() ? event.detail : "grid";
     host.dataset.photoView = view;
     host.hidden = !isVisible || view === "hidden" || !host.childElementCount;
+    syncBackdrop();
     onVisibilityChange(isVisible);
   });
   return {
@@ -101,8 +129,9 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const next = JSON.stringify([visible, layout?.id, media]);
       host.hidden = !visible || view === "hidden" || (!media.photos.length && !media.videoUrls.length);
       onVisibilityChange(visible);
-      if (next === signature) return;
+      if (next === signature) { syncBackdrop(); return; }
       signature = next;
+      clearBackdrop();
       const token = ++version;
       binding?.destroy(); binding = null;
       host.replaceChildren();
@@ -118,6 +147,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
         button.querySelector("img").alt = caption;
       });
       binding = bindGalleries(host);
+      syncBackdrop();
       host.hidden = view === "hidden";
       onVisibilityChange(visible);
     }
