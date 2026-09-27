@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="../../styles.css" />
   </head>
   <body>
+    <button id="menuBtn" type="button">Меню</button>
+    <button id="catalogUpdatesBtn" class="ghost menu-item" type="button">Обновления каталога</button>
     <dialog id="catalogUpdatesDialog" open>
       <form method="dialog" class="dialog-card catalog-updates-dialog-card">
         <header>
@@ -14,44 +16,60 @@
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <p class="dialog-note">Проверки сайтов производителей и очередь решений по найденным изменениям.</p>
-        <p class="dialog-status success">Обновлено: 30.08.2026, 12:00</p>
+        <p id="catalogUpdatesStatus" class="dialog-status success"></p>
         <div id="catalogUpdatesContent" class="catalog-updates-content"></div>
         <footer>
           <button value="cancel" class="ghost">Закрыть</button>
-          <button type="button">Обновить</button>
+          <button id="catalogUpdatesRefreshBtn" type="button">Обновить</button>
         </footer>
       </form>
     </dialog>
     <script type="module">
-      import { renderManufacturerCatalogReview } from "../../src/ui/manufacturer-catalog-review-dialog.js";
+      import { createManufacturerCatalogReviewDialogController } from "../../src/ui/manufacturer-catalog-review-dialog.js";
       if (new URLSearchParams(location.search).get("lang") === "en") {
         document.documentElement.lang = "en";
         document.querySelector("h2").textContent = "Catalog updates";
         document.querySelector(".dialog-note").textContent = "Manufacturer website scans and a review queue for detected changes.";
         document.querySelector('footer button[value="cancel"]').textContent = "Close";
         document.querySelector('footer button[type="button"]').textContent = "Refresh";
+        document.querySelector(".dialog-status").textContent = "Saved scans loaded: September 27, 2026 · time 12:00 GMT+3";
       }
       const changes = Array.from({ length: 8 }, (_, index) => ({
         id: `ortlieb:changed:model-${index}`,
-        manufacturer: "ORTLIEB",
+        manufacturerId: index < 4 ? "ortlieb" : "apidura",
+        manufacturer: index < 4 ? "ORTLIEB" : "Apidura",
         productName: index ? `Model ${index}` : "Back-Roller",
         type: index % 3 === 0 ? "added" : index % 3 === 1 ? "changed" : "missing",
+        before: index % 3 === 0 ? null : { sourceCheckedAt: "2026-08-29" },
+        after: index % 3 === 2 ? null : { sourceCheckedAt: "2026-09-05" },
         sourceUrl: "https://www.ortlieb.com/",
         fields: [{ field: "mountingOptions", before: ["Quick-Lock2.1"], after: ["Quick-Lock2.1", "Quick-Lock3.1"] }],
-        decision: index === 1 ? "approved" : "pending",
+        decision: index === 1 ? "approved" : index === 2 ? "deferred" : "pending",
       }));
-      document.querySelector("#catalogUpdatesContent").innerHTML = renderManufacturerCatalogReview({
+      const data = {
+        generatedAt: "2026-09-27T09:00:00.000Z",
         scans: [{
           id: "catalog-scan-20260830",
-          scannedAt: "2026-08-30T09:00:00.000Z",
+          scannedAt: "2026-09-04T21:27:00.000Z",
           summary: { products: 124 },
           manufacturers: [
             { id: "ortlieb", name: "ORTLIEB", productCount: 62, status: "complete" },
             { id: "arkel", name: "Arkel", productCount: 62, status: "complete" },
+            { id: "apidura", name: "Apidura", productCount: 71, status: "partial" },
           ],
           changes,
         }],
+      };
+      const refs = Object.fromEntries(["menuBtn", "catalogUpdatesBtn", "catalogUpdatesDialog", "catalogUpdatesContent", "catalogUpdatesStatus", "catalogUpdatesRefreshBtn"].map((id) => [id, document.getElementById(id)]));
+      const controller = createManufacturerCatalogReviewDialogController({
+        refs,
+        fetchScans: async () => structuredClone(data),
+        saveDecision: async ({ changeId, decision, note }) => Object.assign(changes.find((item) => item.id === changeId), { decision, decisionNote: note }),
+        canOpen: () => true,
+        openModalDialog: (dialog) => { if (!dialog.open) dialog.showModal(); },
       });
+      refs.catalogUpdatesBtn.addEventListener("click", controller.open);
+      await controller.refresh();
     </script>
   </body>
 </html>

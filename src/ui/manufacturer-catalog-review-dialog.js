@@ -49,15 +49,26 @@ const FIELD_TEXT = Object.freeze({
   sourceImageUrls: ["Image gallery", "Галерея изображений"],
 });
 
+const formatDate = (value) => {
+  const source = String(value || "");
+  const time = Date.parse(source);
+  return Number.isFinite(time) ? new Intl.DateTimeFormat(currentLocale(), {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(source) ? { timeZone: "UTC" } : {}),
+  }).format(new Date(time)) : localText("Date not recorded", "Дата не указана");
+};
+
 const formatDateTime = (value) => {
   const time = Date.parse(String(value || ""));
-  return Number.isFinite(time) ? new Intl.DateTimeFormat(currentLocale(), {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+  if (!Number.isFinite(time)) return localText("Date not recorded", "Дата не указана");
+  const clock = new Intl.DateTimeFormat(currentLocale(), {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(time)) : "—";
+    timeZoneName: "short",
+  }).format(new Date(time));
+  return `${formatDate(value)} · ${localText("time", "время")} ${clock}`;
 };
 
 const formatValue = (value) => {
@@ -145,22 +156,51 @@ const renderFieldChanges = (fields = []) => {
   `).join("")}</dl>`;
 };
 
-const renderManufacturerStatus = (manufacturer = {}) => {
+export const catalogChangeNeedsReview = (change) => !change.decision || ["pending", "deferred"].includes(change.decision);
+
+const manufacturerKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const changeManufacturerKey = (change) => manufacturerKey(change.manufacturerId || change.manufacturer);
+const latestChanges = (data) => Array.isArray(data?.scans?.[0]?.changes) ? data.scans[0].changes : [];
+export const catalogReviewCount = (data) => latestChanges(data).filter(catalogChangeNeedsReview).length;
+
+const renderManufacturerStatus = (manufacturer = {}, changes = [], selected = "") => {
   const partial = manufacturer.status !== "complete";
-  return `<li class="catalog-review-manufacturer${partial ? " has-warning" : ""}">
+  const key = manufacturerKey(manufacturer.id || manufacturer.name);
+  const ownChanges = changes.filter((change) => changeManufacturerKey(change) === key);
+  const reviewCount = ownChanges.filter(catalogChangeNeedsReview).length;
+  return `<li><button type="button" data-catalog-manufacturer="${escapeHtml(key)}" aria-pressed="${selected === key}" class="catalog-review-manufacturer${reviewCount ? " has-changes" : ""}${partial ? " has-warning" : ""}">
     <strong>${escapeHtml(manufacturer.name || manufacturer.id)}</strong>
     <span>${escapeHtml(String(manufacturer.productCount || 0))} ${escapeHtml(localText("products", "товаров"))}</span>
+    <b class="catalog-review-manufacturer-count">${escapeHtml(localText(`To review: ${reviewCount} · Total changes: ${ownChanges.length}`, `К проверке: ${reviewCount} · Всего изменений: ${ownChanges.length}`))}</b>
     <small>${escapeHtml(partial
-      ? localText("Scan needs attention", "Сканирование требует внимания")
+      ? localText("Scan incomplete — errors need checking", "Сканирование неполное — есть ошибки")
       : localText("Scan completed", "Сканирование завершено"))}</small>
-  </li>`;
+  </button></li>`;
 };
 
 const renderDecisionButton = (change, decision, label) => `
   <button type="button" class="${change.decision === decision ? "active" : "ghost"}" data-catalog-decision="${decision}">${escapeHtml(label)}</button>
 `;
 
-const renderChange = (change = {}, scanId = "") => {
+const renderComparisonContext = (change, scannedAt) => {
+  const beforeDate = formatDate(change.before?.sourceCheckedAt);
+  const afterDate = formatDate(change.after?.sourceCheckedAt || scannedAt);
+  const before = change.type === "added"
+    ? localText("This model is not in the catalog yet", "Этой модели в каталоге ещё нет")
+    : `${localText("Source checked", "Проверено у производителя")}: ${beforeDate}`;
+  const after = change.type === "missing"
+    ? `${localText("Not found during the scan", "Не найдена при проверке")}: ${formatDate(scannedAt)}`
+    : `${localText("Source checked", "Проверено у производителя")}: ${afterDate}`;
+  return `<div class="catalog-review-comparison-context">
+    <div><strong>${escapeHtml(localText("Current catalog", "Сейчас в каталоге"))}</strong><span>${escapeHtml(before)}</span></div>
+    <div><strong>${escapeHtml(localText("Proposed update", "Предлагаемое обновление"))}</strong><span>${escapeHtml(after)}</span></div>
+  </div>${change.fields?.length ? `<p class="catalog-review-diff-legend">
+    <span><del>${escapeHtml(localText("Struck through", "Зачёркнуто"))}</del> — ${escapeHtml(localText("current catalog value", "значение в текущем каталоге"))}.</span>
+    <span><ins>${escapeHtml(localText("Highlighted", "Выделено цветом"))}</ins> — ${escapeHtml(localText("proposed replacement", "предлагаемая замена"))}.</span>
+  </p>` : ""}`;
+};
+
+const renderChange = (change = {}, scanId = "", scannedAt = "") => {
   const typePair = TYPE_TEXT[change.type] || [change.type, change.type];
   const explanationPair = TYPE_EXPLANATION[change.type] || ["", ""];
   const decisionPair = DECISION_TEXT[change.decision] || DECISION_TEXT.pending;
@@ -174,6 +214,7 @@ const renderChange = (change = {}, scanId = "") => {
       <span class="catalog-review-decision decision-${escapeHtml(change.decision || "pending")}">${escapeHtml(localText(decisionPair[0], decisionPair[1]))}</span>
     </header>
     ${explanationPair[0] ? `<p class="catalog-review-publication-state">${escapeHtml(localText(explanationPair[0], explanationPair[1]))}</p>` : ""}
+    ${renderComparisonContext(change, scannedAt)}
     ${renderFieldChanges(change.fields)}
     ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Open manufacturer source", "Открыть источник производителя"))}</a>` : ""}
     <label class="catalog-review-note">
@@ -188,7 +229,7 @@ const renderChange = (change = {}, scanId = "") => {
   </article>`;
 };
 
-export function renderManufacturerCatalogReview(data = {}) {
+export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", reviewOnly = true } = {}) {
   const scans = Array.isArray(data.scans) ? data.scans : [];
   if (!scans.length) {
     return `<div class="catalog-review-empty">
@@ -201,21 +242,38 @@ export function renderManufacturerCatalogReview(data = {}) {
   }
   const scan = scans[0];
   const changes = Array.isArray(scan.changes) ? scan.changes : [];
-  const pending = changes.filter((item) => !item.decision || item.decision === "pending").length;
+  const pending = changes.filter(catalogChangeNeedsReview).length;
+  const filtered = changes.filter((change) => (!manufacturer || changeManufacturerKey(change) === manufacturer) && (!reviewOnly || catalogChangeNeedsReview(change)));
+  const manufacturers = [...(scan.manufacturers || [])];
+  changes.forEach((change) => {
+    const key = changeManufacturerKey(change);
+    if (key && !manufacturers.some((item) => manufacturerKey(item.id || item.name) === key)) {
+      manufacturers.push({ id: key, name: change.manufacturer || key, status: "unknown" });
+    }
+  });
   return `
     <section class="catalog-review-summary">
-      <div><strong>${escapeHtml(formatDateTime(scan.scannedAt))}</strong><span>${escapeHtml(localText("Data checked at", "Данные проверены на"))}</span></div>
+      <div><span>${escapeHtml(localText("Manufacturer websites checked", "Проверка сайтов производителей"))}</span><strong>${escapeHtml(formatDateTime(scan.scannedAt))}</strong></div>
       <div><strong>${escapeHtml(String(scan.summary?.products || 0))}</strong><span>${escapeHtml(localText("products checked", "товаров проверено"))}</span></div>
       <div><strong>${escapeHtml(String(changes.length))}</strong><span>${escapeHtml(localText("changes found", "изменений найдено"))}</span></div>
-      <div><strong>${escapeHtml(String(pending))}</strong><span>${escapeHtml(localText("awaiting review", "ожидают проверки"))}</span></div>
+      <div><strong>${escapeHtml(String(pending))}</strong><span>${escapeHtml(localText("to review, including deferred", "к проверке, включая отложенные"))}</span></div>
     </section>
-    <ul class="catalog-review-manufacturers">${(scan.manufacturers || []).map(renderManufacturerStatus).join("")}</ul>
+    <p class="catalog-review-publication-state">${escapeHtml(localText(
+      "This is the scan date and time, not a date range. Each card shows the dates of the compared data. Refresh reloads saved scans; it does not run a new manufacturer scan.",
+      "Это дата и время проверки, а не период изменений. Даты сравниваемых данных указаны в карточках. Кнопка «Обновить» загружает сохранённые проверки, а не запускает новое сканирование производителей."
+    ))}</p>
+    <div class="catalog-review-filters">
+      <button type="button" class="ghost" data-catalog-manufacturer="" aria-pressed="${!manufacturer}">${escapeHtml(localText(`All manufacturers · To review: ${pending}`, `Все производители · К проверке: ${pending}`))}</button>
+      <label><input type="checkbox" data-catalog-review-only ${reviewOnly ? "checked" : ""}>${escapeHtml(localText("Only awaiting review (including Later)", "Только к проверке (включая «Позже»)"))}</label>
+    </div>
+    <ul class="catalog-review-manufacturers">${manufacturers.map((item) => renderManufacturerStatus(item, changes, manufacturer)).join("")}</ul>
     <p class="catalog-review-safety-note">${escapeHtml(localText(
       "A decision records your review. The public catalog is not changed automatically.",
       "Решение фиксирует вашу проверку. Публичный каталог автоматически не меняется."
     ))}</p>
+    <p class="catalog-review-results" aria-live="polite">${escapeHtml(localText(`Shown: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "All manufacturers"}`, `Показано записей: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "Все производители"}`))}</p>
     <section class="catalog-review-changes" aria-label="${escapeHtml(localText("Detected catalog changes", "Найденные изменения каталога"))}">
-      ${changes.length ? changes.map((change) => renderChange(change, scan.id)).join("") : `<p class="catalog-review-empty">${escapeHtml(localText("No changes found.", "Изменений не найдено."))}</p>`}
+      ${filtered.length ? filtered.map((change) => renderChange(change, scan.id, scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
     </section>
   `;
 }
@@ -228,10 +286,76 @@ export function createManufacturerCatalogReviewDialogController({
   isForcedOffline,
   openModalDialog,
   showToast,
+  now = () => Date.now(),
+  schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
+  cancelSchedule = (timer) => globalThis.clearTimeout(timer),
   apiErrorMessage = (error) => String(error?.message || error || localText("Error", "Ошибка")),
 } = {}) {
   let lastData = null;
   let renderedLanguage = "";
+  let filters = { manufacturer: "", reviewOnly: true };
+  let inFlight = null;
+  let lastAttempt = -Infinity;
+  let timer = null;
+  let accessEpoch = 0;
+  let allowed = false;
+  const noteDrafts = new Map();
+  const online = () => Boolean(canOpen?.()) && !isForcedOffline?.();
+  const rememberNotes = () => refs?.catalogUpdatesContent?.querySelectorAll?.("[data-change-id]").forEach((card) => {
+    const note = card.querySelector("[data-catalog-note]");
+    if (note) noteDrafts.set(`${card.dataset.scanId}/${card.dataset.changeId}`, note.value);
+  });
+  const render = () => {
+    if (!lastData || !refs?.catalogUpdatesContent) return;
+    refs.catalogUpdatesContent.innerHTML = renderManufacturerCatalogReview(lastData, filters);
+    refs.catalogUpdatesContent.querySelectorAll?.("[data-change-id]").forEach((card) => {
+      const key = `${card.dataset.scanId}/${card.dataset.changeId}`;
+      const note = card.querySelector("[data-catalog-note]");
+      if (note && noteDrafts.has(key)) note.value = noteDrafts.get(key);
+    });
+    renderedLanguage = currentDocumentLanguage();
+  };
+  const updateBadge = () => {
+    const button = refs?.catalogUpdatesBtn;
+    if (!button) return;
+    const count = allowed && lastData ? catalogReviewCount(lastData) : 0;
+    button.classList.toggle("has-catalog-updates", count > 0);
+    if (count) button.setAttribute("data-review-count", String(count));
+    else button.removeAttribute("data-review-count");
+    const label = localText("Catalog updates", "Обновления каталога");
+    const description = count ? `${label} · ${localText("To review", "К проверке")}: ${count}` : label;
+    button.setAttribute("aria-label", description);
+    button.setAttribute("title", description);
+  };
+  const load = () => {
+    if (!online() || typeof fetchScans !== "function") return Promise.resolve(null);
+    if (inFlight) return inFlight;
+    lastAttempt = now();
+    const epoch = accessEpoch;
+    const request = Promise.resolve().then(fetchScans).then((data) => {
+      if (epoch !== accessEpoch || !online()) return null;
+      lastData = data;
+      updateBadge();
+      return data;
+    }).finally(() => {
+      if (inFlight === request) inFlight = null;
+    });
+    inFlight = request;
+    return request;
+  };
+  const checkForUpdates = async () => {
+    if (!online() || now() - lastAttempt < 60_000) return;
+    try { await load(); } catch { /* Keep the last known count; opening the dialog shows errors. */ }
+  };
+  const scheduleCheck = () => {
+    if (timer != null || !online()) return;
+    timer = schedule(async () => {
+      timer = null;
+      await checkForUpdates();
+      scheduleCheck();
+    }, 5 * 60_000);
+    timer?.unref?.();
+  };
 
   const setStatus = (message, type = "") => {
     if (!refs?.catalogUpdatesStatus) return;
@@ -240,25 +364,45 @@ export function createManufacturerCatalogReviewDialogController({
   };
 
   const syncVisibility = () => {
-    if (refs?.catalogUpdatesBtn) refs.catalogUpdatesBtn.hidden = !canOpen?.();
+    const nextAllowed = Boolean(canOpen?.());
+    if (allowed && !nextAllowed) {
+      accessEpoch += 1;
+      lastData = null;
+      inFlight = null;
+      lastAttempt = -Infinity;
+      noteDrafts.clear();
+      filters = { manufacturer: "", reviewOnly: true };
+      if (refs?.catalogUpdatesContent) refs.catalogUpdatesContent.innerHTML = "";
+      refs?.catalogUpdatesDialog?.close?.();
+    }
+    allowed = nextAllowed;
+    if (refs?.catalogUpdatesBtn) refs.catalogUpdatesBtn.hidden = !allowed;
+    updateBadge();
+    if (online()) {
+      void checkForUpdates();
+      scheduleCheck();
+    } else if (timer != null) {
+      cancelSchedule(timer);
+      timer = null;
+    }
     const language = currentDocumentLanguage();
     if (lastData && refs?.catalogUpdatesDialog?.open && renderedLanguage !== language) {
-      refs.catalogUpdatesContent.innerHTML = renderManufacturerCatalogReview(lastData);
-      renderedLanguage = language;
-      setStatus(`${localText("Updated", "Обновлено")}: ${formatDateTime(lastData.generatedAt || new Date().toISOString())}`, "success");
+      rememberNotes();
+      render();
+      setStatus(`${localText("Saved scans loaded", "Сохранённые проверки загружены")}: ${formatDateTime(lastData.generatedAt || new Date().toISOString())}`, "success");
     }
   };
 
   const refresh = async () => {
-    if (!refs?.catalogUpdatesContent || typeof fetchScans !== "function") return;
+    if (!online() || !refs?.catalogUpdatesContent || typeof fetchScans !== "function") return;
+    rememberNotes();
     refs.catalogUpdatesRefreshBtn?.setAttribute("disabled", "disabled");
     setStatus(localText("Loading catalog scans...", "Загружаю проверки каталога..."));
     try {
-      const data = await fetchScans();
-      lastData = data;
-      renderedLanguage = currentDocumentLanguage();
-      refs.catalogUpdatesContent.innerHTML = renderManufacturerCatalogReview(data);
-      setStatus(`${localText("Updated", "Обновлено")}: ${formatDateTime(data.generatedAt || new Date().toISOString())}`, "success");
+      const data = await load();
+      if (!data) return;
+      render();
+      setStatus(`${localText("Saved scans loaded", "Сохранённые проверки загружены")}: ${formatDateTime(data.generatedAt || new Date().toISOString())}`, "success");
     } catch (error) {
       setStatus(`${localText("Could not load catalog scans", "Не удалось загрузить проверки каталога")}: ${apiErrorMessage(error)}`, "error");
     } finally {
@@ -280,8 +424,16 @@ export function createManufacturerCatalogReviewDialogController({
   };
 
   const handleDecision = async (event) => {
+    const manufacturer = event.target.closest("[data-catalog-manufacturer]");
+    if (manufacturer) {
+      rememberNotes();
+      filters.manufacturer = manufacturer.dataset.catalogManufacturer;
+      render();
+      refs.catalogUpdatesContent.querySelector(`[data-catalog-manufacturer="${filters.manufacturer}"]`)?.focus();
+      return;
+    }
     const button = event.target.closest("[data-catalog-decision]");
-    if (!button || typeof saveDecision !== "function") return;
+    if (!button || typeof saveDecision !== "function" || !online()) return;
     const card = button.closest("[data-scan-id][data-change-id]");
     if (!card) return;
     card.querySelectorAll("button").forEach((item) => item.setAttribute("disabled", "disabled"));
@@ -293,6 +445,8 @@ export function createManufacturerCatalogReviewDialogController({
         decision: button.dataset.catalogDecision,
         note: card.querySelector("[data-catalog-note]")?.value || "",
       });
+      // An earlier background response must not replace the saved decision.
+      if (inFlight) await inFlight.catch(() => {});
       await refresh();
     } catch (error) {
       card.querySelectorAll("button").forEach((item) => item.removeAttribute("disabled"));
@@ -302,7 +456,15 @@ export function createManufacturerCatalogReviewDialogController({
 
   refs?.catalogUpdatesRefreshBtn?.addEventListener("click", refresh);
   refs?.catalogUpdatesContent?.addEventListener("click", handleDecision);
+  refs?.catalogUpdatesContent?.addEventListener("change", (event) => {
+    if (!event.target.matches("[data-catalog-review-only]")) return;
+    rememberNotes();
+    filters.reviewOnly = event.target.checked;
+    render();
+    refs.catalogUpdatesContent.querySelector("[data-catalog-review-only]")?.focus();
+  });
+  refs?.menuBtn?.addEventListener("click", checkForUpdates);
   syncVisibility();
 
-  return { open, refresh, syncVisibility };
+  return { open, refresh, syncVisibility, checkForUpdates };
 }
