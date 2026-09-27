@@ -13,6 +13,14 @@ export function resolveManufacturerGallery(entry, { html = '', product = {}, evi
     if (!selected.length && brand === 'tailfin' && volumes.size > 1) selected = tailfinGalleryEvidence(html, entry);
     if (!selected.length && ['rockgeist','revelate-designs'].includes(brand) && volumes.size > 1) selected = wooGalleryEvidence(html, entry);
     if (selected.length) return withManufacturerGalleryEvidence(entry, selected, { checkedAt });
+    // A selected product with one SKU can have an expandable capacity range.
+    // That range describes the same bag, not several independently sized models.
+    if (entry.variants?.length === 1 && entry.variants[0].sku && entry.sourceImageUrls?.length) {
+      const scope = [...new Set([entry.variants[0].volume, ...(entry.volumeOptions || []), entry.volume].filter(v => v > 0))];
+      if (scope.length) return { ...entry, imageVolumeOptions: entry.sourceImageUrls.map(() => scope),
+        imageSkuOptions: entry.sourceImageUrls.map(() => [entry.variants[0].sku]),
+        imageVariantSource: 'manufacturer-single-variant-gallery', imagesCheckedAt: checkedAt };
+    }
     const result = annotateManufacturerImageVariants(entry, { html, product });
     const unresolved = result.imageVolumeOptions?.some(scope => scope === null);
     const missingSelectedGallery = volumes.size > 1 && ['topeak','tailfin','rockgeist','revelate-designs'].includes(brand);

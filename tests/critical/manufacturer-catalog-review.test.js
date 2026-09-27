@@ -363,3 +363,22 @@ test('our exceptions remain separately visible with note and publication status'
  const html=renderManufacturerCatalogReview({scans:[{changes:[],manufacturers:[{id:'arkel',name:'Arkel'}]}],photoExceptions:[{productId:'bag',productName:'Bag',manufacturer:'Arkel',retainedUrls:['https://photos.test/old.jpg'],excludedUrls:[],note:'Fits the small size',reviewedAt:'2026-09-27'}]},{type:'exceptions'});
  assert.match(html,/Fits the small size/);assert.match(html,/ожидает публикации|awaiting publication/);assert.ok(html.includes('https://photos.test/old.jpg'));assert.doesNotMatch(html,/data-catalog-decision=/);
 });
+
+test('matching corrections replace only affected records and preserve unrelated decisions and newcomers',async()=>{
+ const {latestManufacturerCatalogReviewScan}=await import('../../src/ui/manufacturer-catalog-review-dialog.js');
+ const base={id:'base',scannedAt:'2026-09-26',manufacturers:[{id:'ortlieb'}],changes:[
+ {id:'new',productId:'new',manufacturerId:'ortlieb',type:'added',decision:'approved'},
+ {id:'old',productId:'bag',manufacturerId:'ortlieb',type:'changed',decisionNote:'Check the black SKU',fields:[{field:'sourceImageUrls',before:['a'],after:[]}]},
+ {id:'resolved',productId:'resolved',manufacturerId:'ortlieb',type:'changed',fields:[{field:'sourceImageUrls',before:['b'],after:[]}]}
+ ]};
+ const correction={id:'correction',scannedAt:'2026-09-27',manufacturers:[{id:'ortlieb'}],changes:[
+ {id:'fixed',productId:'bag',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'correction'},fields:[{field:'volume',before:23,after:20}]},
+ {id:'no-change',productId:'resolved',manufacturerId:'ortlieb',type:'changed',after:{catalogReviewScope:'correction'},fields:[]}
+ ]};
+ const original=JSON.stringify([correction,base]);
+ const result=latestManufacturerCatalogReviewScan({scans:[correction,base]});
+ assert.deepEqual(result.changes.map(c=>c.id),['new','fixed']);
+ assert.equal(result.changes[0].decision,'approved');assert.equal(result.changes[0].reviewScanId,'base');
+ assert.equal(result.changes[1].decisionNote,'Check the black SKU');
+ assert.equal(JSON.stringify([correction,base]),original);
+});

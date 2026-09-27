@@ -21,6 +21,14 @@ export function selectManufacturerVariantImages(entry) {
   result.imageVolumeOptions = keep.map((index) => entry.imageVolumeOptions[index]);
   if (entry.imageSkuOptions) result.imageSkuOptions = keep.map((index) => entry.imageSkuOptions[index]);
   if (unknown) result.unassignedImageCount = unknown;
+  if (unknown || (!keep.length && entry.imageVolumeOptions.length)) {
+    result.imageReviewRequired = true;
+    result.imageReviewReason = unknown ? 'Some photographs could not be assigned to this model' : 'The gallery size evidence conflicts with this model';
+    result.pendingImageGallery = entry.pendingImageGallery || {
+      sourceImageUrls: entry.sourceImageUrls, imageAssetPaths: entry.imageAssetPaths,
+      imageVolumeOptions: entry.imageVolumeOptions, imageSkuOptions: entry.imageSkuOptions
+    };
+  }
   return result;
 }
 

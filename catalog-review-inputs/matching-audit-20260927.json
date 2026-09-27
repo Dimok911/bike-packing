@@ -1,0 +1,282 @@
+{
+  "sourceScanId": "catalog-scan-20260927111916",
+  "products": 624,
+  "manufacturers": 11,
+  "corrected": 10,
+  "previousPhotoReview": "catalog-photo-review-20260927",
+  "proposedRemovals": [
+    {
+      "productId": "apidura-apidura-x-canyon-saddle-pack",
+      "manufacturerId": "apidura",
+      "before": 16,
+      "scanned": 16,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://medias.apidura.com/sHRQ6jzh/2020/01/DSC00589-1.jpg"
+      ]
+    },
+    {
+      "productId": "apidura-expedition-downtube-pack",
+      "manufacturerId": "apidura",
+      "before": 12,
+      "scanned": 12,
+      "removed": 2,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://medias.apidura.com/sHRQ6jzh/2026/05/apidura-expedition-downtube-pack-product-presentation-poster-450x300.jpg",
+        "https://medias.apidura.com/sHRQ6jzh/2026/05/apidura-expedition-downtube-pack-1.5l-feature-strap.jpg"
+      ]
+    },
+    {
+      "productId": "arkel-commuter-urban-pannier",
+      "manufacturerId": "arkel",
+      "before": 13,
+      "scanned": 12,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Commuter_Moss.png?v=1778775285&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-gt-18-classic-touring-pannier-pair",
+      "manufacturerId": "arkel",
+      "before": 8,
+      "scanned": 8,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/pannier-gt-18-moss-arkel-2_1800x1800_d590b8de-3465-493e-95c2-9ee333742b09.jpg?v=1756931016&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-gt-18-classic-touring-pannier-single",
+      "manufacturerId": "arkel",
+      "before": 8,
+      "scanned": 8,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/pannier-gt-18-moss-arkel-2_1800x1800_d590b8de-3465-493e-95c2-9ee333742b09.jpg?v=1756931016&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-gt-18bp-convertible-backpack-pannier",
+      "manufacturerId": "arkel",
+      "before": 12,
+      "scanned": 11,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/pannier-gt-18-moss-arkel-2_1800x1800_d590b8de-3465-493e-95c2-9ee333742b09.jpg?v=1756931016&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-heavy-duty-tote-bag",
+      "manufacturerId": "arkel",
+      "before": 10,
+      "scanned": 8,
+      "removed": 2,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Tote-Bag-Fushia.png?v=1738232764&width=700",
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Tote-Bags-Light-Blue_1800x1800_2.webp?v=1758831691&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-shopper-urban-pannier",
+      "manufacturerId": "arkel",
+      "before": 20,
+      "scanned": 18,
+      "removed": 2,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Shopper_Cordura_Moss.png?v=1778775222&width=700",
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/arkel-bike-bags-bicycle-bags-panniers-xpac-federal-yellow-29-l-shopper-urban-pannier-39445060026617.jpg?v=1762971358&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-t-28-classic-touring-panniers",
+      "manufacturerId": "arkel",
+      "before": 10,
+      "scanned": 6,
+      "removed": 4,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/t28_moss_f66cbb65-0589-45a6-be78-dc855dd70374.jpg?v=1756304788&width=700",
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_GT18-pannier_Moss_Panorama_Boreal.jpg?v=1757370242&width=700",
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_GT18-pannier_Black-Rearview.jpg?v=1757370245&width=700",
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/ARKEL_GT18-pannier_Black-Top_View.jpg?v=1757370251&width=700"
+      ]
+    },
+    {
+      "productId": "arkel-tailrider-trunk-bag",
+      "manufacturerId": "arkel",
+      "before": 13,
+      "scanned": 12,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel_Tailrider2_Lime_sideview.jpg?v=1743778033&width=700"
+      ]
+    },
+    {
+      "productId": "blackburn-outpost-frame-bag-medium",
+      "manufacturerId": "blackburn",
+      "before": 2,
+      "scanned": 0,
+      "removed": 2,
+      "resolution": "verified-gallery-restored",
+      "corrected": 2
+    },
+    {
+      "productId": "cyclite-frame-bag-xt-02",
+      "manufacturerId": "cyclite",
+      "before": 9,
+      "scanned": 8,
+      "removed": 1,
+      "resolution": "nonempty-source-gallery-review-retained",
+      "removedUrls": [
+        "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-022-04-600_FRAME-BAG-XT-02_Pink-Rush_Studio_1.jpg?v=1783406888&width=900"
+      ]
+    },
+    {
+      "productId": "ortlieb-back-roller-plus",
+      "manufacturerId": "ortlieb",
+      "before": 32,
+      "scanned": 0,
+      "removed": 32,
+      "resolution": "verified-gallery-restored",
+      "corrected": 37
+    },
+    {
+      "productId": "ortlieb-trunk-bag",
+      "manufacturerId": "ortlieb",
+      "before": 12,
+      "scanned": 0,
+      "removed": 12,
+      "resolution": "verified-gallery-restored",
+      "corrected": 12
+    },
+    {
+      "productId": "ortlieb-vario-lite",
+      "manufacturerId": "ortlieb",
+      "before": 33,
+      "scanned": 0,
+      "removed": 33,
+      "resolution": "verified-gallery-restored",
+      "corrected": 33
+    },
+    {
+      "productId": "rockgeist-52hz-waterproof-framebag-gravel-9l",
+      "manufacturerId": "rockgeist",
+      "before": 1,
+      "scanned": 0,
+      "removed": 1,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-52hz-waterproof-framebag-mountain-6l",
+      "manufacturerId": "rockgeist",
+      "before": 1,
+      "scanned": 0,
+      "removed": 1,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-52hz-waterproof-framebag-salsa-cutthroat-6-5l",
+      "manufacturerId": "rockgeist",
+      "before": 1,
+      "scanned": 0,
+      "removed": 1,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-cache-top-tube-bag",
+      "manufacturerId": "rockgeist",
+      "before": 8,
+      "scanned": 0,
+      "removed": 8,
+      "resolution": "verified-gallery-restored",
+      "corrected": 8
+    },
+    {
+      "productId": "rockgeist-cache-top-tube-bag-bolt-on",
+      "manufacturerId": "rockgeist",
+      "before": 7,
+      "scanned": 0,
+      "removed": 7,
+      "resolution": "verified-gallery-restored",
+      "corrected": 7
+    },
+    {
+      "productId": "rockgeist-gondola",
+      "manufacturerId": "rockgeist",
+      "before": 8,
+      "scanned": 0,
+      "removed": 8,
+      "resolution": "preserved-needs-review",
+      "corrected": 8
+    },
+    {
+      "productId": "rockgeist-meanwhile-wald-basket-bag-15l",
+      "manufacturerId": "rockgeist",
+      "before": 1,
+      "scanned": 0,
+      "removed": 1,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-microwave-panniers",
+      "manufacturerId": "rockgeist",
+      "before": 15,
+      "scanned": 0,
+      "removed": 15,
+      "resolution": "verified-gallery-restored",
+      "corrected": 15
+    },
+    {
+      "productId": "rockgeist-off-road-tour-52hz-waterproof-framebag-9l",
+      "manufacturerId": "rockgeist",
+      "before": 6,
+      "scanned": 0,
+      "removed": 6,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-trail-52hz-waterproof-framebag-9l",
+      "manufacturerId": "rockgeist",
+      "before": 4,
+      "scanned": 0,
+      "removed": 4,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "rockgeist-wedge-52hz-waterproof-framebag-9l",
+      "manufacturerId": "rockgeist",
+      "before": 1,
+      "scanned": 0,
+      "removed": 1,
+      "resolution": "covered-by-existing-photo-review"
+    },
+    {
+      "productId": "topeak-328-wedge-drybag",
+      "manufacturerId": "topeak",
+      "before": 2,
+      "scanned": 0,
+      "removed": 2,
+      "resolution": "preserved-needs-review",
+      "corrected": 2
+    },
+    {
+      "productId": "topeak-686-dynawedge",
+      "manufacturerId": "topeak",
+      "before": 2,
+      "scanned": 0,
+      "removed": 2,
+      "resolution": "verified-gallery-restored",
+      "corrected": 2
+    }
+  ]
+}

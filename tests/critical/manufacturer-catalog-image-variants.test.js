@@ -65,3 +65,19 @@ test("decimal capacities do not match integer suffixes or photo sequence numbers
 test("misaligned arrays fail visibly instead of pairing a photo with the wrong source", () => {
   assert.throws(() => selectManufacturerVariantImages({ ...product(["https://test/a.jpg"]), imageVolumeOptions: [null, [4]] }), /Misaligned/);
 });
+
+for (const [id, oldVolume, volume] of [['ortlieb-back-roller-plus',23,20],['ortlieb-trunk-bag',12,10],['ortlieb-vario-lite',26,22]]) {
+  test(id + ': selected SKU specifications keep the verified gallery despite a legacy volume', () => {
+    const raw = { ...product(['https://test/front.jpg'],[volume]), id, volume:oldVolume, volumeOptions:[oldVolume],
+      variants:[{sku:'F1',volume,evidenceCheckedAt:'2026-09-27',sourceUrl:'https://test/product?variant=1'}],
+      imageVolumeOptions:[[volume]],imageSkuOptions:[['F1']] };
+    const [result]=splitManufacturerBagCatalogSkuModels([raw]);
+    assert.equal(result.volume,volume);
+    assert.deepEqual(result.sourceImageUrls,raw.sourceImageUrls);
+    assert.deepEqual(result.imageAssetPaths,raw.imageAssetPaths);
+    assert.deepEqual(splitManufacturerBagCatalogSkuModels([result]),[result]);
+    const [unverified]=splitManufacturerBagCatalogSkuModels([{...raw,variants:[{sku:'F1',volume}]}]);
+    assert.equal(unverified.volume,oldVolume);
+    assert.deepEqual(unverified.sourceImageUrls,[]);
+  });
+}

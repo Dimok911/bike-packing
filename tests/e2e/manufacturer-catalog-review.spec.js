@@ -90,7 +90,7 @@ for (const language of ["ru", "en"]) {
     await expect(card).toBeVisible();
     await expect(card.locator('.state-added')).toHaveCount(1);
     await expect(card.locator('.state-removed')).toHaveCount(1);
-    await expect(card.locator('.state-added')).toContainText(language==='ru'?'Добавлено':'Added');
+    await expect(card.locator('.state-added')).toContainText(language==='ru'?'Предлагается добавить':'Proposed addition');
     await expect(card.locator('.state-added')).toContainText(language==='ru'?'Новая обложка':'New cover');
     await expect(card.locator('del, ins')).toHaveCount(0);
     await expect(card.locator('.state-added img')).toBeVisible();
@@ -98,6 +98,8 @@ for (const language of ["ru", "en"]) {
     await expect.poll(()=>card.locator('.state-added img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
     await card.locator('summary').click();
     await expect(card.locator('.state-unchanged img')).toBeVisible();
+    await expect(card.getByLabel(language==='ru'?'В итоговой галерее':'In the final gallery').filter({visible:true}).first()).toBeVisible();
+    await expect(card).toContainText(language==='ru'?'не добавляет повторно':'without adding a duplicate');
     const bounds=await card.evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth}));
     expect(bounds.scroll).toBeLessThanOrEqual(bounds.width+1);
     if(language==='ru') await page.screenshot({path:`node_modules/.cache/catalog-photo-repair/gallery-${test.info().project.name}.png`,fullPage:true});

@@ -107,3 +107,20 @@ test('repair keeps current specifications, restores original references and hold
   assert.equal(held.audit[0].status,'preserved-needs-review');
   assert.throws(()=>assertPublishableManufacturerGalleries(held.entries),/publication blocked/);
 });
+
+test('one selected SKU keeps its expandable-capacity gallery aligned', () => {
+ const entry={...product(4.3),brand:'Blackburn',volumeOptions:[4.3,5.8]};
+ const result=selectManufacturerVariantImages(resolveManufacturerGallery(entry));
+ assert.deepEqual(result.sourceImageUrls,entry.sourceImageUrls);
+ assert.deepEqual(result.imageVolumeOptions,[[4.3,5.8]]);
+ assert.equal(result.imageReviewRequired,undefined);
+});
+test('a disjoint size filter preserves raw evidence and cannot approve an empty gallery', () => {
+ const entry={...product(4),imageVolumeOptions:[[6]]};
+ const selected=selectManufacturerVariantImages(entry);
+ assert.equal(selected.imageReviewRequired,true);
+ assert.deepEqual(selected.pendingImageGallery.sourceImageUrls,entry.sourceImageUrls);
+ const preserved=preserveApprovedManufacturerGallery(selected,product(4));
+ assert.deepEqual(preserved.sourceImageUrls,entry.sourceImageUrls);
+ assert.throws(()=>assertPublishableManufacturerGalleries([preserved]),/publication blocked/);
+});

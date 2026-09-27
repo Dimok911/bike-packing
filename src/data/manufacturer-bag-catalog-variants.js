@@ -141,7 +141,13 @@ function fixedVolumeEntry(rawEntry) {
   const entry = normalizedMountingEntry(rawEntry);
   const fixed = manufacturerBagCatalogFixedVolumes(entry?.sourceProductId || entry?.id);
   const volumeSetBasis = VOLUME_SET_BASIS_BY_SOURCE_ID.get(String(entry?.sourceProductId || entry?.id || ""));
-  const normalized = fixed?.length ? { ...entry, volume: fixed[0], volumeOptions: [...fixed] } : entry;
+  // A complete selected-SKU specification supersedes a legacy family correction.
+  // Never infer this from a partial response or an unverified volume label.
+  const variants = entry.variants || [];
+  const verified = variants.length && variants.every(v => v.sku && v.volume > 0 && v.evidenceCheckedAt && v.sourceUrl);
+  const selectedVolumes = verified ? positiveNumbers(variants.map(v => v.volume)) : [];
+  const effective = selectedVolumes.length === 1 ? selectedVolumes : fixed;
+  const normalized = effective?.length ? { ...entry, volume: effective[0], volumeOptions: [...effective] } : entry;
   return volumeSetBasis ? { ...normalized, volumeSetBasis } : normalized;
 }
 

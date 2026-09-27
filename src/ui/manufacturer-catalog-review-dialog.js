@@ -181,7 +181,7 @@ const manufacturerKey = (value) => String(value || "").trim().toLowerCase().repl
 const changeManufacturerKey = (change) => manufacturerKey(change.manufacturerId || change.manufacturer);
 export function latestManufacturerCatalogReviewScan(data = {}) {
   const allScans = Array.isArray(data.scans) ? data.scans : [];
-  const photoScans = allScans.filter(scan => scan.changes?.length && scan.changes.every(change => change.after?.catalogReviewScope === 'photos'));
+  const photoScans = allScans.filter(scan => scan.changes?.length && scan.changes.every(change => ['photos','correction'].includes(change.after?.catalogReviewScope)));
   if (photoScans.length && photoScans.length !== allScans.length) {
     const base = latestManufacturerCatalogReviewScan({ ...data, scans: allScans.filter(scan => !photoScans.includes(scan)) });
     const photos = new Map();
@@ -192,10 +192,15 @@ export function latestManufacturerCatalogReviewScan(data = {}) {
     }
     const changes = base.changes.flatMap(change => {
       if (change.type !== 'changed' || !photos.has(change.productId)) return [change];
+      const replacement = photos.get(change.productId);
+      if (replacement.after?.catalogReviewScope === 'correction') {
+        if (!replacement.decisionNote && change.decisionNote) replacement.decisionNote = change.decisionNote;
+        return [];
+      }
       const fields = (change.fields || []).filter(field => !['sourceImageUrl','sourceImageUrls','imageReviewRequired'].includes(field.field));
       return fields.length ? [{ ...change, fields, after: { ...change.after, imageReviewRequired: false } }] : [];
     });
-    return { ...base, changes: [...changes, ...photos.values()], mixedScans: true };
+    return { ...base, changes: [...changes, ...[...photos.values()].filter(change => change.fields?.length || change.after?.imageReviewRequired)], mixedScans: true };
   }
   const scans = allScans;
   const latest = scans[0];
@@ -288,12 +293,12 @@ const renderPhotoPreview = change => {
   if (!catalogChangeHasPhotoReview(change) && !["added", "missing"].includes(change.type)) return "";
   const photos = catalogPhotoChanges(change);
   const selection = catalogPhotoSelection(change);
-  const labels = { added: localText("Added", "Добавлено"), removed: localText("Will be removed", "Будет убрано"),
-    unchanged: localText("Unchanged photographs", "Без изменений"), saved: localText("Saved photographs", "Сохранённые фотографии") };
-  return `<div class="catalog-review-photo-selection"><p>${escapeHtml(localText("Checked photographs will be included in the catalog. Uncheck any that do not belong to this model.", "В каталог войдут отмеченные фотографии. Снимите отметки с тех, которые не подходят этой модели."))}</p><button type="button" class="ghost" data-catalog-photo-default>${escapeHtml(localText("Select proposed photographs", "Выбрать все предложенные"))}</button></div>` + ["added", "removed", "saved", "unchanged"].map(state => {
+  const labels = { added: localText("Proposed addition", "Предлагается добавить"), removed: localText("Absent from the new gallery", "Нет в новой галерее"),
+    unchanged: localText("Already in catalog", "Уже в каталоге"), saved: localText("Saved photographs", "Сохранённые фотографии") };
+  return `<div class="catalog-review-photo-selection"><p>${escapeHtml(localText("These checkboxes show the gallery after publication: checked photos will be in the product card; unchecked photos will not. Checking an existing photo keeps it without adding a duplicate.", "Галочки задают состав галереи после публикации: отмеченный снимок будет в карточке, неотмеченный — не будет. Галочка у существующего снимка сохраняет его, не добавляет повторно."))}</p><button type="button" class="ghost" data-catalog-photo-default>${escapeHtml(localText("Select proposed photographs", "Выбрать все предложенные"))}</button></div>` + ["added", "removed", "saved", "unchanged"].map(state => {
     const group = photos.filter(photo => photo.state === state);
     if (!group.length) return "";
-    const cards = group.map((photo,index) => '<div class="catalog-review-photo-choice"><a class="catalog-review-photo state-' + state + '" href="' + escapeHtml(photo.url) + '" target="_blank" rel="noopener noreferrer" aria-label="' + escapeHtml(localText("Open photograph", "Открыть фотографию") + ' ' + (index+1)) + '"><img src="' + escapeHtml(photo.url) + '" alt="' + escapeHtml(labels[state] + ' · ' + localText("Photograph", "Фотография") + ' ' + (index+1)) + '" loading="lazy" referrerpolicy="no-referrer"><span class="catalog-review-photo-label">' + escapeHtml(labels[state] + (photo.newCover ? " · " + localText("New cover", "Новая обложка") : "")) + '</span></a><label><input type="checkbox" data-catalog-photo-url="' + escapeHtml(photo.url) + '" ' + (selection.selectedUrls.includes(photo.url) ? 'checked' : '') + '> ' + escapeHtml(state === 'removed' ? localText('Keep in catalog', 'Оставить в каталоге') : state === 'added' ? localText('Add', 'Добавить') : localText('Include in catalog', 'Включить в каталог')) + '</label></div>').join("");
+    const cards = group.map((photo,index) => '<div class="catalog-review-photo-choice"><a class="catalog-review-photo state-' + state + '" href="' + escapeHtml(photo.url) + '" target="_blank" rel="noopener noreferrer" aria-label="' + escapeHtml(localText("Open photograph", "Открыть фотографию") + ' ' + (index+1)) + '"><img src="' + escapeHtml(photo.url) + '" alt="' + escapeHtml(labels[state] + ' · ' + localText("Photograph", "Фотография") + ' ' + (index+1)) + '" loading="lazy" referrerpolicy="no-referrer"><span class="catalog-review-photo-label">' + escapeHtml(labels[state] + (photo.newCover ? " · " + localText("New cover", "Новая обложка") : "")) + '</span></a><label><input type="checkbox" data-catalog-photo-url="' + escapeHtml(photo.url) + '" ' + (selection.selectedUrls.includes(photo.url) ? 'checked' : '') + '> ' + escapeHtml(localText('In the final gallery', 'В итоговой галерее')) + '</label></div>').join("");
     const grid = '<div class="catalog-review-photo-grid">' + cards + '</div>';
     const title = escapeHtml(labels[state]) + ' · ' + group.length;
     return state === "unchanged" && !group.some(photo => photo.newCover)
