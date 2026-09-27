@@ -6026,7 +6026,7 @@ dialog {
 
 #catalogUpdatesDialog {
   width: min(1500px, calc(100vw - 24px));
-  height: max(min(920px, calc(100dvh - 24px)), calc(100dvh - 400px));
+  height: max(min(600px, calc(100dvh - 24px)), calc(100dvh - 200px));
   max-height: calc(100dvh - 24px);
   overflow: hidden;
 }

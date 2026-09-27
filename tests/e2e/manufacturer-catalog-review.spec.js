@@ -238,16 +238,21 @@ test('review comments collapse and preserve text and disclosure state through fi
   await expect(note).toHaveValue('My review comment');
 });
 
-test('review dialog grows on tall screens with 200 pixel margins', async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1440 });
+test('review dialog leaves 100 pixel margins at the user viewport and on taller screens', async ({ page }) => {
+  await page.setViewportSize({ width: 2560, height: 1215 });
   await openReviewFixture(page);
   const dialog = page.locator('#catalogUpdatesDialog');
   await dialog.evaluate(el => { el.close(); el.showModal(); });
-  const bounds = await dialog.boundingBox();
-  expect(Math.round(bounds.height)).toBe(1040);
-  expect(Math.round(bounds.y)).toBe(200);
-  expect(Math.round(1440 - bounds.y - bounds.height)).toBe(200);
-  await page.screenshot({ path: 'node_modules/.cache/catalog-release-v1653/tall-' + test.info().project.name + '.png' });
+  for (const viewport of [{ width: 2560, height: 1215 }, { width: 1920, height: 1440 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await dialog.boundingBox();
+    expect(Math.round(bounds.height)).toBe(viewport.height - 200);
+    expect(Math.round(bounds.y)).toBe(100);
+    expect(Math.round(viewport.height - bounds.y - bounds.height)).toBe(100);
+    expect(Math.round(bounds.width)).toBe(1500);
+  }
+  await page.setViewportSize({ width: 1280, height: 600 });
+  expect(Math.round((await dialog.boundingBox()).height)).toBe(576);
   await page.setViewportSize({ width: 390, height: 700 });
   const small = await dialog.boundingBox();
   expect(small.height).toBeLessThanOrEqual(700);
