@@ -409,3 +409,41 @@ test('gallery reordering keeps the cover significant but does not create empty p
   assert.match(coverHtml, /Новая обложка|New cover/);
   assert.equal(JSON.stringify(change), original);
 });
+
+
+test('actual app request boundary permits authorized catalog decisions while retaining personal write protection', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { isManufacturerCatalogDecisionRequest, saveManufacturerCatalogDecision } = await import('../../src/sync/manufacturer-catalog-review.js');
+  const app = readFileSync(resolve('app.js'), 'utf8');
+  const start = app.indexOf('async function apiFetch(path, options = {})');
+  const end = app.indexOf('async function apiUploadFormData(', start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  let authorized = true;
+  const context = {
+    personalSavePilotEnabled: () => true, currentUser: { id: 'admin' }, modeState: {},
+    isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false,
+    canReviewManufacturerCatalog: () => authorized, isManufacturerCatalogDecisionRequest,
+    isForcedOffline: () => false, isNetworkError: () => false,
+    connectionStatusController: { reportSuccess() {} },
+    apiFetchRequest: async (path, options) => { calls.push({ path, options }); return { ok: true }; },
+  };
+  const apiFetch = runInNewContext(app.slice(start, end) + '\napiFetch', context);
+  const photoSelection = { selectedUrls: ['https://photos.test/saved.jpg'] };
+  for (const decision of ['approved', 'rejected', 'deferred']) {
+    await saveManufacturerCatalogDecision(apiFetch, { scanId: 'scan/one', changeId: 'topeak:photos:bag', decision, note: 'Keep selected', photoSelection });
+    assert.deepEqual(JSON.parse(calls.at(-1).options.body), { decision, note: 'Keep selected', photoSelection });
+  }
+  for (const [path, method] of [
+    ['/bike-packing/lists/list/state', 'PATCH'], ['/bike-packing/admin/templates/one', 'PATCH'],
+    ['/bike-packing/admin/catalog-scans/import', 'POST'],
+    ['/bike-packing/admin/catalog-scans/scan/changes/change/extra', 'PATCH'],
+    ['/bike-packing/admin/catalog-scans/scan/changes/change?extra=1', 'PATCH'],
+    ['/bike-packing/admin/catalog-scans/scan/changes/change', 'DELETE'],
+  ]) await assert.rejects(apiFetch(path, { method }), /Прямой обход остановлен/);
+  authorized = false;
+  await assert.rejects(saveManufacturerCatalogDecision(apiFetch, { scanId: 'scan', changeId: 'change', decision: 'approved' }), /Прямой обход остановлен/);
+  assert.equal(calls.length, 3);
+  await apiFetch('/bike-packing/admin/catalog-scans');
+  assert.equal(calls.length, 4);
+});

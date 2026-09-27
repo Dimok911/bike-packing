@@ -782,7 +782,8 @@ import { adminApiWarningFromCapabilities as adminApiWarningFromCapabilitiesValue
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
 import {
   fetchManufacturerCatalogScans,
-  saveManufacturerCatalogDecision
+  saveManufacturerCatalogDecision,
+  isManufacturerCatalogDecisionRequest
 } from "./src/sync/manufacturer-catalog-review.js";
 import { checkAuthAndLoadFlow } from "./src/sync/auth-load-flow.js";
 import {
@@ -7484,7 +7485,8 @@ function updateSyncUi(message = "") {
 async function apiFetch(path, options = {}) {
   if (personalSavePilotEnabled() && currentUser && !isReadOnlyBikePackingContext()
     && !isAdminPublicEditScope(modeState) && path.startsWith("/bike-packing/")
-    && !["GET", "HEAD"].includes(String(options.method || "GET").toUpperCase())) {
+    && !["GET", "HEAD"].includes(String(options.method || "GET").toUpperCase())
+    && !(canReviewManufacturerCatalog() && isManufacturerCatalogDecisionRequest(path, options))) {
     throw new Error("Этот путь записи ещё не подключён к причинной очереди. Прямой обход остановлен.");
   }
   const { connectionFailureMode = "auto", ...requestOptions } = options;

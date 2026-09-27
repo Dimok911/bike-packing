@@ -1,3 +1,10 @@
+// Review decisions are admin metadata, not mutations of a personal packing list.
+export function isManufacturerCatalogDecisionRequest(path, options = {}) {
+  return String(options.method || 'GET').toUpperCase() === 'PATCH'
+    && typeof path === 'string'
+    && /^\/bike-packing\/admin\/catalog-scans\/[^/?#]+\/changes\/[^/?#]+$/.test(path);
+}
+
 export async function fetchManufacturerCatalogScans(apiFetch, { timeoutMs } = {}) {
   if (typeof apiFetch !== "function") throw new Error("apiFetch is required");
   return await apiFetch("/bike-packing/admin/catalog-scans", {
