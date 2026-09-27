@@ -9,3 +9,20 @@ Validation: source syntax checks, the production build, 891 critical tests and e
 The API, shared services and link editor are unchanged in this release. Publish only the five changed application files via the existing pinned incremental FTPS flow; no photographs. GitHub Actions is omitted under the owner's explicit instruction.
 
 Evidence: ftp-upload/v1615/{critical.log,browser.log,production-comparison.json}.
+
+## Publication
+
+Published 2026-09-27 from 744f17295989ad46e9217d50f1ff5f8ba694ed70 (PR https://github.com/Dimok911/bike-packing/pull/34).
+
+- Backup: /www/vniipo-help.ru/bike-packing-backup-before-v1615-20260927T085525Z/.
+- All five changed application files passed staged FTPS and public HTTPS SHA-256 verification. Zero photographs transferred.
+- Live v1615 measured 16 px above and 16 px below the introduction. All three existing user photos loaded; the new block started expanded. Collapsing hid all content, survived reload, and expanded again correctly. Left the page expanded; no personal content was changed.
+- Screenshot: primary repository test-results/v1615-live-unified-spacing.png. Deployment receipt: ftp-upload/v1615/publication.log.
+
+Published hashes:
+
+- app.js: 4597D6ADB4B3E2E687B8B7DB3A3152DC48C77144E56EDBDB05A833E9C3FCE82A
+- index.html: 3FE4F47FCCC408A02D10150F4B5C546EB36B7A4AC39278AA1BA31CE22350A136
+- styles.css: 18BE8DDD6A1BFFBDA892482ED842F165CB9493A4EC01BCA929C14F10A439AE8E
+- sw.js: 38A49392B264B48F9BA2F18A278354AFBFE1404BF8200DD6F3FC180DE62BDFFE
+- release-contract.json: 73CBC5644633A88E55DE29F1A135926FBE166B7B6E82CEB264A3EC45A3F40723
