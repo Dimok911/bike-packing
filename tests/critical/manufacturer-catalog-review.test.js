@@ -16,6 +16,38 @@ import {
 
 const projectRoot = resolve(import.meta.dirname, "../..");
 
+test("CRITICAL catalog review: editorial description wording is excluded from saved scans and badge counts", async () => {
+  const { compareManufacturerCatalogSnapshots } = await import("../../src/data/manufacturer-catalog-scan.js");
+  const { catalogChangesForReview } = await import("../../src/data/manufacturer-catalog-comparison.js");
+  const before = {
+    en: "Arkel fork bag in 5 L. Technical data is normalized from the official product page.",
+    ru: "Сумка на вилку Arkel объёмом 5 L. Характеристики нормализованы по официальной карточке товара.",
+  };
+  const after = {
+    en: "Arkel fork bag in 5 L. Specifications are from the manufacturer's official product page.",
+    ru: "Сумка на вилку Arkel объёмом 5 L. Характеристики взяты с официальной страницы производителя.",
+  };
+  const editorial = { id: "editorial", manufacturer: "Arkel", type: "changed", fields: [{ field: "description", before, after }] };
+  const real = { ...editorial, id: "real", fields: [...editorial.fields, { field: "weight", before: 0, after: 454 }] };
+  const data = { scans: [{ changes: [editorial, real] }] };
+  const evidence = JSON.stringify(data);
+  assert.equal(catalogReviewCount(data), 1);
+  const html = renderManufacturerCatalogReview(data);
+  assert.doesNotMatch(html, /data-change-id="editorial"|Technical data|Specifications are/);
+  assert.match(html, /data-change-id="real"/);
+  assert.match(html, /454/);
+  assert.match(html, /Исключено из проверки: 1|Excluded from review: 1/);
+  assert.equal(JSON.stringify(data), evidence, "Saved evidence is unchanged");
+  const entry = { id: "bag", brand: "Arkel", description: before };
+  assert.equal(compareManufacturerCatalogSnapshots([entry], [{ ...entry, description: after }]).changes.length, 0);
+  const realDescription = { ...after, en: after.en.replace("5 L", "7 L") };
+  assert.equal(compareManufacturerCatalogSnapshots([entry], [{ ...entry, description: realDescription }]).changes.length, 1);
+  const reviewed = catalogChangesForReview([{ ...editorial, fields: [{ field: "description", before, after: realDescription }] }]);
+  assert.equal(reviewed.length, 1);
+  assert.equal(reviewed[0].fields[0].after.en, "Arkel fork bag in 7 L.");
+  assert.equal(catalogChangesForReview([{ ...editorial, fields: [{ field: "manufacturerDetails", before: "Technical data", after: "New waterproof coating" }] }]).length, 1);
+});
+
 test("CRITICAL catalog review: manufacturer filters and counters include deferred but exclude resolved decisions", () => {
   const data = { scans: [{ manufacturers: [
     { id: "ortlieb", name: "ORTLIEB", productCount: 56, status: "complete" },
@@ -229,6 +261,7 @@ test("CRITICAL catalog review: dialog is admin-only and wired into synchronized 
   const stylesSource = readFileSync(resolve(projectRoot, "styles.css"), "utf8");
   assert.match(indexSource, /id="catalogUpdatesBtn"[^>]*admin-menu-item[^>]*hidden/);
   assert.match(indexSource, /id="catalogUpdatesDialog"/);
+  assert.match(indexSource, /class="catalog-review-menu-schedule">Автопроверка — 1-го числа каждого месяца/);
   assert.match(appSource, /FRONTEND_PERMISSION_ACTIONS\.CATALOG_REVIEW/);
   assert.match(syncUiSource, /manufacturerCatalogReviewDialogController\?\.syncVisibility\?\.\(\)/);
   assert.match(stylesSource, /#catalogUpdatesDialog\s*\{[^}]*width:\s*min\(1500px, calc\(100vw - 24px\)\)/s);

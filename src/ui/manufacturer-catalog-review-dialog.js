@@ -1,5 +1,6 @@
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
+import { catalogChangesForReview } from "../data/manufacturer-catalog-comparison.js";
 
 const isEnglish = () => currentDocumentLanguage() === "en";
 const localText = (en, ru) => isEnglish() ? en : ru;
@@ -47,6 +48,8 @@ const FIELD_TEXT = Object.freeze({
   variants: ["Variants", "Варианты"],
   sourceImageUrl: ["Main image", "Основное изображение"],
   sourceImageUrls: ["Image gallery", "Галерея изображений"],
+  description: ["Description", "Описание"],
+  manufacturerDetails: ["Manufacturer details", "Информация производителя"],
 });
 
 const formatDate = (value) => {
@@ -160,7 +163,7 @@ export const catalogChangeNeedsReview = (change) => !change.decision || ["pendin
 
 const manufacturerKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 const changeManufacturerKey = (change) => manufacturerKey(change.manufacturerId || change.manufacturer);
-const latestChanges = (data) => Array.isArray(data?.scans?.[0]?.changes) ? data.scans[0].changes : [];
+const latestChanges = (data) => catalogChangesForReview(Array.isArray(data?.scans?.[0]?.changes) ? data.scans[0].changes : []);
 export const catalogReviewCount = (data) => latestChanges(data).filter(catalogChangeNeedsReview).length;
 
 const renderManufacturerStatus = (manufacturer = {}, changes = [], selected = "") => {
@@ -241,7 +244,8 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
     </div>`;
   }
   const scan = scans[0];
-  const changes = Array.isArray(scan.changes) ? scan.changes : [];
+  const rawChanges = Array.isArray(scan.changes) ? scan.changes : [];
+  const changes = catalogChangesForReview(rawChanges);
   const pending = changes.filter(catalogChangeNeedsReview).length;
   const filtered = changes.filter((change) => (!manufacturer || changeManufacturerKey(change) === manufacturer) && (!reviewOnly || catalogChangeNeedsReview(change)));
   const manufacturers = [...(scan.manufacturers || [])];
@@ -259,8 +263,8 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
       <div><strong>${escapeHtml(String(pending))}</strong><span>${escapeHtml(localText("to review, including deferred", "к проверке, включая отложенные"))}</span></div>
     </section>
     <p class="catalog-review-publication-state">${escapeHtml(localText(
-      "This is the scan date and time, not a date range. Each card shows the dates of the compared data. Refresh reloads saved scans; it does not run a new manufacturer scan.",
-      "Это дата и время проверки, а не период изменений. Даты сравниваемых данных указаны в карточках. Кнопка «Обновить» загружает сохранённые проверки, а не запускает новое сканирование производителей."
+      "Automatic scan: on the 1st of each month. This is the scan date and time, not a date range. Each card shows the dates of the compared data. Refresh reloads saved scans; it does not run a new manufacturer scan.",
+      "Автопроверка — 1-го числа каждого месяца. Вверху указаны дата и время проверки, а не период изменений. Даты сравниваемых данных указаны в карточках. Кнопка «Обновить» загружает сохранённые проверки, а не запускает новое сканирование производителей."
     ))}</p>
     <div class="catalog-review-filters">
       <button type="button" class="ghost" data-catalog-manufacturer="" aria-pressed="${!manufacturer}">${escapeHtml(localText(`All manufacturers · To review: ${pending}`, `Все производители · К проверке: ${pending}`))}</button>
@@ -272,6 +276,7 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
       "Решение фиксирует вашу проверку. Публичный каталог автоматически не меняется."
     ))}</p>
     <p class="catalog-review-results" aria-live="polite">${escapeHtml(localText(`Shown: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "All manufacturers"}`, `Показано записей: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "Все производители"}`))}</p>
+    ${rawChanges.length > changes.length ? `<p class="catalog-review-publication-state">${escapeHtml(localText(`Excluded from review: ${rawChanges.length - changes.length} entries with only editorial wording or formatting changes.`, `Исключено из проверки: ${rawChanges.length - changes.length} записей только с изменениями служебных формулировок или оформления.`))}</p>` : ""}
     <section class="catalog-review-changes" aria-label="${escapeHtml(localText("Detected catalog changes", "Найденные изменения каталога"))}">
       ${filtered.length ? filtered.map((change) => renderChange(change, scan.id, scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
     </section>
@@ -325,7 +330,7 @@ export function createManufacturerCatalogReviewDialogController({
     const label = localText("Catalog updates", "Обновления каталога");
     const description = count ? `${label} · ${localText("To review", "К проверке")}: ${count}` : label;
     button.setAttribute("aria-label", description);
-    button.setAttribute("title", description);
+    button.setAttribute("title", `${description}. ${localText("Automatic scan — on the 1st of each month", "Автопроверка — 1-го числа каждого месяца")}`);
   };
   const load = () => {
     if (!online() || typeof fetchScans !== "function") return Promise.resolve(null);

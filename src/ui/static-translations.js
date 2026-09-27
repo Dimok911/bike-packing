@@ -68,7 +68,10 @@ export function applyStaticTranslationsUi({
   setText(refs.sharedLayoutsBtn, t("menu.sharedLayouts"));
   setText(refs.shareListBtn, t("menu.shareList"));
   setText(refs.adminReportsBtn, t("menu.adminReports"));
-  setText(refs.catalogUpdatesBtn, t("menu.catalogUpdates"));
+  setText(refs.catalogUpdatesBtn?.querySelector("[data-catalog-menu-label]") || refs.catalogUpdatesBtn, t("menu.catalogUpdates"));
+  setText(refs.catalogUpdatesBtn?.querySelector(".catalog-review-menu-schedule"), uiLanguage === "en"
+    ? "Automatic scan — on the 1st of each month"
+    : "Автопроверка — 1-го числа каждого месяца");
   setText(refs.catalogUpdatesDialog?.querySelector("header h2"), uiLanguage === "en" ? "Catalog updates" : "Обновления каталога");
   setText(refs.catalogUpdatesDialog?.querySelector(".dialog-note"), uiLanguage === "en"
     ? "Manufacturer website scans and a review queue for detected changes."
