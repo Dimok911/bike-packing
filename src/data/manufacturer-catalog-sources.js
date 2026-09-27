@@ -15,6 +15,8 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
   Object.freeze({
     id: "arkel",
     name: "Arkel",
+    // Arkel omits active Orca products when an Accept-Language header is sent.
+    acceptLanguage: "",
     productBaseUrl: "https://arkel.ca/products/",
     collections: Object.freeze([
       ["arkel-products.json", "https://arkel.ca/collections/all-bags-and-panniers/products.json?limit=250"],

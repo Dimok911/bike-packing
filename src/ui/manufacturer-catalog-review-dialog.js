@@ -163,10 +163,36 @@ export const catalogChangeNeedsReview = (change) => !change.decision || ["pendin
 
 const manufacturerKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 const changeManufacturerKey = (change) => manufacturerKey(change.manufacturerId || change.manufacturer);
-const latestChanges = (data) => catalogChangesForReview(Array.isArray(data?.scans?.[0]?.changes) ? data.scans[0].changes : []);
+export function latestManufacturerCatalogReviewScan(data = {}) {
+  const scans = Array.isArray(data.scans) ? data.scans : [];
+  const latest = scans[0];
+  if (!latest?.manufacturers?.length) return latest;
+  const seen = new Set();
+  const manufacturers = [];
+  const changes = [];
+  const usedScans = new Set();
+  for (const scan of scans) {
+    const selected = new Set();
+    for (const item of scan.manufacturers || []) {
+      const key = manufacturerKey(item.id || item.name);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      selected.add(key);
+      manufacturers.push({ ...item, scannedAt: scan.scannedAt });
+    }
+    if (!selected.size) continue;
+    usedScans.add(scan.id);
+    for (const change of scan.changes || []) {
+      if (selected.has(changeManufacturerKey(change))) changes.push({ ...change, reviewScanId: scan.id, reviewScannedAt: scan.scannedAt });
+    }
+  }
+  return { ...latest, manufacturers, changes, mixedScans: usedScans.size > 1,
+    summary: { ...latest.summary, products: manufacturers.reduce((sum, item) => sum + Number(item.productCount || 0), 0) } };
+}
+const latestChanges = (data) => catalogChangesForReview(latestManufacturerCatalogReviewScan(data)?.changes || []);
 export const catalogReviewCount = (data) => latestChanges(data).filter(catalogChangeNeedsReview).length;
 
-const renderManufacturerStatus = (manufacturer = {}, changes = [], selected = "") => {
+const renderManufacturerStatus = (manufacturer = {}, changes = [], selected = "", showDate = false) => {
   const partial = manufacturer.status !== "complete";
   const key = manufacturerKey(manufacturer.id || manufacturer.name);
   const ownChanges = changes.filter((change) => changeManufacturerKey(change) === key);
@@ -178,6 +204,7 @@ const renderManufacturerStatus = (manufacturer = {}, changes = [], selected = ""
     <small>${escapeHtml(partial
       ? localText("Scan incomplete — errors need checking", "Сканирование неполное — есть ошибки")
       : localText("Scan completed", "Сканирование завершено"))}</small>
+    ${showDate ? `<small>${escapeHtml(localText("Checked", "Проверено"))}: ${escapeHtml(formatDate(manufacturer.scannedAt))}</small>` : ""}
   </button></li>`;
 };
 
@@ -232,7 +259,7 @@ const renderChange = (change = {}, scanId = "", scannedAt = "") => {
   </article>`;
 };
 
-export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", reviewOnly = true } = {}) {
+export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", reviewOnly = true, type = "" } = {}) {
   const scans = Array.isArray(data.scans) ? data.scans : [];
   if (!scans.length) {
     return `<div class="catalog-review-empty">
@@ -243,11 +270,19 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
       ))}</p>
     </div>`;
   }
-  const scan = scans[0];
+  const scan = latestManufacturerCatalogReviewScan(data);
   const rawChanges = Array.isArray(scan.changes) ? scan.changes : [];
   const changes = catalogChangesForReview(rawChanges);
   const pending = changes.filter(catalogChangeNeedsReview).length;
-  const filtered = changes.filter((change) => (!manufacturer || changeManufacturerKey(change) === manufacturer) && (!reviewOnly || catalogChangeNeedsReview(change)));
+  const selectedType = Object.hasOwn(TYPE_TEXT, type) ? type : "";
+  const scopedChanges = changes.filter((change) => (!manufacturer || changeManufacturerKey(change) === manufacturer) && (!reviewOnly || catalogChangeNeedsReview(change)));
+  const filtered = scopedChanges.filter((change) => !selectedType || change.type === selectedType);
+  const typeFilters = [
+    ["", localText("All changes", "Все изменения")],
+    ["added", localText("New models", "Новые модели")],
+    ["missing", localText("Not found at manufacturer", "Не найдены у производителя")],
+    ["changed", localText("Data changed", "Изменились данные")],
+  ];
   const manufacturers = [...(scan.manufacturers || [])];
   changes.forEach((change) => {
     const key = changeManufacturerKey(change);
@@ -266,11 +301,15 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
       "Automatic scan: on the 1st of each month. This is the scan date and time, not a date range. Each card shows the dates of the compared data. Refresh reloads saved scans; it does not run a new manufacturer scan.",
       "Автопроверка — 1-го числа каждого месяца. Вверху указаны дата и время проверки, а не период изменений. Даты сравниваемых данных указаны в карточках. Кнопка «Обновить» загружает сохранённые проверки, а не запускает новое сканирование производителей."
     ))}</p>
+    ${scan.mixedScans ? `<p class="catalog-review-publication-state">${escapeHtml(localText("Each manufacturer shows its latest saved check. The individual check dates are shown below.", "Для каждого производителя показана его последняя сохранённая проверка. Даты отдельных проверок указаны ниже."))}</p>` : ""}
     <div class="catalog-review-filters">
       <button type="button" class="ghost" data-catalog-manufacturer="" aria-pressed="${!manufacturer}">${escapeHtml(localText(`All manufacturers · To review: ${pending}`, `Все производители · К проверке: ${pending}`))}</button>
       <label><input type="checkbox" data-catalog-review-only ${reviewOnly ? "checked" : ""}>${escapeHtml(localText("Only awaiting review (including Later)", "Только к проверке (включая «Позже»)"))}</label>
     </div>
-    <ul class="catalog-review-manufacturers">${manufacturers.map((item) => renderManufacturerStatus(item, changes, manufacturer)).join("")}</ul>
+    <ul class="catalog-review-manufacturers">${manufacturers.map((item) => renderManufacturerStatus(item, changes, manufacturer, scan.mixedScans)).join("")}</ul>
+    <div class="catalog-review-filters catalog-review-type-filters" role="group" aria-label="${escapeHtml(localText("Change type", "Тип изменения"))}">
+      ${typeFilters.map(([key, label]) => `<button type="button" class="ghost" data-catalog-type="${key}" aria-pressed="${selectedType === key}">${escapeHtml(label)} · ${scopedChanges.filter((change) => !key || change.type === key).length}</button>`).join("")}
+    </div>
     <p class="catalog-review-safety-note">${escapeHtml(localText(
       "A decision records your review. The public catalog is not changed automatically.",
       "Решение фиксирует вашу проверку. Публичный каталог автоматически не меняется."
@@ -278,7 +317,7 @@ export function renderManufacturerCatalogReview(data = {}, { manufacturer = "", 
     <p class="catalog-review-results" aria-live="polite">${escapeHtml(localText(`Shown: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "All manufacturers"}`, `Показано записей: ${filtered.length} · ${manufacturers.find((item) => manufacturerKey(item.id || item.name) === manufacturer)?.name || "Все производители"}`))}</p>
     ${rawChanges.length > changes.length ? `<p class="catalog-review-publication-state">${escapeHtml(localText(`Excluded from review: ${rawChanges.length - changes.length} entries with only editorial wording or formatting changes.`, `Исключено из проверки: ${rawChanges.length - changes.length} записей только с изменениями служебных формулировок или оформления.`))}</p>` : ""}
     <section class="catalog-review-changes" aria-label="${escapeHtml(localText("Detected catalog changes", "Найденные изменения каталога"))}">
-      ${filtered.length ? filtered.map((change) => renderChange(change, scan.id, scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
+      ${filtered.length ? filtered.map((change) => renderChange(change, change.reviewScanId || scan.id, change.reviewScannedAt || scan.scannedAt)).join("") : `<p class="catalog-review-empty">${escapeHtml(changes.length ? localText("No entries match these filters.", "По выбранным фильтрам записей нет.") : localText("No changes found.", "Изменений не найдено."))}</p>`}
     </section>
   `;
 }
@@ -298,7 +337,7 @@ export function createManufacturerCatalogReviewDialogController({
 } = {}) {
   let lastData = null;
   let renderedLanguage = "";
-  let filters = { manufacturer: "", reviewOnly: true };
+  let filters = { manufacturer: "", reviewOnly: true, type: "" };
   let inFlight = null;
   let lastAttempt = -Infinity;
   let timer = null;
@@ -376,7 +415,7 @@ export function createManufacturerCatalogReviewDialogController({
       inFlight = null;
       lastAttempt = -Infinity;
       noteDrafts.clear();
-      filters = { manufacturer: "", reviewOnly: true };
+      filters = { manufacturer: "", reviewOnly: true, type: "" };
       if (refs?.catalogUpdatesContent) refs.catalogUpdatesContent.innerHTML = "";
       refs?.catalogUpdatesDialog?.close?.();
     }
@@ -435,6 +474,14 @@ export function createManufacturerCatalogReviewDialogController({
       filters.manufacturer = manufacturer.dataset.catalogManufacturer;
       render();
       refs.catalogUpdatesContent.querySelector(`[data-catalog-manufacturer="${filters.manufacturer}"]`)?.focus();
+      return;
+    }
+    const typeButton = event.target.closest("[data-catalog-type]");
+    if (typeButton) {
+      rememberNotes();
+      filters.type = typeButton.dataset.catalogType;
+      render();
+      refs.catalogUpdatesContent.querySelector(`[data-catalog-type="${filters.type}"]`)?.focus();
       return;
     }
     const button = event.target.closest("[data-catalog-decision]");

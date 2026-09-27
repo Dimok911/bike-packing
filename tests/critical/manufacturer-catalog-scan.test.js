@@ -751,3 +751,45 @@ test("CRITICAL catalog scan: Tailfin Rear Top Tube weights follow the named geom
   assert.deepEqual(entry.volumeOptions, [0.8, 0.9]);
   assert.deepEqual(entry.weightOptions, [121, 118]);
 });
+
+test("CRITICAL catalog scan: missing Shopify collection membership requires a direct product check", async () => {
+  const { recoverShopifyCatalogProducts } = await import("../../scripts/manufacturer-catalog/shopify-presence.mjs");
+  const source = { id: "arkel", productBaseUrl: "https://arkel.ca/products/" };
+  const product = { handle: "orca-panniers", title: "Orca 2 - Waterproof Pannier", variants: [{ title: "Grey / 12.5 L / Pair" }] };
+  const approvedEntries = ["12-5l-pair", "12-5l-single", "17-5l-pair"].map((suffix) => ({ id: `arkel-orca-panniers-${suffix}`, brand: "Arkel", sourceUrl: "https://arkel.ca/products/orca-panniers" }));
+  const calls = [];
+  const options = { source, approvedEntries, products: new Map(), fetchText: async (url) => { calls.push(url); return JSON.stringify({ product }); } };
+  assert.deepEqual(await recoverShopifyCatalogProducts(options), [product]);
+  assert.deepEqual(calls, ["https://arkel.ca/products/orca-panniers.json"], "All six catalog variants share one source product");
+  assert.deepEqual(await recoverShopifyCatalogProducts({ ...options, products: new Map([[product.handle, product]]) }), []);
+  const missing = () => { throw Object.assign(new Error("HTTP 404"), { httpStatus: 404 }); };
+  assert.deepEqual(await recoverShopifyCatalogProducts({ ...options, fetchText: missing }), []);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, fetchText: async (url) => url.endsWith(".json") ? missing() : "<h1>Orca</h1>" }), /still responds/);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, fetchText: async () => { throw new Error("timeout"); } }), /timeout/);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, fetchText: async () => JSON.stringify({ product: { ...product, handle: "another-model" } }) }), /identity/);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, fetchText: async () => "<html>challenge</html>" }));
+});
+
+test("CRITICAL catalog scan: Arkel uses the full storefront without the language header that hides Orca", () => {
+  assert.equal(MANUFACTURER_CATALOG_SOURCES.find(({ id }) => id === "arkel").acceptLanguage, "");
+});
+
+test("CRITICAL catalog scan: an official Shopify redirect and matching SKU preserve a renamed model", async () => {
+  const { recoverShopifyCatalogProducts } = await import("../../scripts/manufacturer-catalog/shopify-presence.mjs");
+  const source = { id: "arkel", productBaseUrl: "https://arkel.ca/products/" };
+  const current = { handle: "top-tube-rear", title: "Rear bag", variants: [{ sku: "REAR-BK" }] };
+  const options = {
+    source, products: new Map([[current.handle, current]]),
+    approvedEntries: [{ id: "arkel-top-tube-copy", brand: "Arkel", sku: "REAR-BK", sourceUrl: "https://arkel.ca/products/top-tube-copy" }],
+    fetchText: async (url) => {
+      if (url.endsWith(".json")) throw Object.assign(new Error("404"), { httpStatus: 404 });
+      return '<link rel="canonical" href="https://arkel.ca/products/top-tube-rear">';
+    },
+  };
+  assert.deepEqual(await recoverShopifyCatalogProducts(options), [{ ...current, handle: "top-tube-copy", catalogSourceHandle: "top-tube-rear" }]);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, products: new Map([[current.handle, { ...current, variants: [{ sku: "OTHER" }] }]]) }), /still responds/);
+  await assert.rejects(recoverShopifyCatalogProducts({ ...options, fetchText: async (url) => {
+    if (url.endsWith(".json")) throw Object.assign(new Error("404"), { httpStatus: 404 });
+    return '<link rel="canonical" href="https://other.test/products/top-tube-rear">';
+  } }), /still responds/);
+});

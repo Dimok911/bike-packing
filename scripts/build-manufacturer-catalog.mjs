@@ -484,7 +484,7 @@ async function normalizeProduct({ brandKey, product }) {
   if (!imageRecords.length) throw new Error(`Missing image for ${brandKey}:${product.handle}`);
   const imageAssetPaths = imageRecords.map(({ output }) => output);
   const sourceImageUrls = imageRecords.map(({ url }) => url);
-  const sourceUrl = `${brandKey === "ortlieb" ? "https://us.ortlieb.com" : "https://arkel.ca"}/products/${product.handle}`;
+  const sourceUrl = `${brandKey === "ortlieb" ? "https://us.ortlieb.com" : "https://arkel.ca"}/products/${product.catalogSourceHandle || product.handle}`;
   const soldAsSet = SET_PRODUCT_HANDLES.has(product.handle);
   const setQuantity = soldAsSet ? 2 : 1;
   const specificationsPerBag = brandKey === "ortlieb" && ORTLIEB_PER_BAG_PAIR_HANDLES.has(product.handle);

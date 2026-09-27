@@ -267,3 +267,53 @@ test("CRITICAL catalog review: dialog is admin-only and wired into synchronized 
   assert.match(stylesSource, /#catalogUpdatesDialog\s*\{[^}]*width:\s*min\(1500px, calc\(100vw - 24px\)\)/s);
   assert.match(stylesSource, /\.catalog-updates-dialog-card\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%/s);
 });
+
+test("CRITICAL catalog review: type filters intersect manufacturer and decisions with scoped counts", () => {
+  const changes = [
+    { id: "new", manufacturer: "Arkel", type: "added" },
+    { id: "gone", manufacturer: "Arkel", type: "missing", decision: "deferred" },
+    { id: "edited", manufacturer: "Arkel", type: "changed", fields: [{ field: "weight", before: 1, after: 2 }] },
+    { id: "resolved", manufacturer: "Arkel", type: "added", decision: "approved" },
+    { id: "other", manufacturer: "ORTLIEB", type: "added" },
+    { id: "editorial", manufacturer: "Arkel", type: "changed", fields: [{ field: "description", before: "Bag. Technical data is normalized from the official product page.", after: "Bag. Specifications are from the manufacturer's official product page." }] },
+  ];
+  const data = { scans: [{ changes }] };
+  const html = renderManufacturerCatalogReview(data, { manufacturer: "arkel", type: "added" });
+  assert.match(html, /data-change-id="new"/);
+  assert.doesNotMatch(html, /data-change-id="(?:gone|edited|resolved|other|editorial)"/);
+  assert.match(html, /data-catalog-type="" aria-pressed="false">[^<]+ · 3/);
+  assert.match(html, /data-catalog-type="added" aria-pressed="true">[^<]+ · 1/);
+  assert.match(html, /data-catalog-type="missing" aria-pressed="false">[^<]+ · 1/);
+  assert.match(renderManufacturerCatalogReview(data, { manufacturer: "arkel", type: "missing" }), /data-change-id="gone"/);
+  const resolved = renderManufacturerCatalogReview(data, { manufacturer: "arkel", type: "added", reviewOnly: false });
+  assert.match(resolved, /data-change-id="resolved"/);
+  assert.match(resolved, /data-catalog-type="added" aria-pressed="true">[^<]+ · 2/);
+  assert.match(renderManufacturerCatalogReview(data, { manufacturer: "unknown", type: "added" }), /No entries match|По выбранным фильтрам записей нет/);
+  assert.equal(catalogReviewCount(data), 4, "Menu badge is not narrowed by the dialog filters");
+});
+
+test("CRITICAL catalog review: a targeted scan replaces only its manufacturer and retains original review destinations", async () => {
+  const { latestManufacturerCatalogReviewScan } = await import("../../src/ui/manufacturer-catalog-review-dialog.js");
+  const data = { scans: [
+    { id: "arkel-new", scannedAt: "2026-09-27", manufacturers: [{ id: "arkel", name: "Arkel", productCount: 62 }], changes: [{ id: "orca-found", manufacturerId: "arkel", type: "changed" }] },
+    { id: "all-old", scannedAt: "2026-09-05", manufacturers: [{ id: "arkel", name: "Arkel", productCount: 56 }, { id: "ortlieb", name: "ORTLIEB", productCount: 63 }], changes: [
+      { id: "orca-missing", manufacturerId: "arkel", type: "missing" },
+      { id: "ortlieb-pending", manufacturerId: "ortlieb", type: "added" },
+      { id: "ortlieb-approved", manufacturerId: "ortlieb", type: "changed", decision: "approved", decisionNote: "Verified" },
+    ] },
+  ] };
+  const original = JSON.stringify(data);
+  const scan = latestManufacturerCatalogReviewScan(data);
+  assert.equal(scan.summary.products, 125);
+  assert.equal(scan.mixedScans, true);
+  assert.equal(catalogReviewCount(data), 2);
+  assert.deepEqual(scan.changes.map(({ id }) => id), ["orca-found", "ortlieb-pending", "ortlieb-approved"]);
+  const html = renderManufacturerCatalogReview(data, { reviewOnly: false });
+  assert.match(html, /data-scan-id="arkel-new" data-change-id="orca-found"/);
+  assert.match(html, /data-scan-id="all-old" data-change-id="ortlieb-approved"/);
+  assert.match(html, /Verified/);
+  assert.doesNotMatch(html, /data-change-id="orca-missing"/);
+  assert.equal(JSON.stringify(data), original);
+  const empty = { scans: [{ ...data.scans[0], changes: [] }, data.scans[1]] };
+  assert.equal(catalogReviewCount(empty), 1, "A successful unchanged recheck also supersedes older warnings");
+});

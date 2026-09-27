@@ -7,6 +7,7 @@ import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.j
 import {
   selectManufacturerCatalogSources,
 } from "../src/data/manufacturer-catalog-sources.js";
+import { recoverShopifyCatalogProducts } from "./manufacturer-catalog/shopify-presence.mjs";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
 import {
@@ -57,7 +58,7 @@ const scannedAt = new Date().toISOString();
 const checkedAt = scannedAt.slice(0, 10);
 const errors = Object.fromEntries(activeSources.map((source) => [source.id, []]));
 
-async function fetchText(url, attempts = 3, validate = null) {
+async function fetchText(url, attempts = 3, validate = null, acceptLanguage = "en-US,en;q=0.8") {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
@@ -67,35 +68,38 @@ async function fetchText(url, attempts = 3, validate = null) {
         headers: {
           "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)",
           "accept": "text/html,application/xhtml+xml,application/json,application/xml;q=0.9,*/*;q=0.8",
-          "accept-language": "en-US,en;q=0.8",
+          "accept-language": acceptLanguage, // Empty value suppresses fetch's implicit wildcard header for Arkel.
         },
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}: ${url}`), { httpStatus: response.status });
       const body = await response.text();
       if (validate && !validate(body)) throw new Error("HTTP 200 did not contain the expected catalog content");
       return body;
     } catch (error) {
+      if (error.httpStatus === 404 || error.httpStatus === 410) throw error;
       lastError = error;
     } finally {
       clearTimeout(timeout);
     }
   }
   try {
-    const body = await fetchTextWithCurl(url);
+    const body = await fetchTextWithCurl(url, acceptLanguage);
     if (validate && !validate(body)) throw new Error("curl response did not contain the expected catalog content");
     return body;
   } catch (curlError) {
-    throw new Error(`${url}: ${String(lastError?.message || lastError || "request failed")}; curl fallback: ${String(curlError?.message || curlError)}`);
+    throw Object.assign(new Error(`${url}: ${String(lastError?.message || lastError || "request failed")}; curl fallback: ${String(curlError?.message || curlError)}`), { httpStatus: curlError.httpStatus });
   }
 }
 
-async function fetchTextWithCurl(url) {
+async function fetchTextWithCurl(url, acceptLanguage) {
   const command = process.platform === "win32" ? "curl.exe" : "curl";
   const curlArgs = [
-    "--location", "--fail", "--silent", "--show-error", "--compressed",
+    "--location", "--silent", "--show-error", "--compressed",
+    "--write-out", "\n__CATALOG_HTTP_STATUS__%{http_code}",
     "--retry", "3", "--retry-delay", "2", "--max-time", "90",
     "--user-agent", "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)",
+    ...(acceptLanguage ? ["--header", `Accept-Language: ${acceptLanguage}`] : []),
     String(url),
   ];
   return await new Promise((resolvePromise, reject) => {
@@ -115,9 +119,14 @@ async function fetchTextWithCurl(url) {
     });
     child.stderr.on("data", (chunk) => errors.push(chunk));
     child.once("error", reject);
-    child.once("exit", (code) => code === 0
-      ? resolvePromise(Buffer.concat(output).toString("utf8"))
-      : reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `curl exited with ${code}`)));
+    child.once("exit", (code) => {
+      if (code !== 0) return reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `curl exited with ${code}`));
+      const text = Buffer.concat(output).toString("utf8");
+      const match = /\n__CATALOG_HTTP_STATUS__(\d{3})$/.exec(text);
+      const httpStatus = Number(match?.[1] || 0);
+      if (httpStatus < 200 || httpStatus >= 300) return reject(Object.assign(new Error(`HTTP ${httpStatus}: ${url}`), { httpStatus }));
+      resolvePromise(text.slice(0, match.index));
+    });
   });
 }
 
@@ -129,11 +138,12 @@ async function mapConcurrent(items, limit, worker) {
 }
 
 async function downloadManufacturer(source) {
+  const fetchSourceText = (url, attempts = 3, validate = null) => fetchText(url, attempts, validate, source.acceptLanguage);
   await mkdir(join(pagesDir, source.id), { recursive: true });
   const products = new Map();
   for (const [fileName, url] of source.collections) {
     try {
-      const fetched = await fetchText(url);
+      const fetched = await fetchSourceText(url);
       if (source.adapter === "tailfin-html") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         tailfinCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
@@ -174,6 +184,19 @@ async function downloadManufacturer(source) {
         : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
+  if (!errors[source.id].length && (!source.adapter || source.adapter === "restrap-shopify")) {
+    try {
+      const recovered = await recoverShopifyCatalogProducts({ source, products, approvedEntries: MANUFACTURER_BAG_CATALOG, fetchText: fetchSourceText });
+      recovered.forEach((product) => {
+        if (product.catalogSourceHandle) products.delete(product.catalogSourceHandle);
+        products.set(product.handle, product);
+      });
+      // The builder consumes the saved collections, so persist recovered products as well.
+      await writeFile(join(workDir, source.collections[0][0]), `${JSON.stringify({ products: [...products.values()] })}\n`, "utf8");
+    } catch (error) {
+      errors[source.id].push(String(error?.message || error));
+    }
+  }
   const productConcurrency = source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : source.adapter === "topeak-html" ? 8 : 6;
   await mapConcurrent([...products.values()], productConcurrency, async (product) => {
     const handle = product.handle;
@@ -187,7 +210,7 @@ async function downloadManufacturer(source) {
             : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid
               : source.adapter === "topeak-html" ? topeakProductPageIsValid
                 : source.adapter === "rockgeist-wc-store" ? rockgeistProductPageIsValid : null;
-      await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
+      await writeFile(pagePath, await fetchSourceText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
       await writeFile(pagePath, "", "utf8");
@@ -232,8 +255,8 @@ try {
     ...MANUFACTURER_BAG_CATALOG.filter((entry) => failedIds.has(manufacturerIdForEntry(entry))),
   ];
   const report = buildManufacturerCatalogScanReport({
-    approvedEntries: MANUFACTURER_BAG_CATALOG,
-    scannedEntries,
+    approvedEntries: MANUFACTURER_BAG_CATALOG.filter((entry) => activeSources.some(({ id }) => id === manufacturerIdForEntry(entry))),
+    scannedEntries: scannedEntries.filter((entry) => activeSources.some(({ id }) => id === manufacturerIdForEntry(entry))),
     manufacturers: activeSources,
     scannedAt,
     errors,
