@@ -19,7 +19,7 @@ export function layoutVideoUrls(media) {
 }
 
 export function layoutMediaSnapshot(layout) {
-  const record = { photos: (Array.isArray(layout?.photos) ? layout.photos : []).filter((photo) => photo && typeof photo === "object").map((photo) => ({ ...photo })) };
+  const record = { photos: (Array.isArray(layout?.photos) ? layout.photos : []).filter((photo) => photo && typeof photo === "object").map((photo) => Object.defineProperties({}, Object.getOwnPropertyDescriptors(photo))) };
   return {
     photos: normalizeItemPhotos(record),
     videoUrl: layoutVideoUrls(layout)[0] || "",

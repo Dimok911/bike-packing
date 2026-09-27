@@ -1,3 +1,4 @@
+import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
 import { setupTripBackdropControls, applyTripBackdropSettings } from "./trip-backdrop-controls.js";
 import { escapeHtml } from "../utils/html.js";
 import { layoutMediaSnapshot } from "../state/layout-media.js";
@@ -105,12 +106,21 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       host.dataset.photoView = view;
       arrangeDescription();
       const media = layoutMediaSnapshot(layout);
-      const next = JSON.stringify([visible, layout?.id, media]);
+      // Transport progress must not tear down decoded previews or reset scrolling.
+      const next = JSON.stringify([visible, layout?.id, media.photos.map(photo => [photo.localId || photo.id, photo.caption || ""]), media.videoUrls]);
       hasPhotos = Boolean(media.photos.length);
       hasVideos = Boolean(media.videoUrls.length);
       host.hidden = !visible || (!hasVideos && (view === "hidden" || !hasPhotos));
       onVisibilityChange(visible);
-      if (next === signature) { syncBackdrop(); return; }
+      if (next === signature) {
+        const galleries = [...host.querySelectorAll('[data-photo-gallery]')];
+        galleries.forEach((gallery, index) => {
+          updatePhotoGallerySources(gallery, [media.photos[index]]);
+          updatePhotoGalleryUploadProgress(gallery, [media.photos[index]]);
+        });
+        binding?.refresh?.();
+        syncBackdrop(); return;
+      }
       signature = next;
       clearBackdrop();
       const token = ++version;

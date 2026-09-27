@@ -3435,3 +3435,21 @@ test("CRITICAL offline layouts: removing one or all selections requires confirma
   assert.match(appSource, /#offlineClearLayouts[\s\S]*?await confirmRemoval\(selected, \{ clearAll: true \}\)/);
   assert.match(appSource, /connectionStatusController\.currentProblem\(\)[\s\S]*?вернуть удалённые фотографии получится только после выхода в интернет/);
 });
+
+
+test("photo preparation waits for storage commit and rejects a late IndexedDB abort", async () => {
+  const {photoDbStore}=await import('../../src/sync/photos.js');
+  for(const abort of [false,true]) {
+    const request={result:'stored'};let transaction;let settled=false;let closed=false;
+    const db={close(){closed=true;},transaction(){transaction={objectStore:()=>({put:()=>request})};return transaction;}};
+    const write=photoDbStore('readwrite',store=>store.put({id:'photo'}),{openDb:async()=>db});
+    const outcome=write.then(value=>{settled=true;return {value};},error=>{settled=true;return {error};});
+    await Promise.resolve();request.onsuccess?.();await Promise.resolve();
+    assert.equal(settled,false,'a successful request is not a committed file');
+    if(abort){transaction.error=new Error('storage-aborted');transaction.onabort();}
+    else transaction.oncomplete();
+    const result=await outcome;
+    if(abort)assert.match(result.error.message,/storage-aborted/);else assert.equal(result.value,'stored');
+    assert.equal(closed,true);
+  }
+});

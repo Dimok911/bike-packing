@@ -152,3 +152,33 @@ test("private notes and publication opt-in survive editing, synchronization and 
   assert.equal(copy.trips[0].publishNotes,true);
   assert.equal(layoutTripsSnapshot({trips:[{id:"t",notes:"Old description"}]})[0].publishNotes,false);
 });
+
+
+test("pending photo-only edits are local changes and survive a server refresh for trips, items and bags", async () => {
+  const {hasPendingLocalPhotos,retainLocalPhotoUploads}=await import('../../src/sync/local-photo-state.js');
+  const {compactPhotoForSync}=await import('../../src/sync/serialize.js');
+  for(const key of ['layouts','items','containers']) {
+    const first={id:'first',localId:'first',status:'pending',tripId:'trip'};
+    const synced={id:'second',url:'/second',status:'synced'};
+    const local={[key]:{record:{id:'record',photos:[first,synced],trips:[{id:'trip',name:'Trip'}]}}};
+    const remote={[key]:{record:{id:'record',photos:[synced]}}};
+    assert.equal(compactPhotoForSync(first),null);
+    assert.equal(hasPendingLocalPhotos(local),true);
+    assert.equal(retainLocalPhotoUploads(remote,local),1);
+    assert.deepEqual(remote[key].record.photos.map(p=>p.id),['first','second']);
+    assert.equal(retainLocalPhotoUploads(remote,local),0);
+    assert.equal(retainLocalPhotoUploads({[key]:{}},local),0);
+    const completed={[key]:{record:{id:'record',photos:[{...first,url:'/first',status:'synced'}]}}};
+    assert.equal(retainLocalPhotoUploads(completed,local),0);
+    assert.equal(hasPendingLocalPhotos(completed),false);
+  }
+});
+
+test("trip snapshots retain live upload progress without serializing transient fields", async () => {
+  const {layoutTripsSnapshot}=await import('../../src/state/layout-trips.js');
+  const photo={id:'first',localId:'first',status:'uploading'};
+  Object.defineProperty(photo,'uploadProgress',{value:45,enumerable:false});
+  const trip=layoutTripsSnapshot({id:'layout',photos:[photo]})[0];
+  assert.equal(layoutMediaSnapshot(trip).photos[0].uploadProgress,45);
+  assert.equal(JSON.stringify(trip).includes('uploadProgress'),false);
+});

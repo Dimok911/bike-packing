@@ -199,25 +199,25 @@ export function getPhotoCacheScope() {
   return activePhotoCacheScopeKey;
 }
 
-export async function photoDbStore(mode, callback) {
-  const db = await openPhotoDb();
+export async function photoDbStore(mode, callback, { openDb = openPhotoDb } = {}) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(PHOTO_STORE, mode);
-    const store = transaction.objectStore(PHOTO_STORE);
+    let transaction;
     let request;
+    const fail = error => { db.close(); reject(error || new Error("Ошибка хранилища фото")); };
     try {
-      request = callback(store);
+      transaction = db.transaction(PHOTO_STORE, mode);
+      transaction.oncomplete = () => { db.close(); resolve(request.result); };
+      transaction.onerror = () => fail(transaction.error);
+      transaction.onabort = () => fail(transaction.error);
+      request = callback(transaction.objectStore(PHOTO_STORE));
+      request.onerror = () => fail(request.error);
+      // request.onsuccess can precede a failed commit (quota/storage errors).
+      // A selected iCloud file is safe only once the transaction completes.
     } catch (error) {
-      reject(error);
-      return;
+      transaction?.abort?.();
+      fail(error);
     }
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Не удалось прочитать фото"));
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error || new Error("Ошибка хранилища фото"));
-    };
   });
 }
 
@@ -229,9 +229,9 @@ export async function getCachedPhoto(id, scopeKey = activePhotoCacheScopeKey) {
   if (!id) return Promise.resolve(null);
   const logicalId = String(id).trim();
   const scoped = await photoDbStore("readonly", (store) =>
-    store.get(scopedPhotoCacheRecordId(logicalId, scopeKey))).catch(() => null);
+    store.get(scopedPhotoCacheRecordId(logicalId, scopeKey)));
   if (scoped) return photoCacheRecordForRuntime(scoped, logicalId);
-  const legacy = await photoDbStore("readonly", (store) => store.get(logicalId)).catch(() => null);
+  const legacy = await photoDbStore("readonly", (store) => store.get(logicalId));
   if (!legacy || legacy.cacheScope) return null;
   const runtimeRecord = photoCacheRecordForRuntime(legacy, logicalId);
   putCachedPhoto(runtimeRecord, scopeKey).catch(() => null);

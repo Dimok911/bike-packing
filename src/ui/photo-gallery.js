@@ -734,6 +734,22 @@ export function renderPhotoUploadProgress({ active = false, complete = false, in
   `;
 }
 
+export function updatePhotoGallerySources(root, photos) {
+  [...(root?.querySelectorAll?.('[data-photo-open] img') || [])].forEach((image, index) => {
+    const photo = photos[index];
+    if (!photo) return;
+    const full = normalizeRemotePhotoUrl(photo.url || "");
+    const thumb = normalizeRemotePhotoUrl(photo.thumbUrl || photo.url || "");
+    const signature = full ? photoCacheSourceSignature(full, thumb, photo.updatedAt || "") : "";
+    image.dataset.photoLocalId = photo.localId || photo.id || "";
+    image.dataset.photoLocalSourceId = photo.localId || photo.id || "";
+    image.dataset.photoSourceSignature = signature;
+    image.dataset.photoRemoteFullSrc = versionedPhotoUrl(full, photo.updatedAt || photo.id || "");
+    image.dataset.photoRemoteThumbSrc = versionedPhotoUrl(thumb, photo.updatedAt || photo.id || "");
+    if (full) image.dataset.photoFullSrc = image.dataset.photoRemoteFullSrc;
+  });
+}
+
 export function updatePhotoGalleryUploadProgress(root, photos, {
   showCompletedBatchProgress = true,
   showStatus = false
@@ -865,6 +881,7 @@ export function bindPhotoGalleries(root = document, {
   const boardGesturePassThrough = bindPackingBoardPhotoGesturePassThrough(root);
   let compactControls = null;
   const sharedController = bindSharedPhotoGalleries(root, {
+    canRubberBand: event => !event.target?.closest?.('.layout-photo-summary-list'),
     openLightbox: ({ image, gallery, index }) => {
       if (image) openLightbox(image, {
         gallery,
@@ -886,6 +903,7 @@ export function bindPhotoGalleries(root = document, {
   });
   return {
     refresh() {
+      photoPreviewLoader?.observe?.(root);
       sharedController?.refresh?.();
       compactControls.refresh();
     },

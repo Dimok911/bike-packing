@@ -1,3 +1,4 @@
+import { hasPendingLocalPhotos, retainLocalPhotoUploads } from "./src/sync/local-photo-state.js";
 import { setupLayoutPhotoViewControl } from "./src/ui/layout-photo-summary.js";
 import { isBuiltinCategory, builtinCategoryAction } from "./src/state/builtin-categories.js";
 import {
@@ -4528,6 +4529,7 @@ function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 90
 }
 
 function hasLocalSyncChanges(baseState = loadBaseState()) {
+  if (hasPendingLocalPhotos(state)) return true;
   if (!baseState) return true;
   return !sameJson(serializeState({ forSync: true }), cloneStateForSync(baseState, { forSync: true }));
 }
@@ -5534,6 +5536,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     return false;
   }
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
+  retainLocalPhotoUploads(remoteState, state);
   replaceState(remoteState);
   removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
   setActivePrivateScope();
@@ -5543,7 +5546,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   syncMeta.serverUpdatedAt = updatedAt || null;
   syncMeta.localUpdatedAt = updatedAt || null;
   syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-  if (catalogRepairBase && hasLocalSyncChanges(catalogRepairBase)) {
+  if (hasPendingLocalPhotos(state) || (catalogRepairBase && hasLocalSyncChanges(catalogRepairBase))) {
     syncMeta.dirty = true;
     syncMeta.localUpdatedAt = nowIso();
   }
@@ -5560,6 +5563,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     updateSyncUi(localText("Technical catalog duplicates removed · syncing...", "Каталог очищен от технических дублей · синхронизирую..."));
     scheduleRemoteSave();
   }
+  if (hasPendingLocalPhotos(state)) scheduleRemoteSave();
   updateSyncUi();
   return true;
 }
@@ -6965,6 +6969,7 @@ async function tryApplyRemoteEntityChanges(listId, freshness, { preferredLayout 
   const request = canRequestEntityChanges({ syncMeta, freshness, listId });
   if (!request.ok) return { applied: false, fallbackRequired: true, reason: request.reason };
   const data = await fetchRemoteListChangesRecord(listId, request.sinceRevision);
+  if (photoUploadInFlight || syncMeta.dirty || hasPendingLocalPhotos(state)) return { applied: false, reason: "local-upload-pending" };
   const result = applyEntityChangesToState(serializeState({ forSync: true }), data);
   if (!result.applied || !result.state) return result;
   const meta = {
@@ -8079,7 +8084,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   if (isForcedOffline()) return;
   if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) return;
-  if (!currentUser || remoteRefreshInFlight) return;
+  if (!currentUser || remoteRefreshInFlight || photoUploadInFlight) return;
   if (recoverUnsyncedLocalChanges("remote-freshness")) return;
   if (syncMeta.dirty) return;
   if (document.hidden) return;
@@ -8110,6 +8115,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
       updateSyncUi();
       return;
     }
+    if (photoUploadInFlight || syncMeta.dirty || hasPendingLocalPhotos(state)) return;
     const preferred = preferredLayout || preferredCurrentLayoutRef();
     let entityChangesApplied = false;
     try {
@@ -8128,7 +8134,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
         message: error?.message || String(error || "")
       });
     }
-    if (!entityChangesApplied) await loadRemoteState({ preferredLayout: preferred });
+    if (!entityChangesApplied && !photoUploadInFlight && !syncMeta.dirty && !hasPendingLocalPhotos(state)) await loadRemoteState({ preferredLayout: preferred });
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;

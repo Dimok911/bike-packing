@@ -18,7 +18,7 @@ export function layoutTripsSnapshot(layout) {
   for (const photo of photos) {
     // Older clients and imports may leave an unassigned photo: retain it.
     const trip = trips.find(candidate => candidate.id === photo.tripId) || trips[0];
-    if (trip) trip.photos.push({ ...photo, tripId: trip.id });
+    if (trip) { photo.tripId = trip.id; trip.photos.push(photo); }
   }
   return trips;
 }

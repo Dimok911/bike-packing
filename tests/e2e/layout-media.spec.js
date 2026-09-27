@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { prepareIsolatedRussianGuest, openApp, createEmptyLayout, waitForApp } from "./guest-test-helpers.js";
+import { prepareIsolatedRussianGuest, openApp, createEmptyLayout, createRootContainer, waitForApp } from "./guest-test-helpers.js";
 
 test("layout photos: captions, reorder, fullscreen, persistence, discard and video validation", async ({ page, browserName }) => {
   test.setTimeout(60000);
@@ -438,4 +438,96 @@ test('trip video thumbnails open a lazy player below photos with compact navigat
   await expect(player).toHaveCount(0);
   await expect(videos.locator('.layout-video-card').nth(2)).toHaveAttribute('href','https://example.com/video');
   await card.screenshot({path:`test-results/v1621-trip-videos-${isMobile?'mobile':'desktop'}.png`});
+});
+
+
+test("trip upload batches retain first photo, decoded previews and progress without reload", async ({page,browserName}) => {
+  test.skip(browserName==='webkit','Windows WebKit cannot store Blob values in IndexedDB');
+  test.setTimeout(60000);
+  const {readFile}=await import('node:fs/promises');const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page);await openApp(page);
+  await page.route('**/__testsrc/**',async route=>{const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});});
+  await page.evaluate(async()=>{
+    const {createLayoutTripsEditor}=await import('/__testsrc/src/ui/layout-trips-editor.js');
+    const {createLayoutPhotoSummary}=await import('/__testsrc/src/ui/layout-photo-summary.js');
+    const {applyLayoutTrips,layoutTripsSnapshot}=await import('/__testsrc/src/state/layout-trips.js');
+    const {normalizeItemPhotos}=await import('/__testsrc/src/state/item-photos.js');
+    const {createItemPhotoFromFile,getCachedPhoto,putCachedPhoto,deleteCachedPhoto}=await import('/__testsrc/src/sync/photos.js');
+    const {createPhotoObjectUrlRegistry}=await import('/__testsrc/src/ui/photo-object-url-registry.js');
+    const {renderPhotoGalleryHtml,bindPhotoGalleries,createDemandDrivenPhotoPreviewLoader}=await import('/__testsrc/src/ui/photo-gallery.js');
+    const {uploadPhotoToPath}=await import('/__testsrc/src/sync/photo-upload-flow.js');
+    const dialog=document.querySelector('#layoutEditDialog').cloneNode(true);
+    const section=document.createElement('section');section.className='layout-introduction';section.innerHTML='<div id="fixture-summary" class="layout-photo-summary"></div><div id="layoutDescriptionSummary"></div>';
+    document.body.replaceChildren(dialog,section);section.style.height='auto';
+    const registry=createPhotoObjectUrlRegistry();registry.activateScope('guest');
+    const loader=createDemandDrivenPhotoPreviewLoader({photoObjectUrls:registry,getScopeKey:()=> 'guest'});
+    const bind=root=>bindPhotoGalleries(root,{photoObjectUrls:registry,photoPreviewLoader:loader});
+    const editor=createLayoutTripsEditor({dialog,createPhoto:createItemPhotoFromFile,deleteCachedPhoto,renderGallery:renderPhotoGalleryHtml,bindGalleries:bind,onChange(){},getLimit:()=>100,localText:(en,ru)=>ru,showToast:message=>{throw Error(message);}});
+    const layout={id:'batch-layout',trips:[{id:'trip',name:'Batch'}],photos:[]};editor.open(layout);dialog.showModal();
+    const summary=createLayoutPhotoSummary({host:section.firstElementChild,renderGallery:renderPhotoGalleryHtml,bindGalleries:bind,localText:(en,ru)=>ru});
+    const render=()=>summary.render({...layoutTripsSnapshot(layout)[0],id:layout.id},true);
+    window.batchFixture={async save(){applyLayoutTrips(layout,editor.snapshot());editor.close(layout);dialog.close();await render();},async upload(){
+      const initialImages=[...section.querySelectorAll('[data-photo-open] img')];let sawProgress=false;
+      for(const photo of [...layout.photos]) {
+        await uploadPhotoToPath({path:'/test/photos',listId:'fixture',entity:layout,entityType:'layout',photo,apiFetch:async()=>({}),getCachedPhoto,putCachedPhoto,registerCachedPhotoRecord:(task,record)=>registry.setRecord(task,record),
+          apiUploadFormData:async(path,options)=>{for(const progress of [7,45,100]){options.onUploadProgress(progress);await render();sawProgress ||= [...section.querySelectorAll('.photo-upload-progress span')].some(el=>el.textContent==='45');normalizeItemPhotos(layout);await new Promise(requestAnimationFrame);}return {photo:{id:photo.id,url:`https://example.test/${photo.id}/file`,thumbUrl:`https://example.test/${photo.id}/thumb`}};},
+          scheduleProgressRender:()=>render()});await render();
+      }
+      return {count:layout.photos.length,synced:layout.photos.filter(p=>p.status==='synced').length,sawProgress,sameImages:initialImages.every((img,i)=>img===section.querySelectorAll('[data-photo-open] img')[i]),cached:(await Promise.all(layout.photos.map(p=>getCachedPhoto(p.localId||p.id)))).every(r=>r?.blob?.size>0)};
+    }};
+  });
+  const editor=page.locator('[data-layout-media-editor]');
+  const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=180;c.getContext('2d').fillRect(0,0,320,180);return c.toDataURL().split(',')[1];}),'base64');
+  const file=n=>({name:`photo-${n}.png`,mimeType:'image/png',buffer:png});
+  await editor.locator('input[type=file]').first().setInputFiles(file(0));
+  await expect(editor.locator('[data-layout-photo-caption]')).toHaveCount(1);
+  await editor.locator('input[type=file]').first().setInputFiles(Array.from({length:15},(_,i)=>file(i+1)));
+  await expect(editor.locator('[data-layout-photo-caption]')).toHaveCount(16);
+  await page.evaluate(()=>window.batchFixture.save());
+  const images=page.locator('#fixture-summary [data-photo-open] img');await expect(images).toHaveCount(16);
+  for(let i=0;i<16;i++){await images.nth(i).scrollIntoViewIfNeeded();await expect.poll(()=>images.nth(i).evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);}
+  const result=await page.evaluate(()=>window.batchFixture.upload());
+  expect(result).toEqual({count:16,synced:16,sawProgress:true,sameImages:true,cached:true});
+  expect(await images.evaluateAll(imgs=>imgs.every(img=>img.complete&&img.naturalWidth>0))).toBe(true);
+});
+
+
+for (const kind of ['item','container']) test(`${kind} photos added in separate batches survive save and reload`, async({page,browserName})=>{
+  test.skip(browserName==='webkit','Windows WebKit cannot store Blob values in IndexedDB');
+  await prepareIsolatedRussianGuest(page);await openApp(page);await createEmptyLayout(page,'Фото вещей и сумок');
+  if(kind==='item') {
+    const container=await createRootContainer(page,'Сумка');await container.locator('[data-add-to-container]').click();await page.locator('#createItemForContainerBtn').click();await page.locator('#itemName').fill('Фото вещи');
+  } else {await page.locator('[data-add-packing-root]').click();await page.locator('#createRootForLayoutBtn').click();await page.locator('#rootContainerName').fill('Фото сумки');}
+  const prefix=kind==='item'?'item':'rootContainer';
+  const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=60;c.height=60;c.getContext('2d').fillRect(0,0,60,60);return c.toDataURL().split(',')[1];}),'base64');
+  const file=n=>({name:`${kind}-${n}.png`,mimeType:'image/png',buffer:png});
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles(file(0));await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(1);
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles([file(1),file(2)]);await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(3);
+  await page.locator(kind==='item'?'#saveItemBtn':'#saveRootContainerBtn').click();
+  await page.reload();await waitForApp(page);
+  const result=await page.evaluate(kind=>{const state=JSON.parse(localStorage.getItem('bike-packing-prototype-state-v1'));return Object.values(state[kind==='item'?'items':'containers']).find(r=>r.name===(kind==='item'?'Фото вещи':'Фото сумки'))?.photos;},kind);
+  expect(result).toHaveLength(3);expect(new Set(result.map(p=>p.id)).size).toBe(3);
+});
+
+test('trip thumbnail strip accepts a native horizontal touch gesture over images',async({page,browserName})=>{
+  test.skip(browserName!=='chromium','Native touch injection uses Chromium; other layout tests cover WebKit');
+  const {readFile}=await import('node:fs/promises');const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page);await openApp(page);await page.setViewportSize({width:390,height:844});
+  await page.route('**/__testsrc/**',async route=>{const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});});
+  await page.evaluate(async()=>{
+    const {renderPhotoGalleryHtml,bindPhotoGalleries}=await import('/__testsrc/src/ui/photo-gallery.js');
+    document.body.innerHTML='<div class="layout-photo-summary" data-photo-view="grid"><div class="layout-photo-summary-list"></div></div>';
+    const host=document.querySelector('.layout-photo-summary-list');host.innerHTML=(await Promise.all(Array.from({length:16},async(_,i)=>`<figure>${await renderPhotoGalleryHtml([{id:`photo-${i}`,status:'pending',localId:`photo-${i}`}],{className:'layout-summary-thumbnail'})}</figure>`))).join('');
+    bindPhotoGalleries(document);
+  });
+  const strip=page.locator('.layout-photo-summary-list');
+  const box=await strip.boundingBox();
+  const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+  const point=x=>({x,y:box.y+30,id:1,radiusX:1,radiusY:1});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point(box.x+285)]});
+  for(let i=1;i<=12;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point(box.x+285-i*18)]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await expect.poll(()=>strip.evaluate(el=>el.scrollLeft)).toBeGreaterThan(100);
+  await expect(page.locator('.photo-lightbox[open]')).toHaveCount(0);
+  await cdp.detach();
 });

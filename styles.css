@@ -11142,3 +11142,7 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 
 .admin-visual-control.is-visible { width: min(760px, calc(100vw - 20px)); padding-right: 42px; }
 .admin-visual-close { position: absolute; right: 3px; top: 3px; width: 36px; min-height: 36px; }
+
+/* A trip strip owns the horizontal gesture; its single-image galleries do not. */
+.layout-photo-summary-list { touch-action: pan-x pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
+.layout-photo-summary-list .photo-gallery-track { overflow: clip; overscroll-behavior: auto; touch-action: pan-x pan-y pinch-zoom; }
