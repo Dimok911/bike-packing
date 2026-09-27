@@ -53,9 +53,10 @@ export function validateManufacturerCatalogImport(report) {
     const id = requiredText(manufacturer?.id, "Manufacturer id").toLowerCase();
     if (!MANUFACTURER_HOSTS[id]) throw new Error(`Unsupported manufacturer: ${id}`);
     if (manufacturerIds.has(id)) throw new Error(`Duplicate manufacturer: ${id}`);
-    if (manufacturer.status !== "complete" || (Array.isArray(manufacturer.errors) && manufacturer.errors.length)) {
-      throw new Error(`Manufacturer is not complete: ${id}`);
-    }
+    const count = Array.isArray(manufacturer.errors) ? manufacturer.errors.length : 0;
+    if (manufacturer.status === "partial" && count) incompleteIds.add(id);
+    else if (manufacturer.status !== "complete" || count) throw new Error(`Manufacturer status contradicts evidence: ${id}`);
+    errorCount += count;
     manufacturerIds.add(id);
   });
   const changes = Array.isArray(report.changes) ? report.changes : [];

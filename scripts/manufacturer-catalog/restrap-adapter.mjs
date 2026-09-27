@@ -200,13 +200,12 @@ function productColor(variant = {}) {
 
 function compactVariants(product = {}, volumes = [], weights = [], mounting = "") {
   const source = Array.isArray(product.variants) && product.variants.length ? product.variants : [{}];
-  const alignedWeights = weights.length === source.length ? weights : [];
-  return source.map((variant, index) => ({
+  return source.map((variant) => ({
     sku: String(variant.sku || ""),
     title: String(variant.title || "Manufacturer model"),
     color: productColor(variant),
     volume: Number(String(variant.title || "").match(/(\d+(?:\.\d+)?)\s*L\b/i)?.[1]) || (volumes.length === 1 ? volumes[0] : 0),
-    weight: Number(variant.grams) > 0 ? Number(variant.grams) : (weights.length === 1 ? weights[0] : 0),
+    weight: weights.length === 1 ? weights[0] : 0,
     mounting,
     available: variant.available !== false,
   }));
