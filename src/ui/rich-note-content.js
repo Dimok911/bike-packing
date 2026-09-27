@@ -60,6 +60,40 @@ export function sanitizeNoteHtml(source, documentRef = globalThis.document) {
   return output.innerHTML;
 }
 
+// Clipboard HTML contains source indentation and empty layout paragraphs. Clean
+// only incoming HTML: saved notes and line breaks typed by the user stay intact.
+export function normalizePastedNoteHtml(source, documentRef = globalThis.document) {
+  const root = documentRef.createElement("div");
+  root.innerHTML = sanitizeNoteHtml(source, documentRef);
+  const isBlock = node => node?.nodeType === 1 && /^(P|DIV|UL|OL|LI|BLOCKQUOTE|H2|H3|PRE|TABLE|THEAD|TBODY|TFOOT|TR|TD|TH|CAPTION)$/.test(node.nodeName);
+  function clean(parent) {
+    if (parent.matches?.("pre,code")) return;
+    for (const node of [...parent.childNodes]) {
+      if (node.nodeType === 3) {
+        node.data = node.data.replace(/[\t\r\n ]+/g, " ");
+      } else if (node.nodeType === 1) clean(node);
+    }
+    parent.normalize();
+    for (const node of [...parent.childNodes]) {
+      if (node.nodeName === "TABLE" && !node.querySelector("td,th")) node.remove();
+      if (node.nodeType === 3 && !node.data.trim() &&
+          (!node.previousSibling || !node.nextSibling || isBlock(node.previousSibling) || isBlock(node.nextSibling) || node.previousSibling.nodeName === "BR" || node.nextSibling.nodeName === "BR")) node.remove();
+      if (node.nodeType === 1 && /^(P|DIV)$/.test(node.nodeName) && !node.textContent.trim() && !node.querySelector("table,ul,ol,pre,code")) node.remove();
+    }
+    let breaks = 0;
+    for (const node of [...parent.childNodes]) {
+      if (node.nodeName === "BR") { if (++breaks > 2) node.remove(); }
+      else breaks = 0;
+    }
+    if (parent === root || isBlock(parent)) {
+      while (parent.firstChild?.nodeName === "BR") parent.firstChild.remove();
+      while (parent.lastChild?.nodeName === "BR") parent.lastChild.remove();
+    }
+  }
+  clean(root);
+  return root.innerHTML;
+}
+
 export function plainNoteHtml(text) {
   return escapeHtml(String(text || "")).replace(/\r\n?/g, "\n").replaceAll("\n", "<br>");
 }

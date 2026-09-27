@@ -1,5 +1,5 @@
 import { currentDocumentLanguage } from "../utils/language.js";
-import { sanitizeNoteHtml, plainNoteHtml, noteTextMap } from "./rich-note-content.js";
+import { sanitizeNoteHtml, normalizePastedNoteHtml, plainNoteHtml, noteTextMap } from "./rich-note-content.js";
 
 const tr = (en, ru) => currentDocumentLanguage() === "en" ? en : ru;
 
@@ -23,9 +23,10 @@ export function createRichNoteEditor(textarea) {
   editor.spellcheck = true;
   editor.hidden = true;
   const anchor = textarea.closest(".desktop-input-layout") || textarea;
-  anchor.before(toolbar);
-  toolbar.after(linkPanel);
-  anchor.after(editor);
+  const surface = doc.createElement("div");
+  surface.className = "rich-note-surface";
+  anchor.before(surface);
+  surface.append(anchor, editor, linkPanel, toolbar);
   let active = false;
   let savedRange = null;
   let linkDraft = null;
@@ -108,7 +109,7 @@ export function createRichNoteEditor(textarea) {
     if (!active && !html) return;
     event.preventDefault();
     clearMatch();
-    insert(html ? sanitizeNoteHtml(html, doc) : plainNoteHtml(text));
+    insert(html ? normalizePastedNoteHtml(html, doc) : plainNoteHtml(text));
   }
   function openLinkPanel(selectedLink = null) {
     if (textarea.disabled || textarea.readOnly) return;

@@ -1356,21 +1356,40 @@ button.filter-active.filter-no-results {
   color: var(--accent);
 }
 
-.rich-note-toolbar {
-  /* Keep the row in flow so focusing a note never shifts the form. */
+.rich-note-surface {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.rich-note-surface:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rich-note-surface > .rich-note-editor,
+.rich-note-surface textarea { border: 0; outline: none; box-shadow: none; background: transparent; }
+.rich-note-surface > .rich-note-editor { border-radius: 10px 10px 0 0; }
+.rich-note-surface > .rich-note-toolbar {
+  /* The reserved row belongs to the field, never separating its label and text. */
   visibility: hidden;
   pointer-events: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
-  margin-bottom: 6px;
+  min-height: 46px;
+  padding: 4px 6px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+  background: var(--accent-faint);
+  overflow-x: auto;
 }
 .note-field:focus-within .rich-note-toolbar { visibility: visible; pointer-events: auto; }
 .rich-note-toolbar button {
+  flex: 0 0 auto;
   min-width: 36px;
   min-height: 36px;
   padding: 4px 10px;
   font-size: 15px;
+  white-space: nowrap;
 }
 .rich-note-toolbar [data-note-command="bold"] { font-weight: 800; }
 .rich-note-toolbar [data-note-command="italic"] { font-style: italic; }
@@ -1401,7 +1420,7 @@ button.filter-active.filter-no-results {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.rich-note-editor:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rich-note-editor:focus { outline: none; }
 .rich-note-editor p { margin: 0 0 0.65em; }
 .rich-note-editor ul, .rich-note-editor ol { padding-left: 1.6em; }
 .rich-note-editor h2, .rich-note-editor h3 { font-size: 1.1em; margin: 0.7em 0; }

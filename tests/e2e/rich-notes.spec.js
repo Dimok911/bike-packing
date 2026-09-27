@@ -363,8 +363,18 @@ test('formatting controls follow focus without moving either trip field', async 
   await activate(page.locator('#layoutEditNotes'),isMobile);
   await expect(toolbar).toBeVisible();await expect(notesToolbar).toBeHidden();
   expect(await geometry()).toEqual(before);
+  await expect(toolbar.locator('[data-note-command="edit-link"]')).toBeHidden();
+  const attachment=await description.evaluate(field=>{
+    const label=field.querySelector('label').getBoundingClientRect();
+    const surface=field.querySelector('.rich-note-surface').getBoundingClientRect();
+    const input=field.querySelector('textarea').getBoundingClientRect();
+    return {labelGap:surface.top-label.bottom,textInset:input.top-surface.top};
+  });
+  expect(attachment.labelGap).toBeLessThanOrEqual(8);
+  expect(attachment.textInset).toBeLessThanOrEqual(2);
+  await description.screenshot({path:`test-results/v1619-toolbar-active-${isMobile?'mobile':'desktop'}.png`});
   // Keyboard navigation into the toolbar also keeps it visible.
-  await page.locator('#layoutEditNotes').press('Shift+Tab');
+  await page.locator('#layoutEditNotes').press('Tab');
   await expect(toolbar).toBeVisible();
   await activate(page.locator('#layoutTripNotes'),isMobile);
   await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeVisible();
@@ -381,5 +391,30 @@ test('formatting controls follow focus without moving either trip field', async 
   expect(await geometry()).toEqual(before);
   await expect(page.locator('#layoutEditNotes')).toHaveValue('');
   await expect(page.locator('#layoutTripNotes')).toHaveValue('');
-  await page.screenshot({path:`test-results/v1618-toolbar-idle-${isMobile?'mobile':'desktop'}.png`});
+  await page.screenshot({path:`test-results/v1619-toolbar-idle-${isMobile?'mobile':'desktop'}.png`});
+});
+
+
+test('website paste removes layout whitespace while preserving paragraphs, links and preformatted text', async ({page,isMobile}) => {
+  await fixture(page);
+  await activate(page.locator('[data-item-id="notesItem"] .item-title-hitarea'),isMobile);
+  await paste(page.locator('#itemNote'), `<div>
+    <p><br></p>
+    <p><strong>Маршрут</strong> <a href="https://example.com/route">Описание</a></p>
+    <p>&nbsp;</p><div><br></div><p><br><br></p>
+    <p>Второй абзац</p>
+    <pre>  first\n\n    second</pre>
+    <p><br></p>
+  </div>`);
+  const editor=page.locator('#itemNoteRich');
+  await expect(editor.locator('strong')).toHaveText('Маршрут');
+  await expect(editor.locator('a')).toHaveAttribute('href','https://example.com/route');
+  await expect(editor).toHaveText('Маршрут ОписаниеВторой абзац  first\n\n    second');
+  expect(await editor.locator('pre').textContent()).toBe('  first\n\n    second');
+  expect(await page.locator('#itemNote').inputValue()).toBe('Маршрут Описание\nВторой абзац\n  first\n\n    second');
+  await save(page,'#saveItemBtn',isMobile);
+  await page.reload();await waitForApp(page);
+  await activate(page.locator('[data-item-id="notesItem"] .item-title-hitarea'),isMobile);
+  expect(await page.locator('#itemNote').inputValue()).toBe('Маршрут Описание\nВторой абзац\n  first\n\n    second');
+  await expect(editor.locator('a')).toHaveAttribute('href','https://example.com/route');
 });
