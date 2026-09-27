@@ -1,10 +1,7 @@
+import { createPhotoFromFile, resolveUploadedPhotoByContentHash as resolvePhotoHash } from "../vendor/vniipo-photo-upload-engine.js";
+export { materializeSelectedPhotoFile, resizeImageFile, imageFileDimensions, paintImageOnJpegCanvas, loadImageBitmap, isGifImageFile, isSvgImageFile, selectedPhotoMimeType, clonePhotoUploadBlob, sha256BlobHex, applyPendingPhotoUploadRetry } from "../vendor/vniipo-photo-upload-engine.js";
 import {
   API_BASE,
-  ITEM_PHOTO_MAX_SIZE,
-  ITEM_PHOTO_QUALITY,
-  ITEM_PHOTO_TARGET_BYTES,
-  ITEM_PHOTO_THUMB_TARGET_BYTES,
-  ITEM_PHOTO_THUMB_SIZE,
   PHOTO_DB_NAME,
   PHOTO_DB_VERSION,
   PHOTO_STORE
@@ -532,22 +529,6 @@ export function applySyncedPhotoUploadResult(targetPhoto, serverPhoto, {
   return targetPhoto;
 }
 
-export function applyPendingPhotoUploadRetry(targetPhoto, {
-  nowIsoValue = nowIso()
-} = {}) {
-  if (!targetPhoto || typeof targetPhoto !== "object") return targetPhoto;
-  targetPhoto.status = "pending";
-  targetPhoto.error = "";
-  targetPhoto.updatedAt = nowIsoValue;
-  Object.defineProperty(targetPhoto, "uploadRetryPending", {
-    value: true,
-    writable: true,
-    configurable: true,
-    enumerable: false
-  });
-  return targetPhoto;
-}
-
 export function shouldRetryLocalPhotoUploadAfterFailure({
   blob = null,
   error = null,
@@ -564,252 +545,25 @@ export function shouldRetryLocalPhotoUploadAfterFailure({
   );
 }
 
-export function clonePhotoUploadBlob(blob) {
-  if (!blob || typeof blob !== "object") return blob;
-  if (typeof blob.slice !== "function") return blob;
-  return blob.slice(0, blob.size || undefined, blob.type || "");
-}
-
-export async function sha256BlobHex(blob, {
-  cryptoImpl = globalThis.crypto
-} = {}) {
-  if (!blob || typeof blob.arrayBuffer !== "function" || !cryptoImpl?.subtle?.digest) return "";
-  const digest = await cryptoImpl.subtle.digest("SHA-256", await blob.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export async function resolveUploadedPhotoByContentHash({
-  apiFetch,
-  blob,
-  cryptoImpl = globalThis.crypto,
-  listId = "",
-  retryDelayMs = 700,
-  timeoutMs = 30000
-} = {}) {
+export async function resolveUploadedPhotoByContentHash({ apiFetch, blob, listId = "", ...options } = {}) {
   if (!blob || !listId || typeof apiFetch !== "function") return null;
-  const hash = await sha256BlobHex(blob, { cryptoImpl });
-  if (!hash) return null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (attempt > 0 && retryDelayMs > 0) {
-      await new Promise((resolve) => globalThis.setTimeout(resolve, retryDelayMs));
-    }
-    try {
+  return resolvePhotoHash({
+    ...options,
+    blob,
+    resolveHash: async (hash, { timeoutMs }) => {
       const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/resolve`, {
-        method: "POST",
-        silentErrors: true,
-        timeoutMs,
+        method: "POST", silentErrors: true, timeoutMs,
         body: JSON.stringify({ hashes: [hash] })
       });
-      const resolved = data?.photosByHash?.[hash];
-      if (resolved?.id) return resolved;
-    } catch {
-      return null;
+      return data?.photosByHash?.[hash];
     }
-  }
-  return null;
-}
-
-export async function createItemPhotoFromFile(file, {
-  cachePhoto = putCachedPhoto,
-  dimensionsForFile = imageFileDimensions,
-  materializeFile = materializeSelectedPhotoFile,
-  now = nowIso,
-  resizeFile = resizeImageFile
-} = {}) {
-  if (!file || (!file.type?.startsWith("image/") && !isSvgImageFile(file))) {
-    throw new Error("Выберите файл изображения.");
-  }
-  const photoId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const source = await materializeFile(file);
-  let full;
-  let thumbBlob = null;
-  if (isGifImageFile(source)) {
-    const dimensions = await dimensionsForFile(source);
-    full = { blob: source, width: dimensions.width, height: dimensions.height };
-  } else {
-    full = await resizeFile(source, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY, {
-      targetBytes: ITEM_PHOTO_TARGET_BYTES
-    });
-    const thumb = await resizeFile(source, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY, {
-      targetBytes: ITEM_PHOTO_THUMB_TARGET_BYTES
-    });
-    thumbBlob = thumb.blob;
-  }
-  const createdAt = now();
-  const fileName = gifPhotoFileName(file.name || source.name || "", full.blob.type);
-  await cachePhoto({
-    id: photoId,
-    blob: full.blob,
-    thumbBlob,
-    fullBlobVerified: true,
-    fileName: fileName || "item-photo.jpg",
-    type: full.blob.type || "image/jpeg",
-    size: full.blob.size,
-    width: full.width,
-    height: full.height,
-    createdAt,
-    updatedAt: createdAt
-  });
-  return {
-    id: photoId,
-    localId: photoId,
-    status: "pending",
-    url: "",
-    thumbUrl: "",
-    fileName,
-    type: full.blob.type || "image/jpeg",
-    size: full.blob.size,
-    width: full.width,
-    height: full.height,
-    createdAt,
-    updatedAt: createdAt,
-    error: ""
-  };
-}
-
-export function isGifImageFile(file) {
-  const type = String(file?.type || "").trim().toLowerCase();
-  const name = String(file?.name || "").trim().toLowerCase();
-  return type === "image/gif" || name.endsWith(".gif");
-}
-
-function gifPhotoFileName(name, type) {
-  const value = String(name || "").trim();
-  if (String(type || "").toLowerCase() !== "image/gif") return value;
-  if (/\.gif$/i.test(value)) return value;
-  return value ? `${value.replace(/\.[^.]+$/, "")}.gif` : "item-photo.gif";
-}
-
-export async function imageFileDimensions(file) {
-  const bitmap = await loadImageBitmap(file);
-  try {
-    return {
-      width: Math.max(1, Number(bitmap?.width || bitmap?.naturalWidth || 1)),
-      height: Math.max(1, Number(bitmap?.height || bitmap?.naturalHeight || 1))
-    };
-  } finally {
-    if (typeof bitmap?.close === "function") bitmap.close();
-  }
-}
-
-export async function materializeSelectedPhotoFile(file, {
-  timeoutMs = 60000
-} = {}) {
-  if (!file || typeof file.arrayBuffer !== "function") return file;
-  const readPromise = file.arrayBuffer();
-  const buffer = timeoutMs > 0
-    ? await promiseWithTimeout(readPromise, timeoutMs, "Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.")
-    : await readPromise;
-  const byteLength = Number(buffer?.byteLength || buffer?.length || 0);
-  if (!byteLength) {
-    throw new Error("Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.");
-  }
-  const type = selectedPhotoMimeType(file);
-  const name = file.name || "item-photo.jpg";
-  if (typeof File === "function") {
-    return new File([buffer], name, {
-      type,
-      lastModified: Number(file.lastModified || Date.now())
-    });
-  }
-  const blob = new Blob([buffer], { type });
-  try {
-    Object.defineProperty(blob, "name", { value: name, configurable: true });
-    Object.defineProperty(blob, "lastModified", { value: Number(file.lastModified || Date.now()), configurable: true });
-  } catch {
-    // Blob metadata is optional; the materialized bytes are the required part.
-  }
-  return blob;
-}
-
-function promiseWithTimeout(promise, timeoutMs, message) {
-  let timeoutId = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
   });
 }
 
-export async function resizeImageFile(file, maxSize, quality, {
-  targetBytes = 0,
-  minQuality = 0.58,
-  minSize = 960,
-  qualityStep = 0.08,
-  sizeStep = 0.85
-} = {}) {
-  const bitmap = await loadImageBitmap(file);
-  try {
-    let nextMaxSize = maxSize;
-    let best = null;
-    while (true) {
-      const scale = Math.min(1, nextMaxSize / Math.max(bitmap.width, bitmap.height));
-      const width = Math.max(1, Math.round(bitmap.width * scale));
-      const height = Math.max(1, Math.round(bitmap.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext("2d");
-      paintImageOnJpegCanvas(context, bitmap, width, height);
-      for (let nextQuality = quality; nextQuality >= minQuality; nextQuality -= qualityStep) {
-        const blob = await canvasToJpegBlob(canvas, nextQuality);
-        best = { blob, width, height };
-        if (!targetBytes || blob.size <= targetBytes) return best;
-      }
-      if (nextMaxSize <= minSize) return best;
-      nextMaxSize = Math.max(minSize, Math.round(nextMaxSize * sizeStep));
-    }
-  } finally {
-    if (typeof bitmap.close === "function") bitmap.close();
-  }
-}
-
-export function paintImageOnJpegCanvas(context, bitmap, width, height) {
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, width, height);
-  context.drawImage(bitmap, 0, 0, width, height);
-}
-
-async function canvasToJpegBlob(canvas, quality) {
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-  if (!blob) throw new Error("Не удалось подготовить фото.");
-  return blob;
-}
-
-export function loadImageBitmap(file) {
-  // SVG decoding through createImageBitmap is inconsistent in Safari/iOS.
-  // Loading it as an image first keeps the input compatible, while the
-  // existing canvas pipeline still turns it into a non-executable JPEG.
-  if (isSvgImageFile(file)) return loadImageElement(file);
-  if ("createImageBitmap" in window) return createImageBitmap(file, { imageOrientation: "from-image" });
-  return loadImageElement(file);
-}
-
-export function isSvgImageFile(file) {
-  const type = String(file?.type || "").trim().toLowerCase();
-  const name = String(file?.name || "").trim().toLowerCase();
-  return type === "image/svg+xml" || name.endsWith(".svg");
-}
-
-export function selectedPhotoMimeType(file) {
-  const type = String(file?.type || "").trim();
-  if (type) return type;
-  return isSvgImageFile(file) ? "image/svg+xml" : "image/jpeg";
-}
-
-function loadImageElement(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Не удалось открыть фото."));
-    };
-    image.src = url;
+export function createItemPhotoFromFile(file, options = {}) {
+  const scopeKey = getPhotoCacheScope();
+  return createPhotoFromFile(file, {
+    ...options,
+    cachePhoto: options.cachePhoto ?? (record => putCachedPhoto(record, scopeKey))
   });
 }

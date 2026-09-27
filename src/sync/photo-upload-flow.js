@@ -1,3 +1,5 @@
+import { findEntityPhotoForUpload, setPhotoUploadProgress, markPhotoUploadStarted, clearPhotoUploadProgress } from "../vendor/vniipo-photo-upload-engine.js";
+export { findEntityPhotoForUpload, setPhotoUploadProgress, markPhotoUploadStarted, clearPhotoUploadProgress };
 import {
   PHOTO_UPLOAD_STALL_TIMEOUT_MS,
   PHOTO_UPLOAD_TIMEOUT_MS
@@ -274,40 +276,6 @@ export async function uploadPhotoToPath({
     clearPhotoPairProgress(targetPhoto);
     return true;
   }
-}
-
-export function findEntityPhotoForUpload(entity, sourcePhoto) {
-  const photos = Array.isArray(entity?.photos) ? entity.photos : [];
-  const sourceId = String(sourcePhoto?.id || "");
-  const sourceLocalId = String(sourcePhoto?.localId || "");
-  return photos.find((photo) =>
-    (sourceId && String(photo?.id || "") === sourceId) ||
-    (sourceLocalId && String(photo?.localId || "") === sourceLocalId)
-  ) || null;
-}
-
-export function setPhotoUploadProgress(photo, progress) {
-  if (!photo) return;
-  Object.defineProperty(photo, "uploadProgress", {
-    value: Math.max(0, Math.min(100, Number(progress) || 0)),
-    writable: true,
-    configurable: true,
-    enumerable: false
-  });
-}
-
-export function markPhotoUploadStarted(photo, { nowIsoValue = nowIso() } = {}) {
-  if (!photo) return;
-  if (Object.prototype.hasOwnProperty.call(photo, "uploadRetryPending")) delete photo.uploadRetryPending;
-  photo.status = "uploading";
-  photo.error = "";
-  photo.updatedAt = nowIsoValue;
-  setPhotoUploadProgress(photo, photo.uploadProgress || 0);
-}
-
-export function clearPhotoUploadProgress(photo) {
-  if (!photo || !Object.prototype.hasOwnProperty.call(photo, "uploadProgress")) return;
-  delete photo.uploadProgress;
 }
 
 export async function getPhotoUploadSource(photo, localId, {

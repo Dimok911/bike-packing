@@ -1,3 +1,5 @@
+import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "./src/sync/photo-upload-queue.js";
+import { findEntityPhotoForUpload, syncPhotoRecordFromUpload } from "./src/vendor/vniipo-photo-upload-engine.js";
 import { hasPendingLocalPhotos, retainLocalPhotoUploads } from "./src/sync/local-photo-state.js";
 import { setupLayoutPhotoViewControl } from "./src/ui/layout-photo-summary.js";
 import { isBuiltinCategory, builtinCategoryAction } from "./src/state/builtin-categories.js";
@@ -6253,10 +6255,30 @@ async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId 
     const targetListId = listId || await ensureCurrentPackingListId();
     if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
     if (isReadOnlyBikePackingContext()) return false;
-    for (const entry of entries) {
-      const uploaded = await uploadEntityPhoto(targetListId, entry.entity, entry.photo, entry.entityType);
-      changed = uploaded || changed;
-    }
+    const uploadScope = getPhotoCacheScope();
+    const entryByPhoto = new Map(entries.map(entry => [entry.photo, entry]));
+    const currentEntity = photo => {
+      const entry = entryByPhoto.get(photo);
+      const key = { layout: "layouts", item: "items", container: "containers" }[entry?.entityType];
+      return state[key]?.[entry?.entity.id];
+    };
+    const stillOwned = photo => getPhotoCacheScope() === uploadScope && Boolean(currentUser)
+      && Boolean(findEntityPhotoForUpload(currentEntity(photo), photo));
+    const result = await uploadPhotoBatchQueue(entries.map(entry => entry.photo), {
+      concurrency: 1,
+      shouldUploadPhoto: stillOwned,
+      uploadPhoto: photo => uploadPhotoWithOneRetry(photo, {
+        shouldRetryPhoto: candidate => Boolean(candidate.uploadRetryPending) && stillOwned(candidate),
+        uploadPhotoAttempt: (candidate, options) => uploadEntityPhoto(targetListId, currentEntity(candidate), candidate, entryByPhoto.get(candidate).entityType, options)
+      }),
+      onUnexpectedError: photo => {
+        if (!stillOwned(photo)) return;
+        syncPhotoRecordFromUpload(currentEntity(photo), photo);
+        changed = true;
+        schedulePhotoUploadProgressRender();
+      }
+    });
+    changed = result.uploaded || changed;
   } catch {
     // Keep photos queued locally; the next manual or automatic sync will retry.
   } finally {

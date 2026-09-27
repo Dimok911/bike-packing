@@ -1,0 +1,11 @@
+{
+  "name": "vniipo-photo-upload-engine",
+  "version": "1.0.0",
+  "contractVersion": 1,
+  "asset": "index.js",
+  "sha256": "8bd6e23f5aeb865f4971a93d1dc04d243f919b3abbb02da532f7ea8dc2124c2f",
+  "sourceCommit": "27ad568d835399ab57e784cec0ef0dba47326a7c",
+  "immutableUrl": "/shared-ui/photo-upload/v1.0.0/index.js",
+  "integration": "vendored-esm",
+  "actions": "disabled-by-owner"
+}

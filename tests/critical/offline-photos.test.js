@@ -3453,3 +3453,23 @@ test("photo preparation waits for storage commit and rejects a late IndexedDB ab
     assert.equal(closed,true);
   }
 });
+
+
+test("Bike Packing adapters use the pinned shared uploader without duplicating its mechanisms", async () => {
+  const engine=await import('../../src/vendor/vniipo-photo-upload-engine.js');
+  const queue=await import('../../src/sync/photo-upload-queue.js');
+  const lock=await import('../../src/sync/photo-upload-lock.js');
+  const preparation=await import('../../src/sync/photos.js');
+  const metadata=await import('../../src/state/item-photos.js');
+  const progress=await import('../../src/sync/photo-upload-flow.js');
+  const manifest=JSON.parse(readFileSync(new URL('../../src/vendor/vniipo-photo-upload-engine-manifest.json',import.meta.url),'utf8'));
+  const bytes=readFileSync(new URL('../../src/vendor/vniipo-photo-upload-engine.js',import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),manifest.sha256);
+  assert.equal(engine.version,manifest.version);
+  assert.equal(engine.contractVersion,manifest.contractVersion);
+  for(const name of ['uploadPhotoBatchQueue','uploadPhotoWithOneRetry'])assert.equal(queue[name],engine[name]);
+  assert.equal(lock.acquirePhotoUploadSlot,engine.acquirePhotoUploadSlot);
+  for(const name of ['materializeSelectedPhotoFile','resizeImageFile','paintImageOnJpegCanvas','clonePhotoUploadBlob'])assert.equal(preparation[name],engine[name]);
+  for(const name of ['markPhotoUploadBatch','photoUploadBatchSummary','syncPhotoRecordFromUpload'])assert.equal(metadata[name],engine[name]);
+  for(const name of ['markPhotoUploadStarted','setPhotoUploadProgress','findEntityPhotoForUpload'])assert.equal(progress[name],engine[name]);
+});
