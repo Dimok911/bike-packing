@@ -1351,7 +1351,9 @@ test("retirement evidence survives many compactions without retaining old large 
 });
 
 test("actual app pilot blocks legacy list writes and file upload bypasses before network access", async () => {
+  const { isManufacturerCatalogDecisionRequest } = await import("../../src/sync/manufacturer-catalog-review.js");
   const dependencies = { personalSavePilotEnabled: () => true, currentUser: { id: "actor-a" },
+    canReviewManufacturerCatalog: () => true, isManufacturerCatalogDecisionRequest,
     isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {} };
   const fetch = appFunction("apiFetch", dependencies);
   const upload = appFunction("apiUploadFormData", dependencies);
