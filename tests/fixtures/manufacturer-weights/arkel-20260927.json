@@ -1,0 +1,1359 @@
+[
+  {
+    "entry": {
+      "id": "arkel-bb-packer-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 5L capacity with roll-top closure<br />\n- 100% waterproof X-Pac Black construction<br />\n- Mounts directly to handlebars (no rack required)<br />\n- Adjustable mounting straps included<br />\n- Roll-top expandable design<br />\n- Lightweight and compact<br />\n- Reflective details for visibility<br />\n- Centered weight placement for stable handling<br />\n- Ideal for bikepacking and touring<br />\n- Durable weather-resistant fabric<br />\n- Quick-access to essentials while riding</span>\n<span class=\"metafield-multi_line_text_field\">5L is perfect for bikepacking essentials: a lightweight down jacket or rain layer, snacks and energy bars for the day, a compact sleeping bag or bivy sack (ultralight models), basic tools and repair kit, or a combination of these items. It&#39;s not meant for bulky items or complete camping setups‚ think of it as supplement storage for items you want within reach, working alongside frame bags and seat bags in a full bikepacking system.</span>\n<div class=\"metafield-rich_text_field\"><p>Position: handlebar<br />\nWeight: 240 g (8 oz)<br />\nVolume: 5 L (305 cu. in.)<br />\n- Made in Canada.<br />\n- 100% Waterproof with a TPU fabric sealed liner.<br />\n- Durable XPac X21 fabric made in the USA.<br />\n- Roll top closure with secure strap and buckle.<br />\n- Reflective logos for safety.<br />\n- Includes compact shoulder strap.</p></div>",
+    "expected": {
+      "weight": 240,
+      "weightOptions": [
+        240
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-bug-pannier-backpack",
+      "brand": "Arkel",
+      "volume": 25,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Dimensions</strong><br />\nPosition: rear<br />\nVolume: 25L (6.6 US Gallons or 1650 cu. in.)<br />\nWeight: 1.2 kg (2.6lbs)</p><ul><li>- Water-resistant construction</li><li>- Made in X-Pac RX30, a waterproof carbon-neutral fabric and strong 1000D Cordura</li><li>- Waterproof YKK zippers</li><li>- Padded 17&#39;&#39; Laptop Sleeve pocket organizer</li><li>- Proudly made in Canada</li></ul><p><strong>Care</strong><br />\nWash the bag by hand or with a delicate brush. Be sure to use a mild detergent. Afterwards, let it air dry.<br />\n<br />\n<strong>Good to know</strong></p><ul><li>- If your rack tubing diameter is bigger than 15mm (and up to 21mm), you will need the Oversized Cam-Lock retrofit kit. <a href=\"https://qom9gpio6oc.typeform.com/to/J5RVLxJG\" target=\"_blank\" title=\"Cam-Lock Size Detector\">More details here</a></li></ul></div>",
+    "expected": {
+      "weight": 1200,
+      "weightOptions": [
+        1200
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-bug-2-0-pannier-backpack",
+      "brand": "Arkel",
+      "volume": 25,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Technical specifications</strong><br />\nPosition: rear rack<br />\nVolume: 25L (6.6 US Gallons or 1650 cu. in.)<br />\nWeight: 1.4 kg (3.1lbs)<br />\n<br />\n<strong>Good to know</strong><br />\nMade with recycled and waterproof EcoPak 400D polyester fabric, C0 DWR and 1000D Nylon<br />\nYKK Zippers <br />\nRain cover made of ripstop nylon orange fabric included<br />\nPadded laptop sleeve pocket organizer that fits up to 17&#39;&#39; laptop.<br />\nIf your rack tubing diameter is bigger than 15mm (and up to 21mm), you will need the Oversized Cam-Lock retrofit kit. <a href=\"/pages/cam-lock-attachment-system\" target=\"_blank\" title=\"Cam-Lock Size Detector\">More details here</a></p><p><strong>Care</strong><br />\nWash the bag by hand or with a delicate brush. Be sure to use a mild detergent. Let it air dry.</p></div>",
+    "expected": {
+      "weight": 1400,
+      "weightOptions": [
+        1400
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-burrito-handlebar-bag-2l",
+      "sourceProductId": "arkel-burrito-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 2,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% Waterproof<br />\n- One hand closure with Fidlock magnetic buckle <br />\n- Very light for no weight compromise<br />\n- Side mesh pockets<br />\n- Semi-rigid bag that keeps its shape and allows you to find your things easily<br />\n- Easy installation without tools<br />\n- Handmade in Canada.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Burrito 2 L:</strong><br />\n• Weight: 230 g (8.11 oz)<br />\n• Volume: 2 L (122.05 cu. in.)<br />\n• Diameter: 12 cm (4.72&quot;)<br />\n• Length: 24 cm (9.44&quot;)<br />\n• Kit include the bag and 2 8&#39;&#39; TPU straps<br />\n• Minimum clearance from handlebar to wheel: 12 cm (4.72&quot;)<br />\n<br />\n<strong>Burrito 4.5 L:</strong><br />\n• Weight: 270 g (9.53 oz)<br />\n• Volume: 4.5 L (274.6 cu. in.)<br />\n• Diameter: 15.5 cm (6.1&quot;)<br />\n• Length: 25 cm (9.84&quot;)<br />\n• Kit include the bag and 2 8&#39;&#39; TPU straps<br />\n• Minimum clearance from handlebar to wheel: 17 cm (6.7&quot;)</p></div>",
+    "expected": {
+      "weight": 230,
+      "weightOptions": [
+        230
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-burrito-handlebar-bag-4-5l",
+      "sourceProductId": "arkel-burrito-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 4.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% Waterproof<br />\n- One hand closure with Fidlock magnetic buckle <br />\n- Very light for no weight compromise<br />\n- Side mesh pockets<br />\n- Semi-rigid bag that keeps its shape and allows you to find your things easily<br />\n- Easy installation without tools<br />\n- Handmade in Canada.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Burrito 2 L:</strong><br />\n• Weight: 230 g (8.11 oz)<br />\n• Volume: 2 L (122.05 cu. in.)<br />\n• Diameter: 12 cm (4.72&quot;)<br />\n• Length: 24 cm (9.44&quot;)<br />\n• Kit include the bag and 2 8&#39;&#39; TPU straps<br />\n• Minimum clearance from handlebar to wheel: 12 cm (4.72&quot;)<br />\n<br />\n<strong>Burrito 4.5 L:</strong><br />\n• Weight: 270 g (9.53 oz)<br />\n• Volume: 4.5 L (274.6 cu. in.)<br />\n• Diameter: 15.5 cm (6.1&quot;)<br />\n• Length: 25 cm (9.84&quot;)<br />\n• Kit include the bag and 2 8&#39;&#39; TPU straps<br />\n• Minimum clearance from handlebar to wheel: 17 cm (6.7&quot;)</p></div>",
+    "expected": {
+      "weight": 270,
+      "weightOptions": [
+        270
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-commuter-urban-pannier",
+      "brand": "Arkel",
+      "volume": 23,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">*Sold as a single pannier*<br />\n<br />\nSpecs for 1 pannier :<br />\nPosition : Front or rear rack<br />\nWeight: 1.7 kg (2.3 lbs)<br />\nVolume: 23 L (1400 cu. in.)<br />\nDimensions : 43 X 15 X 31 cm (17&#39;&#39;X 6&#39;&#39; X 12&#39;&#39;) see picture <br />\n<br />\n- Equipped with our Cam-Lock® attachment system.<br />\n- Water resistant with inside wholly lined with waterproof fabric.<br />\n- Fidlock magnetic snap buckle.<br />\n- The exterior fabric is a mix of challenging and durable 1000D Cordura nylon and Sunbrella acrylic, used in awnings and boat covers.<br />\n- A built-in laptop compartment can hold up to 15 laptops.<br />\n- The internal backplate protects the laptop against shocks on the bike and when set on the floor.<br />\n- Deluxe shoulder strap.<br />\n- 2 outside zippered pockets for easy storage and access to keys, wallet, and cell phone.<br />\n- Reflective material on all sides.<br />\n- Made in Canada.</span>",
+    "expected": {
+      "weight": 1700,
+      "weightOptions": [
+        1700
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dolphin-16l-waterproof-pannier-pair",
+      "sourceProductId": "arkel-dolphin-16l-waterproof-pannier",
+      "brand": "Arkel",
+      "volume": 16,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Yes! The Dolphin 16L is designed for both front and rear rack use. Its moderate 16L capacity per bag makes it ideal for front loading, helping balance your bike&#39;s weight distribution on long tours. The Cam-Lock system works on standard front racks, and the bags sit low enough to maintain good handling.</span>\n<div class=\"metafield-rich_text_field\"><p>Positions: front or rear<br />\n<br />\nSpecs for the pair of bags:<br />\n-Weight: 1.8 kg (3.9 lbs)<br />\n-Volume: 32 L (1850 cu. in.)<br />\n<br />\nSpecs for 1 bag:<br />\n-Weight: 0.9 kg (1.95 lbs)<br />\n-Volume: 16 L (925 cu. in.)<br />\n<br />\n- Fabric: Ripstop Nylon fabric 420D with PU coating.<br />\n- UHMWPE Plastic Panel against your rack (Serviceable)<br />\n- Cam-lock attachment system to fit all type of racks solidly for a lifetime (Serviceable)<br />\n- Bags ethically made in Vietnam.<br />\n- Assembly of all components made in Canada</p></div>",
+    "expected": {
+      "weight": 900,
+      "weightOptions": [
+        900
+      ],
+      "totalWeight": 1800
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dolphin-16l-waterproof-pannier-single",
+      "sourceProductId": "arkel-dolphin-16l-waterproof-pannier",
+      "brand": "Arkel",
+      "volume": 16,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Yes! The Dolphin 16L is designed for both front and rear rack use. Its moderate 16L capacity per bag makes it ideal for front loading, helping balance your bike&#39;s weight distribution on long tours. The Cam-Lock system works on standard front racks, and the bags sit low enough to maintain good handling.</span>\n<div class=\"metafield-rich_text_field\"><p>Positions: front or rear<br />\n<br />\nSpecs for the pair of bags:<br />\n-Weight: 1.8 kg (3.9 lbs)<br />\n-Volume: 32 L (1850 cu. in.)<br />\n<br />\nSpecs for 1 bag:<br />\n-Weight: 0.9 kg (1.95 lbs)<br />\n-Volume: 16 L (925 cu. in.)<br />\n<br />\n- Fabric: Ripstop Nylon fabric 420D with PU coating.<br />\n- UHMWPE Plastic Panel against your rack (Serviceable)<br />\n- Cam-lock attachment system to fit all type of racks solidly for a lifetime (Serviceable)<br />\n- Bags ethically made in Vietnam.<br />\n- Assembly of all components made in Canada</p></div>",
+    "expected": {
+      "weight": 900,
+      "weightOptions": [
+        900
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dolphin-24l-waterproof-pannier-pair",
+      "sourceProductId": "arkel-dolphin-24l-waterproof-pannier",
+      "brand": "Arkel",
+      "volume": 24,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">While the Dolphin 24L can physically mount on front racks, we recommend them primarily for rear use due to their larger size (24L per bag). The weight and volume work best on rear racks for balanced handling. For front loading, consider the Dolphin 16L, which is specifically designed for front or rear use and provides better front-end handling with its moderate capacity.</span>\n<span class=\"metafield-multi_line_text_field\">For fully loaded touring, pair Dolphin 16L on your front rack (32L total) with Dolphin 24L on your rear rack (48L total) for a complete 80L system. This front/rear combination provides excellent weight distribution, keeps your bike balanced and stable, and offers organized storage for extended adventures. The complete kit handles everything from lightweight summer touring to winter expeditions with bulky gear.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: Rear rack </strong></p><p><strong> </strong><br />\nTotal Volume (per bag): 24L <br />\nMain pocket volume : up to 8L  <br />\nFront pocket volume : up to 20L <br />\nWeight (per bag):  1.1 kg <br />\nVolume (pair): 48L <br />\nWeight (pair):  2.2 kg <br />\nColor : Black <br />\n<br />\n<strong>Materials:</strong><br />\n- Fabric: 420D Ripstop Nylon with PU coating<br />\n- Fully taped seams for 100% waterproofing<br />\n- UHMWPE plastic back panel (serviceable)<br />\n- Cam-Lock with aluminum hooks (serviceable) <br />\n<br />\n<strong>Manufacturing:</strong><br />\n- Ethically made in Vietnam<br />\n- Cam-Lock, plastic panel and bag assembly in Canada<br />\n<br />\n<strong>Compatibility:</strong><br />\n- Fits all racks thanks to the Cam-Lock system<br />\n- Oversized hooks available for larger tubing (15-21mm) <br />\n<br />\n<strong>Sold as:</strong><br />\nSingle pannier (sold individually) or in pair. </p></div>",
+    "expected": {
+      "weight": 1100,
+      "weightOptions": [
+        1100
+      ],
+      "totalWeight": 2200
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dolphin-24l-waterproof-pannier-single",
+      "sourceProductId": "arkel-dolphin-24l-waterproof-pannier",
+      "brand": "Arkel",
+      "volume": 24,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">While the Dolphin 24L can physically mount on front racks, we recommend them primarily for rear use due to their larger size (24L per bag). The weight and volume work best on rear racks for balanced handling. For front loading, consider the Dolphin 16L, which is specifically designed for front or rear use and provides better front-end handling with its moderate capacity.</span>\n<span class=\"metafield-multi_line_text_field\">For fully loaded touring, pair Dolphin 16L on your front rack (32L total) with Dolphin 24L on your rear rack (48L total) for a complete 80L system. This front/rear combination provides excellent weight distribution, keeps your bike balanced and stable, and offers organized storage for extended adventures. The complete kit handles everything from lightweight summer touring to winter expeditions with bulky gear.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: Rear rack </strong></p><p><strong> </strong><br />\nTotal Volume (per bag): 24L <br />\nMain pocket volume : up to 8L  <br />\nFront pocket volume : up to 20L <br />\nWeight (per bag):  1.1 kg <br />\nVolume (pair): 48L <br />\nWeight (pair):  2.2 kg <br />\nColor : Black <br />\n<br />\n<strong>Materials:</strong><br />\n- Fabric: 420D Ripstop Nylon with PU coating<br />\n- Fully taped seams for 100% waterproofing<br />\n- UHMWPE plastic back panel (serviceable)<br />\n- Cam-Lock with aluminum hooks (serviceable) <br />\n<br />\n<strong>Manufacturing:</strong><br />\n- Ethically made in Vietnam<br />\n- Cam-Lock, plastic panel and bag assembly in Canada<br />\n<br />\n<strong>Compatibility:</strong><br />\n- Fits all racks thanks to the Cam-Lock system<br />\n- Oversized hooks available for larger tubing (15-21mm) <br />\n<br />\n<strong>Sold as:</strong><br />\nSingle pannier (sold individually) or in pair. </p></div>",
+    "expected": {
+      "weight": 1100,
+      "weightOptions": [
+        1100
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dry-lites-saddle-bags-28l",
+      "sourceProductId": "arkel-dry-lites-saddle-bags",
+      "brand": "Arkel",
+      "volume": 28,
+      "soldAsSet": true,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% waterproof with sealed seams<br />\n- 540g Lightweight roll-top design<br />\n- Available in 28L and 36L sizes<br />\n- Durable &amp; recycled 420D ripstop waterproof fabric construction<br />\n- Minimalist design reduces weight<br />\n- Mounts on rear rack and some front racks<br />\n- Reflective logo for visibility<br />\n- Ideal for bikepacking and touring</span>\n<span class=\"metafield-multi_line_text_field\">Hit the road with Arkel Dry-Lites, the lightest waterproof bicycle panniers on the market. They are 100% waterproof, have a sleek design, can accommodate a volume of 28 liters, and are an incredible featherweight of 540 grams.</span>\n<span class=\"metafield-multi_line_text_field\">Dry-Lites use an efficient and lightweight hook and bungee system paired with tensioner buckles. The system ensures panniers will never come detached from the rack, even in the toughest road conditions.</span>\n<span class=\"metafield-multi_line_text_field\">The 28L size is perfect for light and fast adventures, weekend trips, credit card touring, or when paired with fork bags and top trunk bag for additional storage. The 36L size is ideal for self-supported touring where you need maximum capacity for camping gear, clothing, and supplies. Both sizes use the same lightweight construction, so choose based on your typical trip length, travelling season and gear volume.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dry-Lite 28L<br />\n</strong>Weight: 540 g (19 oz)<br />\nVolume: 28 L (1708 cu. in.) for both bags<br />\nDimensions per bag (Pack): 14.5 x 11 x 5.5 (37cm x 28cm x 14cm)<br />\nRecommended Maximum load: 4.5 kg - 8 Kg / 10 - 18 pounds.<br />\n<br />\n<strong>Dry-Lite 36L<br />\n</strong>Weight: 850 g (30 oz)<br />\nVolume: 36 L (2197 cu. in.) for both bags<br />\nDimensions per bag (Pack): 16.9 x 14.5 x 7 (43cm x 37cm x 18cm)<br />\nRecommended Maximum load: 5.5 kg - 9 Kg / 12 - 20 pounds.<br />\n<br />\n- Featherweight 420D Ripstop Nylon with PU coating<br />\n- 100% waterproof roll-top design<br />\n- Reflectors on elastic stripe for safety and location<br />\n- Rolls tight for easy storage<br />\n- Attached and detached from your rack in a jiffy<br />\n- Built for lightness and performance<br />\n- Design in Canada<br />\n- Made in Vietnam</p></div>",
+    "expected": {
+      "weight": 540,
+      "weightOptions": [
+        540
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-dry-lites-saddle-bags-36l",
+      "sourceProductId": "arkel-dry-lites-saddle-bags",
+      "brand": "Arkel",
+      "volume": 36,
+      "soldAsSet": true,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% waterproof with sealed seams<br />\n- 540g Lightweight roll-top design<br />\n- Available in 28L and 36L sizes<br />\n- Durable &amp; recycled 420D ripstop waterproof fabric construction<br />\n- Minimalist design reduces weight<br />\n- Mounts on rear rack and some front racks<br />\n- Reflective logo for visibility<br />\n- Ideal for bikepacking and touring</span>\n<span class=\"metafield-multi_line_text_field\">Hit the road with Arkel Dry-Lites, the lightest waterproof bicycle panniers on the market. They are 100% waterproof, have a sleek design, can accommodate a volume of 28 liters, and are an incredible featherweight of 540 grams.</span>\n<span class=\"metafield-multi_line_text_field\">Dry-Lites use an efficient and lightweight hook and bungee system paired with tensioner buckles. The system ensures panniers will never come detached from the rack, even in the toughest road conditions.</span>\n<span class=\"metafield-multi_line_text_field\">The 28L size is perfect for light and fast adventures, weekend trips, credit card touring, or when paired with fork bags and top trunk bag for additional storage. The 36L size is ideal for self-supported touring where you need maximum capacity for camping gear, clothing, and supplies. Both sizes use the same lightweight construction, so choose based on your typical trip length, travelling season and gear volume.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dry-Lite 28L<br />\n</strong>Weight: 540 g (19 oz)<br />\nVolume: 28 L (1708 cu. in.) for both bags<br />\nDimensions per bag (Pack): 14.5 x 11 x 5.5 (37cm x 28cm x 14cm)<br />\nRecommended Maximum load: 4.5 kg - 8 Kg / 10 - 18 pounds.<br />\n<br />\n<strong>Dry-Lite 36L<br />\n</strong>Weight: 850 g (30 oz)<br />\nVolume: 36 L (2197 cu. in.) for both bags<br />\nDimensions per bag (Pack): 16.9 x 14.5 x 7 (43cm x 37cm x 18cm)<br />\nRecommended Maximum load: 5.5 kg - 9 Kg / 12 - 20 pounds.<br />\n<br />\n- Featherweight 420D Ripstop Nylon with PU coating<br />\n- 100% waterproof roll-top design<br />\n- Reflectors on elastic stripe for safety and location<br />\n- Rolls tight for easy storage<br />\n- Attached and detached from your rack in a jiffy<br />\n- Built for lightness and performance<br />\n- Design in Canada<br />\n- Made in Vietnam</p></div>",
+    "expected": {
+      "weight": 850,
+      "weightOptions": [
+        850
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage-5l",
+      "sourceProductId": "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage",
+      "brand": "Arkel",
+      "volume": 5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Old Man Mountain FLiP Cage secure mounting<br />\n- Quarter turn fast bag installation<br />\n- Waterproof construction, sealed liner<br />\n- Lightweight and strapless solution<br />\n- Reflective logos for safety<br />\n- Made In Canada with carbon neutral &amp; recycled fabric.<br />\n- Sold as single units</span>\n<div class=\"metafield-rich_text_field\"><h3><strong>Bag specifications </strong></h3><ul><li>-Per unit - volume : 5L (305cu. in.), 7 L (427 cu. in.)</li><li>-Weight of bag : 245g (0.54 lbs) - 270g (0.60 lbs)</li><li>-Height : 43cm (17&#39;&#39;) -  45 cm (17 1/2 &#39;&#39;)</li><li>-Width : 20 cm (8&#39;&#39;) - 22 cm (8 1/2 &#39;&#39;)</li></ul><p></p><ul><li>- <strong>Remove the cage foot when using with Forkpacker bags</strong>.  </li></ul><h3><strong>FLiP Cage specifications </strong></h3><ul><li>-94 grams without feet, 140g with foot</li><li>- 215mm tall (8.5 inches) without the base foot and 240mm-254mm tall (9.4-10 inches) with the cargo foot installed, with a width of about 62mm–70mm (roughly 2.5–2.75 inches)</li><li>-Made of rugged injected molded nylon</li><li>-Fits on carbon or steel front forks with 3 inserts parallel to the fork. </li><li>- Fork with inserts at angle 30 or 45 degrees are not compatible with the Forkpacker bags </li><li>- Removable Cargo Feet to mount regular Dry-bags with TPU strap attachment. </li><li>- <strong>Remove the cage foot when using with Forkpacker bags</strong>.  </li><li>- Total weight capacity up to 4 kg / 9 pounds, refer to your bike and fork manufacturer specs. </li><li>- <strong>Mounting Bolts not included</strong> as the usually come with the bike or length is specific to each fork model. Check with your local store.  Bolt specs Example : M5 X 16mm Soc. Cap - Stainless.   </li><li>- <strong>Weight can influence handling, be careful.</strong>   </li></ul></div>",
+    "expected": {
+      "weight": 245,
+      "weightOptions": [
+        245
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage-7l",
+      "sourceProductId": "arkel-arkel-forkpacker-omm-flip-fork-bag-and-cage",
+      "brand": "Arkel",
+      "volume": 7,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Old Man Mountain FLiP Cage secure mounting<br />\n- Quarter turn fast bag installation<br />\n- Waterproof construction, sealed liner<br />\n- Lightweight and strapless solution<br />\n- Reflective logos for safety<br />\n- Made In Canada with carbon neutral &amp; recycled fabric.<br />\n- Sold as single units</span>\n<div class=\"metafield-rich_text_field\"><h3><strong>Bag specifications </strong></h3><ul><li>-Per unit - volume : 5L (305cu. in.), 7 L (427 cu. in.)</li><li>-Weight of bag : 245g (0.54 lbs) - 270g (0.60 lbs)</li><li>-Height : 43cm (17&#39;&#39;) -  45 cm (17 1/2 &#39;&#39;)</li><li>-Width : 20 cm (8&#39;&#39;) - 22 cm (8 1/2 &#39;&#39;)</li></ul><p></p><ul><li>- <strong>Remove the cage foot when using with Forkpacker bags</strong>.  </li></ul><h3><strong>FLiP Cage specifications </strong></h3><ul><li>-94 grams without feet, 140g with foot</li><li>- 215mm tall (8.5 inches) without the base foot and 240mm-254mm tall (9.4-10 inches) with the cargo foot installed, with a width of about 62mm–70mm (roughly 2.5–2.75 inches)</li><li>-Made of rugged injected molded nylon</li><li>-Fits on carbon or steel front forks with 3 inserts parallel to the fork. </li><li>- Fork with inserts at angle 30 or 45 degrees are not compatible with the Forkpacker bags </li><li>- Removable Cargo Feet to mount regular Dry-bags with TPU strap attachment. </li><li>- <strong>Remove the cage foot when using with Forkpacker bags</strong>.  </li><li>- Total weight capacity up to 4 kg / 9 pounds, refer to your bike and fork manufacturer specs. </li><li>- <strong>Mounting Bolts not included</strong> as the usually come with the bike or length is specific to each fork model. Check with your local store.  Bolt specs Example : M5 X 16mm Soc. Cap - Stainless.   </li><li>- <strong>Weight can influence handling, be careful.</strong>   </li></ul></div>",
+    "expected": {
+      "weight": 270,
+      "weightOptions": [
+        270
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-gt-18-classic-touring-pannier-pair",
+      "sourceProductId": "arkel-gt-18-classic-touring-pannier",
+      "brand": "Arkel",
+      "volume": 18,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Yes, GT-18 panniers (36L total for pair) provide sufficient capacity for lightweight touring, credit-card touring, summer trips with minimal gear, or bikepacking-style setups where you supplement with frame bags and handlebar bags. They&#39;re not ideal as the sole panniers for long expeditions requiring maximum gear, cold-weather tours with bulky sleeping systems, or extended remote touring. But for many touring scenarios, GT-18 alone handles your needs excellently.</span>\n<div class=\"metafield-rich_text_field\"><p>Positions: front or rear racks<br />\nSold as a unit.<br />\nWeight: 1.2 kg (2.7 lbs)<br />\nVolume: 18 L (1100 cu. in.) for 1 unit.<br />\n<br />\n- Available in Cordura 1000D fabric.<br />\n- Regular version of the backpack GT-18BP.<br />\n- Designed as front panniers to compliment our GT-54 for fully loaded touring.<br />\n- The rectangular shape offers the most versatility in terms of lodging capacity.<br />\n- Comes with a fully waterproof integrated liner bag inside the main compartment.<br />\n- The exterior mesh pocket is great for stashing that rain jacket after a summer shower.<br />\n- Comes as a single unit or as a pair.<br />\n- Made in Canada.<br />\n- The Cam-Lock® Attachment System is very strong and can hold the pannier firmly on the rack.</p></div>",
+    "expected": {
+      "weight": 1200,
+      "weightOptions": [
+        1200
+      ],
+      "totalWeight": 2400
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-gt-18-classic-touring-pannier-single",
+      "sourceProductId": "arkel-gt-18-classic-touring-pannier",
+      "brand": "Arkel",
+      "volume": 18,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Yes, GT-18 panniers (36L total for pair) provide sufficient capacity for lightweight touring, credit-card touring, summer trips with minimal gear, or bikepacking-style setups where you supplement with frame bags and handlebar bags. They&#39;re not ideal as the sole panniers for long expeditions requiring maximum gear, cold-weather tours with bulky sleeping systems, or extended remote touring. But for many touring scenarios, GT-18 alone handles your needs excellently.</span>\n<div class=\"metafield-rich_text_field\"><p>Positions: front or rear racks<br />\nSold as a unit.<br />\nWeight: 1.2 kg (2.7 lbs)<br />\nVolume: 18 L (1100 cu. in.) for 1 unit.<br />\n<br />\n- Available in Cordura 1000D fabric.<br />\n- Regular version of the backpack GT-18BP.<br />\n- Designed as front panniers to compliment our GT-54 for fully loaded touring.<br />\n- The rectangular shape offers the most versatility in terms of lodging capacity.<br />\n- Comes with a fully waterproof integrated liner bag inside the main compartment.<br />\n- The exterior mesh pocket is great for stashing that rain jacket after a summer shower.<br />\n- Comes as a single unit or as a pair.<br />\n- Made in Canada.<br />\n- The Cam-Lock® Attachment System is very strong and can hold the pannier firmly on the rack.</p></div>",
+    "expected": {
+      "weight": 1200,
+      "weightOptions": [
+        1200
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-gt-18bp-convertible-backpack-pannier",
+      "brand": "Arkel",
+      "volume": 18,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>Positions: front or rear racks<br />\nWeight: 1.2 kg (2.7 lbs)<br />\nVolume: 18 L (1100 cu. in.)<br />\n<br />\n- Available in Cordura 1000D fabric.<br />\n- Backpack version of the regular GT-18.<br />\n- Designed as front panniers to compliment our GT-54 for fully loaded touring.<br />\n- The rectangular shape offers the most versatility in terms of lodging capacity.<br />\n- Comes with a fully waterproof integrated liner bag inside the main compartment.<br />\n- The exterior mesh pocket is great for storing that rain jacket after a summer shower.<br />\n- Comes as a single unit or as a pair.<br />\n- Made in Canada.<br />\n- The Cam-Lock® Attachment System is very strong and can hold the pannier firmly on the rack.</p></div>",
+    "expected": {
+      "weight": 1200,
+      "weightOptions": [
+        1200
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-gt-54-classic-touring-panniers",
+      "brand": "Arkel",
+      "volume": 54,
+      "soldAsSet": true,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">How do you combine the advantages of multiple functional zippered pockets with total waterproofness? We achieved the absolute best of both worlds by adding a 100% waterproof liner inside the whole main compartment of the GT-54. The liner is made of lightweight, fully waterproof, polyurethane-coated nylon. The zippers on the liner allow for full frontal access to the main compartment in the same fashion as the front panel of the bag itself. </span>\n<span class=\"metafield-multi_line_text_field\">While the GT-54 can physically hold substantial weight, we recommend keeping loads reasonable for comfortable riding and bike component longevity. Most expedition cyclists load 15-20 lbs (7-9 kg) per pannier, totaling 30-40 lbs (14-18 kg) for the pair. The bags structurally handle more, but excessive weight affects bike handling and component wear. Proper weight distribution between front and rear panniers (if running front bags) is more important than maximum weight capacity.</span>\n<span class=\"metafield-multi_line_text_field\">Yes, the GT-54&#39;s internal aluminum frame is removable if you want to reduce weight for ultralight touring or bikepacking-style trips. Similarly, the rigid UHMWPE plastic panel can be trimmed or removed by the customer. Removing these components saves 200-400g per pannier but reduces structural support‚ the bags will sag more when loaded and be harder to pack efficiently. Most touring cyclists keep the frame/panel for the organizational benefits, but weight-conscious riders can customize.</span>\n<div class=\"metafield-rich_text_field\"><p>Position: Rear Racks<br />\nWeight: 3408 g (7.3 lbs)<br />\nVolume: 54 L (3300 cu. in.)<br />\n<br />\n- Available in Cordura 1000D fabric.<br />\n- Reflective bands on the rear pocket and the sides.<br />\n- Compression straps: upper safety strap and lower strap.<br />\n- Waist Pack pocket.<br />\n- The butterfly pocket is located on the main panel of the pannier.<br />\n- Hidden pocket behind the butterfly pocket for sun lotion or other quick-access items.<br />\n- An adjustable and removable tube pocket is mounted on Velcro.<br />\n- Full-length dual heavy-duty zippers for comprehensive access.<br />\n- Flip Flop Pocket.<br />\n- Aluminum internal frame and a rigid bottom shelf (unique!) prevent sagging. It also allows the panniers to fold flat for closet storage.</p></div>",
+    "expected": {
+      "weight": 3408,
+      "weightOptions": [
+        3408
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-handlebar-bag-7-5l",
+      "sourceProductId": "arkel-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 7.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Position: handlebar<br />\n<br />\nSmall<br />\nVolume: 7.5 L <br />\nWeight: 1080 g (2.38 Lbs)<br />\n<br />\nLarge<br />\nVolume: 9.0 L<br />\nWeight: 1230g (2.7 lbs)<br />\n<br />\nFits round diameter bars of 22.2 up to 31.8 mm<br />\n<br />\nMaximum weight capacity is suggested to be below 15 lbs, mainly for handling and safety purposes.<br />\nArkel mounting system and bag construction allow heavy loads compared to the same category product on the market.<br />\n<br />\n- Includes adjustable solid aluminum/stainless steel handlebar mounts<br />\n- 100% waterproof bag with main compartment, combining RF welded seams and traditional sewing- Removable waterproof liner<br />\n- Compact shoulder strap to carry your bag when travelling<br />\n<br />\nAdditional Options:<br />\n- Increase your visibility and protect the front and side pockets from the elements with an Arkel rain cover<br />\n- Add a map case  (note: map case is no longer included on our handlebar bags)<br />\n- Additional mounting brackets available in accessories to swap bar bags from bike to bike<br />\n<br />\n<br />\n</span>",
+    "expected": {
+      "weight": 1080,
+      "weightOptions": [
+        1080
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-handlebar-bag-9l",
+      "sourceProductId": "arkel-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 9,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Position: handlebar<br />\n<br />\nSmall<br />\nVolume: 7.5 L <br />\nWeight: 1080 g (2.38 Lbs)<br />\n<br />\nLarge<br />\nVolume: 9.0 L<br />\nWeight: 1230g (2.7 lbs)<br />\n<br />\nFits round diameter bars of 22.2 up to 31.8 mm<br />\n<br />\nMaximum weight capacity is suggested to be below 15 lbs, mainly for handling and safety purposes.<br />\nArkel mounting system and bag construction allow heavy loads compared to the same category product on the market.<br />\n<br />\n- Includes adjustable solid aluminum/stainless steel handlebar mounts<br />\n- 100% waterproof bag with main compartment, combining RF welded seams and traditional sewing- Removable waterproof liner<br />\n- Compact shoulder strap to carry your bag when travelling<br />\n<br />\nAdditional Options:<br />\n- Increase your visibility and protect the front and side pockets from the elements with an Arkel rain cover<br />\n- Add a map case  (note: map case is no longer included on our handlebar bags)<br />\n- Additional mounting brackets available in accessories to swap bar bags from bike to bike<br />\n<br />\n<br />\n</span>",
+    "expected": {
+      "weight": 1230,
+      "weightOptions": [
+        1230
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-haul-it-versatile-pannier",
+      "brand": "Arkel",
+      "volume": 25,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">While the Haul-It can physically hold 25L+, we recommend keeping loads under 15kg (33 lbs) per pannier to maintain comfortable riding balance and stay within the Cam-Lock® system&#39;s optimal performance range. The bag&#39;s flexible design excels at carrying bulky but moderately weighted items like groceries, camping gear, or sports equipment.</span>\n<div class=\"metafield-rich_text_field\"><p>Weight: 750 gr / 1.65 lbs<br />\nDimensions: 13 X 13 X 7 in. / 33 X 33 X 18 cm<br />\nFolded Dimensions: 13 X 7 X 3 in. / 33 X 18 X 7 cm<br />\n<br />\n- Zippered convenience pocket for keys, wallet, or phone.<br />\n- Folds for easy carry or storage.<br />\n- Plenty of reflective front and back.<br />\n- Made of 1000D US made Cordura®.<br />\n- Arkel&#39;s exclusive Cam-Lock® mounting system.<br />\n- Made In Canada.</p></div>",
+    "expected": {
+      "weight": 750,
+      "weightOptions": [
+        750
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-heavy-duty-tote-bag",
+      "brand": "Arkel",
+      "volume": 0,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "",
+    "expected": null
+  },
+  {
+    "entry": {
+      "id": "arkel-le-petit-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 1,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Waterproof fabric with water-resistant construction<br />\n- Internal mesh pocket keeps items organized<br />\n- Includes 2 TPU anti slip straps <br />\n- Tough YKK waterproof zipper<br />\n- Handmade in Canada from X-Pac carbon neutral and recycled fabrics<br />\n- Available in 6 color options<br />\n- Lightweight at only 240g (8 oz)</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: Handlebar </strong><br />\nWeight: 240 g (8 oz) <br />\nVolume: 1L (61 cu. in.) <br />\nLength: 20 cm (7.9 inches) <br />\nDiameter: 9 cm (3.5 inches)<br />\n</p><p>Waterproof fabrics used but seams are not tape. </p><p><br />\n<strong>Fabric Options:</strong><br />\n- XPac RX21: Black<br />\n- XPac RX30: Ocean Blue, Cayenne, Mountain Brown<br />\n- XPac X50 Tactical: Wolf Grey (Stealth Grey), Ranger Green</p></div>",
+    "expected": {
+      "weight": 240,
+      "weightOptions": [
+        240
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-metropolitan-urban-pannier",
+      "brand": "Arkel",
+      "volume": 25,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Rear Rack</strong><br />\n<br />\n<strong>Specs</strong></p><p>Volume: 25 L (1525 cu. in.<br />\nWeight: 1.27 kg (2.8 lbs)</p><p><strong>Materials</strong></p><p>- Made with X-Pac RX30 and 1000D Cordura® fabric<br />\n- X-Pac RX30 Fabric is carbon neutral and made of US recycled material<br />\n- Waterproof C0 PU laminated internal nylon liner with fully taped seams<br />\n- Fidlock magnetic buckle on the front pocket<br />\n- YKK #8 zipper</p></div>",
+    "expected": {
+      "weight": 1270,
+      "weightOptions": [
+        1270
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-metropolitan-waterproof-rolltop-backpack",
+      "brand": "Arkel",
+      "volume": 25,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Material: XPac fabric (ultra-lightweight, waterproof, and abrasion-resistant)<br />\nWater Protection: Roll-top closure + YKK water-resistant zipper + Waterproof sealed nylon fabric liner. <br />\nCapacity: up to 25L (expandable with roll-top)<br />\nLaptop Compatibility: Padded organizer fits up to 17” laptop, with additional storage for accessories<br />\nLock Holster: Built-in U-lock storage for quick and easy access<br />\nClosure System: Fidlock magnetic buckle + YKK-zippered main compartment<br />\nStraps: Ergonomic, adjustable, and breathable<br />\nReflectivity: 360-degree reflective details for night visibility<br />\n<br />\nHeight: 30.5 cm (15.5 in)<br />\nLength: 32 cm (12.5 in)<br />\nWidth: 13 cm (5 in)<br />\nWeight: 930 g (2 lbs)<br />\nCapacity : up to 25L  (1525.59 cubic inches - 6.6 gallons) <br />\n<br />\nMade in Canada </span>",
+    "expected": {
+      "weight": 930,
+      "weightOptions": [
+        930
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-mont-royal-sling-bag",
+      "brand": "Arkel",
+      "volume": 1.4,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>Capacity: 1.4L<br />\nMaterial: XPac fabric (recycled, ultra-lightweight, waterproof, abrasion-resistant) or Cordura 1000D Nylon<br />\nWater Protection: Waterproof fabric (XPac) + YKK waterproof zippers (Seams are not tape)<br />\nClosure System: YKK zippered main compartment<br />\nCompartments: Main compartment with YKK zipper for secure storage.<br />\nInternal organizer for small essentials.<br />\nMagnetic phone pocket for easy access<br />\n<br />\nDimensions:<br />\nHeight: 23 cm (9 in)<br />\nWidth: 12 cm (4.7 in)<br />\nDepth: 5 cm (2 in)<br />\nWeight: 175 g (0.39 lbs)<br />\n<br />\nStrap: Adjustable 1.5&#39;&#39; shoulder strap for a comfortable fit<br />\nReflectivity &amp; Safety Features: Reflective details for night visibility</p></div>",
+    "expected": {
+      "weight": 175,
+      "weightOptions": [
+        175
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-12-5l-pair",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 12.5,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 775,
+      "weightOptions": [
+        700,
+        775
+      ],
+      "totalWeight": 1550
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-12-5l-single",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 12.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 775,
+      "weightOptions": [
+        700,
+        775
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-17-5l-pair",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 17.5,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 1060,
+      "weightOptions": [
+        930,
+        1060
+      ],
+      "totalWeight": 2120
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-17-5l-single",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 17.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 1060,
+      "weightOptions": [
+        930,
+        1060
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-22-5l-pair",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 22.5,
+      "soldAsSet": true,
+      "specificationBasis": "per-bag",
+      "setQuantity": 2,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 1145,
+      "weightOptions": [
+        1010,
+        1145
+      ],
+      "totalWeight": 2290
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-panniers-22-5l-single",
+      "sourceProductId": "arkel-orca-panniers",
+      "brand": "Arkel",
+      "volume": 22.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>&quot;Waterproof, bombproof, 22.5L capacity and a 33lb weight limit. This thing is a dream. &quot; <br />\n<br />\n<strong>- Wellesley</strong></p></div>\n<span class=\"metafield-multi_line_text_field\">The Orca 2 has our renowned Cam-Lock® attachment system and is famous for its durability, versatility and waterproofness. The Orca 2 has a side or top roll-top closure attachment design, with reinforced bottom and lower edges. It has a second rear hook position for better rack compatibility, and includes a compact shoulder strap. <br />\n<br />\nThe Dry-Lite pannier is a more simple design with less features. It has a simple attachment system and is essentially one big bag, so it has become very popular with people looking to skimp on weight for cycling adventures.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Orca 25</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 25 L (1,500 cu. in.)<br />\nVolume for the unit: 12.5 L (750 cu. in.)<br />\nWeight for the pair: 1.55 kg (3.4 lbs) or 1.4 kg (3 lbs) without the removable internal cradle<br />\nWeight for the unit: 0.775 kg (1.7 lbs) or 0.7 kg (1.5 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 35</strong><br />\nPosition: Front or rear rack<br />\nVolume for the pair: 35 L (2,140 cu. in.)<br />\nVolume for the unit: 17.5 L (1,070 cu. in.)<br />\nWeight for the pair: 2.12 kg (4.6 lbs) or 1.86 kg (4.1 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.06 kg (2.3 lbs) or 0.93 kg (2.05 lbs) without the removable internal cradle<br />\n <br />\n<strong>Orca 45</strong><br />\nPosition: Rear rack only<br />\nVolume for the pair: 45 L (2,750 cu. in.)<br />\nVolume for the unit: 22.5 L (1,375 cu. in.)<br />\nWeight for the pair: 2.29 kg (5.5 lbs) or 2.02 kg (4.56 lbs) without the removable internal cradle<br />\nWeight for the unit: 1.145 kg (2.75 lbs) or 1.01 kg (2.28 lbs) without the removable internal cradle</p><p><em><strong>Still uncertain? </strong></em><a href=\"https://arkel.ca/blogs/products-technical-information/orca-vs-dolphin-which-waterproof-pannier-is-right-for-you\"><em><strong>Read this comparison between the Orca 2 and Dolphin panniers. Click here.</strong></em></a></p></div>",
+    "expected": {
+      "weight": 1145,
+      "weightOptions": [
+        1010,
+        1145
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-orca-city-backpack-pannier",
+      "brand": "Arkel",
+      "volume": 22,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: rear rack + backpack<br />\n</strong>Weight: 1.45 kg ( 3.2 lbs)<br />\nVolume: 22 L (22000 cu. in.)</p><p><strong>Dimensions:</strong><br />\nHeight rolled:  41cm / 16&quot;<br />\nHeight Open: 56cm / 22&quot;<br />\nWidth: 32cm / 12.5&quot;<br />\nDepth: 14cm / 5.5&quot;<br />\n</p></div>",
+    "expected": {
+      "weight": 1450,
+      "weightOptions": [
+        1450
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-rollpacker-front-bikepacking-bag-15l",
+      "sourceProductId": "arkel-rollpacker-front-bikepacking-bag",
+      "brand": "Arkel",
+      "volume": 15,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The lightweight aluminum hanger attaches securely to your handlebars and creates a stable platform that eliminates bag sway, even on rough terrain. The adjustable mounting system keeps the bag suspended away front tire, ensuring smooth handling and comfortable riding on any surface.</span>\n<span class=\"metafield-multi_line_text_field\">The maximum recommended load is 15.4 lbs (7 kg). The Rollpacker 15L weighs 680g complete with hanger, while the Rollpacker 20L weighs 748g. The aluminum hanger is designed to support substantial loads while maintaining stability, but staying within weight limits ensures optimal handling and component longevity.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Rollpacker 15 Front</strong><br />\nWeight of hanger and bag: 680 g / 1.5 lbs<br />\nVolume: 12 to 15L / 732-925 cu. in. (depending on roll-top closures)<br />\nFront Pocket volume: 2L<br />\nMaximum Load: 15.4 lbs / 7 kg<br />\nWidth: 16.25&quot; / 41 cm<br />\nHeight: 8&quot; / 20 cm (main compartment)<br />\nDepth: 9&quot; / 23 cm without front pocket (main compartment only)<br />\nDepth: 11.25&quot; / 28.5 cm including front pocket<br />\n <br />\n<strong>Rollpacker 20 Front</strong><br />\nWeight of hanger and bag: 748 g / 1.65 lbs<br />\nVolume: 20L to 22L / 1220-1342 cu. in. (depending on roll-top closures)<br />\nFront Pocket volume: 2L <br />\nMaximum Load: 15.4 lbs / 7 kg<br />\nWidth: 18&quot; / 46.5 cm<br />\nHeight: 9&quot; / 24 cm (main compartment)<br />\nDepth: 11&quot; / 28 cm without front pocket (main compartment only)<br />\n <br />\n Minimum handlebar diameter: 2.2 cm<br />\n<br />\n*This kit includes the aluminum hanger and the bag.<br />\n<br />\n<strong>Maintenance : </strong><br />\n- When starting a new season, loosen the bolts and add LocTite blue to rack bolts. Re tighten the bolts.  <br />\n- In season or during long trips, inspect the rack bolts &amp; nuts and tighten them if  case need. </p></div>",
+    "expected": {
+      "weight": 680,
+      "weightOptions": [
+        680
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-rollpacker-front-bikepacking-bag-20l",
+      "sourceProductId": "arkel-rollpacker-front-bikepacking-bag",
+      "brand": "Arkel",
+      "volume": 20,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The lightweight aluminum hanger attaches securely to your handlebars and creates a stable platform that eliminates bag sway, even on rough terrain. The adjustable mounting system keeps the bag suspended away front tire, ensuring smooth handling and comfortable riding on any surface.</span>\n<span class=\"metafield-multi_line_text_field\">The maximum recommended load is 15.4 lbs (7 kg). The Rollpacker 15L weighs 680g complete with hanger, while the Rollpacker 20L weighs 748g. The aluminum hanger is designed to support substantial loads while maintaining stability, but staying within weight limits ensures optimal handling and component longevity.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Rollpacker 15 Front</strong><br />\nWeight of hanger and bag: 680 g / 1.5 lbs<br />\nVolume: 12 to 15L / 732-925 cu. in. (depending on roll-top closures)<br />\nFront Pocket volume: 2L<br />\nMaximum Load: 15.4 lbs / 7 kg<br />\nWidth: 16.25&quot; / 41 cm<br />\nHeight: 8&quot; / 20 cm (main compartment)<br />\nDepth: 9&quot; / 23 cm without front pocket (main compartment only)<br />\nDepth: 11.25&quot; / 28.5 cm including front pocket<br />\n <br />\n<strong>Rollpacker 20 Front</strong><br />\nWeight of hanger and bag: 748 g / 1.65 lbs<br />\nVolume: 20L to 22L / 1220-1342 cu. in. (depending on roll-top closures)<br />\nFront Pocket volume: 2L <br />\nMaximum Load: 15.4 lbs / 7 kg<br />\nWidth: 18&quot; / 46.5 cm<br />\nHeight: 9&quot; / 24 cm (main compartment)<br />\nDepth: 11&quot; / 28 cm without front pocket (main compartment only)<br />\n <br />\n Minimum handlebar diameter: 2.2 cm<br />\n<br />\n*This kit includes the aluminum hanger and the bag.<br />\n<br />\n<strong>Maintenance : </strong><br />\n- When starting a new season, loosen the bolts and add LocTite blue to rack bolts. Re tighten the bolts.  <br />\n- In season or during long trips, inspect the rack bolts &amp; nuts and tighten them if  case need. </p></div>",
+    "expected": {
+      "weight": 748,
+      "weightOptions": [
+        748
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-rollpacker-bikepacking-bag-15l",
+      "sourceProductId": "arkel-rollpacker-bikepacking-bag",
+      "brand": "Arkel",
+      "volume": 15,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Available in 15L and 20L capacities<br />\n- 100% waterproof X-Pac construction<br />\n- Proprietary aluminum hanger attachment system<br />\n- Eliminates sway and bounce<br />\n- Roll-top waterproof closure<br />\n- Aerodynamic streamlined profile<br />\n- Available in Black, Ocean Blue, Mountain Brown<br />\n- Lightweight construction<br />\n- Reflective details for visibility<br />\n- Mounts to seat post and saddle rails<br />\n- Perfect for sleeping bags and bulky gear<br />\n- Compatible with most bikes and saddles</span>\n<span class=\"metafield-multi_line_text_field\">Choose 15L for weekend tours and lightweight bikepacking, or 20L for extended adventures requiring more gear. The closure provides genuine waterproof protection. Perfect for sleeping bags, extra clothing, camp shoes, and bulky items that compress well. The X-Pac fabric combines light weight with exceptional durability, and the aerodynamic profile cuts through wind efficiently while keeping weight low and centred. <br />\n<br />\nThe straps on top of the bag allow you to carry a mat or a tent, and additional mounting points allow you to attach voile or webbing straps.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Fabrics: </strong><br />\nCordura 1000D and X-Pac RX30 construction. The inside liner is 200D Nylon laminated with PU coating and seam tape.<br />\n<br />\n<strong>Rollpacker 15L</strong><br />\n-Volume: 15 L (915 cu. in.)<br />\n-Front Pocket volume : 2L<br />\n-Weight of seat bag: 454 g (1 lb)<br />\n-Weight of hanger: 363 g (0.8 lb)<br />\n-Total weight : 817 g (1.8 Lb)<br />\n-Maximum Load: 15.4 lbs (7 kg)<br />\n-Width: 16.25 (41 cm)<br />\n-Height of the main compartment: 20 cm (8&#39;&#39;)<br />\n-Depth of the main compartment excluding front pocket: 9 (23 cm)<br />\n<br />\n<strong>Rollpacker 20L</strong><br />\n-Volume: 20L (1220.5 cu. in.)<br />\n-Front Pocket volume : 2L<br />\n-Weight of seat bag: 567 g (1.25 lbs)<br />\n-Weight of hanger: 363 g (0.8 lbs)<br />\n-Maximum Load: 7 kg (15.4 lbs)<br />\n-Closed width: 38 cm (15&#39;&#39;)<br />\n-Open width : 46.5 cm (18.3&#39;&#39;)<br />\n-Height of the main compartment: 9&#39;&#39; (24 cm)<br />\n-Depth of the main compartment excluding front pocket: (28 cm)<br />\n-Depth of the main compartment, including front pocket: 13.5 (43.3 cm)<br />\n<br />\n<strong>Compatibility</strong><br />\nThis kit includes an aluminum hanger. If your saddle&#39;s seat rails are more than 3.5 inches (89mm) apart, you will need the following wide rail adaptor, which is available in our accessories.<br />\n<br />\nCarbon Seat Post Compatible: Yes<br />\nAero Seat Post Compatible: Yes<br />\nSuspension Seat Post: Yes, functional.<br />\nDropper posts: Not recommended due to weight and rear tire clearance; refer to your dropper posts tech. specs<br />\nSprung saddles: No<br />\nCarbon Seat Rails: No<br />\n<br />\n<strong>Compatibility Note:<br />\n</strong>-If the seat rails of your saddle are more than 3.5 inches (89mm) apart, the <a href=\"https://arkel-bike-bags.myshopify.com/collections/accessories/products/wide-rails-adapter\">Wide Rail Adaptor</a> is required.<br />\n-Not compatible with sprung saddles.<br />\n<br />\n<strong>Maintenance: </strong><br />\n- When starting a new season, loosen the bolts and add LocTite blue to rack bolts. Re tighten the bolts.  <br />\n- In season or during long trips, inspect the rack bolts &amp; nuts and tighten them if necessary. </p></div>",
+    "expected": {
+      "weight": 817,
+      "weightOptions": [
+        817
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-rollpacker-bikepacking-bag-20l",
+      "sourceProductId": "arkel-rollpacker-bikepacking-bag",
+      "brand": "Arkel",
+      "volume": 20,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Available in 15L and 20L capacities<br />\n- 100% waterproof X-Pac construction<br />\n- Proprietary aluminum hanger attachment system<br />\n- Eliminates sway and bounce<br />\n- Roll-top waterproof closure<br />\n- Aerodynamic streamlined profile<br />\n- Available in Black, Ocean Blue, Mountain Brown<br />\n- Lightweight construction<br />\n- Reflective details for visibility<br />\n- Mounts to seat post and saddle rails<br />\n- Perfect for sleeping bags and bulky gear<br />\n- Compatible with most bikes and saddles</span>\n<span class=\"metafield-multi_line_text_field\">Choose 15L for weekend tours and lightweight bikepacking, or 20L for extended adventures requiring more gear. The closure provides genuine waterproof protection. Perfect for sleeping bags, extra clothing, camp shoes, and bulky items that compress well. The X-Pac fabric combines light weight with exceptional durability, and the aerodynamic profile cuts through wind efficiently while keeping weight low and centred. <br />\n<br />\nThe straps on top of the bag allow you to carry a mat or a tent, and additional mounting points allow you to attach voile or webbing straps.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Fabrics: </strong><br />\nCordura 1000D and X-Pac RX30 construction. The inside liner is 200D Nylon laminated with PU coating and seam tape.<br />\n<br />\n<strong>Rollpacker 15L</strong><br />\n-Volume: 15 L (915 cu. in.)<br />\n-Front Pocket volume : 2L<br />\n-Weight of seat bag: 454 g (1 lb)<br />\n-Weight of hanger: 363 g (0.8 lb)<br />\n-Total weight : 817 g (1.8 Lb)<br />\n-Maximum Load: 15.4 lbs (7 kg)<br />\n-Width: 16.25 (41 cm)<br />\n-Height of the main compartment: 20 cm (8&#39;&#39;)<br />\n-Depth of the main compartment excluding front pocket: 9 (23 cm)<br />\n<br />\n<strong>Rollpacker 20L</strong><br />\n-Volume: 20L (1220.5 cu. in.)<br />\n-Front Pocket volume : 2L<br />\n-Weight of seat bag: 567 g (1.25 lbs)<br />\n-Weight of hanger: 363 g (0.8 lbs)<br />\n-Maximum Load: 7 kg (15.4 lbs)<br />\n-Closed width: 38 cm (15&#39;&#39;)<br />\n-Open width : 46.5 cm (18.3&#39;&#39;)<br />\n-Height of the main compartment: 9&#39;&#39; (24 cm)<br />\n-Depth of the main compartment excluding front pocket: (28 cm)<br />\n-Depth of the main compartment, including front pocket: 13.5 (43.3 cm)<br />\n<br />\n<strong>Compatibility</strong><br />\nThis kit includes an aluminum hanger. If your saddle&#39;s seat rails are more than 3.5 inches (89mm) apart, you will need the following wide rail adaptor, which is available in our accessories.<br />\n<br />\nCarbon Seat Post Compatible: Yes<br />\nAero Seat Post Compatible: Yes<br />\nSuspension Seat Post: Yes, functional.<br />\nDropper posts: Not recommended due to weight and rear tire clearance; refer to your dropper posts tech. specs<br />\nSprung saddles: No<br />\nCarbon Seat Rails: No<br />\n<br />\n<strong>Compatibility Note:<br />\n</strong>-If the seat rails of your saddle are more than 3.5 inches (89mm) apart, the <a href=\"https://arkel-bike-bags.myshopify.com/collections/accessories/products/wide-rails-adapter\">Wide Rail Adaptor</a> is required.<br />\n-Not compatible with sprung saddles.<br />\n<br />\n<strong>Maintenance: </strong><br />\n- When starting a new season, loosen the bolts and add LocTite blue to rack bolts. Re tighten the bolts.  <br />\n- In season or during long trips, inspect the rack bolts &amp; nuts and tighten them if necessary. </p></div>",
+    "expected": {
+      "weight": 930,
+      "weightOptions": [
+        930
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-saddle-bag",
+      "brand": "Arkel",
+      "volume": 0.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Arkel&#39;s Saddle Bag is perfect to carry your bike tools, spare tube or other small items. It is made here with lightweight, durable waterproof fabric, and  fits perfectly under your seat.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dimensions</strong><br />\nPosition: saddle<br />\n<br />\n14&#39;&#39; TPU Black strap and strap keeper is included.<br />\n<br />\nWeight: 55g (1.9 oz)<br />\nVolume: .5L, 500 ml (30 cu. in.)<br />\nLength: 5 1/2&quot; (14 cm)<br />\nWidth: 4&quot; (10 cm)<br />\nHeight: 3&quot; (7.6 cm)<br />\n<br />\n<strong>Care</strong><br />\nWash the bag by hand or with a hose shower spray. Be sure to use a mild detergent. Afterwards, let it air dry.</p></div>",
+    "expected": {
+      "weight": 55,
+      "weightOptions": [
+        55
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-seatpacker-seat-bag-hanger-kit-9l",
+      "sourceProductId": "arkel-seatpacker-seat-bag-hanger-kit",
+      "brand": "Arkel",
+      "volume": 9,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Seat and seat post</strong><br />\n <br />\n<strong>Seatpacker 9</strong><br />\n Weight: 640 g (1.35 lbs)<br />\n Volume: 9 L (550 cu. in.)<br />\n Maximum Load: 5 kg (11 lbs)<br />\n Minimum Clearance Required: 7&quot;<br />\n <br />\n<strong> Seatpacker 15</strong><br />\n Weight: 720 g (1.55 lbs)<br />\n Volume: 15 L (925 cu. in.)<br />\n Maximum Load: 5 kg (11 lbs)<br />\n Minimum Clearance Required: 8&quot;<br />\n <br />\n<strong>Compatibility:</strong></p><p>- Fits standard posts  (27.2mm to 33.9mm diameter) <br />\n- Minimum post diameter: 22 mm<br />\n- Carbon Seat Post Compatible: Yes<br />\n- Carbon seat rails: No<br />\n- Compatible with Aero / profile seat posts<br />\n- Compatible with suspension seats post like Redshift but check tire clearance.<br />\n- Compatible with dropper posts but check tire clearance when dropping.<br />\n- Seatpacker Hanger quick release treads size: M6 <br />\n- <strong>Not recommended</strong> for carbon seat rails<br />\n- Saddle with wide rails (more than 3.5 inches or 89 mm apart) needs the additional <a href=\"https://arkel.ca/collections/replacement-parts/products/wide-rails-adapter\" target=\"_blank\">Wide Rails Adapter (Brooks, SMP Saddles)</a>.<br />\n<br />\n<br />\n<br />\n<strong>Maintenance : </strong><br />\n- When starting a new season, loosen the support bolts and add LocTite blue to rack bolts. Re tighten the bolts.  </p></div>",
+    "expected": {
+      "weight": 640,
+      "weightOptions": [
+        640
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-seatpacker-seat-bag-hanger-kit-15l",
+      "sourceProductId": "arkel-seatpacker-seat-bag-hanger-kit",
+      "brand": "Arkel",
+      "volume": 15,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Seat and seat post</strong><br />\n <br />\n<strong>Seatpacker 9</strong><br />\n Weight: 640 g (1.35 lbs)<br />\n Volume: 9 L (550 cu. in.)<br />\n Maximum Load: 5 kg (11 lbs)<br />\n Minimum Clearance Required: 7&quot;<br />\n <br />\n<strong> Seatpacker 15</strong><br />\n Weight: 720 g (1.55 lbs)<br />\n Volume: 15 L (925 cu. in.)<br />\n Maximum Load: 5 kg (11 lbs)<br />\n Minimum Clearance Required: 8&quot;<br />\n <br />\n<strong>Compatibility:</strong></p><p>- Fits standard posts  (27.2mm to 33.9mm diameter) <br />\n- Minimum post diameter: 22 mm<br />\n- Carbon Seat Post Compatible: Yes<br />\n- Carbon seat rails: No<br />\n- Compatible with Aero / profile seat posts<br />\n- Compatible with suspension seats post like Redshift but check tire clearance.<br />\n- Compatible with dropper posts but check tire clearance when dropping.<br />\n- Seatpacker Hanger quick release treads size: M6 <br />\n- <strong>Not recommended</strong> for carbon seat rails<br />\n- Saddle with wide rails (more than 3.5 inches or 89 mm apart) needs the additional <a href=\"https://arkel.ca/collections/replacement-parts/products/wide-rails-adapter\" target=\"_blank\">Wide Rails Adapter (Brooks, SMP Saddles)</a>.<br />\n<br />\n<br />\n<br />\n<strong>Maintenance : </strong><br />\n- When starting a new season, loosen the support bolts and add LocTite blue to rack bolts. Re tighten the bolts.  </p></div>",
+    "expected": {
+      "weight": 720,
+      "weightOptions": [
+        720
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-shopper-urban-pannier",
+      "brand": "Arkel",
+      "volume": 29,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>Position: rear rack<br />\nWeight: 1.4 kg (2.5 lbs)<br />\nVolume: 25-29 L (1525 - 1768 cu. in.)<br />\n<br />\n<strong>Colour and the fabric options:</strong><br />\n- Cordura 1000D : Olive and Black<br />\n- X-Pac RX30 : Ocean Blue <br />\n- X-Pac RVX25 : Hot Orange<br />\n- X-Pac VX21 : Federal Yellow, Black</p></div>",
+    "expected": {
+      "weight": 1400,
+      "weightOptions": [
+        1400
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-signature-bb-handlebar-bag",
+      "brand": "Arkel",
+      "volume": 4,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Handlebar</strong><br />\n Weight: Approximately 0.5 kg (1.1 lbs)<br />\n Volume: 4 L<br />\n <br />\n<strong> Fabric Options:</strong><br />\n- Cordura Black<br />\n- Cordura Ranger Green<br />\n- Cordura Copper<br />\n <br />\n Fits handlebars: 22.2mm to 31.8mm diameter</p></div>",
+    "expected": {
+      "weight": 500,
+      "weightOptions": [
+        500
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-signature-d-rolltop-backpack",
+      "brand": "Arkel",
+      "volume": 22,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\"><br />\nWeight: 0.86 kg (1.9 lbs)<br />\nHeight (Bottom to shoulder strap):  45 cm (17.5&quot;)<br />\nWidth (left to right): 12&quot; (30.5 cm)<br />\nDepth (front to back): 13cm (5.1&#39;&#39;)<br />\nVolume: 22 L (1342.5 cu. in.)<br />\nCapacity: Expandable up to 24L (1464.5 cu. in.)<br />\n<br />\nMaterial: XPac fabric (lightweight, durable, and waterproof)<br />\nLaptop Compartment: Fits up to a 17-inches laptop<br />\nClosure: Roll-top with Fid-Lock magnetic strap<br />\n<br />\nPockets:<br />\nInternal organizer compartment<br />\nMesh side pocket (for water bottles)<br />\nYKK-zippered side pocket</span>",
+    "expected": {
+      "weight": 860,
+      "weightOptions": [
+        860
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-signature-h-urban-pannier",
+      "brand": "Arkel",
+      "volume": 24,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>*Sold as a unit*<br />\n<br />\nPosition: rear rack<br />\n<br />\nSpecs for 1 pannier :<br />\nWeight: 1.32 kg (2.9 lbs)<br />\nVolume: 24 L (1460 cu. in.)<br />\nLength: 16&quot; (40.6 cm)<br />\nWidth: 6.5&quot; (16.5 cm)<br />\nHeight from bottom of the bag to attachment system: 9&quot; (23 cm)<br />\nTotal height: 12&quot; (30.5 cm)</p></div>",
+    "expected": {
+      "weight": 1320,
+      "weightOptions": [
+        1320
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-signature-m-waterproof-urban-pannier",
+      "brand": "Arkel",
+      "volume": 18,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">Choose Cordura 1000D if you want the absolute most durable fabric available and plan to pass this bag to your grandchildren. It&#39;s proven over decades of use. Choose X-Pac if you prefer a lighter weight bag with sustainable cotton-face fabric that looks and feels more natural while still being completely waterproof. Both are excellent choices‚Äîit&#39;s about preference and priorities.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>*Sold as a single pannier*</strong><br />\n<br />\n<strong>Specs for 1 pannier :</strong><br />\nWeight: 1.02 kg (2.3 lbs)<br />\nVolume: 15 to 18 liters, or 3.5 to 4.75 US gallon capacity (1100 cu. in.)<br />\nLength: 12&quot; (30.5 cm)<br />\nWidth: 5&quot; (12.5 cm)<br />\nHeight from bottom to attachment system: 12&quot; (30.5 cm)<br />\nTotal height: 15&quot; (38.1 cm)</p><p>- If your rack tubing diameter is bigger than 15mm (and up to 21mm), you will need the Oversized Cam-Lock. <a href=\"https://qom9gpio6oc.typeform.com/to/J5RVLxJG\" target=\"_blank\" title=\"Cam-Lock Size Detector\">More details here</a></p><p>- Fits slim laptop up to 15&#39;&#39;, if you think yours is oversized, check <a href=\"https://arkel.ca/pages/will-my-laptop-fit\" target=\"_blank\" title=\"Will My Laptop Fit\"><strong>our laptop sizing guide</strong></a>.</p></div>",
+    "expected": {
+      "weight": 1020,
+      "weightOptions": [
+        1020
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-signature-v-urban-pannier",
+      "brand": "Arkel",
+      "volume": 28,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p>Position: Rear rack <br />\n*Sold as a single pannier*<br />\n<br />\nSpecs for 1 pannier :<br />\nWeight: 1.02 kg (2.3 lbs)<br />\nVolume:  25 liters to 28 liters, or 6 to 7.4 US gallon capacity  (1700 cu. in.)<br />\nLength: 12&quot; (30.5 cm)<br />\nWidth: 8&quot; (20.3 cm)<br />\nHeight from bottom to attachment system: 12&quot; (30.5 cm)<br />\nTotal height: 15&quot; (38.1 cm)</p></div>",
+    "expected": {
+      "weight": 1020,
+      "weightOptions": [
+        1020
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-t-28-classic-touring-panniers",
+      "brand": "Arkel",
+      "volume": 28,
+      "soldAsSet": true,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The version made with X-Pac X50 tactical waterproof 3-ply Fabric version is available in:<br />\n<br />\n- XPac X50 Ranger Green<br />\n- XPac X50 Stealth Grey <br />\n<br />\nX-Pac Series <br />\nNote that water intrusions through seams and zippers are possible and normal. We do not tape the seams. This fabric still offers better water resistance than Cordura fabric. <br />\n<br />\nThe weight of the fabrics is practically similar <br />\nat 310g/square meter for the XPac X50 <br />\nvs 311.8 grams/yard for Cordura 1000D<br />\n<br />\n*Specs for the pair*<br />\nWeight: 1.78 kg (3.9 lbs)<br />\nVolume: 28 L (1700 cu. in.)<br />\nPosition: Front or Rear<br />\n<br />\n</span>",
+    "expected": {
+      "weight": 1780,
+      "weightOptions": [
+        1780
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-t-42-classic-touring-panniers",
+      "brand": "Arkel",
+      "volume": 42,
+      "soldAsSet": true,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The T-42 is designed primarily as a rear touring pannier due to its 21L per-bag capacity and feature set. For front rack use, we recommend the GT-18 Classic (18L) or T-28 Classic (14L per bag), which are specifically designed to complement rear panniers and provide better front-end handling with their moderate capacities. The T-42&#39;s size works best on rear racks for balanced weight distribution.</span>\n<div class=\"metafield-rich_text_field\"><p>** The T-42 panniers have a right and left side. They are asymmetrical with the side pocket being position toward the rear**.  Positioning the side pocket forward will interfer in the pedaling stroke. </p><p>Weight: 2.3 kg (5 lbs)<br />\nVolume: 42 L (2550 cu. in.) (for the pair)<br />\nPosition: Rear<br />\nFabric : 1000D Nylon Cordura<br />\nInside waterproof Liner : No<br />\n<br />\nAdd a<strong> </strong><a href=\"https://arkel.ca/products/safety-hi-vis-yellow-protective-waterproof-covers?variant=43699900285177\" target=\"_blank\" title=\"arkel rain covers\"><strong>high visibility waterproof rain cover</strong></a>.</p></div>",
+    "expected": {
+      "weight": 2300,
+      "weightOptions": [
+        2300
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-top-tube-bag",
+      "brand": "Arkel",
+      "volume": 1,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- Rock-solid stability with bolt-on mounting or TPU non-slip straps included<br />\n- Weatherproof protection with waterproof fabric and YKK zipper<br />\n- Easy one-handed access due to reinforced structure that maintains shape<br />\n- Lightweight &amp; durable at only 85g<br />\n- Universal fit compatible with most top tubes<br />\n- Built-in cable port for device charging<br />\n- Matches Arkel gravel &amp; bikepacking bags colours<br />\n- Made in Canada</span>\n<span class=\"metafield-multi_line_text_field\">At just 85 grams (0.2 lbs), the Taco adds virtually no weight to your bike while providing essential storage for snacks, tools, or electronics. The compact 1L capacity is perfectly sized for energy bars, a multi-tool, phone, or other small essentials you need within easy reach during long rides.</span>\n<div class=\"metafield-rich_text_field\"><p>Weight: 85 g (0.2 lbs) <br />\nVolume: 1 L <br />\nLength: 9&quot; (23.5 cm) <br />\nWidth: 2&quot; (5 cm) <br />\nHeight: 4&quot; (10 cm) <br />\nMaterial: XPac fabric (lightweight, durable, and waterproof) <br />\nFixation: TPU straps (included) or bolt-on mounts <br />\nClosure: YKK waterproof zipper </p><p>3 bolt-on hole series to fit different type of compact headsets   <br />\n<br />\n<strong>Color Options:</strong><br />\nXPac Black, Cayenne, Ocean Blue, Mountain Brown, Ranger Green, Stealth Grey</p></div>",
+    "expected": {
+      "weight": 85,
+      "weightOptions": [
+        85
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-tailrider-trunk-bag",
+      "brand": "Arkel",
+      "volume": 11,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Rear rack </strong><br />\nVolume: 11 L <br />\nWeight: Approximately 0.6 kg (1.3 lbs) <br />\n<br />\n<strong>Fabric Options:<br />\n</strong>- EcoPak Black Knight<br />\n- EcoPak Wolf Grey<br />\n- EcoPak Lime</p></div>",
+    "expected": {
+      "weight": 600,
+      "weightOptions": [
+        600
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-tailrider-rolltop-trunk-bag",
+      "brand": "Arkel",
+      "volume": 20,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: Rear rack </strong><br />\nVolume: 20 L <br />\nWeight: Approximately 0.6 kg (1.3 lbs) <br />\nHeight: 10in / 25cm<br />\nLength: 16in / 41cm<br />\nDepth: 8in / 20cm<br />\n<br />\n<strong>Fabric:<br />\n</strong>- EcoPak 100% recycled polyester</p></div>",
+    "expected": {
+      "weight": 600,
+      "weightOptions": [
+        600
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-water-resistant-frame-bag-2-5l",
+      "sourceProductId": "arkel-water-resistant-frame-bag",
+      "brand": "Arkel",
+      "volume": 2.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: frame<br />\n</strong><br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nHeight: 6&quot; (15.2 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nHeight: 7.5&quot; (19 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Large<br />\n</strong>Weight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nHeight: 9 1/4&quot; (23.5 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full</p><p><strong>As a general rule...</strong><em><strong><br />\n</strong></em>- Small bags fits on X-small, small and medium bike frames<br />\n- Medium frame bag fits on medium or Large bike frames<br />\n- Large frame bag fits on XL bike frames<em><br />\n<br />\n</em><strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 160,
+      "weightOptions": [
+        160
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-water-resistant-frame-bag-4l",
+      "sourceProductId": "arkel-water-resistant-frame-bag",
+      "brand": "Arkel",
+      "volume": 4,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: frame<br />\n</strong><br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nHeight: 6&quot; (15.2 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nHeight: 7.5&quot; (19 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Large<br />\n</strong>Weight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nHeight: 9 1/4&quot; (23.5 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full</p><p><strong>As a general rule...</strong><em><strong><br />\n</strong></em>- Small bags fits on X-small, small and medium bike frames<br />\n- Medium frame bag fits on medium or Large bike frames<br />\n- Large frame bag fits on XL bike frames<em><br />\n<br />\n</em><strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 180,
+      "weightOptions": [
+        180
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-water-resistant-frame-bag-5l",
+      "sourceProductId": "arkel-water-resistant-frame-bag",
+      "brand": "Arkel",
+      "volume": 5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<div class=\"metafield-rich_text_field\"><p><strong>Position: frame<br />\n</strong><br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nHeight: 6&quot; (15.2 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nHeight: 7.5&quot; (19 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full<br />\n<br />\n<strong>Large<br />\n</strong>Weight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nHeight: 9 1/4&quot; (23.5 cm)<br />\nWidth: 2&quot; (5 cm) empty<br />\nWidth: 2&quot;3/4 (7cm) full</p><p><strong>As a general rule...</strong><em><strong><br />\n</strong></em>- Small bags fits on X-small, small and medium bike frames<br />\n- Medium frame bag fits on medium or Large bike frames<br />\n- Large frame bag fits on XL bike frames<em><br />\n<br />\n</em><strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 220,
+      "weightOptions": [
+        220
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-waterproof-frame-bag-2-5l",
+      "sourceProductId": "arkel-waterproof-frame-bag",
+      "brand": "Arkel",
+      "volume": 2.5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% waterproof X-Pac fabric construction<br />\n- Waterproof YKK #8 zipper for reliable weather-sealed access<br />\n- Inside waterproof liner with sealed seams<br />\n- Available in 3 sizes: 2.5L, 4L, 5L<br />\n- Reflective details for low-light visibility<br />\n- Multiple mounting straps included<br />\n- Centered weight placement for stable handling<br />\n- Ideal for tools, snacks, electronics<br />\n- Made in Canada</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: frame</strong><br />\n<br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nWidth: 6&quot; (15.2 cm)<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nWidth: 7.5&quot; (19 cm)<br />\n<br />\n<strong>Large</strong><br />\nWeight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nWidth: 9 1/4&quot; (23.5 cm)<br />\n<br />\n<strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 160,
+      "weightOptions": [
+        160
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-waterproof-frame-bag-4l",
+      "sourceProductId": "arkel-waterproof-frame-bag",
+      "brand": "Arkel",
+      "volume": 4,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% waterproof X-Pac fabric construction<br />\n- Waterproof YKK #8 zipper for reliable weather-sealed access<br />\n- Inside waterproof liner with sealed seams<br />\n- Available in 3 sizes: 2.5L, 4L, 5L<br />\n- Reflective details for low-light visibility<br />\n- Multiple mounting straps included<br />\n- Centered weight placement for stable handling<br />\n- Ideal for tools, snacks, electronics<br />\n- Made in Canada</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: frame</strong><br />\n<br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nWidth: 6&quot; (15.2 cm)<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nWidth: 7.5&quot; (19 cm)<br />\n<br />\n<strong>Large</strong><br />\nWeight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nWidth: 9 1/4&quot; (23.5 cm)<br />\n<br />\n<strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 180,
+      "weightOptions": [
+        180
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-waterproof-frame-bag-5l",
+      "sourceProductId": "arkel-waterproof-frame-bag",
+      "brand": "Arkel",
+      "volume": 5,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 100% waterproof X-Pac fabric construction<br />\n- Waterproof YKK #8 zipper for reliable weather-sealed access<br />\n- Inside waterproof liner with sealed seams<br />\n- Available in 3 sizes: 2.5L, 4L, 5L<br />\n- Reflective details for low-light visibility<br />\n- Multiple mounting straps included<br />\n- Centered weight placement for stable handling<br />\n- Ideal for tools, snacks, electronics<br />\n- Made in Canada</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Position: frame</strong><br />\n<br />\n<strong>Small</strong><br />\nWeight: 160 g (6 oz)<br />\nVolume: 2.5 L (150 cu. in.)<br />\nLength: 16 1/4&quot; (41.3 cm)<br />\nWidth: 6&quot; (15.2 cm)<br />\n<br />\n<strong>Medium</strong><br />\nWeight: 180 g (7 oz)<br />\nVolume: 4 L (250 cu. in.)<br />\nLength: 18 3/4&quot; (47.6 cm)<br />\nWidth: 7.5&quot; (19 cm)<br />\n<br />\n<strong>Large</strong><br />\nWeight: 220 g (8 oz)<br />\nVolume: 5 L (300 cu. in.)<br />\nLength: 20 1/2&quot; (52 cm)<br />\nWidth: 9 1/4&quot; (23.5 cm)<br />\n<br />\n<strong>To determine the best size for your bike frame:</strong><br />\n1. Print the templates (links below) to determine which size best fits your frame.<br />\n<br />\n2. These templates are exactly the size of the bags and can be cut and fitted inside your frame to determine the fit.<br />\n<br />\n3. These bags are designed to be stretched tight inside your frame at each of the 3 attachment points. If the bag can&#39;t be stretched tight, operating the zipper will be difficult. When in doubt, choose the smaller size.<br />\n<br />\n<a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Small-Cutting-Template-Part-A-and-B.pdf?v=1662557831\" target=\"_blank\" title=\"Small Arkel Frame Bag Cutting Template\">Small Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Frame-Bag-Medium-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Medium Frame Bag Cutting Template\">Medium Frame Bag Cutting Template</a></p><p><a href=\"https://cdn.shopify.com/s/files/1/0652/0333/9513/files/Arkel-Frame-Bag-Large-Cutting-Template-Parts-ABC-1.pdf?v=1662557831\" target=\"_blank\" title=\"Large Frame Bag Cutting Template\">Large Frame Bag Cutting Template</a></p></div>",
+    "expected": {
+      "weight": 220,
+      "weightOptions": [
+        220
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-wellington-messenger-bag-6l",
+      "sourceProductId": "arkel-wellington-messenger-bag",
+      "brand": "Arkel",
+      "volume": 6,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The Wellington is water-resistant, not fully waterproof. The recycled XPac fabric repels rain, splashes, and light-to-moderate precipitation effectively, protecting your gear during typical urban cycling conditions. For heavy downpours or all-day rain, we recommend Arkel&#39;s fully waterproof bags like the Signature series. The Wellington&#39;s water-resistance is designed to handle the unpredictable weather of daily commuting without the weight and bulk of fully waterproof construction.</span>\n<span class=\"metafield-multi_line_text_field\">Yes! The Wellington&#39;s padded shoulder strap is designed to swap between left and right-shoulder carry, so you can choose your preferred side or alternate to distribute weight evenly. The adjustable third-point stabilizer strap keeps the bag secure against your body while cycling, preventing bounce and sway regardless of which shoulder you choose. This versatility makes the Wellington comfortable for all-day wear.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dimensions:</strong><br />\nCapacity: 6L<br />\nHeight: 22 cm (8,5 in)<br />\nWidth: 10 cm (4 in)<br />\nLength: 38 cm (15 in)<br />\nWeight: 450 g (1 lb)<br />\n<br />\n<strong>Capacity: 16L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 14 cm (5.5 in)<br />\nLength: 50 cm (20 in)<br />\nWeight: 625 g (1.38 lbs)<br />\n<br />\n<strong>Capacity: 24L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 18 cm (7 in)<br />\nLength: 60 cm (24 in)<br />\nWeight: 825 g (1.12 lbs)<br />\n<br />\n<strong>Material</strong>: XPac fabric (Locally made, carbon neutral, ultra-lightweight, waterproof, abrasion-resistant)<br />\n<br />\n<strong>Water Protection</strong>: Flap closure + waterproof liner<br />\n<br />\n<strong>Laptop Compatibility</strong>: Padded organizer fits up to 17” laptop in the 16L and 24L, plus extra storage for accessories. 10&#39;&#39; tablet or laptop for the 6L Wellington. <br />\n<br />\n<strong>Closure System</strong>: Fidlock magnetic buckles + YKK waterproof compartments<br />\n<br />\n<strong>Straps</strong>: Ergonomic, adjustable, and breathable. Padded shoulder strap swaps for left or right shoulder use. Adjustable third-point stabilizer strap for added security while riding<br />\n<br />\n<strong>Reflectivity</strong>: Reflective details for night visibility<br />\nBuilt-in light holder for added security in low-light conditions</p></div>",
+    "expected": {
+      "weight": 450,
+      "weightOptions": [
+        450
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-wellington-messenger-bag-16l",
+      "sourceProductId": "arkel-wellington-messenger-bag",
+      "brand": "Arkel",
+      "volume": 16,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The Wellington is water-resistant, not fully waterproof. The recycled XPac fabric repels rain, splashes, and light-to-moderate precipitation effectively, protecting your gear during typical urban cycling conditions. For heavy downpours or all-day rain, we recommend Arkel&#39;s fully waterproof bags like the Signature series. The Wellington&#39;s water-resistance is designed to handle the unpredictable weather of daily commuting without the weight and bulk of fully waterproof construction.</span>\n<span class=\"metafield-multi_line_text_field\">Yes! The Wellington&#39;s padded shoulder strap is designed to swap between left and right-shoulder carry, so you can choose your preferred side or alternate to distribute weight evenly. The adjustable third-point stabilizer strap keeps the bag secure against your body while cycling, preventing bounce and sway regardless of which shoulder you choose. This versatility makes the Wellington comfortable for all-day wear.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dimensions:</strong><br />\nCapacity: 6L<br />\nHeight: 22 cm (8,5 in)<br />\nWidth: 10 cm (4 in)<br />\nLength: 38 cm (15 in)<br />\nWeight: 450 g (1 lb)<br />\n<br />\n<strong>Capacity: 16L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 14 cm (5.5 in)<br />\nLength: 50 cm (20 in)<br />\nWeight: 625 g (1.38 lbs)<br />\n<br />\n<strong>Capacity: 24L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 18 cm (7 in)<br />\nLength: 60 cm (24 in)<br />\nWeight: 825 g (1.12 lbs)<br />\n<br />\n<strong>Material</strong>: XPac fabric (Locally made, carbon neutral, ultra-lightweight, waterproof, abrasion-resistant)<br />\n<br />\n<strong>Water Protection</strong>: Flap closure + waterproof liner<br />\n<br />\n<strong>Laptop Compatibility</strong>: Padded organizer fits up to 17” laptop in the 16L and 24L, plus extra storage for accessories. 10&#39;&#39; tablet or laptop for the 6L Wellington. <br />\n<br />\n<strong>Closure System</strong>: Fidlock magnetic buckles + YKK waterproof compartments<br />\n<br />\n<strong>Straps</strong>: Ergonomic, adjustable, and breathable. Padded shoulder strap swaps for left or right shoulder use. Adjustable third-point stabilizer strap for added security while riding<br />\n<br />\n<strong>Reflectivity</strong>: Reflective details for night visibility<br />\nBuilt-in light holder for added security in low-light conditions</p></div>",
+    "expected": {
+      "weight": 625,
+      "weightOptions": [
+        625
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-wellington-messenger-bag-24l",
+      "sourceProductId": "arkel-wellington-messenger-bag",
+      "brand": "Arkel",
+      "volume": 24,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">The Wellington is water-resistant, not fully waterproof. The recycled XPac fabric repels rain, splashes, and light-to-moderate precipitation effectively, protecting your gear during typical urban cycling conditions. For heavy downpours or all-day rain, we recommend Arkel&#39;s fully waterproof bags like the Signature series. The Wellington&#39;s water-resistance is designed to handle the unpredictable weather of daily commuting without the weight and bulk of fully waterproof construction.</span>\n<span class=\"metafield-multi_line_text_field\">Yes! The Wellington&#39;s padded shoulder strap is designed to swap between left and right-shoulder carry, so you can choose your preferred side or alternate to distribute weight evenly. The adjustable third-point stabilizer strap keeps the bag secure against your body while cycling, preventing bounce and sway regardless of which shoulder you choose. This versatility makes the Wellington comfortable for all-day wear.</span>\n<div class=\"metafield-rich_text_field\"><p><strong>Dimensions:</strong><br />\nCapacity: 6L<br />\nHeight: 22 cm (8,5 in)<br />\nWidth: 10 cm (4 in)<br />\nLength: 38 cm (15 in)<br />\nWeight: 450 g (1 lb)<br />\n<br />\n<strong>Capacity: 16L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 14 cm (5.5 in)<br />\nLength: 50 cm (20 in)<br />\nWeight: 625 g (1.38 lbs)<br />\n<br />\n<strong>Capacity: 24L</strong><br />\nHeight: 35 cm (14 in)<br />\nWidth: 18 cm (7 in)<br />\nLength: 60 cm (24 in)<br />\nWeight: 825 g (1.12 lbs)<br />\n<br />\n<strong>Material</strong>: XPac fabric (Locally made, carbon neutral, ultra-lightweight, waterproof, abrasion-resistant)<br />\n<br />\n<strong>Water Protection</strong>: Flap closure + waterproof liner<br />\n<br />\n<strong>Laptop Compatibility</strong>: Padded organizer fits up to 17” laptop in the 16L and 24L, plus extra storage for accessories. 10&#39;&#39; tablet or laptop for the 6L Wellington. <br />\n<br />\n<strong>Closure System</strong>: Fidlock magnetic buckles + YKK waterproof compartments<br />\n<br />\n<strong>Straps</strong>: Ergonomic, adjustable, and breathable. Padded shoulder strap swaps for left or right shoulder use. Adjustable third-point stabilizer strap for added security while riding<br />\n<br />\n<strong>Reflectivity</strong>: Reflective details for night visibility<br />\nBuilt-in light holder for added security in low-light conditions</p></div>",
+    "expected": {
+      "weight": 825,
+      "weightOptions": [
+        825
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-exp-waterproof-top-tube-1l-rear",
+      "brand": "Arkel",
+      "volume": 0.75,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 0.75 liters of storage  (45.76 cu in)<br />\n- Weight 120g (.26 pds)<br />\n- Waterproof and durable 420D fabric <br />\n- Comes with plastic wrap to protect paint job<br />\n- Solid YKK waterproof zipper<br />\n- Effortless one-handed operation<br />\n- Narrow slim width to minimize thigh rubbing under the saddle. <br />\n<br />\n</span>\n<div class=\"metafield-rich_text_field\"><p><strong>XP waterproof rear top tube bag <br />\n</strong>Weight: 120g (.26 pds ) with TPU straps <br />\nVolume:  .75L   (45.76 cu in)<br />\nLength:  15 cm   (5.9&quot;)<br />\nWidth : 45 mm (1.77&#39;&#39;)      <br />\nHeight:  17.5 cm   (6.89&#39;&#39;) <br />\nMaterial: 420D Ripstop Polyester<br />\nInstallation: 2 X TPU straps 1 X velcro strap (included)<br />\nClosure: YKK waterproof zipper</p><p>1 X Clear Protective film included to protect your frame. <br />\nInside bag bottom section is paddle to prevent rattles. </p></div>",
+    "expected": {
+      "weight": 120,
+      "weightOptions": [
+        120
+      ]
+    }
+  },
+  {
+    "entry": {
+      "id": "arkel-exp-waterproof-top-tube-1l",
+      "brand": "Arkel",
+      "volume": 1,
+      "soldAsSet": false,
+      "variants": [
+        {
+          "sku": "test",
+          "weight": 9999
+        }
+      ]
+    },
+    "html": "<span class=\"metafield-multi_line_text_field\">- 1 liter of storage<br />\n- Lightweight at only 156 grams<br />\n- Narrow fit to prevent knee rubbing <br />\n- Rock-solid stability with bolt-on mounting or TPU non-slip straps included<br />\n- Weatherproof protection with welded seams, waterproof fabric and YKK zipper<br />\n- Easy one-handed access <br />\n- Universal fit compatible with compact headset top tubes <br />\n- Built-in USB cable port for device charging<br />\n- Internal side mesh pocket for cell phone<br />\n- Removable plastic sleeve for candy<br />\n- Matches with our XP rear top tube bag</span>\n<div class=\"metafield-rich_text_field\"><p><strong>XP waterproof front top tube bag <br />\n</strong>Weight: 156g ( lbs) bolt on. <strong><br />\n</strong>Weight: 176g ( lbs) with TPU straps <br />\nVolume: 1 L<br />\nLength:  24 cm   (9.45&quot;)<br />\nWidth front:  55 mm (2.16&#39;&#39;)  (Toward stem)<br />\nWidth rear : 45 m (1.77&#39;&#39;)       (Toward rider) <br />\nHeight:  12.5 cm   (4.92&#39;&#39;) <br />\nMaterial: 420D Ripstop Polyester<br />\nInstallation: TPU straps and bolt-on mounts (included)<br />\nClosure: YKK waterproof zipper</p><p>3 bolt-on hole series to fit different type of headsets including compact low profile headsets. <br />\nClear Protective film included to protect your frame. <br />\nInside bottom section is paddle to prevent noise. </p><p></p></div>",
+    "expected": {
+      "weight": 156,
+      "weightOptions": [
+        156,
+        176
+      ]
+    }
+  }
+]

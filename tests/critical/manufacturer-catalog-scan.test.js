@@ -815,3 +815,63 @@ test('Restrap weights follow named sizes, independently of variant order and shi
   const ambiguous=build('Weight - 368g / 380g',[{title:'Small/Medium',grams:601},{title:'Large/XL',grams:615}]);
   assert.deepEqual(ambiguous.variants.map(v=>v.weight),[0,0], 'Unlabeled official alternatives must not be assigned by array position');
 });
+
+
+test('Arkel visible weight specifications cover all captured sizes without Shopify inventory weights',async()=>{
+ const {applyArkelWeightEvidence,preserveUnverifiedArkelWeight}=await import('../../scripts/manufacturer-catalog/arkel-weight-evidence.mjs');
+ const cases=JSON.parse(readFileSync(resolve('tests/fixtures/manufacturer-weights/arkel-20260927.json'),'utf8'));
+ assert.equal(cases.length,62);
+ for(const row of cases){const actual=applyArkelWeightEvidence(row.entry,row.html);
+   if(!row.expected){assert.equal(actual.weightEvidenceMissing,true,row.entry.id);const kept=preserveUnverifiedArkelWeight(actual,{weight:300,weightOptions:[300],variants:[{sku:'test',weight:300}]});assert.equal(kept.weight,300);assert.equal(kept.variants[0].weight,300);continue;}
+   assert.equal(actual.weightEvidenceMissing,false,row.entry.id);
+   assert.equal(actual.weight,row.expected.weight,row.entry.id);
+   assert.deepEqual(actual.weightOptions,row.expected.weightOptions,row.entry.id);
+   assert.equal(actual.totalWeight,row.expected.totalWeight,row.entry.id);
+   assert.ok(actual.variants.every(v=>v.weight===actual.weight),row.entry.id);
+ }
+});
+
+test('Arkel specifications use labels and preserve uncertainty instead of matching sorted weights',async()=>{
+ const {arkelWeightEvidence,applyArkelWeightEvidence,preserveUnverifiedArkelWeight}=await import('../../scripts/manufacturer-catalog/arkel-weight-evidence.mjs');
+ const wrap=text=>'<div class="metafield-rich_text_field">'+text+'</div>';
+ const reversed=wrap('<p>Large<br>Weight: 180 g<br>Volume: 5 L</p><p>Small<br>Weight: 220 g<br>Volume: 2.5 L</p>');
+ assert.equal(arkelWeightEvidence(reversed,{volume:2.5}).weight,220);
+ assert.equal(arkelWeightEvidence(reversed,{volume:5}).weight,180);
+ assert.equal(arkelWeightEvidence(reversed,{volume:9}),null);
+ const bb='<script>{"weight":318}</script>'+wrap('<p>Weight: 240 g<br>Volume: 5 L<br>Maximum weight capacity: 10 kg</p>');
+ assert.equal(arkelWeightEvidence(bb,{volume:5}).weight,240);
+ assert.equal(arkelWeightEvidence(wrap('<p>Weight: 55g<br>Volume: .5L</p>'),{volume:.5}).weight,55);
+ const missing=applyArkelWeightEvidence({id:'arkel-unknown',brand:'Arkel',weight:9999,variants:[{sku:'x',weight:9999}]},'<script>{"weight":9999}</script>');
+ const safe=preserveUnverifiedArkelWeight(missing);assert.equal(safe.weight,0);assert.equal(safe.variants[0].weight,0);
+});
+
+
+test('Arkel weight review removes the BB Packer false positive and retains new models and photo proposals',async()=>{
+ const {latestManufacturerCatalogReviewScan}=await import('../../src/ui/manufacturer-catalog-review-dialog.js');
+ const report=JSON.parse(readFileSync(resolve('catalog-review-inputs/arkel-weight-review-20260927.json'),'utf8'));
+ const photo=JSON.parse(readFileSync(resolve('catalog-review-inputs/photo-review-20260927.json'),'utf8'));
+ assert.equal(report.summary.products,62);assert.equal(report.summary.added,1);assert.equal(report.summary.missing,0);
+ assert.equal(report.changes.some(c=>c.productId==='arkel-bb-packer-handlebar-bag'),false);
+ for(const old of photo.changes.filter(c=>c.manufacturerId==='arkel')){
+   const updated=report.changes.find(c=>c.productId===old.productId);
+   assert.ok(updated,old.productId);
+   assert.deepEqual(updated.after.sourceImageUrls,old.after.sourceImageUrls,old.productId);
+ }
+ const ortlieb={id:'old',scannedAt:'2026-09-01T00:00:00Z',manufacturers:[{id:'ortlieb',name:'ORTLIEB',status:'complete'}],changes:[{id:'ortlieb-new',manufacturerId:'ortlieb',productId:'ortlieb-new',type:'added',decision:'approved'}]};
+ const combined=latestManufacturerCatalogReviewScan({scans:[report,photo,ortlieb]});
+ assert.equal(combined.changes.filter(c=>c.type==='added').length,2);
+ assert.equal(combined.changes.find(c=>c.id==='ortlieb-new').decision,'approved');
+});
+
+
+test('actual catalog builder prefers Arkel technical weight over conflicting Shopify grams',async()=>{
+ const {mkdtemp,mkdir,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');const {pathToFileURL}=await import('node:url');
+ const root=await mkdtemp(join(tmpdir(),'arkel-weight-builder-'));
+ try{
+  await mkdir(join(root,'.catalog-pages','arkel'),{recursive:true});
+  await writeFile(join(root,'arkel-products.json'),JSON.stringify({products:[{handle:'bb-packer-handlebar-bag',title:'BB Packer',product_type:'Handlebar Bags',tags:[],variants:[{sku:'BBP-X21-BK',title:'XPac Black / 5 L',grams:318,available:true}],images:[{src:'https://cdn.shopify.com/s/files/1/bb.jpg'}]}]}));
+  await writeFile(join(root,'.catalog-pages','arkel','bb-packer-handlebar-bag.html'),'<h2>Technical Specifications</h2><div class="metafield-rich_text_field"><p>Weight: 240 g (8 oz)<br>Volume: 5 L</p></div>');
+  const output=join(root,'generated.mjs');await promisify(execFile)(process.execPath,['scripts/build-manufacturer-catalog.mjs','--manufacturers','arkel','--source-dir',root,'--output',output,'--image-manifest',join(root,'images.json')],{cwd:resolve('.')});
+  const {MANUFACTURER_BAG_CATALOG_GENERATED:rows}=await import(pathToFileURL(output));assert.equal(rows.length,1);assert.equal(rows[0].weight,240);assert.equal(rows[0].variants[0].weight,240);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

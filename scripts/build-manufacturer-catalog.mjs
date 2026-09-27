@@ -9,6 +9,7 @@ import {
 import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
 import { resolveManufacturerGallery } from "./manufacturer-catalog/resolve-gallery.mjs";
 import { preserveApprovedManufacturerGallery, MANUFACTURER_GALLERY_FIELDS } from "./manufacturer-catalog/gallery-preservation.mjs";
+import { applyArkelWeightEvidence, preserveUnverifiedArkelWeight } from "./manufacturer-catalog/arkel-weight-evidence.mjs";
 import { ortliebVariantEvidence } from "./manufacturer-catalog/ortlieb-variant-evidence.mjs";
 import {
   buildTailfinCatalogEntry,
@@ -716,7 +717,12 @@ for (const target of rockgeistTargets) {
   });
 }
 
-const normalizedEntries = assertManufacturerBagCatalogSkuModels(splitManufacturerBagCatalogSkuModels(entries));
+const normalizedEntries = assertManufacturerBagCatalogSkuModels(await Promise.all(splitManufacturerBagCatalogSkuModels(entries).map(async entry => {
+  if (entry.brand !== "Arkel") return entry;
+  const handle = String(entry.sourceProductId || entry.id).replace(/^arkel-/, "");
+  const html = await readFile(join(pagesDir, "arkel", handle + ".html"), "utf8");
+  return applyArkelWeightEvidence(entry, html);
+})));
 let outputEntries = normalizedEntries;
 let catalogCheckedAt = checkedAt;
 if (approvedCatalogPath) {
@@ -760,7 +766,7 @@ if (approvedCatalogPath) {
 
 const galleryBaselineModule = await import(pathToFileURL(approvedCatalogPath || resolve("src/data/manufacturer-bag-catalog.generated.js")).href);
 const galleryBaseline = new Map((galleryBaselineModule.MANUFACTURER_BAG_CATALOG_GENERATED || galleryBaselineModule.MANUFACTURER_BAG_CATALOG || []).map(entry => [entry.id, entry]));
-outputEntries = outputEntries.map(entry => preserveApprovedManufacturerGallery(entry, galleryBaseline.get(entry.id)));
+outputEntries = outputEntries.map(entry => preserveApprovedManufacturerGallery(preserveUnverifiedArkelWeight(entry, galleryBaseline.get(entry.id)), galleryBaseline.get(entry.id)));
 
 const imageManifest = [...new Map(outputEntries.flatMap((entry) => {
   const outputs = Array.isArray(entry.imageAssetPaths) ? entry.imageAssetPaths : [entry.imageAssetPath];
