@@ -675,3 +675,42 @@ test("layout choice aligns colored trip counts and supports selection and keyboa
   expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
   await page.screenshot({path:"ftp-upload/v1627/layout-choices-"+test.info().project.name+".png"});
 });
+
+test("copying a layout preserves gear but starts without trips or their media", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await createEmptyLayout(page,"Исходная укладка");
+  const sourceId=await page.locator("#layoutSelect").inputValue();
+  await page.evaluate(id=>{
+    const key="bike-packing-prototype-state-v1";
+    const state=JSON.parse(localStorage.getItem(key));
+    const layout=state.layouts[id];
+    layout.trips=[{id:"trip",name:"Прошлая поездка",notes:"Описание",privateNotes:"Личные заметки",videoUrls:["https://youtu.be/example"]}];
+    layout.photos=[{id:"trip-photo",tripId:"trip",status:"synced",url:"https://example.test/trip.jpg"}];
+    const bag=state.containers["copy-bag"]={id:"copy-bag",name:"Сумка для копии",weight:100,parentId:null};
+    const item=state.items["copy-item"]={id:"copy-item",name:"Вещь для копии",weight:50,quantity:1,stockQuantity:3,containerId:bag.id};
+    layout.rootContainerIds=[bag.id];
+    layout.arrangement={rootContainerIds:[bag.id],containers:{[bag.id]:{parentId:null}},items:{[item.id]:{containerId:bag.id,quantity:3}}};
+    item.note="Заметка вещи"; item.photos=[{id:"item-photo",status:"synced",url:"https://example.test/item.jpg"}];
+    bag.note="Заметка сумки"; bag.photos=[{id:"bag-photo",status:"synced",url:"https://example.test/bag.jpg"}];
+    localStorage.setItem(key,JSON.stringify(state));
+  },sourceId);
+  await page.reload(); await waitForApp(page);
+  await page.locator("#newLayoutBtn").click();
+  await page.locator("#layoutCreateMode").selectOption("copy");
+  await page.locator("#layoutCopyFrom").selectOption(sourceId);
+  await page.locator("#layoutName").fill("Новая копия");
+  await page.locator("#saveLayoutBtn").click();
+  await expect(page.locator("#layoutDialog")).not.toBeVisible();
+  await expect(page.locator(".layout-choice-trigger .layout-choice-name")).toHaveText("Новая копия");
+  const result=await page.evaluate(id=>{
+    const state=JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1"));
+    return {source:state.layouts[id],copy:Object.values(state.layouts).find(layout=>layout.name==="Новая копия"),items:Object.values(state.items),bags:Object.values(state.containers)};
+  },sourceId);
+  expect(result.copy.trips).toBeUndefined();expect(result.copy.photos).toBeUndefined();
+  expect(result.copy.arrangement).toEqual(result.source.arrangement);
+  expect(result.source.trips).toHaveLength(1);expect(result.source.photos).toHaveLength(1);
+  expect(result.items.find(item=>item.name==="Вещь для копии").photos).toHaveLength(1);
+  expect(result.bags.find(bag=>bag.name==="Сумка для копии").photos).toHaveLength(1);
+  expect(result.items.find(item=>item.name==="Вещь для копии").note).toBe("Заметка вещи");
+  await expect(page.locator(".layout-choice-trigger .has-trips")).toHaveCount(0);
+});

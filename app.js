@@ -9174,11 +9174,6 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   state.layouts[layoutId] = {
     id: layoutId,
     name: demoCopyLayoutName(sourceLayout.name, { exactTemplateName, preferredName }),
-    ...(sourceLayout.photos?.length ? { photos: clone(sourceLayout.photos) } : {}),
-    ...(sourceLayout.trips ? { trips: clone(sourceLayout.trips) } : {}),
-    ...(sourceLayout.notes ? { notes: sourceLayout.notes, notesHtml: sourceLayout.notesHtml || "" } : {}),
-    ...(sourceLayout.videoUrl ? { videoUrl: sourceLayout.videoUrl } : {}),
-    ...(sourceLayout.videoUrls ? { videoUrls: clone(sourceLayout.videoUrls) } : {}),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),

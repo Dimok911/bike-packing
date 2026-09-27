@@ -91,11 +91,11 @@ test("legacy media becomes a trip without mutating the original; saving keeps th
   assert.equal(applyLayoutTrips(layout, layoutTripsSnapshot(layout)), false);
 });
 
-test("trip associations survive sync, normalization, copying and backup without cross-trip galleries", () => {
+test("trip associations survive sync, normalization and backup without cross-trip galleries", () => {
   const layout = {id:"l",trips:[{id:"one",name:"One"},{id:"two",name:"Two"}],photos:[{id:"a",tripId:"one",url:"https://example.org/a.jpg"},{id:"b",tripId:"two",url:"https://example.org/b.jpg"}]};
   const synced = compactLayoutForEntitySync(layout);
   normalizeItemPhotos(synced);
-  const copy = createManagedLayoutCopyRecord({id:"copy",name:"Copy",sourceLayout:synced});
+  const copy = structuredClone(synced);
   const trips = layoutTripsSnapshot(copy);
   assert.deepEqual(trips.map(trip=>trip.photos.map(p=>p.id)), [["a"],["b"]]);
   trips[0].photos[0].caption = "Changed in copy";
@@ -141,11 +141,11 @@ test("multiple videos migrate from the old URL, preserve order and reject unsafe
   assert.deepEqual(layoutMediaSnapshot({videoUrls:["javascript:alert(1)","https://example.org/video"]}).videoUrls,["https://example.org/video"]);
   assert.deepEqual(layoutMediaSnapshot({videoUrls:[],videoUrl:"https://youtu.be/old"}).videoUrls,[]);
 });
-test("private notes and publication opt-in survive editing, synchronization and copies separately from descriptions", () => {
+test("private notes and publication opt-in survive editing and synchronization separately from descriptions", () => {
   const layout={id:"a",trips:[{id:"t",notes:"Description",privateNotes:"Private",privateNotesHtml:"<b>Private</b>",publishNotes:false}]};
   const trips=layoutTripsSnapshot(layout);
   trips[0].publishNotes=true;applyLayoutTrips(layout,trips);
-  const copy=createManagedLayoutCopyRecord({id:"b",sourceLayout:compactLayoutForEntitySync(layout)});
+  const copy=compactLayoutForEntitySync(layout);
   assert.equal(copy.trips[0].notes,"Description");
   assert.equal(copy.trips[0].privateNotes,"Private");
   assert.equal(copy.trips[0].privateNotesHtml,"<b>Private</b>");
@@ -214,4 +214,24 @@ test("discarded trip drafts and changed accounts never attach late uploads", asy
   await session.add(photo);current=false;assert.equal(request.shouldUploadPhoto(photo),false);
   current=true;session.close();assert.equal(request.shouldUploadPhoto(photo),false);
   photo.url='/late';request.onPhotoProgress(photo);assert.deepEqual(saved.photos,[]);
+});
+
+test("new layout and template copies keep gear arrangement but omit all trip and legacy story fields", async () => {
+  const { createTemplateCopyRecord, createDemoTemplateCopyRecord } = await import("../../src/state/layout-manage.js");
+  const sourceLayout = {
+    id: "source", name: "Source",
+    arrangement: {rootContainerIds:["bag"],containers:{bag:{parentId:null}},items:{item:{containerId:"bag",quantity:3}}},
+    trips:[{id:"trip",notes:"Description",privateNotes:"Private",videoUrls:["https://youtu.be/a"]}],
+    photos:[{id:"trip-photo",tripId:"trip",url:"/trip-photo"}],
+    notes:"Legacy",notesHtml:"<b>Legacy</b>",videoUrl:"https://youtu.be/b",videoUrls:["https://youtu.be/b"]
+  };
+  const before=structuredClone(sourceLayout);
+  for (const create of [createManagedLayoutCopyRecord,createTemplateCopyRecord,createDemoTemplateCopyRecord]) {
+    const copy=create({id:"copy",name:"Copy",sourceLayout});
+    assert.deepEqual(copy.arrangement,sourceLayout.arrangement);
+    assert.deepEqual(copy.rootContainerIds,["bag"]);
+    for(const field of ["trips","photos","notes","notesHtml","videoUrl","videoUrls"]) assert.equal(copy[field],undefined,field);
+    assert.deepEqual(layoutTripsSnapshot(copy),[]);
+    assert.deepEqual(sourceLayout,before);
+  }
 });
