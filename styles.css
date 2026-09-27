@@ -6026,7 +6026,7 @@ dialog {
 
 #catalogUpdatesDialog {
   width: min(1500px, calc(100vw - 24px));
-  height: min(920px, calc(100dvh - 24px));
+  height: max(min(920px, calc(100dvh - 24px)), calc(100dvh - 400px));
   max-height: calc(100dvh - 24px);
   overflow: hidden;
 }
@@ -10887,6 +10887,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
 .catalog-updates-content {
   min-height: 0;
+  overflow-anchor: none;
   overflow-x: hidden;
   overflow-y: auto;
   display: grid;
@@ -11214,9 +11215,18 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-weight: 700;
 }
 
-.catalog-review-note {
+.catalog-review-note > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.catalog-review-note > label {
   display: grid;
   gap: 5px;
+  margin-top: 8px;
 }
 
 .catalog-review-note span {

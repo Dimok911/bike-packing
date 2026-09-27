@@ -337,10 +337,13 @@ const renderChange = (change = {}, scanId = "", scannedAt = "") => {
     ${change.manualPhotoException ? `<p class="catalog-review-safety-note">${escapeHtml(localText("A manual exception was saved for this model. Its photograph choices are retained where available; see Our exceptions.", "Для этой модели сохранено ручное исключение. Выбор доступных фотографий учтён; подробности — в разделе «Наши исключения»."))}</p>` : ""}
     ${renderPhotoPreview(change)}
     ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Open manufacturer source", "Открыть источник производителя"))}</a>` : ""}
-    <label class="catalog-review-note">
-      <span>${escapeHtml(localText("Review note", "Комментарий к проверке"))}</span>
-      <textarea rows="2" maxlength="1000" data-catalog-note placeholder="${escapeHtml(localText("Optional", "Необязательно"))}">${escapeHtml(change.decisionNote || "")}</textarea>
-    </label>
+    <details class="catalog-review-note"${change.decisionNote ? " open" : ""}>
+      <summary>${escapeHtml(localText("Review comment", "Комментарий к проверке"))}</summary>
+      <label>
+        <span class="visually-hidden">${escapeHtml(localText("Review note", "Комментарий к проверке"))}</span>
+        <textarea rows="2" maxlength="1000" data-catalog-note placeholder="${escapeHtml(localText("Optional", "Необязательно"))}">${escapeHtml(change.decisionNote || "")}</textarea>
+      </label>
+    </details>
     <div class="catalog-review-actions">
       ${renderDecisionButton(change, "approved", localText("Approve", "Подтвердить"))}
       ${renderDecisionButton(change, "rejected", localText("Reject", "Отклонить"))}
@@ -469,6 +472,7 @@ export function createManufacturerCatalogReviewDialogController({
   let allowed = false;
   const noteDrafts = new Map();
   const photoDrafts = new Map();
+  const noteExpanded = new Map();
   const pendingDecisions = new Set();
   const savedDecisions = new Map();
   let decisionRevision = 0;
@@ -477,6 +481,8 @@ export function createManufacturerCatalogReviewDialogController({
     const key = `${card.dataset.scanId}/${card.dataset.changeId}`;
     const photos = [...card.querySelectorAll("[data-catalog-photo-url]")];
     if (photos.length) photoDrafts.set(key, photos.filter(photo => photo.checked).map(photo => photo.dataset.catalogPhotoUrl));
+    const disclosure = card.querySelector(".catalog-review-note");
+    if (disclosure) noteExpanded.set(key, disclosure.open);
     const note = card.querySelector("[data-catalog-note]");
     if (note) noteDrafts.set(`${card.dataset.scanId}/${card.dataset.changeId}`, note.value);
   });
@@ -486,6 +492,16 @@ export function createManufacturerCatalogReviewDialogController({
     const section = host.querySelector?.('.catalog-review-changes');
     if (updatedKey && section && filters.type !== 'exceptions' && host.ownerDocument) {
       const scrollTop = host.scrollTop;
+      const cards = [...section.querySelectorAll('[data-change-id]')];
+      const updatedCard = cards.find(card => card.dataset.scanId + '/' + card.dataset.changeId === updatedKey);
+      const viewport = host.getBoundingClientRect();
+      const updatedBounds = updatedCard?.getBoundingClientRect();
+      // A background save must not pull the reader away from another card.
+      const advance = updatedBounds && updatedBounds.bottom > viewport.top && updatedBounds.top < viewport.bottom;
+      const nextCard = updatedCard && cards[cards.indexOf(updatedCard) + 1];
+      const readingCard = cards.find(card => card.getBoundingClientRect().bottom > viewport.top);
+      const readingTop = readingCard?.getBoundingClientRect().top;
+      let removedCard = false;
       const summary = host.ownerDocument.createElement('div');
       summary.innerHTML = renderManufacturerCatalogReview(lastData, { ...filters, summaryOnly: true });
       for (const selector of ['.catalog-review-summary', '.catalog-review-filters', '.catalog-review-manufacturers', '.catalog-review-results']) {
@@ -500,18 +516,36 @@ export function createManufacturerCatalogReviewDialogController({
         if (key !== updatedKey) return;
         const change = changes.find(row => row.id === card.dataset.changeId
           && (row.reviewScanId || latestManufacturerCatalogReviewScan(lastData)?.id) === card.dataset.scanId);
-        if (!change || !visible(change)) card.remove();
+        if (!change || !visible(change)) {
+          card.remove();
+          removedCard = true;
+        }
         else card.outerHTML = renderChange(change, card.dataset.scanId, change.reviewScannedAt);
       });
-      if (!section.querySelector('[data-change-id]')) section.innerHTML = '<p class="catalog-review-empty">'
-        + escapeHtml(localText('No entries match these filters.', 'По выбранным фильтрам записей нет.')) + '</p>';
+      if (!section.querySelector('[data-change-id]')) {
+        section.style.paddingBottom = '';
+        section.innerHTML = '<p class="catalog-review-empty">'
+          + escapeHtml(localText('No entries match these filters.', 'По выбранным фильтрам записей нет.')) + '</p>';
+      }
       host.scrollTop = scrollTop;
+      if (advance && removedCard && nextCard?.isConnected) {
+        const gap = 16;
+        section.style.paddingBottom = '';
+        // Leave enough room to align even the final, short card.
+        const remainingHeight = section.getBoundingClientRect().bottom - nextCard.getBoundingClientRect().top;
+        section.style.paddingBottom = Math.max(0, host.clientHeight - gap - remainingHeight) + 'px';
+        host.scrollTop += nextCard.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientTop - gap;
+      } else if (!advance && readingCard?.isConnected) {
+        host.scrollTop += readingCard.getBoundingClientRect().top - readingTop;
+      }
     } else host.innerHTML = renderManufacturerCatalogReview(lastData, filters);
     refs.catalogUpdatesContent.querySelectorAll?.("[data-change-id]").forEach((card) => {
       const key = `${card.dataset.scanId}/${card.dataset.changeId}`;
       if (pendingDecisions.has(key)) card.querySelectorAll("button, input, textarea").forEach(item => item.setAttribute("disabled", "disabled"));
       const note = card.querySelector("[data-catalog-note]");
       if (note && noteDrafts.has(key)) note.value = noteDrafts.get(key);
+      const disclosure = card.querySelector(".catalog-review-note");
+      if (disclosure && noteExpanded.has(key)) disclosure.open = noteExpanded.get(key);
       if (photoDrafts.has(key)) card.querySelectorAll("[data-catalog-photo-url]").forEach(input => { input.checked = photoDrafts.get(key).includes(input.dataset.catalogPhotoUrl); });
     });
     renderedLanguage = currentDocumentLanguage();
@@ -577,6 +611,7 @@ export function createManufacturerCatalogReviewDialogController({
       inFlight = null;
       lastAttempt = -Infinity;
       noteDrafts.clear();
+      noteExpanded.clear();
       photoDrafts.clear();
       pendingDecisions.clear();
       savedDecisions.clear();

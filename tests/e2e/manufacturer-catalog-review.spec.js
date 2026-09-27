@@ -23,6 +23,7 @@ for (const language of ["ru", "en"]) {
     await expect(type("added")).toHaveText(/ · 2$/);
     await expect(type("missing")).toHaveText(/ · 1$/);
     await expect(type("changed")).toHaveText(/ · 0$/);
+    await cards.first().locator(".catalog-review-note > summary").click();
     await cards.first().locator('textarea').fill("Keep this draft");
     await type("missing").click();
     await expect(cards).toHaveCount(1);
@@ -64,6 +65,7 @@ for (const language of ["ru", "en"]) {
     await page.locator('[data-catalog-type="photos"]').click();
     await expect(page.locator('[data-change-id]')).toHaveCount(1);
     await expect(page.locator('.catalog-review-photo-warning')).toContainText(language === "ru" ? "Ранее сохранённые фотографии" : "Previously saved photographs");
+    await page.locator('.catalog-review-note > summary').click();
     await page.locator('[data-catalog-note]').fill('Check size mapping');
     await page.locator('[data-catalog-manufacturer="ortlieb"]').click();
     await expect(page.locator('[data-change-id]')).toHaveCount(0);
@@ -96,7 +98,7 @@ for (const language of ["ru", "en"]) {
     await expect(card.locator('.state-added img')).toBeVisible();
     await card.locator('.state-added img').scrollIntoViewIfNeeded();
     await expect.poll(()=>card.locator('.state-added img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
-    await card.locator('summary').click();
+    await card.locator('.catalog-review-photo-preview > summary').click();
     await expect(card.locator('.state-unchanged img')).toBeVisible();
     await expect(card.getByLabel(language==='ru'?'В итоговой галерее':'In the final gallery').filter({visible:true}).first()).toBeVisible();
     await expect(card).toContainText(language==='ru'?'не добавляет повторно':'without adding a duplicate');
@@ -117,6 +119,7 @@ for(const language of ['ru','en']){
   await page.locator('[data-catalog-manufacturer="ortlieb"]').click();
   await page.locator('[data-catalog-type="missing"]').click();
   const card=page.locator('[data-change-id]');
+  await card.locator('.catalog-review-note > summary').click();
   await card.locator('textarea').fill('Preserve this note');
   const title=card.locator('[data-catalog-current-product]');
   await title.scrollIntoViewIfNeeded();
@@ -151,7 +154,7 @@ for(const language of ['ru','en']){
   const card=page.locator('[data-change-id="ortlieb:changed:gallery-demo"]');
   const added=card.locator('[data-catalog-photo-url$="frame-pack-12.jpg"]'),removed=card.locator('[data-catalog-photo-url$="frame-pack-10.jpg"]');
   await expect(added).toBeChecked();await expect(removed).not.toBeChecked();
-  await added.uncheck();await removed.check();await card.locator('textarea').fill('Fits the small size');
+  await added.uncheck();await removed.check();await card.locator('.catalog-review-note > summary').click();await card.locator('textarea').fill('Fits the small size');
   await page.locator('[data-catalog-type="added"]').click();await page.locator('[data-catalog-type="photos"]').click();
   await expect(added).not.toBeChecked();await expect(removed).toBeChecked();
   await card.locator('[data-catalog-decision="approved"]').click();await expect(card).toHaveCount(0);
@@ -172,6 +175,7 @@ test('saving a decision retains neighboring cards and drafts without another ful
   await page.goto('/tests/fixtures/manufacturer-catalog-review.html');
   const cards=page.locator('[data-change-id]');await expect(cards).toHaveCount(7);
   const neighbor=page.locator('[data-change-id="ortlieb:changed:model-2"]');
+  await neighbor.locator('.catalog-review-note > summary').click();
   await neighbor.locator('textarea').fill('Preserve this neighboring draft');
   await neighbor.evaluate(el=>{el.dataset.testIdentity='same-node';});
   await cards.first().locator('[data-catalog-decision="approved"]').click();
@@ -181,4 +185,85 @@ test('saving a decision retains neighboring cards and drafts without another ful
   await neighbor.locator('[data-catalog-decision="rejected"]').click();
   await expect(cards).toHaveCount(5);await expect(page.locator('body')).toHaveAttribute('data-catalog-fetches','1');
   await expect(page.locator('#catalogUpdatesBtn')).toHaveAttribute('data-review-count','5');
+});
+
+async function openReviewFixture(page) {
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.hostname !== 'bike-packing.localhost' || !(url.pathname === '/tests/fixtures/manufacturer-catalog-review.html' || url.pathname === '/styles.css' || /^\/src\/[a-z0-9/.-]+\.js$/i.test(url.pathname))) return route.abort();
+    return route.fulfill({ contentType: url.pathname.endsWith('.html') ? 'text/html' : url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript', body: await readFile(resolve('.' + url.pathname), 'utf8') });
+  });
+  await page.goto('/tests/fixtures/manufacturer-catalog-review.html');
+  await expect(page.locator('[data-change-id]')).toHaveCount(7);
+}
+
+test('review advances the next card with a small gap through the final card', async ({ page }) => {
+  await openReviewFixture(page);
+  const cards = page.locator('[data-change-id]');
+  const ids = await cards.evaluateAll(elements => elements.map(el => el.dataset.changeId));
+  // Different heights reproduce both long descriptions and short final cards.
+  await cards.evaluateAll(elements => elements.forEach((el, i) => { if (i < elements.length - 1) el.style.minHeight = (i % 2 ? 700 : 1000) + 'px'; }));
+  for (let i = 0; i < ids.length - 1; i++) {
+    await page.locator('[data-change-id="' + ids[i] + '"] [data-catalog-decision="' + (i % 2 ? 'rejected' : 'approved') + '"]').click();
+    await expect(cards).toHaveCount(ids.length - i - 1);
+    const next = page.locator('[data-change-id="' + ids[i + 1] + '"]');
+    await expect.poll(() => next.evaluate(el => {
+      const host = el.closest('.catalog-updates-content');
+      return Math.abs(el.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientTop - 16);
+    })).toBeLessThanOrEqual(1);
+  }
+  await cards.first().locator('[data-catalog-decision="approved"]').click();
+  await expect(cards).toHaveCount(0);
+  await expect(page.locator('.catalog-review-empty')).toBeVisible();
+  await expect(page.locator('body')).toHaveAttribute('data-catalog-fetches', '1');
+});
+
+test('review comments collapse and preserve text and disclosure state through filters', async ({ page }) => {
+  await openReviewFixture(page);
+  const card = page.locator('[data-change-id="ortlieb:changed:model-0"]');
+  const note = card.locator('textarea');
+  await expect(note).not.toBeVisible();
+  await card.locator('summary').click();
+  await note.fill('My review comment');
+  await card.locator('summary').click();
+  await expect(note).not.toBeVisible();
+  await page.locator('[data-catalog-type="missing"]').click();
+  await page.locator('[data-catalog-type="added"]').click();
+  await expect(note).not.toBeVisible();
+  await card.locator('summary').click();
+  await expect(note).toHaveValue('My review comment');
+  await page.locator('[data-catalog-type="missing"]').click();
+  await page.locator('[data-catalog-type="added"]').click();
+  await expect(note).toBeVisible();
+  await expect(note).toHaveValue('My review comment');
+});
+
+test('review dialog grows on tall screens with 200 pixel margins', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1440 });
+  await openReviewFixture(page);
+  const dialog = page.locator('#catalogUpdatesDialog');
+  await dialog.evaluate(el => { el.close(); el.showModal(); });
+  const bounds = await dialog.boundingBox();
+  expect(Math.round(bounds.height)).toBe(1040);
+  expect(Math.round(bounds.y)).toBe(200);
+  expect(Math.round(1440 - bounds.y - bounds.height)).toBe(200);
+  await page.screenshot({ path: 'node_modules/.cache/catalog-release-v1653/tall-' + test.info().project.name + '.png' });
+  await page.setViewportSize({ width: 390, height: 700 });
+  const small = await dialog.boundingBox();
+  expect(small.height).toBeLessThanOrEqual(700);
+  expect(small.height).toBeGreaterThan(650);
+});
+
+
+test('a deferred card stays in place instead of advancing the list', async ({ page }) => {
+  await openReviewFixture(page);
+  const card = page.locator('[data-change-id="ortlieb:changed:model-0"]');
+  const button = card.locator('[data-catalog-decision="deferred"]');
+  await button.scrollIntoViewIfNeeded();
+  const before = await card.evaluate(el => el.getBoundingClientRect().top);
+  await button.click();
+  await expect(card.locator('.catalog-review-decision')).toHaveClass(/decision-deferred/);
+  const after = await card.evaluate(el => el.getBoundingClientRect().top);
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+  await expect(page.locator('[data-change-id]')).toHaveCount(7);
 });
