@@ -11201,3 +11201,19 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .trip-track-preview > small:empty { display: none; }
 .layout-photo-summary[data-photo-view="grid"] .photo-gallery-slide { padding: 0; }
 .layout-photo-summary[data-photo-view="grid"] .photo-gallery-slide img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Trip rows retain native touch scrolling without a separate scrollbar. */
+.trip-media-scroll { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; min-width: 0; gap: 4px; }
+.trip-media-scroll.has-overflow { grid-template-columns: 32px minmax(0, 1fr) 32px; }
+.trip-media-scroll > .layout-photo-summary-list,
+.trip-media-scroll > .layout-video-summary-list { min-width: 0; scrollbar-width: none; }
+.trip-media-scroll > .layout-photo-summary-list::-webkit-scrollbar,
+.trip-media-scroll > .layout-video-summary-list::-webkit-scrollbar { display: none; }
+.trip-media-scroll-button { display: grid; place-items: center; width: 32px; min-width: 0; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer; font-size: 28px; line-height: 1; }
+.trip-media-scroll-button[hidden] { display: none; }
+.trip-media-scroll-button:disabled { opacity: .3; cursor: default; }
+.trip-media-scroll-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.layout-photo-summary-list .layout-summary-thumbnail { border: 0; background: transparent; }
+.layout-photo-summary-list .layout-summary-thumbnail img { padding: 0; background: transparent; object-fit: cover; }
+.trip-media-scroll > .layout-video-summary-list { padding-inline: 0; }

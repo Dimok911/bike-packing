@@ -4,7 +4,7 @@ Each trip owns an optional `track` record: name, original filename and separate 
 
 The trip editor accepts GPX tracks (`trk/trkseg/trkpt`) and routes (`rte/rtept`), including namespace-qualified GPX. Invalid XML, DTD/entity declarations, missing/out-of-range coordinates, files over 20 MiB, more than 100 segments or 200,000 input points are rejected. Failed replacement and discarded edits preserve the previous saved track. Large tracks are simplified to at most 6,000 points, preserving segment endpoints and gaps. Computation has an operation budget to reject pathological files.
 
-Photos and videos use separate horizontal rows, photos above videos, with 4 px gaps and no hidden overflow tiles. Each row scrolls horizontally. Photo fullscreen navigation includes all photographs. Embedded YouTube videos have previous/next controls; other video URLs remain external links. Admin photo strip and hero variants remain available.
+Photos and videos use separate horizontal rows, photos above videos, with 4 px gaps and no hidden overflow tiles. Each row scrolls horizontally without a visible scrollbar; previous/next buttons appear only when the content overflows. Native touch scrolling remains available. Photo previews have no white inset frame. Photo fullscreen navigation includes all photographs. Embedded YouTube videos have previous/next controls; other video URLs remain external links. Admin photo strip and hero variants remain available.
 
 ## Yandex activation
 

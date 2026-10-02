@@ -789,9 +789,26 @@ test("compact horizontal media rows keep all photos and video navigation in thei
   for (const selector of [".layout-photo-summary-list", ".layout-video-summary-list"]) {
     const dimensions=await page.locator(selector).evaluate(list=>({gap:getComputedStyle(list).gap,overflow:list.scrollWidth>list.clientWidth,rows:new Set([...list.children].map(child=>Math.round(child.getBoundingClientRect().top))).size}));
     expect(dimensions).toEqual({gap:"4px",overflow:true,rows:1});
-    expect(await page.locator(selector).evaluate(list=>{list.scrollLeft=list.scrollWidth;return list.scrollLeft;})).toBeGreaterThan(100);
+    const row = page.locator(selector).locator("..");
+    const previous = row.locator('[data-trip-media-scroll="previous"]');
+    const next = row.locator('[data-trip-media-scroll="next"]');
+    await expect(previous).toBeVisible();
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeEnabled();
+    expect(await page.locator(selector).evaluate(list=>getComputedStyle(list).scrollbarWidth)).toBe("none");
+    await next.click();
+    await expect.poll(()=>page.locator(selector).evaluate(list=>list.scrollLeft)).toBeGreaterThan(100);
+    await expect(previous).toBeEnabled();
+    await previous.click();
+    await expect.poll(()=>page.locator(selector).evaluate(list=>list.scrollLeft)).toBeLessThan(2);
+    await page.locator(selector).evaluate(list=>{list.scrollLeft=list.scrollWidth;});
+    await expect(next).toBeDisabled();
     await page.locator(selector).evaluate(list=>{list.scrollLeft=0;});
   }
+  await page.setViewportSize({width:1600,height:1000});
+  await expect(page.locator('.trip-media-scroll-button:visible')).toHaveCount(0);
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('.trip-media-scroll-button:visible')).toHaveCount(4);
   expect(await page.locator(".layout-summary-videos").evaluate(videos=>videos.getBoundingClientRect().top > document.querySelector(".layout-summary-photos").getBoundingClientRect().bottom)).toBe(true);
   await expect.poll(()=>page.locator(".layout-summary-photos img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
   await page.screenshot({path:testInfo.outputPath("trip-media-rows.png")});

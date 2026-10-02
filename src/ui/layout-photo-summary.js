@@ -1,3 +1,4 @@
+import { bindTripMediaScroll } from "./trip-media-scroll.js";
 import { renderTripTrackMap, bindTripTrackMap } from "./trip-track-map.js";
 import { normalizeTripTrack } from "../state/trip-track.js";
 import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
@@ -52,6 +53,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   let version = 0;
   let binding = null;
   let videoBinding = null;
+  let scrollBinding = null;
   let mapBinding = null;
   let hasTrack = false;
   let hasPhotos = false;
@@ -132,6 +134,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const token = ++version;
       binding?.destroy(); binding = null;
       videoBinding?.destroy(); videoBinding = null;
+      scrollBinding?.destroy(); scrollBinding = null;
       mapBinding?.destroy(); mapBinding = null;
       host.replaceChildren();
       if (!visible || (!hasTrack && !media.photos.length && !media.videoUrls.length)) return;
@@ -147,6 +150,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       });
       binding = bindGalleries(host);
       videoBinding = bindTripVideoCards(host, localText);
+      scrollBinding = bindTripMediaScroll(host, localText);
       mapBinding = bindTripTrackMap(host, track, localText);
       syncBackdrop();
       host.hidden = !hasTrack && !hasVideos && view === "hidden";
