@@ -97,3 +97,11 @@ export function parseTripGpx(text, fileName = "", Parser = globalThis.DOMParser)
   const name = children(tracks[0] || routes[0] || xml.documentElement, "name")[0]?.textContent || fileName.replace(/\.gpx$/i, "");
   return normalizeTripTrack({ name, fileName, startedAt, segments: compactTrackSegments(segments) });
 }
+
+// An explicit empty collection wins over the legacy single-track field.
+export function normalizeTripTracks(value) {
+  return (Array.isArray(value) ? value : value ? [value] : []).map(normalizeTripTrack).filter(Boolean);
+}
+export function tripTracks(trip) {
+  return normalizeTripTracks(Array.isArray(trip?.tracks) ? trip.tracks : trip?.track);
+}

@@ -243,17 +243,17 @@ test("GPX track survives trip edits, sync and JSON while invalid coordinates are
   const track = { name: "Route", fileName: "route.gpx", startedAt: "2026-09-21T08:00:00.000Z", segments: [[[55,37],[55.1,37.1]],[[56,38],[56.1,38.1]]] };
   const layout = { id:"route-layout", trips:[{id:"trip",track}] };
   const draft = layoutTripsSnapshot(layout);
-  draft[0].track.name = "Changed";
+  draft[0].tracks[0].name = "Changed";
   assert.equal(layout.trips[0].track.name,"Route");
   assert.equal(applyLayoutTrips(layout,draft),true);
   assert.equal(applyLayoutTrips(layout,draft),false);
   const synced = JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout)));
-  assert.deepEqual(synced.trips[0].track.segments,track.segments);
-  assert.equal(synced.trips[0].track.startedAt,track.startedAt);
+  assert.deepEqual(synced.trips[0].tracks[0].segments,track.segments);
+  assert.equal(synced.trips[0].tracks[0].startedAt,track.startedAt);
   for (const point of [[91,0],[0,181],[null,1],[NaN,1],["55",37]]) assert.equal(normalizeTripTrack({...track,segments:[[point,[1,1]]]}),null);
   assert.equal(normalizeTripTrack({...track,segments:[[[0,0]]]}),null);
-  draft[0].track = null; applyLayoutTrips(layout,draft);
-  assert.equal(layoutTripsSnapshot(layout)[0].track,null);
+  draft[0].tracks = []; applyLayoutTrips(layout,draft);
+  assert.deepEqual(layoutTripsSnapshot(layout)[0].tracks,[]);
   const long = Array.from({length:15000},(_,i)=>[55 + Math.sin(i / 30) * .01,37 + i / 10000]);
   const compact = compactTrackSegments([long,[[0,0],[1,1]]]);
   assert.ok(compact.flat().length <= MAX_TRACK_POINTS);
@@ -269,7 +269,7 @@ test("track replacement has a readable history entry without dumping coordinates
   const before={layouts:{l:{id:"l",trips:[{id:"t",name:"Trip",track:{name:"Old",segments:[[[55,37],[56,38]]]}}]}},items:{},containers:{}};
   const after=structuredClone(before);after.layouts.l.trips[0].track={name:"New",segments:[[[55,37],[57,39]]]};
   const diff=buildHistoryStateDiff(before,after);
-  assert.match(JSON.stringify(diff),/Трек в «Trip»: Old → New/);
+  assert.match(JSON.stringify(diff),/Треки в «Trip»: Old → New/);
 });
 
 
@@ -278,4 +278,27 @@ test("GPX dates require valid timestamp and calendar day", async () => {
   assert.equal(normalizeTrackStartedAt("2026-09-21T11:00:00+03:00"), "2026-09-21T08:00:00.000Z");
   assert.equal(normalizeTrackStartedAt("2024-02-29T08:00:00Z"), "2024-02-29T08:00:00.000Z");
   for (const invalid of [undefined,"","2026-02-30T08:00:00Z","2026-02-29T08:00:00Z","2026-09-21","invalid"]) assert.equal(normalizeTrackStartedAt(invalid), "");
+});
+
+
+test("multiple GPX tracks migrate legacy data, preserve independent dates and delete without resurrection", async () => {
+  const { tripTracks } = await import("../../src/state/trip-track.js");
+  const { applyLayoutTrips, layoutTripsSnapshot } = await import("../../src/state/layout-trips.js");
+  const old={name:"Legacy",startedAt:"2026-09-21T08:00:00Z",segments:[[[55,37],[56,38]]]};
+  const layout={id:"l",trips:[{id:"t",track:old}]};
+  const draft=layoutTripsSnapshot(layout);
+  assert.equal(draft[0].tracks.length,1);
+  draft[0].tracks.push(...Array.from({length:5},(_,i)=>({...old,name:`Route ${i+1}`,startedAt:`2026-09-${22+i}T08:00:00Z`})));
+  assert.equal(applyLayoutTrips(layout,draft),true);
+  assert.equal(applyLayoutTrips(layout,draft),false);
+  assert.equal(layout.trips[0].track,undefined);
+  const synced=JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout)));
+  assert.equal(synced.trips[0].tracks.length,6);
+  assert.equal(synced.trips[0].tracks[5].startedAt,"2026-09-26T08:00:00.000Z");
+  assert.equal(synced.trips[0].tracks[0].name,"Legacy");
+  assert.deepEqual(tripTracks({track:old,tracks:[]}),[]);
+  draft[0].tracks.splice(1,1);applyLayoutTrips(layout,draft);
+  assert.deepEqual(layout.trips[0].tracks.map(t=>t.name),["Legacy","Route 2","Route 3","Route 4","Route 5"]);
+  draft[0].tracks=[];applyLayoutTrips(layout,draft);
+  assert.deepEqual(layoutTripsSnapshot(layout)[0].tracks,[]);
 });

@@ -744,7 +744,7 @@ test("GPX route: load, reject malformed replacement, persist, map dialog, discar
   await page.locator("#layoutSelect").selectOption({label:"Поездка с треком (1 поездка)"});
   await expect(page.locator(".trip-track-name")).toHaveText("Лесной маршрут");
   await expect(page.locator(".layout-summary-map svg polyline")).toHaveCount(2);
-  const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")).layouts).find(layout=>layout.name === "Поездка с треком").trips[0].track);
+  const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")).layouts).find(layout=>layout.name === "Поездка с треком").trips[0].tracks[0]);
   expect(saved.startedAt).toBe("2026-09-21T08:00:00.000Z");
   await expect(page.locator('.trip-track-open time')).toHaveText("21.09.2026");
   const mapSize = await page.locator('[data-trip-track-canvas]').boundingBox();
@@ -765,7 +765,7 @@ test("GPX route: load, reject malformed replacement, persist, map dialog, discar
   await expect(page.locator(".trip-track-name")).toHaveText("Лесной маршрут");
   await page.locator("#editLayoutBtn").click();
   await page.locator("[data-trip-add]").click();
-  await expect(page.locator("[data-trip-gpx-status]")).toHaveText("Трек пока не добавлен");
+  await expect(page.locator("[data-trip-gpx-status]")).toHaveText("Треки пока не добавлены");
   await page.locator("[data-layout-trips-editor] select").selectOption("0");
   await expect(page.locator("[data-trip-gpx-status]")).toContainText("Лесной маршрут");
   await page.locator("[data-trip-gpx-remove]").click();
@@ -817,9 +817,9 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     await page.locator(selector).evaluate(list=>{list.scrollLeft=0;});
   }
   await page.setViewportSize({width:1600,height:1000});
-  await expect(page.locator('.trip-media-scroll-button:visible')).toHaveCount(0);
+  await expect(page.locator('.layout-summary-photos .trip-media-scroll-button:visible, .layout-summary-videos .trip-media-scroll-button:visible')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});
-  await expect(page.locator('.trip-media-scroll-button:visible')).toHaveCount(4);
+  await expect(page.locator('.layout-summary-photos .trip-media-scroll-button:visible, .layout-summary-videos .trip-media-scroll-button:visible')).toHaveCount(4);
   expect(await page.locator(".layout-summary-videos").evaluate(videos=>videos.getBoundingClientRect().top > document.querySelector(".layout-summary-photos").getBoundingClientRect().bottom)).toBe(true);
   await expect.poll(()=>page.locator(".layout-summary-photos img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
   await page.screenshot({path:testInfo.outputPath("trip-media-rows.png")});
@@ -946,4 +946,50 @@ test("compact photo editor supports inline captions, pointer reorder, cancellati
   await page.locator("#saveEditedLayoutBtn").click();
   await page.reload();await waitForApp(page);await page.locator("#layoutSelect").selectOption({label:"Компактный редактор (1 поездка)"});await page.locator("#editLayoutBtn").click();
   await expect(list.locator("[data-layout-caption-edit]")).toHaveText(["Новая подпись","Кадр 3","Кадр 2","Кадр 4","Кадр 5"]);
+});
+
+
+test("multiple GPX files append to legacy track and remain independent after reload, removal and discard", async ({page},testInfo) => {
+  test.setTimeout(60000);
+  await page.route("https://api-maps.yandex.ru/**",route=>route.abort());
+  await prepareIsolatedRussianGuest(page);await openApp(page);await createEmptyLayout(page,"Несколько карт");
+  await page.evaluate(()=>{
+    const key="bike-packing-prototype-state-v1",state=JSON.parse(localStorage.getItem(key));
+    const layout=Object.values(state.layouts).find(l=>l.name==="Несколько карт");
+    layout.trips=[{id:"legacy",name:"Все дни",track:{name:"Старый трек",startedAt:"2026-09-20T08:00:00Z",segments:[[[55,37],[56,38]]]}}];
+    localStorage.setItem(key,JSON.stringify(state));
+  });
+  const reopen=async()=>{await page.reload();await waitForApp(page);await page.locator("#layoutSelect").selectOption({label:"Несколько карт (1 поездка)"});};
+  await reopen();await expect(page.locator("[data-trip-map-card]")).toHaveCount(1);
+  await page.locator("#editLayoutBtn").click();
+  const file=n=>({name:`day-${n}.gpx`,mimeType:"application/gpx+xml",buffer:Buffer.from(`<gpx><trk><name>День ${n}</name><trkseg><trkpt lat="${55+n/100}" lon="37"><time>2026-09-${20+n}T08:00:00Z</time></trkpt><trkpt lat="56" lon="38"/></trkseg></trk></gpx>`)});
+  const input=page.locator("[data-trip-gpx-file]");
+  await expect(input).toHaveAttribute("multiple","");
+  await input.setInputFiles([file(1),{name:"broken.gpx",mimeType:"application/gpx+xml",buffer:Buffer.from("<gpx><trk>")},file(2),file(3)]);
+  await expect(page.locator(".trip-track-editor-card")).toHaveCount(4);
+  await expect(page.locator("[data-trip-gpx-status]")).toContainText("broken.gpx");
+  await input.setInputFiles([file(4),file(5)]);
+  await expect(page.locator(".trip-track-editor-card")).toHaveCount(6);
+  await page.locator("#saveEditedLayoutBtn").click();await reopen();
+  await expect(page.locator(".trip-track-name")).toHaveText(["Старый трек","День 1","День 2","День 3","День 4","День 5"]);
+  await expect(page.locator("[data-trip-map-card] time").last()).toHaveText("25.09.2026");
+  await page.setViewportSize({width:390,height:844});
+  const next=page.getByRole("button",{name:"Прокрутить карты вправо",exact:true});
+  await expect(next).toBeVisible();await next.click();
+  await expect.poll(()=>page.locator(".trip-map-summary-list").evaluate(list=>list.scrollLeft)).toBeGreaterThan(100);
+  expect(await page.locator(".trip-map-summary-list").evaluate(list=>getComputedStyle(list).scrollbarWidth)).toBe("none");
+  for (const index of [0,3,5]) {
+    await page.locator("[data-trip-track-open]").nth(index).click();
+    await expect(page.locator(".trip-track-dialog header strong")).toHaveText(index ? `День ${index}` : "Старый трек");
+    await expect(page.locator(".trip-track-dialog svg polyline")).toHaveCount(1);
+    await page.getByRole("button",{name:"Закрыть карту",exact:true}).click();
+  }
+  await page.screenshot({path:testInfo.outputPath("multiple-maps.png")});
+  await page.locator("#editLayoutBtn").click();await page.locator("[data-trip-gpx-remove]").nth(1).click();
+  await expect(page.locator(".trip-track-editor-card")).toHaveCount(5);
+  await page.locator("#layoutEditDialog header button").click();await page.locator("#confirmCancelBtn").click();
+  await expect(page.locator("[data-trip-map-card]")).toHaveCount(6);
+  await page.locator("#editLayoutBtn").click();await page.locator("[data-trip-gpx-remove]").nth(1).click();
+  await page.locator("#saveEditedLayoutBtn").click();await reopen();
+  await expect(page.locator(".trip-track-name")).toHaveText(["Старый трек","День 2","День 3","День 4","День 5"]);
 });

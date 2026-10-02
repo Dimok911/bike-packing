@@ -1,3 +1,4 @@
+import { tripTracks } from "../state/trip-track.js";
 import { createTripTrackEditor } from "./trip-track-editor.js";
 import { createLayoutDraftPhotoUploads } from "../sync/layout-draft-photo-uploads.js";
 import { createLayoutMediaEditor } from "./layout-media-editor.js";
@@ -37,7 +38,7 @@ export function createLayoutTripsEditor(options) {
     if (!trips[active]) return;
     const fields = readNoteFields(notes);
     const privateFields = readNoteFields(privateNotes);
-    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot(), track: trackEditor.snapshot() });
+    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot(), tracks: trackEditor.snapshot() });
   }
   function renderChoices() {
     select.replaceChildren(...trips.map((trip, index) => new Option(tripDisplayName(trip, index, language()), String(index))));
@@ -56,7 +57,7 @@ export function createLayoutTripsEditor(options) {
     loadNoteFields(notes, { note: trip?.notes, noteHtml: trip?.notesHtml });
     loadNoteFields(privateNotes, { note: trip?.privateNotes, noteHtml: trip?.privateNotesHtml });
     publishNotes.checked = trip?.publishNotes === true;
-    trackEditor.open(trip?.track);
+    trackEditor.open(tripTracks(trip));
     media.open(trip, { preserveCreated });
     renderChoices();
   }

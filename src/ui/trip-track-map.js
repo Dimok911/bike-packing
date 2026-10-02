@@ -1,5 +1,5 @@
 import { YANDEX_MAPS_API_KEY } from "../config/trip-map.js";
-import { normalizeTripTrack, projectTrackSegments } from "../state/trip-track.js";
+import { normalizeTripTracks, projectTrackSegments } from "../state/trip-track.js";
 import { escapeHtml } from "../utils/html.js";
 
 let sdkPromise;
@@ -34,20 +34,25 @@ export function trackOutlineSvg(track) {
 }
 
 export function renderTripTrackMap(value, localText) {
-  const track = normalizeTripTrack(value);
-  if (!track) return "";
-  const title = localText("Map", "Карта");
+  const tracks = normalizeTripTracks(value);
+  if (!tracks.length) return "";
+  const title = localText("Maps", "Карты");
+  return `<section class="layout-summary-map" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong><div class="trip-map-summary-list">${tracks.map((track,index) => renderTrackCard(track,index,localText)).join("")}</div></section>`;
+}
+function renderTrackCard(track, index, localText) {
   const name = track.name || track.fileName || localText("Trip track", "Трек поездки");
   const date = track.startedAt ? new Intl.DateTimeFormat(localText("en-GB", "ru-RU"), {day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(track.startedAt)) : "";
-  return `<section class="layout-summary-map" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong>
-    <div class="trip-track-preview"><div class="trip-track-canvas" data-trip-track-canvas>${trackOutlineSvg(track)}</div>
-    <small data-trip-map-status role="status"></small><button type="button" class="trip-track-open" data-trip-track-open aria-haspopup="dialog" aria-label="${escapeHtml(localText("Open large map", "Открыть большую карту"))}"><span class="trip-track-name">${escapeHtml(name)}</span>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<span class="trip-track-expand" aria-hidden="true">↗</span></button></div></section>`;
+  return `<article data-trip-map-card="${index}" class="trip-track-preview"><div class="trip-track-canvas" data-trip-track-canvas>${trackOutlineSvg(track)}</div>
+    <small data-trip-map-status role="status"></small><button type="button" class="trip-track-open" data-trip-track-open aria-haspopup="dialog" aria-label="${escapeHtml(localText("Open large map", "Открыть большую карту"))}"><span class="trip-track-name">${escapeHtml(name)}</span>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<span class="trip-track-expand" aria-hidden="true">↗</span></button></article>`;
 }
 
 export function bindTripTrackMap(host, value, localText) {
-  const track = normalizeTripTrack(value);
-  const section = host.querySelector(".layout-summary-map");
-  if (!track || !section) return { destroy() {} };
+  const tracks = normalizeTripTracks(value);
+  const bindings = [...host.querySelectorAll("[data-trip-map-card]")].map((section,index) => bindSingleTrackMap(section, tracks[index], localText));
+  return { destroy() { bindings.forEach(binding=>binding.destroy()); } };
+}
+function bindSingleTrackMap(section, track, localText) {
+  if (!track) return { destroy() {} };
   let destroyed = false, dialog = null, stopLarge = null, observer = null;
   const fallbackLabel = () => localText("Track outline · map unavailable", "Схема трека · карта недоступна");
   function mount(canvas, status, interactive, onClick) {

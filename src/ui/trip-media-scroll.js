@@ -2,7 +2,7 @@ import { escapeHtml } from "../utils/html.js";
 
 // Navigation for Bike Packing trip rows; fullscreen gallery behavior is unchanged.
 export function bindTripMediaScroll(host, localText) {
-  const bindings = [...host.querySelectorAll(".layout-photo-summary-list, .layout-video-summary-list")].map(list => {
+  const bindings = [...host.querySelectorAll(".layout-photo-summary-list, .layout-video-summary-list, .trip-map-summary-list")].map(list => {
     const photos = list.classList.contains("layout-photo-summary-list");
     const wrapper = document.createElement("div");
     wrapper.className = "trip-media-scroll";
@@ -13,7 +13,10 @@ export function bindTripMediaScroll(host, localText) {
       button.className = "trip-media-scroll-button";
       button.dataset.tripMediaScroll = direction;
       button.hidden = true;
-      const label = photos
+      const maps = list.classList.contains("trip-map-summary-list");
+      const label = maps
+        ? direction === "previous" ? localText("Scroll maps left", "Прокрутить карты влево") : localText("Scroll maps right", "Прокрутить карты вправо")
+        : photos
         ? direction === "previous" ? localText("Scroll photos left", "Прокрутить фото влево") : localText("Scroll photos right", "Прокрутить фото вправо")
         : direction === "previous" ? localText("Scroll videos left", "Прокрутить видео влево") : localText("Scroll videos right", "Прокрутить видео вправо");
       button.setAttribute("aria-label", label);

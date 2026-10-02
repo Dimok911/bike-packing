@@ -1,6 +1,6 @@
 import { bindTripMediaScroll } from "./trip-media-scroll.js";
 import { renderTripTrackMap, bindTripTrackMap } from "./trip-track-map.js";
-import { normalizeTripTrack } from "../state/trip-track.js";
+import { tripTracks } from "../state/trip-track.js";
 import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
 import { setupTripBackdropControls, applyTripBackdropSettings } from "./trip-backdrop-controls.js";
 import { escapeHtml } from "../utils/html.js";
@@ -112,8 +112,8 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       host.dataset.photoView = view;
       arrangeDescription();
       const media = layoutMediaSnapshot(layout);
-      const track = normalizeTripTrack(layout?.track);
-      hasTrack = Boolean(track);
+      const track = tripTracks(layout);
+      hasTrack = Boolean(track.length);
       // Transport progress must not tear down decoded previews or reset scrolling.
       const next = JSON.stringify([visible, layout?.id, media.photos.map(photo => [photo.localId || photo.id, photo.caption || ""]), media.videoUrls, track]);
       hasPhotos = Boolean(media.photos.length);
