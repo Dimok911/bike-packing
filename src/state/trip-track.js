@@ -103,5 +103,12 @@ export function normalizeTripTracks(value) {
   return (Array.isArray(value) ? value : value ? [value] : []).map(normalizeTripTrack).filter(Boolean);
 }
 export function tripTracks(trip) {
-  return normalizeTripTracks(Array.isArray(trip?.tracks) ? trip.tracks : trip?.track);
+  const tracks = normalizeTripTracks(Array.isArray(trip?.tracks) ? trip.tracks : trip?.track);
+  return trip?.trackOrder === "manual" ? tracks : sortTripTracksByDate(tracks);
+}
+
+// Stable ties and undated tracks retain their relative order.
+export function sortTripTracksByDate(tracks) {
+  const time = track => track.startedAt ? Date.parse(track.startedAt) : Infinity;
+  return [...tracks].sort((a,b) => time(a) - time(b));
 }

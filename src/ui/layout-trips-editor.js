@@ -38,7 +38,7 @@ export function createLayoutTripsEditor(options) {
     if (!trips[active]) return;
     const fields = readNoteFields(notes);
     const privateFields = readNoteFields(privateNotes);
-    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot(), tracks: trackEditor.snapshot() });
+    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot(), tracks: trackEditor.snapshot(), trackOrder: trackEditor.order() });
   }
   function renderChoices() {
     select.replaceChildren(...trips.map((trip, index) => new Option(tripDisplayName(trip, index, language()), String(index))));
@@ -57,7 +57,7 @@ export function createLayoutTripsEditor(options) {
     loadNoteFields(notes, { note: trip?.notes, noteHtml: trip?.notesHtml });
     loadNoteFields(privateNotes, { note: trip?.privateNotes, noteHtml: trip?.privateNotesHtml });
     publishNotes.checked = trip?.publishNotes === true;
-    trackEditor.open(tripTracks(trip));
+    trackEditor.open(tripTracks(trip), trip?.trackOrder);
     media.open(trip, { preserveCreated });
     renderChoices();
   }

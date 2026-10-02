@@ -302,3 +302,25 @@ test("multiple GPX tracks migrate legacy data, preserve independent dates and de
   draft[0].tracks=[];applyLayoutTrips(layout,draft);
   assert.deepEqual(layoutTripsSnapshot(layout)[0].tracks,[]);
 });
+
+
+test("trip map chronological default and manual mode survive sync and idempotent saves", async () => {
+  const { tripTracks } = await import("../../src/state/trip-track.js");
+  const { applyLayoutTrips, layoutTripsSnapshot } = await import("../../src/state/layout-trips.js");
+  const track=(name,startedAt)=>({name,startedAt,segments:[[[55,37],[56,38]]]});
+  const original=[track("Undated A"),track("New","2026-09-25T08:00:00Z"),track("Old","2026-09-21T08:00:00Z"),track("Tie","2026-09-21T08:00:00Z"),track("Undated B")];
+  const names=tracks=>tracks.map(t=>t.name);
+  assert.deepEqual(names(tripTracks({tracks:original})),["Old","Tie","New","Undated A","Undated B"]);
+  assert.deepEqual(names(original),["Undated A","New","Old","Tie","Undated B"]);
+  const layout={id:"l",trips:[{id:"t",tracks:original}]};
+  const draft=layoutTripsSnapshot(layout);
+  draft[0].trackOrder="manual";draft[0].tracks.reverse();
+  assert.equal(applyLayoutTrips(layout,draft),true);
+  assert.equal(applyLayoutTrips(layout,draft),false);
+  const synced=JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout)));
+  assert.equal(synced.trips[0].trackOrder,"manual");
+  assert.deepEqual(names(layoutTripsSnapshot(synced)[0].tracks),["Undated B","Undated A","New","Tie","Old"]);
+  const sorted=layoutTripsSnapshot(synced); sorted[0].trackOrder="date";
+  assert.equal(applyLayoutTrips(synced,sorted),true);
+  assert.deepEqual(names(tripTracks(synced.trips[0])),["Tie","Old","New","Undated B","Undated A"]);
+});

@@ -1067,3 +1067,53 @@ test('trip composition previews preserve media, compact empty sections and guest
   expect(pos.description.y).toBeGreaterThan(pos.maps.y);
   expect(await page.evaluate(()=>localStorage.getItem('bike-packing-trip-presentation-v1'))).toBe('description-maps');
 });
+
+
+test("trip maps use chronological order until dragged and retain manual mode after reload", async ({page},testInfo) => {
+  test.setTimeout(60000);
+  await page.route("https://api-maps.yandex.ru/**",route=>route.abort());
+  await prepareIsolatedRussianGuest(page);await openApp(page);await createEmptyLayout(page,"Порядок карт");
+  await page.locator("#editLayoutBtn").click();await page.locator("[data-trip-add]").click();
+  const file=n=>({name:`day-${n}.gpx`,mimeType:"application/gpx+xml",buffer:Buffer.from(`<gpx><trk><name>День ${n}</name><trkseg><trkpt lat="55" lon="37">${n<0?'':`<time>2026-09-${20+n}T08:00:00Z</time>`}</trkpt><trkpt lat="56" lon="38"/></trkseg></trk></gpx>`)});
+  const input=page.locator("[data-trip-gpx-file]"),list=page.locator("[data-trip-gpx-list]");
+  const names=list.locator(".trip-track-editor-card > strong");
+  await input.setInputFiles([file(-1),file(2),file(1)]);
+  await expect(names).toHaveText(["День 1","День 2","День -1"]);
+  await list.locator("[data-trip-track-drag]").first().scrollIntoViewIfNeeded();
+  const from=await list.locator("[data-trip-track-drag]").first().boundingBox();
+  const to=await list.locator("[data-trip-track-index]").nth(1).boundingBox();
+  await page.mouse.move(from.x+14,from.y+14);await page.mouse.down();
+  await page.mouse.move(to.x+to.width*.8,to.y+40,{steps:12});
+  await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(1);
+  await expect(list.locator(".layout-media-drag-source")).toBeHidden();
+  await page.screenshot({path:testInfo.outputPath("map-reorder.png")});
+  await page.mouse.up();
+  await expect(names).toHaveText(["День 2","День 1","День -1"]);
+  await expect(page.locator("[data-trip-gpx-order]")).toHaveText("Порядок: вручную");
+  await page.locator("#saveEditedLayoutBtn").click();await page.reload();await waitForApp(page);
+  await page.locator("#layoutSelect").selectOption({label:"Порядок карт (1 поездка)"});
+  await expect(page.locator(".trip-track-name")).toHaveText(["День 2","День 1","День -1"]);
+  await page.locator("#editLayoutBtn").click();
+  await expect(page.locator("[data-trip-gpx-order]")).toHaveText("Порядок: вручную");
+  await input.setInputFiles(file(0));
+  await expect(names).toHaveText(["День 2","День 1","День -1","День 0"]);
+  await page.locator("[data-trip-gpx-sort]").click();
+  await expect(names).toHaveText(["День 0","День 1","День 2","День -1"]);
+  await expect(page.locator("[data-trip-gpx-sort]")).toHaveAttribute("aria-pressed","true");
+  // Canceling an in-progress drag does not switch out of chronological mode.
+  await list.locator("[data-trip-track-drag]").first().scrollIntoViewIfNeeded();
+  const handle=await list.locator("[data-trip-track-drag]").first().boundingBox();
+  await page.mouse.move(handle.x+14,handle.y+14);await page.mouse.down();
+  await page.mouse.move(handle.x+70,handle.y+60,{steps:6});
+  await page.keyboard.press("Escape");await page.mouse.up();
+  await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(0);
+  await expect(page.locator("[data-trip-gpx-sort]")).toHaveAttribute("aria-pressed","true");
+  await page.locator("#saveEditedLayoutBtn").click();await page.reload();await waitForApp(page);
+  await page.locator("#layoutSelect").selectOption({label:"Порядок карт (1 поездка)"});
+  await expect(page.locator(".trip-track-name")).toHaveText(["День 0","День 1","День 2","День -1"]);
+  await page.locator("#editLayoutBtn").click();
+  await list.locator("[data-trip-track-drag]").first().press("End");
+  await expect(names).toHaveText(["День 1","День 2","День -1","День 0"]);
+  await page.locator("#layoutEditDialog header button").click();await page.locator("#confirmCancelBtn").click();
+  await expect(page.locator(".trip-track-name")).toHaveText(["День 0","День 1","День 2","День -1"]);
+});

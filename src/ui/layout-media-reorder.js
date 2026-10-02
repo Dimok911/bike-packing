@@ -1,13 +1,14 @@
-// Pointer sorting for the trip editor's photo grid. A placeholder reserves the
+// Pointer sorting for the trip editor's photo and map grids. A placeholder reserves the
 // destination, as in the application's existing layout-order drag interaction.
-export function bindLayoutMediaReorder({list, dialog, canMove, onMove}) {
+export function bindLayoutMediaReorder({list, dialog, canMove, onMove, handleSelector = "[data-layout-photo-drag]", indexAttribute = "data-layout-photo-index"}) {
+  const itemSelector = `[${indexAttribute}]`;
   let cancelActive = () => {};
   const start = event => {
-    const handle = event.target.closest("[data-layout-photo-drag]");
+    const handle = event.target.closest(handleSelector);
     if (!handle || event.button !== 0 || !canMove()) return;
     cancelActive();
-    const source = handle.closest("[data-layout-photo-index]");
-    const from = Number(source.dataset.layoutPhotoIndex);
+    const source = handle.closest(itemSelector);
+    const from = Number(source.getAttribute(indexAttribute));
     const startX = event.clientX, startY = event.clientY;
     let x = startX, y = startY, started = false, frame = 0;
     let ghost, placeholder;
@@ -20,12 +21,12 @@ export function bindLayoutMediaReorder({list, dialog, canMove, onMove}) {
     const place = () => {
       if (!started) return;
       ghost.style.transform = `translate(${x-startX}px,${y-startY}px)`;
-      const target = document.elementFromPoint(x,y)?.closest("[data-layout-photo-index]");
+      const target = document.elementFromPoint(x,y)?.closest(itemSelector);
       if (!target || target === source || !list.contains(target)) return;
       const box = target.getBoundingClientRect();
       const before = x < box.left + box.width/2 ? target : target.nextElementSibling;
       if (before === placeholder || placeholder.nextElementSibling === before) return;
-      const cards = [...list.querySelectorAll("[data-layout-photo-index]")].filter(card=>card!==source);
+      const cards = [...list.querySelectorAll(itemSelector)].filter(card=>card!==source);
       const old = cards.map(card=>card.getBoundingClientRect());
       list.insertBefore(placeholder, before);
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches) cards.forEach((card,i)=>{
@@ -53,7 +54,7 @@ export function bindLayoutMediaReorder({list, dialog, canMove, onMove}) {
         placeholder.className="layout-media-drop-placeholder";
         placeholder.style.height=`${box.height}px`;
         ghost=source.cloneNode(true); ghost.classList.add("layout-media-drag-ghost");
-        ghost.removeAttribute("data-layout-photo-index"); ghost.setAttribute("aria-hidden","true");
+        ghost.removeAttribute(indexAttribute); ghost.setAttribute("aria-hidden","true");
         Object.assign(ghost.style,{width:`${box.width}px`,left:`${box.left}px`,top:`${box.top}px`});
         source.before(placeholder); source.classList.add("layout-media-drag-source");
         dialog.append(ghost); tick();
@@ -86,16 +87,16 @@ export function bindLayoutMediaReorder({list, dialog, canMove, onMove}) {
     dialog.addEventListener("cancel",cancel);
   };
   const keyboard = event => {
-    const handle=event.target.closest("[data-layout-photo-drag]");
+    const handle=event.target.closest(handleSelector);
     if (!handle || !canMove() || !["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
     event.preventDefault();
-    const from=Number(handle.closest("[data-layout-photo-index]").dataset.layoutPhotoIndex);
-    const total=list.querySelectorAll("[data-layout-photo-index]").length;
+    const from=Number(handle.closest(itemSelector).getAttribute(indexAttribute));
+    const total=list.querySelectorAll(itemSelector).length;
     const to=event.key==="Home" ? 0 : event.key==="End" ? total-1 : from+(["ArrowLeft","ArrowUp"].includes(event.key)?-1:1);
     if(to>=0 && to<total && from!==to) onMove(from,to);
   };
   list.addEventListener("pointerdown",start);
   list.addEventListener("keydown",keyboard);
-  list.addEventListener("contextmenu",event=>{if(event.target.closest("[data-layout-photo-drag]"))event.preventDefault();});
+  list.addEventListener("contextmenu",event=>{if(event.target.closest(handleSelector))event.preventDefault();});
   return {cancel:()=>cancelActive()};
 }

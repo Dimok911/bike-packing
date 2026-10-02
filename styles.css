@@ -11275,3 +11275,8 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
   .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]):not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; gap: 12px; }
   .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) :is(.layout-summary-photos, .layout-summary-videos, .layout-summary-map, #layoutDescriptionSummary) { grid-area: auto; order: var(--trip-part-order); }
 }
+
+.trip-track-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.trip-track-editor-card.layout-media-drag-source { display: none; }
+
+.trip-track-editor-card.layout-media-drag-ghost { position: fixed; }
