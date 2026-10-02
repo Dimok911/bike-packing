@@ -11269,7 +11269,7 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) .layout-summary-map { grid-area: maps; margin: 0; }
 .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) #layoutDescriptionSummary { grid-area: description; overflow-wrap: anywhere; }
 @media (min-width: 641px) {
-  .layout-introduction-content:is([data-trip-presentation="photo-story"], [data-trip-presentation="description-maps"]) #layoutDescriptionSummary { max-height: 280px; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+  .layout-introduction-content:is([data-trip-presentation="photo-story"], [data-trip-presentation="description-maps"], [data-trip-presentation="story-left"]) #layoutDescriptionSummary { max-height: 280px; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 }
 @media (max-width: 640px) {
   .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]):not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; gap: 12px; }

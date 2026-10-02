@@ -1027,7 +1027,7 @@ test('trip composition previews preserve media, compact empty sections and guest
     const r=node.getBoundingClientRect();return [key,{x:r.x,y:r.y,width:r.width}];
   })));
   await expect(page.locator('button[data-trip-presentation="current"]')).toHaveAttribute('data-visual-default','true');
-  for (const variant of ['photos-top','photo-story','description-maps']) {
+  for (const variant of ['photos-top','photo-story','description-maps','story-left']) {
     await page.locator(`button[data-trip-presentation="${variant}"]`).click();
     await expect(content).toHaveAttribute('data-trip-presentation',variant);
     await expect(page.locator(`button[data-trip-presentation="${variant}"]`)).toHaveAttribute('aria-pressed','true');
@@ -1035,7 +1035,7 @@ test('trip composition previews preserve media, compact empty sections and guest
     expect(await content.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
     const pos=await positions();
     if (isMobile) {
-      const order=variant==='description-maps'?['description','maps','photos','videos']:variant==='photo-story'?['photos','description','videos','maps']:['photos','videos','maps','description'];
+      const order=['description-maps','story-left'].includes(variant)?['description','maps','photos','videos']:variant==='photo-story'?['photos','description','videos','maps']:['photos','videos','maps','description'];
       for(let i=1;i<order.length;i++) expect(pos[order[i]].y).toBeGreaterThan(pos[order[i-1]].y);
     } else if(variant==='photos-top') {
       expect(Math.abs(pos.videos.y-pos.maps.y)).toBeLessThan(2);
@@ -1044,6 +1044,12 @@ test('trip composition previews preserve media, compact empty sections and guest
     } else if(variant==='photo-story') {
       expect(Math.abs(pos.photos.y-pos.description.y)).toBeLessThan(2);
       expect(pos.description.x).toBeGreaterThan(pos.photos.x);
+    } else if (variant==='story-left') {
+      expect(Math.abs(pos.description.y-pos.photos.y)).toBeLessThan(2);
+      expect(Math.abs(pos.maps.y-pos.videos.y)).toBeLessThan(2);
+      expect(pos.photos.x).toBeGreaterThan(pos.description.x);
+      expect(pos.videos.x).toBeGreaterThan(pos.maps.x);
+      expect(pos.maps.y).toBeGreaterThan(pos.description.y);
     } else {
       expect(Math.abs(pos.description.y-pos.maps.y)).toBeLessThan(2);
       expect(pos.maps.x).toBeGreaterThan(pos.description.x);
@@ -1053,7 +1059,7 @@ test('trip composition previews preserve media, compact empty sections and guest
     await page.locator('.layout-introduction').screenshot({path:testInfo.outputPath(`${variant}.png`)});
   }
   await page.evaluate(()=>window.compositionFixture.summary.render(window.compositionFixture.layout,true));
-  await expect(content).toHaveAttribute('data-trip-presentation','description-maps');
+  await expect(content).toHaveAttribute('data-trip-presentation','story-left');
   // Collapse does not accidentally turn the grid visible.
   await content.evaluate(el=>el.hidden=true); await expect(content).toBeHidden();
   await content.evaluate(el=>el.hidden=false);
@@ -1065,7 +1071,7 @@ test('trip composition previews preserve media, compact empty sections and guest
   await expect(content).toHaveAttribute('data-trip-presentation','current');
   const pos=await positions();
   expect(pos.description.y).toBeGreaterThan(pos.maps.y);
-  expect(await page.evaluate(()=>localStorage.getItem('bike-packing-trip-presentation-v1'))).toBe('description-maps');
+  expect(await page.evaluate(()=>localStorage.getItem('bike-packing-trip-presentation-v1'))).toBe('story-left');
 });
 
 

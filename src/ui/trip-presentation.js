@@ -5,7 +5,8 @@ const VIEWS = [
   ["current", "Current", "Текущий"],
   ["photos-top", "Photos above", "Фото сверху"],
   ["photo-story", "Photos and description", "Фото и описание"],
-  ["description-maps", "Description and maps", "Описание и карты"]
+  ["description-maps", "Description and maps", "Описание и карты"],
+  ["story-left", "Description and maps on the left", "Описание слева"]
 ];
 export function tripPresentation(canChoose = false) {
   if (!canChoose) return "current";
@@ -56,10 +57,12 @@ export function applyTripPresentation(host, value) {
   const arrangements = {
     "photos-top": [["photos"], ["videos", "maps"], ["description"]],
     "photo-story": [["photos", "description"], ["videos", "maps"]],
-    "description-maps": [["description", "maps"], ["photos"], ["videos"]]
+    "description-maps": [["description", "maps"], ["photos"], ["videos"]],
+    "story-left": [["description", "photos"], ["maps", "videos"]]
   };
   let order = 0;
   const rows = (arrangements[value] || []).map(row => row.filter(key => parts[key])).filter(row => row.length);
   for (const row of rows) for (const key of row) parts[key].style.setProperty("--trip-part-order", String(order++));
+  if (value === "story-left") ["description", "maps", "photos", "videos"].forEach((key,index) => parts[key]?.style.setProperty("--trip-part-order", String(index)));
   content.style.setProperty("--trip-grid-areas", rows.map(row => `"${row.length === 1 ? `${row[0]} ${row[0]}` : row.join(" ")}"`).join(" ") || "none");
 }
