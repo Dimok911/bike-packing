@@ -1,3 +1,4 @@
+import { createTripTrackEditor } from "./trip-track-editor.js";
 import { createLayoutDraftPhotoUploads } from "../sync/layout-draft-photo-uploads.js";
 import { createLayoutMediaEditor } from "./layout-media-editor.js";
 import { layoutTripsSnapshot, layoutTripsSignature, tripDisplayName } from "../state/layout-trips.js";
@@ -17,6 +18,12 @@ export function createLayoutTripsEditor(options) {
   const privateNotes = dialog.querySelector("#layoutTripNotes");
   const publishNotes = privateField.querySelector("[data-trip-publish-notes]");
   const mediaField = dialog.querySelector("[data-layout-media-editor]");
+  const trackField = document.createElement("section");
+  trackField.className = "trip-track-editor";
+  trackField.dataset.tripTrackEditor = "";
+  mediaField.after(trackField);
+  const trackEditor = createTripTrackEditor({ host: trackField, localText, onChange: () => { updateBusy(); onChange(); } });
+  const isBusy = () => media.isBusy() || trackEditor.isBusy();
   const empty = host.querySelector("[data-trips-empty]");
   let uploads = null;
   let trips = [];
@@ -24,19 +31,19 @@ export function createLayoutTripsEditor(options) {
   const media = createLayoutMediaEditor({ ...options, onPhotoAdded: photo => { photo.tripId = trips[active]?.id; return uploads?.add(photo); }, getLimit: () => Math.max(0, options.getLimit() - trips.reduce((total, trip, index) => total + (index === active ? 0 : trip.photos.length), 0)), onChange: () => { updateBusy(); onChange(); } });
   const language = () => localText("en", "ru");
   function updateBusy() {
-    for (const control of [select, add, remove]) control.disabled = media.isBusy();
+    for (const control of [select, add, remove]) control.disabled = isBusy();
   }
   function flush() {
     if (!trips[active]) return;
     const fields = readNoteFields(notes);
     const privateFields = readNoteFields(privateNotes);
-    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot() });
+    Object.assign(trips[active], { privateNotes: privateFields.note, privateNotesHtml: privateFields.noteHtml || "", publishNotes: publishNotes.checked, name: name.value.trim(), notes: fields.note, notesHtml: fields.noteHtml || "", ...media.snapshot(), track: trackEditor.snapshot() });
   }
   function renderChoices() {
     select.replaceChildren(...trips.map((trip, index) => new Option(tripDisplayName(trip, index, language()), String(index))));
     select.value = String(active);
     select.hidden = remove.hidden = nameField.hidden = !trips.length;
-    noteField.hidden = privateField.hidden = mediaField.hidden = !trips.length;
+    noteField.hidden = privateField.hidden = mediaField.hidden = trackField.hidden = !trips.length;
     noteField.setAttribute("aria-hidden", String(!trips.length));
     empty.hidden = Boolean(trips.length);
     updateBusy();
@@ -49,25 +56,26 @@ export function createLayoutTripsEditor(options) {
     loadNoteFields(notes, { note: trip?.notes, noteHtml: trip?.notesHtml });
     loadNoteFields(privateNotes, { note: trip?.privateNotes, noteHtml: trip?.privateNotesHtml });
     publishNotes.checked = trip?.publishNotes === true;
+    trackEditor.open(trip?.track);
     media.open(trip, { preserveCreated });
     renderChoices();
   }
   select.addEventListener("change", () => {
     const next = Number(select.value);
-    if (!media.validate()) { select.value = String(active); return; }
+    if (isBusy() || !media.validate()) { select.value = String(active); return; }
     flush(); show(next); onChange();
   });
   add.addEventListener("click", () => {
-    if (media.isBusy() || (trips.length && !media.validate())) return;
+    if (isBusy() || (trips.length && !media.validate())) return;
     flush();
     trips.push({ id: `trip-${crypto.randomUUID()}`, name: "", notes: "", notesHtml: "", photos: [], videoUrl: "" });
     show(trips.length - 1); onChange(); name.focus();
   });
   remove.addEventListener("click", async () => {
-    if (media.isBusy() || !trips[active]) return;
+    if (isBusy() || !trips[active]) return;
     const id = trips[active].id;
     const confirmed = await options.confirmRemove(tripDisplayName(trips[active], active, language()));
-    if (!confirmed || trips[active]?.id !== id || media.isBusy()) return;
+    if (!confirmed || trips[active]?.id !== id || isBusy()) return;
     trips.splice(active, 1); show(Math.min(active, trips.length - 1)); onChange();
   });
   name.addEventListener("input", () => { flush(); renderChoices(); onChange(); });
@@ -97,10 +105,10 @@ export function createLayoutTripsEditor(options) {
     },
     snapshot: () => { flush(); return trips; },
     signature: () => { flush(); return layoutTripsSignature(trips); },
-    isBusy: media.isBusy,
-    validate: () => !trips.length || media.validate(),
+    isBusy,
+    validate: () => !isBusy() && (!trips.length || media.validate()),
     addFiles: files => trips.length ? media.addFiles(files) : Promise.resolve(),
     sessionToken: media.sessionToken,
-    close: layout => { uploads?.close(); uploads = null; media.close(layout); trips = []; active = -1; }
+    close: layout => { uploads?.close(); uploads = null; media.close(layout); trackEditor.close(); trips = []; active = -1; }
   };
 }

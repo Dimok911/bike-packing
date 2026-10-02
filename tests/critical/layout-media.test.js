@@ -235,3 +235,38 @@ test("new layout and template copies keep gear arrangement but omit all trip and
     assert.deepEqual(sourceLayout,before);
   }
 });
+
+
+test("GPX track survives trip edits, sync and JSON while invalid coordinates are rejected", async () => {
+  const { normalizeTripTrack, compactTrackSegments, MAX_TRACK_POINTS, projectTrackSegments } = await import("../../src/state/trip-track.js");
+  const { applyLayoutTrips, layoutTripsSnapshot } = await import("../../src/state/layout-trips.js");
+  const track = { name: "Route", fileName: "route.gpx", segments: [[[55,37],[55.1,37.1]],[[56,38],[56.1,38.1]]] };
+  const layout = { id:"route-layout", trips:[{id:"trip",track}] };
+  const draft = layoutTripsSnapshot(layout);
+  draft[0].track.name = "Changed";
+  assert.equal(layout.trips[0].track.name,"Route");
+  assert.equal(applyLayoutTrips(layout,draft),true);
+  assert.equal(applyLayoutTrips(layout,draft),false);
+  const synced = JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout)));
+  assert.deepEqual(synced.trips[0].track.segments,track.segments);
+  for (const point of [[91,0],[0,181],[null,1],[NaN,1],["55",37]]) assert.equal(normalizeTripTrack({...track,segments:[[point,[1,1]]]}),null);
+  assert.equal(normalizeTripTrack({...track,segments:[[[0,0]]]}),null);
+  draft[0].track = null; applyLayoutTrips(layout,draft);
+  assert.equal(layoutTripsSnapshot(layout)[0].track,null);
+  const long = Array.from({length:15000},(_,i)=>[55 + Math.sin(i / 30) * .01,37 + i / 10000]);
+  const compact = compactTrackSegments([long,[[0,0],[1,1]]]);
+  assert.ok(compact.flat().length <= MAX_TRACK_POINTS);
+  assert.deepEqual(compact[0][0],long[0]);
+  assert.deepEqual(compact[0].at(-1),long.at(-1));
+  assert.deepEqual(compact[1],[[0,0],[1,1]]);
+  const dateLine = projectTrackSegments([[[0,179.9],[0,-179.9]]])[0];
+  assert.ok(Math.abs(dateLine[1][0] - dateLine[0][0]) < 25000);
+});
+
+
+test("track replacement has a readable history entry without dumping coordinates", () => {
+  const before={layouts:{l:{id:"l",trips:[{id:"t",name:"Trip",track:{name:"Old",segments:[[[55,37],[56,38]]]}}]}},items:{},containers:{}};
+  const after=structuredClone(before);after.layouts.l.trips[0].track={name:"New",segments:[[[55,37],[57,39]]]};
+  const diff=buildHistoryStateDiff(before,after);
+  assert.match(JSON.stringify(diff),/Трек в «Trip»: Old → New/);
+});

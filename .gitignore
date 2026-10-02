@@ -14,3 +14,6 @@ AGENTS.md
 
 # standalone backend repo
 bikepacking-api/
+
+# Local build configuration
+.env.local

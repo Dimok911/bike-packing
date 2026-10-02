@@ -1,3 +1,5 @@
+import { renderTripTrackMap, bindTripTrackMap } from "./trip-track-map.js";
+import { normalizeTripTrack } from "../state/trip-track.js";
 import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
 import { setupTripBackdropControls, applyTripBackdropSettings } from "./trip-backdrop-controls.js";
 import { escapeHtml } from "../utils/html.js";
@@ -50,6 +52,8 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   let version = 0;
   let binding = null;
   let videoBinding = null;
+  let mapBinding = null;
+  let hasTrack = false;
   let hasPhotos = false;
   let hasVideos = false;
   let signature = "";
@@ -94,7 +98,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   document.addEventListener("layout-photo-view-change", event => {
     view = canChoose() ? event.detail : "grid";
     host.dataset.photoView = view;
-    host.hidden = !isVisible || (!hasVideos && (view === "hidden" || !hasPhotos));
+    host.hidden = !isVisible || (!hasTrack && !hasVideos && (view === "hidden" || !hasPhotos));
     syncBackdrop();
     onVisibilityChange(isVisible);
   });
@@ -106,11 +110,13 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       host.dataset.photoView = view;
       arrangeDescription();
       const media = layoutMediaSnapshot(layout);
+      const track = normalizeTripTrack(layout?.track);
+      hasTrack = Boolean(track);
       // Transport progress must not tear down decoded previews or reset scrolling.
-      const next = JSON.stringify([visible, layout?.id, media.photos.map(photo => [photo.localId || photo.id, photo.caption || ""]), media.videoUrls]);
+      const next = JSON.stringify([visible, layout?.id, media.photos.map(photo => [photo.localId || photo.id, photo.caption || ""]), media.videoUrls, track]);
       hasPhotos = Boolean(media.photos.length);
       hasVideos = Boolean(media.videoUrls.length);
-      host.hidden = !visible || (!hasVideos && (view === "hidden" || !hasPhotos));
+      host.hidden = !visible || (!hasTrack && !hasVideos && (view === "hidden" || !hasPhotos));
       onVisibilityChange(visible);
       if (next === signature) {
         const galleries = [...host.querySelectorAll('[data-photo-gallery]')];
@@ -126,21 +132,31 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const token = ++version;
       binding?.destroy(); binding = null;
       videoBinding?.destroy(); videoBinding = null;
+      mapBinding?.destroy(); mapBinding = null;
       host.replaceChildren();
-      if (!visible || (!media.photos.length && !media.videoUrls.length)) return;
+      if (!visible || (!hasTrack && !media.photos.length && !media.videoUrls.length)) return;
       const galleries = await Promise.all(media.photos.map(photo => renderGallery([photo], { className: "layout-summary-thumbnail" })));
       if (token !== version) return;
       host.dataset.photoView = view;
-      host.innerHTML = `${hasPhotos ? `<div class="layout-summary-photos"><div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div></div>` : ""}${renderTripVideoCards(media.videoUrls, localText)}`;
+      host.innerHTML = `${hasPhotos ? `<div class="layout-summary-photos"><strong>${escapeHtml(localText("Photos", "Фото"))}</strong><div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure${index >= 4 ? ' class="trip-media-overflow"' : ""}>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div></div>` : ""}${renderTripVideoCards(media.videoUrls, localText)}${renderTripTrackMap(track, localText)}`;
       host.querySelectorAll("[data-photo-open]").forEach((button, index) => {
         const caption = media.photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`);
         button.setAttribute("aria-label", caption);
         button.querySelector("img").alt = caption;
+        if (index === 3 && media.photos.length > 4) {
+          const more = document.createElement("span");
+          more.className = "trip-media-more";
+          more.textContent = `+${media.photos.length - 4}`;
+          more.setAttribute("aria-hidden", "true");
+          button.append(more);
+          button.setAttribute("aria-label", localText(`Open gallery, ${media.photos.length} photos`, `Открыть галерею, ${media.photos.length} фото`));
+        }
       });
       binding = bindGalleries(host);
       videoBinding = bindTripVideoCards(host, localText);
+      mapBinding = bindTripTrackMap(host, track, localText);
       syncBackdrop();
-      host.hidden = !hasVideos && view === "hidden";
+      host.hidden = !hasTrack && !hasVideos && view === "hidden";
       onVisibilityChange(visible);
     }
   };

@@ -26,10 +26,10 @@ export function renderTripVideoCards(urls, localText) {
     const video = tripVideoPreview(url);
     if (!video) return "";
     const name = localText(`Video ${index + 1}`, `Видео ${index + 1}`);
-    return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
-      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
+    return `<a class="layout-video-card${index >= 4 ? " trip-media-overflow" : ""}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
+      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span>${index === 3 && urls.length > 4 ? `<span class="trip-media-more" aria-hidden="true">+${urls.length - 4}</span>` : ""}</span>
       <span class="layout-video-caption"><span>${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span></a>`;
-  }).join("")}</div></section>`;
+  }).join("")}</div>${urls.length > 4 ? `<button type="button" class="ghost trip-videos-expand" data-trip-videos-expand>${escapeHtml(localText("Show all videos", "Показать все видео"))}</button>` : ""}</section>`;
 }
 
 // Bike Packing trip UI: the shared photo gallery is not involved in video playback.
@@ -46,6 +46,14 @@ export function bindTripVideoCards(host, localText) {
     if (opener?.isConnected) opener.focus({ preventScroll: true });
   };
   const onClick = event => {
+    const expand = event.target.closest("[data-trip-videos-expand]");
+    if (expand && host.contains(expand)) {
+      const section = expand.closest(".layout-summary-videos");
+      const expanded = section.classList.toggle("is-expanded");
+      expand.setAttribute("aria-expanded", String(expanded));
+      expand.textContent = expanded ? localText("Collapse videos", "Свернуть видео") : localText("Show all videos", "Показать все видео");
+      return;
+    }
     const link = event.target.closest("[data-trip-video-play]");
     if (!link || !host.contains(link) || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const video = tripVideoPreview(link.href);
@@ -62,6 +70,32 @@ export function bindTripVideoCards(host, localText) {
     dialog.addEventListener("cancel", event => { event.preventDefault(); closePlayer(); });
     dialog.addEventListener("close", () => { if (player === dialog) closePlayer(); });
     document.body.append(dialog);
+    const links = [...host.querySelectorAll("[data-trip-video-play]")];
+    let active = links.indexOf(link);
+    if (links.length > 1) {
+      const controls = document.createElement("div");
+      controls.className = "trip-video-navigation";
+      controls.innerHTML = `<button type="button" data-video-prev aria-label="${escapeHtml(localText("Previous video", "Предыдущее видео"))}">←</button><span></span><button type="button" data-video-next aria-label="${escapeHtml(localText("Next video", "Следующее видео"))}">→</button>`;
+      const sync = () => {
+        controls.querySelector("span").textContent = `${active + 1} / ${links.length}`;
+        controls.querySelector("[data-video-prev]").disabled = active === 0;
+        controls.querySelector("[data-video-next]").disabled = active === links.length - 1;
+      };
+      const select = index => {
+        if (index < 0 || index >= links.length) return;
+        active = index;
+        const selected = links[active], next = tripVideoPreview(selected.href);
+        dialog.querySelector("iframe").src = next.embed;
+        dialog.querySelector("iframe").title = selected.getAttribute("aria-label");
+        dialog.querySelector("strong").textContent = selected.getAttribute("aria-label");
+        dialog.setAttribute("aria-label", selected.getAttribute("aria-label"));
+        dialog.querySelector(".trip-video-external").href = next.url;
+        sync();
+      };
+      controls.querySelector("[data-video-prev]").addEventListener("click", () => select(active - 1));
+      controls.querySelector("[data-video-next]").addEventListener("click", () => select(active + 1));
+      dialog.querySelector("iframe").after(controls); sync();
+    }
     dialog.showModal();
   };
   const onImageError = event => {

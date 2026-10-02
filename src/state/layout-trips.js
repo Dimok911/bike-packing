@@ -1,3 +1,4 @@
+import { normalizeTripTrack } from "./trip-track.js";
 import { clonePhotoWithUploadState } from "./item-photos.js";
 import { layoutMediaSnapshot, layoutMediaSignature, layoutVideoUrls } from "./layout-media.js";
 import { normalizeLayoutNotes } from "./layout-notes.js";
@@ -11,7 +12,7 @@ export function layoutTripsSnapshot(layout) {
     let id = String(trip.id || `trip-${index + 1}`);
     while (seen.has(id)) id += "-copy";
     seen.add(id);
-    return { id, name: String(trip.name || "").trim(), notes: normalizeLayoutNotes(trip.notes), notesHtml: String(trip.notesHtml || ""), privateNotes: normalizeLayoutNotes(trip.privateNotes), privateNotesHtml: String(trip.privateNotesHtml || ""), publishNotes: trip.publishNotes === true, videoUrl: layoutVideoUrls(trip)[0] || "", videoUrls: layoutVideoUrls(trip), photos: [] };
+    return { id, track: normalizeTripTrack(trip.track), name: String(trip.name || "").trim(), notes: normalizeLayoutNotes(trip.notes), notesHtml: String(trip.notesHtml || ""), privateNotes: normalizeLayoutNotes(trip.privateNotes), privateNotesHtml: String(trip.privateNotesHtml || ""), publishNotes: trip.publishNotes === true, videoUrl: layoutVideoUrls(trip)[0] || "", videoUrls: layoutVideoUrls(trip), photos: [] };
   });
   if (!trips.length && (photos.length || normalizeLayoutNotes(layout?.notes) || layoutVideoUrls(layout).length)) {
     trips.push({ id: "trip-legacy", name: "", notes: normalizeLayoutNotes(layout?.notes), notesHtml: String(layout?.notesHtml || ""), videoUrl: layoutVideoUrls(layout)[0] || "", videoUrls: layoutVideoUrls(layout), photos: [] });
@@ -45,7 +46,7 @@ export function layoutTripCountLabel(layout, language = "ru") {
 }
 
 export function layoutTripsSignature(trips) {
-  return JSON.stringify(trips.map(trip => [trip.id, String(trip.name || "").trim(), normalizeLayoutNotes(trip.notes), trip.notesHtml || "", normalizeLayoutNotes(trip.privateNotes), trip.privateNotesHtml || "", trip.publishNotes === true, layoutMediaSignature(trip)]));
+  return JSON.stringify(trips.map(trip => [trip.id, String(trip.name || "").trim(), normalizeLayoutNotes(trip.notes), trip.notesHtml || "", normalizeLayoutNotes(trip.privateNotes), trip.privateNotesHtml || "", trip.publishNotes === true, normalizeTripTrack(trip.track), layoutMediaSignature(trip)]));
 }
 
 export function applyLayoutTrips(layout, trips) {
@@ -57,7 +58,7 @@ export function applyLayoutTrips(layout, trips) {
       const live = (layout.photos || []).find(candidate => candidate.id === photo.id || (photo.localId && candidate.localId === photo.localId));
       photos.push(Object.assign(clonePhotoWithUploadState(live || photo), { caption: photo.caption || "", tripId: trip.id }));
     }
-    return { id: trip.id, name: String(trip.name || "").trim(), notes: normalizeLayoutNotes(trip.notes), notesHtml: trip.notesHtml || "", privateNotes: normalizeLayoutNotes(trip.privateNotes), privateNotesHtml: trip.privateNotesHtml || "", publishNotes: trip.publishNotes === true, videoUrl: media.videoUrl, videoUrls: media.videoUrls };
+    return { id: trip.id, track: normalizeTripTrack(trip.track), name: String(trip.name || "").trim(), notes: normalizeLayoutNotes(trip.notes), notesHtml: trip.notesHtml || "", privateNotes: normalizeLayoutNotes(trip.privateNotes), privateNotesHtml: trip.privateNotesHtml || "", publishNotes: trip.publishNotes === true, videoUrl: media.videoUrl, videoUrls: media.videoUrls };
   });
   if (photos.length) layout.photos = photos;
   else delete layout.photos;

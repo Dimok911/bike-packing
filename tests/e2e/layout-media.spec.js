@@ -171,8 +171,8 @@ test('photo introduction: admin variants, description placement and horizontal o
     await expect(photos).toHaveAttribute('data-photo-view',variant);
   }
   const list=photos.locator('.layout-photo-summary-list');
-  expect(await list.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
-  expect(await list.evaluate(el=>{el.scrollLeft=el.scrollWidth;return el.scrollLeft>0;})).toBe(true);
+  expect(await list.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await expect(list.locator("figure:visible")).toHaveCount(4);
   expect(await photos.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   expect(await root.locator('[data-intro]').evaluate(el=>el.lastElementChild.id)).toBe('layoutDescriptionSummary');
   await root.locator('[data-layout-photo-view="hidden"]').click();
@@ -312,9 +312,9 @@ test('trips: legacy migration, independent stories, count, paging, reload, cance
   await page.evaluate(()=>document.activeElement?.blur());
   await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
   await page.locator('#saveLayoutBtn').click();
-  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Основа новой укладки (1 поездка)');
-  await expect(page.locator('#layoutDescriptionSummary')).toContainText('Старое описание');
-  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(2);
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Основа новой укладки');
+  await expect(page.locator('#layoutDescriptionSummary')).toBeHidden();
+  await expect(page.locator('#layoutPhotoSummary [data-photo-open]')).toHaveCount(0);
 });
 
 
@@ -425,7 +425,7 @@ test('trip video thumbnails open a lazy player below photos with compact navigat
   await expect(page.locator('.trip-video-dialog')).toHaveCount(0);
   const dimensions=await card.evaluate(card=>({header:card.querySelector('.layout-introduction-header').getBoundingClientRect().height,overflow:card.scrollWidth>card.clientWidth+1,videos:card.querySelector('.layout-summary-videos').getBoundingClientRect().bottom,description:card.querySelector('#layoutDescriptionSummary').getBoundingClientRect().top}));
   expect(dimensions.header).toBeLessThanOrEqual(66);expect(dimensions.overflow).toBe(false);expect(dimensions.description).toBeGreaterThan(dimensions.videos);
-  if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
+  if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   await videos.locator('.layout-video-card').first().click();
   const player=page.locator('.trip-video-dialog');
   await expect(player).toBeVisible();
@@ -485,10 +485,10 @@ test("trip upload batches retain first photo, decoded previews and progress with
   await expect(editor.locator('[data-layout-photo-caption]')).toHaveCount(16);
   await page.evaluate(()=>window.batchFixture.save());
   const images=page.locator('#fixture-summary [data-photo-open] img');await expect(images).toHaveCount(16);
-  for(let i=0;i<16;i++){await images.nth(i).scrollIntoViewIfNeeded();await expect.poll(()=>images.nth(i).evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);}
+  for(let i=0;i<4;i++){await images.nth(i).scrollIntoViewIfNeeded();await expect.poll(()=>images.nth(i).evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);}
   const result=await page.evaluate(()=>window.batchFixture.upload());
   expect(result).toEqual({count:16,synced:16,sawProgress:true,sameImages:true,cached:true});
-  expect(await images.evaluateAll(imgs=>imgs.every(img=>img.complete&&img.naturalWidth>0))).toBe(true);
+  expect(await images.evaluateAll(imgs=>imgs.slice(0,4).every(img=>img.complete&&img.naturalWidth>0))).toBe(true);
 });
 
 
@@ -516,7 +516,7 @@ test('trip thumbnail strip accepts a native horizontal touch gesture over images
   await page.route('**/__testsrc/**',async route=>{const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});});
   await page.evaluate(async()=>{
     const {renderPhotoGalleryHtml,bindPhotoGalleries}=await import('/__testsrc/src/ui/photo-gallery.js');
-    document.body.innerHTML='<div class="layout-photo-summary" data-photo-view="grid"><div class="layout-photo-summary-list"></div></div>';
+    document.body.innerHTML='<div class="layout-photo-summary" data-photo-view="strip"><div class="layout-photo-summary-list"></div></div>';
     const host=document.querySelector('.layout-photo-summary-list');host.innerHTML=(await Promise.all(Array.from({length:16},async(_,i)=>`<figure>${await renderPhotoGalleryHtml([{id:`photo-${i}`,status:'pending',localId:`photo-${i}`}],{className:'layout-summary-thumbnail'})}</figure>`))).join('');
     bindPhotoGalleries(document);
   });
@@ -713,4 +713,136 @@ test("copying a layout preserves gear but starts without trips or their media", 
   expect(result.bags.find(bag=>bag.name==="Сумка для копии").photos).toHaveLength(1);
   expect(result.items.find(item=>item.name==="Вещь для копии").note).toBe("Заметка вещи");
   await expect(page.locator(".layout-choice-trigger .has-trips")).toHaveCount(0);
+});
+
+
+test("GPX route: load, reject malformed replacement, persist, map dialog, discard and remove", async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+  await openApp(page);
+  await createEmptyLayout(page, "Поездка с треком");
+  await page.locator("#editLayoutBtn").click();
+  await page.locator("[data-trip-add]").click();
+  const input = page.locator("[data-trip-gpx-file]");
+  const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Лесной маршрут</name><trkseg><trkpt lat="55.7" lon="37.4"/><trkpt lat="55.71" lon="37.42"/><trkpt lat="55.72" lon="37.41"/></trkseg><trkseg><trkpt lat="55.73" lon="37.4"/><trkpt lat="55.74" lon="37.42"/></trkseg></trk></gpx>`;
+  const upload = value => input.setInputFiles({name:"route.gpx",mimeType:"application/gpx+xml",buffer:Buffer.from(value)});
+  await upload(gpx);
+  await expect(page.locator("[data-trip-gpx-status]")).toContainText("Лесной маршрут");
+  for (const invalid of ["<gpx><trk>", '<!DOCTYPE gpx [<!ENTITY x "bad">]><gpx/>', '<gpx><trk><trkseg><trkpt lat="95" lon="37"/><trkpt lat="55" lon="38"/></trkseg></trk></gpx>', '<gpx><wpt lat="55" lon="37"/></gpx>']) {
+    await upload(invalid);
+    await expect(page.locator("[data-trip-gpx-status]")).toContainText("Не удалось прочитать");
+  }
+  await page.locator("#saveEditedLayoutBtn").click();
+  await expect(page.locator("#layoutEditDialog")).toBeHidden();
+  await page.reload(); await waitForApp(page);
+  await page.locator("#layoutSelect").selectOption({label:"Поездка с треком (1 поездка)"});
+  await expect(page.locator(".trip-track-name")).toHaveText("Лесной маршрут");
+  await expect(page.locator(".layout-summary-map svg polyline")).toHaveCount(2);
+  const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")).layouts).find(layout=>layout.name === "Поездка с треком").trips[0].track);
+  expect(saved.segments).toHaveLength(2);
+  expect(saved.segments[0][0]).toEqual([55.7,37.4]);
+  await page.locator("[data-trip-track-open]").click();
+  await expect(page.locator(".trip-track-dialog")).toBeVisible();
+  await expect(page.locator(".trip-track-dialog svg polyline")).toHaveCount(2);
+  await page.getByRole("button",{name:"Закрыть карту",exact:true}).click();
+  await expect(page.locator(".trip-track-dialog")).toHaveCount(0);
+  await page.locator("#editLayoutBtn").click();
+  await page.locator("[data-trip-gpx-remove]").click();
+  await page.locator("#layoutEditDialog header button").click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  await page.locator("#confirmCancelBtn").click();
+  await expect(page.locator("#layoutEditDialog")).toBeHidden();
+  await expect(page.locator(".trip-track-name")).toHaveText("Лесной маршрут");
+  await page.locator("#editLayoutBtn").click();
+  await page.locator("[data-trip-add]").click();
+  await expect(page.locator("[data-trip-gpx-status]")).toHaveText("Трек пока не добавлен");
+  await page.locator("[data-layout-trips-editor] select").selectOption("0");
+  await expect(page.locator("[data-trip-gpx-status]")).toContainText("Лесной маршрут");
+  await page.locator("[data-trip-gpx-remove]").click();
+  await page.locator("#saveEditedLayoutBtn").click();
+  await expect(page.locator(".layout-summary-map")).toHaveCount(0);
+});
+
+test("compact square media tiles keep all photos and video navigation in their full viewers", async ({page}, testInfo) => {
+  await prepareIsolatedRussianGuest(page);
+  await page.route("https://www.youtube-nocookie.com/**", route=>route.fulfill({contentType:"text/html",body:"<p>Video test player</p>"}));
+  await openApp(page);
+  await createEmptyLayout(page,"Плитки поездки");
+  const thumbnail=Buffer.from(await page.evaluate(()=>{const canvas=document.createElement("canvas");canvas.width=240;canvas.height=240;const ctx=canvas.getContext("2d");ctx.fillStyle="#93bd9e";ctx.fillRect(0,0,240,240);return canvas.toDataURL().split(",")[1];}),"base64");
+  await page.route("https://example.test/tile-*.png**", route=>route.fulfill({contentType:"image/png",headers:{"Access-Control-Allow-Origin":"http://bike-packing.localhost:4173","Access-Control-Allow-Credentials":"true"},body:thumbnail}));
+  await page.route("https://i.ytimg.com/**", route=>route.fulfill({contentType:"image/png",body:thumbnail}));
+  await page.evaluate(()=>{
+    const key="bike-packing-prototype-state-v1", state=JSON.parse(localStorage.getItem(key));
+    const layout=Object.values(state.layouts).find(record=>record.name==="Плитки поездки");
+    const canvas=document.createElement("canvas"); canvas.width=240; canvas.height=240;
+    const context=canvas.getContext("2d"); context.fillStyle="#93bd9e"; context.fillRect(0,0,240,240);
+    const image=canvas.toDataURL();
+    layout.trips=[{id:"tiles-trip",name:"Тестовая поездка",videoUrls:Array.from({length:6},(_,i)=>`https://youtu.be/abcdefghij${i}`),track:{name:"Лесной маршрут",fileName:"route.gpx",segments:[[[55.7,37.4],[55.72,37.43],[55.74,37.42]]]}}];
+    layout.photos=Array.from({length:7},(_,i)=>({id:`photo-${i}`,tripId:"tiles-trip",url:`https://example.test/tile-${i}.png`,thumbUrl:`https://example.test/tile-${i}.png`,status:"synced",caption:`Фото ${i+1}`}));
+    localStorage.setItem(key,JSON.stringify(state));
+  });
+  await page.reload(); await waitForApp(page);
+  await page.locator("#layoutSelect").selectOption({label:"Плитки поездки (1 поездка)"});
+  await expect(page.locator(".layout-summary-photos [data-photo-open]:visible")).toHaveCount(4);
+  await expect(page.locator(".layout-summary-photos .trip-media-more")).toHaveText("+3");
+  await expect(page.locator(".layout-video-card:visible")).toHaveCount(4);
+  await expect(page.locator(".layout-summary-videos .trip-media-more")).toHaveText("+2");
+  const tile=await page.locator(".layout-summary-thumbnail").first().boundingBox();
+  expect(Math.abs(tile.width-tile.height)).toBeLessThan(2);
+  await expect.poll(()=>page.locator(".layout-summary-photos img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath("trip-media-tiles.png")});
+  await page.locator(".layout-summary-photos [data-photo-open]").nth(3).click();
+  await expect(page.locator(".photo-lightbox[open]")).toBeVisible();
+  await expect(page.locator("[data-photo-lightbox-dot]")).toHaveCount(7);
+  await expect(page.locator('[data-photo-lightbox-dot="3"]')).toHaveAttribute("aria-current","true");
+  await page.locator('[data-photo-lightbox-dot="6"]').click();
+  await expect(page.locator('[data-photo-lightbox-dot="6"]')).toHaveAttribute("aria-current","true");
+  await page.keyboard.press("Escape");
+  await page.locator("[data-trip-video-play]").nth(3).click();
+  await expect(page.locator(".trip-video-dialog")).toBeVisible();
+  await expect(page.locator(".trip-video-navigation span")).toHaveText("4 / 6");
+  await page.locator("[data-video-next]").click();
+  await expect(page.locator(".trip-video-dialog iframe")).toHaveAttribute("src",/abcdefghij4/);
+  await page.locator("[data-video-next]").click();
+  await expect(page.locator("[data-video-next]")).toBeDisabled();
+  await page.getByRole("button",{name:"Закрыть видео",exact:true}).click();
+  await expect(page.locator(".trip-video-dialog iframe")).toHaveCount(0);
+});
+
+
+test("Yandex adapter fits each GPX segment, opens a large map and releases both map instances", async ({page}) => {
+  const {readFile}=await import("node:fs/promises");
+  const {resolve}=await import("node:path");
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await page.route("**/__testsrc/**", async route=>{
+    const relative=new URL(route.request().url()).pathname.split("/__testsrc/")[1];
+    if (!relative.startsWith("src/") || relative.includes("..")) return route.abort();
+    const body=relative==="src/config/trip-map.js" ? 'export const YANDEX_MAPS_API_KEY="test-only-key";' : await readFile(resolve(relative),"utf8");
+    await route.fulfill({contentType:"text/javascript",body});
+  });
+  await page.route("https://api-maps.yandex.ru/**", route=>route.fulfill({contentType:"text/javascript",body:`
+    window.mapCalls=[];
+    window.ymaps={ready:callback=>callback(),Polyline:class{constructor(points){this.points=points;}},Map:class{
+      constructor(canvas,state){this.record={state,segments:[],destroyed:false};window.mapCalls.push(this.record);canvas.textContent="Test map";this.geoObjects={add:line=>this.record.segments.push(line.points),getBounds:()=>[[55,37],[56,38]]};this.events={add:()=>{}};}
+      setBounds(bounds,options){this.record.bounds=bounds;this.record.fitOptions=options;return Promise.resolve();}
+      getZoom(){return 10;} destroy(){this.record.destroyed=true;}
+    }};
+  `}));
+  await page.evaluate(async()=>{
+    const {renderTripTrackMap,bindTripTrackMap}=await import("/__testsrc/src/ui/trip-track-map.js");
+    const track={name:"Test track",segments:[[[55,37],[55.1,37.1]],[[55.9,37.9],[56,38]]]};
+    const host=document.createElement("div");host.id="map-fixture";host.style.width="340px";
+    host.innerHTML=renderTripTrackMap(track,(en,ru)=>ru);document.body.prepend(host);
+    window.mapBinding=bindTripTrackMap(host,track,(en,ru)=>ru);
+  });
+  await expect.poll(()=>page.evaluate(()=>window.mapCalls?.length)).toBe(1);
+  expect(await page.evaluate(()=>window.mapCalls[0].segments)).toEqual([[[55,37],[55.1,37.1]],[[55.9,37.9],[56,38]]]);
+  await expect(page.locator("#map-fixture [data-trip-map-status]")).toHaveText("");
+  await page.locator("#map-fixture [data-trip-track-open]").click();
+  await expect.poll(()=>page.evaluate(()=>window.mapCalls.length)).toBe(2);
+  expect(await page.evaluate(()=>window.mapCalls[1].state.behaviors)).toContain("drag");
+  expect(await page.evaluate(()=>window.mapCalls[1].state.controls)).toContain("zoomControl");
+  await page.getByRole("button",{name:"Закрыть карту",exact:true}).click();
+  expect(await page.evaluate(()=>window.mapCalls[1].destroyed)).toBe(true);
+  await page.evaluate(()=>window.mapBinding.destroy());
+  expect(await page.evaluate(()=>window.mapCalls[0].destroyed)).toBe(true);
 });

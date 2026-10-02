@@ -11170,3 +11170,49 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .layout-choice-list [role="option"]:hover, .layout-choice-list .is-highlighted { background: #f0f5f2; }
 .layout-choice-list [aria-selected="true"] { background: #e4eee8; font-weight: 700; }
 .layout-choice-list [aria-disabled="true"] { opacity: .45; cursor: default; }
+
+/* Trip media: separate, compact tile groups followed by the route preview. */
+.layout-summary-photos, .layout-summary-map { display: grid; gap: 8px; min-width: 0; }
+.layout-summary-photos > strong, .layout-summary-map > strong { font-size: 12px; color: var(--muted); }
+.layout-summary-map { margin-top: 16px; }
+.layout-summary-map:first-child { margin-top: 0; }
+.layout-photo-summary[data-photo-view="grid"] .layout-photo-summary-list,
+.layout-video-summary-list { display: grid; grid-template-columns: repeat(2, minmax(0, 112px)); grid-auto-flow: row; grid-auto-columns: auto; overflow: visible; gap: 8px; padding: 0; }
+.layout-photo-summary[data-photo-view="grid"] .layout-summary-thumbnail,
+.layout-video-cover { width: 100%; height: auto; aspect-ratio: 1; }
+.layout-photo-summary[data-photo-view="grid"] .trip-media-overflow,
+.layout-summary-videos:not(.is-expanded) .trip-media-overflow { display: none; }
+.layout-photo-summary [data-photo-open] { position: relative; }
+.trip-media-more { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #0008; color: #fff; font-size: 24px; font-weight: 700; border-radius: inherit; pointer-events: none; }
+.layout-photo-summary:not([data-photo-view="grid"]) .trip-media-more,
+.layout-summary-videos.is-expanded .trip-media-more { display: none; }
+.layout-video-card { width: 100%; }
+.trip-videos-expand { justify-self: start; font-size: 12px; }
+.trip-video-navigation { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 8px; }
+.trip-video-navigation button { min-width: 44px; min-height: 44px; }
+.trip-track-editor { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.trip-track-editor[hidden] { display: none; }
+.trip-track-editor p { margin: 0; font-size: 12px; color: var(--muted); }
+.trip-track-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.trip-track-preview { max-width: 472px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+.trip-track-canvas { position: relative; height: 220px; width: 100%; color: #ed6723; background: var(--accent-soft); }
+.trip-track-canvas svg { display: block; width: 100%; height: 100%; }
+.trip-track-preview .trip-track-canvas svg { cursor: pointer; }
+.trip-track-open { width: 100%; border: 0; border-radius: 0; min-height: 38px; font-size: 12px; }
+.trip-track-name { font-size: 12px; overflow-wrap: anywhere; }
+.layout-summary-map small, .trip-track-dialog small { color: var(--muted); font-size: 12px; }
+.trip-track-dialog { width: min(1000px, calc(100vw - 24px)); padding: 12px; background: var(--panel); color: var(--ink); }
+.trip-track-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.trip-track-dialog header strong { overflow-wrap: anywhere; min-width: 0; }
+.trip-track-dialog header button { flex: none; width: 44px; height: 44px; }
+.trip-track-dialog .trip-track-canvas { height: min(65dvh, 700px); min-height: 240px; }
+
+.layout-photo-summary[data-photo-view="grid"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; align-items: start; }
+.layout-photo-summary[data-photo-view="grid"][hidden] { display: none; }
+.layout-photo-summary[data-photo-view="grid"] > .layout-summary-videos,
+.layout-photo-summary[data-photo-view="grid"] > .layout-summary-map { margin-top: 0; }
+
+.trip-track-preview > small { display: block; padding: 4px 8px; }
+.trip-track-preview > small:empty { display: none; }
+.layout-photo-summary[data-photo-view="grid"] .photo-gallery-slide { padding: 0; }
+.layout-photo-summary[data-photo-view="grid"] .photo-gallery-slide img { width: 100%; height: 100%; object-fit: cover; }
