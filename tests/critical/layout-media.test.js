@@ -240,7 +240,7 @@ test("new layout and template copies keep gear arrangement but omit all trip and
 test("GPX track survives trip edits, sync and JSON while invalid coordinates are rejected", async () => {
   const { normalizeTripTrack, compactTrackSegments, MAX_TRACK_POINTS, projectTrackSegments } = await import("../../src/state/trip-track.js");
   const { applyLayoutTrips, layoutTripsSnapshot } = await import("../../src/state/layout-trips.js");
-  const track = { name: "Route", fileName: "route.gpx", segments: [[[55,37],[55.1,37.1]],[[56,38],[56.1,38.1]]] };
+  const track = { name: "Route", fileName: "route.gpx", startedAt: "2026-09-21T08:00:00.000Z", segments: [[[55,37],[55.1,37.1]],[[56,38],[56.1,38.1]]] };
   const layout = { id:"route-layout", trips:[{id:"trip",track}] };
   const draft = layoutTripsSnapshot(layout);
   draft[0].track.name = "Changed";
@@ -249,6 +249,7 @@ test("GPX track survives trip edits, sync and JSON while invalid coordinates are
   assert.equal(applyLayoutTrips(layout,draft),false);
   const synced = JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout)));
   assert.deepEqual(synced.trips[0].track.segments,track.segments);
+  assert.equal(synced.trips[0].track.startedAt,track.startedAt);
   for (const point of [[91,0],[0,181],[null,1],[NaN,1],["55",37]]) assert.equal(normalizeTripTrack({...track,segments:[[point,[1,1]]]}),null);
   assert.equal(normalizeTripTrack({...track,segments:[[[0,0]]]}),null);
   draft[0].track = null; applyLayoutTrips(layout,draft);
@@ -269,4 +270,12 @@ test("track replacement has a readable history entry without dumping coordinates
   const after=structuredClone(before);after.layouts.l.trips[0].track={name:"New",segments:[[[55,37],[57,39]]]};
   const diff=buildHistoryStateDiff(before,after);
   assert.match(JSON.stringify(diff),/Трек в «Trip»: Old → New/);
+});
+
+
+test("GPX dates require valid timestamp and calendar day", async () => {
+  const { normalizeTrackStartedAt } = await import("../../src/state/trip-track.js");
+  assert.equal(normalizeTrackStartedAt("2026-09-21T11:00:00+03:00"), "2026-09-21T08:00:00.000Z");
+  assert.equal(normalizeTrackStartedAt("2024-02-29T08:00:00Z"), "2024-02-29T08:00:00.000Z");
+  for (const invalid of [undefined,"","2026-02-30T08:00:00Z","2026-02-29T08:00:00Z","2026-09-21","invalid"]) assert.equal(normalizeTrackStartedAt(invalid), "");
 });

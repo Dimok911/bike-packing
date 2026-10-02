@@ -1,8 +1,9 @@
+import { bindLayoutMediaReorder } from "./layout-media-reorder.js";
 import { updatePhotoGallerySources, updatePhotoGalleryUploadProgress } from "./photo-gallery.js";
 import { escapeHtml } from "../utils/html.js";
 import { layoutMediaSnapshot, layoutMediaSignature, normalizeLayoutVideoUrl } from "../state/layout-media.js";
 
-export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto, renderGallery, bindGalleries, onChange, getLimit, localText, showToast, onPhotoAdded = () => {} }) {
+export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto, renderGallery, bindGalleries, onChange, getLimit, localText, showToast, onPhotoAdded = () => {}, confirmRemovePhoto = async () => false }) {
   const host = dialog.querySelector("[data-layout-media-editor]");
   const list = host.querySelector("[data-layout-media-list]");
   const input = host.querySelector("input[type=file]");
@@ -16,6 +17,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   let session = 0;
   let renderVersion = 0;
   let busy = false;
+  let reordering = false;
   let created = [];
   let galleryBinding = null;
   // The gallery closes on keydown; suppress the native Escape action so it
@@ -64,6 +66,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     videos.querySelector("[data-layout-video-index]:last-child input").focus();
   });
   async function render() {
+    reorder.cancel();
     const version = ++renderVersion;
     const photos = [...draft.photos];
     const galleries = await Promise.all(photos.map((photo) => renderGallery([photo], { className: "layout-media-thumbnail" })));
@@ -71,16 +74,15 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     galleryBinding?.destroy();
     list.innerHTML = photos.map((photo, index) => `
       <div class="layout-media-photo ${photo.status === "pending" ? "layout-media-local" : ""}" data-layout-photo-index="${index}">
-        <div class="layout-media-preview">${galleries[index]}</div>
-        <label><span>${escapeHtml(localText("Caption", "Подпись"))} ${index + 1}</span>
-          <input data-layout-photo-caption maxlength="2000" value="${escapeHtml(photo.caption || "")}" />
-        </label>
-        <p data-layout-photo-error hidden role="status"></p>
-        <div class="layout-media-photo-actions">
-          <button type="button" class="ghost" data-layout-photo-move="-1" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(localText("Move photo earlier", "Переместить фото раньше"))}">←</button>
-          <button type="button" class="ghost" data-layout-photo-move="1" ${index === photos.length - 1 ? "disabled" : ""} aria-label="${escapeHtml(localText("Move photo later", "Переместить фото позже"))}">→</button>
-          <button type="button" class="ghost danger" data-layout-photo-remove>${escapeHtml(localText("Remove", "Удалить"))}</button>
+        <div class="layout-media-preview">${galleries[index]}
+          <button type="button" class="layout-media-drag-handle" data-layout-photo-drag aria-label="${escapeHtml(localText(`Reorder photo ${index + 1}`, `Изменить порядок фото ${index + 1}`))}" title="${escapeHtml(localText("Drag to reorder; use arrow keys when focused", "Перетащите; с клавиатуры — стрелки"))}">⠿</button>
+          <button type="button" class="layout-media-remove" data-layout-photo-remove aria-label="${escapeHtml(localText(`Remove photo ${index + 1}`, `Удалить фото ${index + 1}`))}">×</button>
         </div>
+        <div class="layout-media-caption">
+          <button type="button" data-layout-caption-edit title="${escapeHtml(photo.caption || localText("Add caption", "Добавить подпись"))}">${escapeHtml(photo.caption || localText("Add caption", "Добавить подпись"))}</button>
+          <input hidden data-layout-photo-caption aria-label="${escapeHtml(localText(`Caption ${index + 1}`, `Подпись ${index + 1}`))}" maxlength="2000" value="${escapeHtml(photo.caption || "")}" />
+        </div>
+        <p data-layout-photo-error hidden role="status"></p>
       </div>`).join("");
     list.querySelectorAll("[data-photo-open]").forEach((button, index) => {
       button.setAttribute("aria-label", photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`));
@@ -96,18 +98,49 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     if (draft.photos[index]) draft.photos[index].caption = event.target.value;
     changed();
   });
-  list.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-layout-photo-move], [data-layout-photo-remove]");
-    if (!button || busy) return;
-    const index = Number(button.closest("[data-layout-photo-index]").dataset.layoutPhotoIndex);
-    if (button.hasAttribute("data-layout-photo-remove")) draft.photos.splice(index, 1);
-    else {
-      const next = index + Number(button.dataset.layoutPhotoMove);
-      if (next < 0 || next >= draft.photos.length) return;
-      [draft.photos[index], draft.photos[next]] = [draft.photos[next], draft.photos[index]];
+  const reorder = bindLayoutMediaReorder({list, dialog, canMove: () => !busy && !reordering, onMove: async (from, to) => {
+    const token = session;
+    const photo = draft.photos.splice(from,1)[0];
+    if (!photo) return;
+    reordering = true;
+    try {
+      draft.photos.splice(to,0,photo); changed();
+      await render();
+      if (token === session) list.querySelector(`[data-layout-photo-index="${to}"] [data-layout-photo-drag]`)?.focus({preventScroll:true});
+    } finally { reordering = false; }
+  }});
+  const finishCaption = input => {
+    const row=input.closest("[data-layout-photo-index]");
+    if (!row) return;
+    const button=row.querySelector("[data-layout-caption-edit]");
+    button.textContent=input.value || localText("Add caption", "Добавить подпись");
+    button.title=button.textContent;
+    const open=row.querySelector("[data-photo-open]");
+    if(open)open.setAttribute("aria-label", input.value || localText(`Open photo ${Number(row.dataset.layoutPhotoIndex)+1}`, `Открыть фото ${Number(row.dataset.layoutPhotoIndex)+1}`));
+    input.hidden=true; button.hidden=false;
+  };
+  list.addEventListener("focusout", event=>{if(event.target.matches("[data-layout-photo-caption]"))finishCaption(event.target);});
+  list.addEventListener("keydown", event=>{
+    if (!event.target.matches("[data-layout-photo-caption]") || !["Enter","Escape"].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    const button=event.target.parentElement.querySelector("button");
+    finishCaption(event.target); button.focus();
+  });
+  list.addEventListener("click", async event => {
+    const edit=event.target.closest("[data-layout-caption-edit]");
+    if(edit) {
+      const input=edit.parentElement.querySelector("input");
+      edit.hidden=true; input.hidden=false; input.focus(); input.select(); return;
     }
-    render();
-    changed();
+    const button=event.target.closest("[data-layout-photo-remove]");
+    if(!button || busy) return;
+    const token=session, index=Number(button.closest("[data-layout-photo-index]").dataset.layoutPhotoIndex);
+    const photo=draft.photos[index];
+    if(!photo || !await confirmRemovePhoto(photo.caption || localText(`Photo ${index+1}`,`Фото ${index+1}`))) return;
+    if(token!==session || busy) return;
+    const current=draft.photos.indexOf(photo);
+    if(current<0)return;
+    draft.photos.splice(current,1); await render(); changed();
   });
   input.addEventListener("change", async () => {
     const files = [...input.files];
@@ -121,6 +154,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
   });
   async function addFiles(files) {
     if (!files.length || busy) return;
+    reorder.cancel();
     const token = session;
     busy = true;
     input.disabled = true;
@@ -174,6 +208,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     sessionToken: () => session,
     refreshUploads,
     open(layout, { preserveCreated = false } = {}) {
+      reorder.cancel();
       document.addEventListener("keydown", guardGalleryEscape, true);
       session++;
       draft = layoutMediaSnapshot(layout);
@@ -199,6 +234,7 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     isBusy: () => busy,
     validate: () => { videos.querySelectorAll("[data-layout-video-index]").forEach(updateVideoLink); return [...videos.querySelectorAll("[data-layout-video]")].every(video => video.reportValidity()) && !busy; },
     close(savedLayout) {
+      reorder.cancel();
       document.removeEventListener("keydown", guardGalleryEscape, true);
       session++;
       renderVersion++;

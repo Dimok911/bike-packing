@@ -37,10 +37,11 @@ export function renderTripTrackMap(value, localText) {
   const track = normalizeTripTrack(value);
   if (!track) return "";
   const title = localText("Map", "Карта");
+  const name = track.name || track.fileName || localText("Trip track", "Трек поездки");
+  const date = track.startedAt ? new Intl.DateTimeFormat(localText("en-GB", "ru-RU"), {day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(track.startedAt)) : "";
   return `<section class="layout-summary-map" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong>
     <div class="trip-track-preview"><div class="trip-track-canvas" data-trip-track-canvas>${trackOutlineSvg(track)}</div>
-    <small data-trip-map-status role="status"></small><button type="button" class="trip-track-open" data-trip-track-open aria-haspopup="dialog">${escapeHtml(localText("Open large map", "Открыть большую карту"))} ↗</button></div>
-    <span class="trip-track-name">${escapeHtml(track.name || track.fileName)}</span></section>`;
+    <small data-trip-map-status role="status"></small><button type="button" class="trip-track-open" data-trip-track-open aria-haspopup="dialog" aria-label="${escapeHtml(localText("Open large map", "Открыть большую карту"))}"><span class="trip-track-name">${escapeHtml(name)}</span>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<span class="trip-track-expand" aria-hidden="true">↗</span></button></div></section>`;
 }
 
 export function bindTripTrackMap(host, value, localText) {

@@ -58,9 +58,12 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
     ]);
   }
   await expect(editor.locator("[data-layout-photo-caption]")).toHaveCount(2);
+  await editor.locator("[data-layout-caption-edit]").nth(0).click();
   await editor.locator("[data-layout-photo-caption]").nth(0).fill("Велосипед целиком");
+  await editor.locator("[data-layout-caption-edit]").nth(1).click();
   await editor.locator("[data-layout-photo-caption]").nth(1).fill("Упакованные сумки");
-  await editor.locator('[data-layout-photo-move="-1"]').nth(1).click();
+  await editor.locator("[data-layout-photo-caption]").nth(1).press("Enter");
+  await editor.locator("[data-layout-photo-drag]").nth(1).press("ArrowLeft");
   await expect(editor.locator("[data-layout-photo-caption]").first()).toHaveValue("Упакованные сумки");
   await page.locator("#layoutEditNotes").fill("Заметки сохраняются");
   await editor.locator("[data-layout-video]").fill("javascript:alert(1)");
@@ -122,6 +125,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await page.keyboard.press("Escape");
   await expect(page.locator("#layoutEditDialog")).toBeVisible();
   await editor.locator("[data-layout-photo-remove]").first().click();
+  await page.locator("#confirmOkBtn").click();
   await expect(editor.locator("[data-layout-photo-caption]")).toHaveCount(1);
   await page.locator("#layoutEditDialog header button").click();
   await expect(page.locator("#confirmDialog")).toBeVisible();
@@ -330,6 +334,7 @@ test('new photos survive switching trip drafts and save, while discarded additio
     await page.locator('[data-layout-media-editor] input[type=file]').first().setInputFiles({name:`trip-${i}.png`,mimeType:'image/png',buffer:png});
     await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(1);
     await expect(page.locator('[data-trip-add]')).toBeEnabled();
+    await page.locator('[data-layout-caption-edit]').click();
     await page.locator('[data-layout-photo-caption]').fill(`Фотография ${i+1}`);
   }
   await page.locator('[data-layout-trips-editor] select').selectOption('0');
@@ -575,6 +580,7 @@ test('trip photos start uploading in the open editor and finish after save acros
   await input.setInputFiles({name:'next.png',mimeType:'image/png',buffer:png});
   await expect.poll(()=>page.evaluate(()=>window.immediateFixture.started.length)).toBe(2);
   await expect(page.locator('[data-layout-photo-caption]')).toHaveCount(2);
+  await page.locator('[data-layout-caption-edit]').first().click();
   await page.locator('[data-layout-photo-caption]').first().fill('First caption');
   expect(await page.evaluate(()=>window.immediateFixture.layout.photos.length)).toBe(0);
   await page.evaluate(()=>window.immediateFixture.save());
@@ -717,13 +723,14 @@ test("copying a layout preserves gear but starts without trips or their media", 
 
 
 test("GPX route: load, reject malformed replacement, persist, map dialog, discard and remove", async ({ page }) => {
+  await page.route("https://api-maps.yandex.ru/**", route=>route.abort());
   await prepareIsolatedRussianGuest(page);
   await openApp(page);
   await createEmptyLayout(page, "Поездка с треком");
   await page.locator("#editLayoutBtn").click();
   await page.locator("[data-trip-add]").click();
   const input = page.locator("[data-trip-gpx-file]");
-  const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Лесной маршрут</name><trkseg><trkpt lat="55.7" lon="37.4"/><trkpt lat="55.71" lon="37.42"/><trkpt lat="55.72" lon="37.41"/></trkseg><trkseg><trkpt lat="55.73" lon="37.4"/><trkpt lat="55.74" lon="37.42"/></trkseg></trk></gpx>`;
+  const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><metadata><time>2026-10-02T12:00:00Z</time></metadata><trk><name>Лесной маршрут</name><trkseg><trkpt lat="55.7" lon="37.4"><time>2026-09-21T08:00:00Z</time></trkpt><trkpt lat="55.71" lon="37.42"/><trkpt lat="55.72" lon="37.41"/></trkseg><trkseg><trkpt lat="55.73" lon="37.4"/><trkpt lat="55.74" lon="37.42"/></trkseg></trk></gpx>`;
   const upload = value => input.setInputFiles({name:"route.gpx",mimeType:"application/gpx+xml",buffer:Buffer.from(value)});
   await upload(gpx);
   await expect(page.locator("[data-trip-gpx-status]")).toContainText("Лесной маршрут");
@@ -738,6 +745,10 @@ test("GPX route: load, reject malformed replacement, persist, map dialog, discar
   await expect(page.locator(".trip-track-name")).toHaveText("Лесной маршрут");
   await expect(page.locator(".layout-summary-map svg polyline")).toHaveCount(2);
   const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")).layouts).find(layout=>layout.name === "Поездка с треком").trips[0].track);
+  expect(saved.startedAt).toBe("2026-09-21T08:00:00.000Z");
+  await expect(page.locator('.trip-track-open time')).toHaveText("21.09.2026");
+  const mapSize = await page.locator('[data-trip-track-canvas]').boundingBox();
+  expect(Math.abs(mapSize.width - mapSize.height)).toBeLessThan(1);
   expect(saved.segments).toHaveLength(2);
   expect(saved.segments[0][0]).toEqual([55.7,37.4]);
   await page.locator("[data-trip-track-open]").click();
@@ -867,4 +878,72 @@ test("Yandex adapter fits each GPX segment, opens a large map and releases both 
   expect(await page.evaluate(()=>window.mapCalls[1].destroyed)).toBe(true);
   await page.evaluate(()=>window.mapBinding.destroy());
   expect(await page.evaluate(()=>window.mapCalls[0].destroyed)).toBe(true);
+});
+
+
+test("compact photo editor supports inline captions, pointer reorder, cancellation and confirmed removal", async ({page,browserName}, testInfo) => {
+  test.setTimeout(60000);
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await createEmptyLayout(page,"Компактный редактор");
+  const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement("canvas");c.width=160;c.height=100;c.getContext("2d").fillRect(0,0,160,100);return c.toDataURL().split(",")[1];}),"base64");
+  await page.route("https://example.test/compact-*.png**",route=>route.fulfill({contentType:"image/png",headers:{"Access-Control-Allow-Origin":"http://bike-packing.localhost:4173","Access-Control-Allow-Credentials":"true"},body:png}));
+  await page.evaluate(()=>{
+    const key="bike-packing-prototype-state-v1",state=JSON.parse(localStorage.getItem(key));
+    const layout=Object.values(state.layouts).find(layout=>layout.name==="Компактный редактор");
+    layout.trips=[{id:"compact",name:"Поездка"}];
+    layout.photos=Array.from({length:6},(_,i)=>({id:`compact-${i}`,tripId:"compact",url:`https://example.test/compact-${i}.png`,thumbUrl:`https://example.test/compact-${i}.png`,status:"synced",caption:`Кадр ${i+1}`}));
+    localStorage.setItem(key,JSON.stringify(state));
+  });
+  await page.reload();await waitForApp(page);await page.locator("#layoutSelect").selectOption({label:"Компактный редактор (1 поездка)"});await page.locator("#editLayoutBtn").click();
+  const list=page.locator("[data-layout-media-list]");
+  await list.locator("[data-layout-caption-edit]").first().scrollIntoViewIfNeeded();
+  await expect.poll(()=>list.locator(".layout-media-preview img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
+  await expect(list.locator("[data-layout-photo-caption]:visible")).toHaveCount(0);
+  await list.locator("[data-layout-caption-edit]").first().click();
+  await list.locator("[data-layout-photo-caption]").first().fill("Новая подпись");
+  await list.locator("[data-layout-photo-caption]").first().press("Enter");
+  await expect(list.locator("[data-layout-caption-edit]").first()).toHaveText("Новая подпись");
+  await list.locator("[data-layout-photo-drag]").first().press("ArrowRight");
+  await expect(list.locator("[data-layout-caption-edit]").nth(1)).toHaveText("Новая подпись");
+  await list.locator("[data-layout-photo-drag]").first().scrollIntoViewIfNeeded();
+  const from=await list.locator("[data-layout-photo-drag]").first().boundingBox();
+  const to=await list.locator("[data-layout-photo-index]").nth(2).boundingBox();
+  await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();
+  await page.mouse.move(to.x+to.width*.8,to.y+40,{steps:12});
+  await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(1);
+  await page.screenshot({path:testInfo.outputPath("compact-editor-drag.png")});
+  await page.mouse.up();
+  await expect(list.locator("[data-layout-caption-edit]").nth(2)).toHaveText("Кадр 2");
+  await expect(page.locator(".photo-lightbox[open]")).toHaveCount(0);
+  // Canceling a drag restores the original order and keeps the editor open.
+  const original=await list.locator("[data-layout-caption-edit]").allTextContents();
+  const handle=await list.locator("[data-layout-photo-drag]").first().boundingBox();
+  await page.mouse.move(handle.x+12,handle.y+12);await page.mouse.down();
+  await page.mouse.move(handle.x+65,handle.y+55,{steps:5});
+  await page.keyboard.press("Escape");await page.mouse.up();
+  await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(0);
+  await expect(list.locator("[data-layout-caption-edit]")).toHaveText(original);
+  if(browserName==="chromium") {
+    const client=await page.context().newCDPSession(page);
+    const a=await list.locator("[data-layout-photo-drag]").first().boundingBox();
+    const b=await list.locator("[data-layout-photo-index]").nth(1).boundingBox();
+    await client.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:a.x+14,y:a.y+14}]});
+    await client.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:b.x+b.width*.8,y:b.y+40}]});
+    await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(1);
+    await client.send("Input.dispatchTouchEvent",{type:"touchCancel",touchPoints:[]});
+    await expect(list.locator(".layout-media-drop-placeholder")).toHaveCount(0);
+    await expect(list.locator("[data-layout-caption-edit]")).toHaveText(original);
+    await client.detach();
+  }
+  await list.locator("[data-layout-photo-remove]").last().click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  await page.locator("#confirmCancelBtn").click();
+  await expect(list.locator("[data-layout-photo-index]")).toHaveCount(6);
+  await list.locator("[data-layout-photo-remove]").last().click();
+  await page.locator("#confirmOkBtn").click();
+  await expect(list.locator("[data-layout-photo-index]")).toHaveCount(5);
+  await page.screenshot({path:testInfo.outputPath("compact-editor.png")});
+  await page.locator("#saveEditedLayoutBtn").click();
+  await page.reload();await waitForApp(page);await page.locator("#layoutSelect").selectOption({label:"Компактный редактор (1 поездка)"});await page.locator("#editLayoutBtn").click();
+  await expect(list.locator("[data-layout-caption-edit]")).toHaveText(["Новая подпись","Кадр 3","Кадр 2","Кадр 4","Кадр 5"]);
 });

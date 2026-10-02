@@ -3,6 +3,14 @@ export const MAX_TRACK_POINTS = 6000;
 const MAX_SEGMENTS = 100;
 const validPoint = point => Array.isArray(point) && point.length === 2 && point.every(value => typeof value === "number" && Number.isFinite(value)) && Math.abs(point[0]) <= 90 && Math.abs(point[1]) <= 180;
 
+export function normalizeTrackStartedAt(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return "";
+  const time = Date.parse(value);
+  const day = Date.parse(`${value.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(time) || !Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== value.slice(0, 10)) return "";
+  return new Date(time).toISOString();
+}
+
 export function normalizeTripTrack(value) {
   if (!value || !Array.isArray(value.segments) || !value.segments.length || value.segments.length > MAX_SEGMENTS) return null;
   let count = 0;
@@ -11,7 +19,8 @@ export function normalizeTripTrack(value) {
     if (!Array.isArray(segment) || segment.length < 2 || (count += segment.length) > MAX_TRACK_POINTS || !segment.every(validPoint)) return null;
     segments.push(segment.map(point => point.map(coordinate => Number(coordinate.toFixed(6)))));
   }
-  return { name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
+  const startedAt = normalizeTrackStartedAt(value.startedAt);
+  return { ...(startedAt ? { startedAt } : {}), name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
 }
 
 // Unwrap longitude at the date line; segments remain separate (no invented joins).
@@ -73,16 +82,18 @@ export function parseTripGpx(text, fileName = "", Parser = globalThis.DOMParser)
   const sources = tracks.flatMap(track => children(track, "trkseg")).map(node => [node, "trkpt"]);
   if (!sources.length) sources.push(...routes.map(node => [node, "rtept"]));
   if (sources.length > MAX_SEGMENTS) throw new Error("complex");
-  let count = 0;
+  let count = 0, startedAt = "";
   const segments = sources.map(([node, tag]) => children(node, tag).map(point => {
     if (++count > 200000) throw new Error("complex");
     const latitude = point.getAttribute("lat"), longitude = point.getAttribute("lon");
     if (!latitude?.trim() || !longitude?.trim()) throw new Error("coordinates");
     const result = [Number(latitude), Number(longitude)];
     if (!validPoint(result)) throw new Error("coordinates");
+    const recorded = normalizeTrackStartedAt(children(point, "time")[0]?.textContent?.trim());
+    if (recorded && (!startedAt || recorded < startedAt)) startedAt = recorded;
     return result;
   })).filter(segment => segment.length >= 2);
   if (!segments.length) throw new Error("empty");
   const name = children(tracks[0] || routes[0] || xml.documentElement, "name")[0]?.textContent || fileName.replace(/\.gpx$/i, "");
-  return normalizeTripTrack({ name, fileName, segments: compactTrackSegments(segments) });
+  return normalizeTripTrack({ name, fileName, startedAt, segments: compactTrackSegments(segments) });
 }
