@@ -993,3 +993,77 @@ test("multiple GPX files append to legacy track and remain independent after rel
   await page.locator("#saveEditedLayoutBtn").click();await reopen();
   await expect(page.locator(".trip-track-name")).toHaveText(["Старый трек","День 2","День 3","День 4","День 5"]);
 });
+
+
+test('trip composition previews preserve media, compact empty sections and guest default', async ({page, isMobile}, testInfo) => {
+  const {readFile} = await import('node:fs/promises');
+  const {resolve} = await import('node:path');
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await page.route('**/__testsrc/**', async route => {
+    const relative = new URL(route.request().url()).pathname.split('/__testsrc/')[1];
+    if (!relative.startsWith('src/') || relative.includes('..')) return route.abort();
+    await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});
+  });
+  await page.route('https://api-maps.yandex.ru/**', route=>route.abort());
+  await page.evaluate(async () => {
+    const {setupLayoutPhotoViewControl,createLayoutPhotoSummary}=await import('/__testsrc/src/ui/layout-photo-summary.js');
+    document.body.innerHTML='<main id="composition" style="padding:12px;max-width:1040px;margin:auto"><div data-options></div><section class="layout-introduction"><header class="layout-introduction-header"><strong>Поездки · Николо-Ленивец</strong></header><div class="layout-introduction-content"><section class="layout-photo-summary"></section><section id="layoutDescriptionSummary"><p>Три дня на велосипеде</p><p>Маршрут через лес, ночёвки в палатке и тихие дороги. Здесь описание поездки и впечатления о маршруте.</p></section></div></section></main>';
+    let admin=true;
+    const canvas=document.createElement('canvas');canvas.width=180;canvas.height=120;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#669980';ctx.fillRect(0,0,180,120);ctx.fillStyle='#d4cb8c';ctx.fillRect(0,70,180,50);
+    const image=canvas.toDataURL();
+    const layout={id:'composition',photos:Array.from({length:12},(_,i)=>({id:`p${i}`,url:image,caption:`Фото ${i+1}`,status:'synced'})), videoUrls:['https://youtu.be/dQw4w9WgXcQ'],tracks:[{name:'Первый день',segments:[[[37.6,55.7],[37.7,55.8]]],startedAt:'2026-09-21T10:00:00Z'}]};
+    const root=document.querySelector('#composition');
+    setupLayoutPhotoViewControl(root.querySelector('[data-options]'),(en,ru)=>ru,()=>admin);
+    const host=root.querySelector('.layout-photo-summary');
+    const summary=createLayoutPhotoSummary({host,canChoose:()=>admin,localText:(en,ru)=>ru,renderGallery:async()=>`<button data-photo-open class="layout-summary-thumbnail"><img src="${image}" style="width:100%;height:100%;object-fit:cover" alt="" /></button>`,bindGalleries:()=>({destroy(){}})});
+    await summary.render(layout,true);
+    window.compositionFixture={layout,summary,guest:()=>{admin=false;return summary.render(layout,true);}};
+    window.originalPhoto=host.querySelector('[data-photo-open]');
+  });
+  const content=page.locator('.layout-introduction-content');
+  const positions=()=>content.evaluate(el=>Object.fromEntries(['photos','videos','maps','description'].map(key=>{
+    const node=el.querySelector(key==='description'?'#layoutDescriptionSummary':`.layout-summary-${key==='maps'?'map':key}`);
+    const r=node.getBoundingClientRect();return [key,{x:r.x,y:r.y,width:r.width}];
+  })));
+  await expect(page.locator('button[data-trip-presentation="current"]')).toHaveAttribute('data-visual-default','true');
+  for (const variant of ['photos-top','photo-story','description-maps']) {
+    await page.locator(`button[data-trip-presentation="${variant}"]`).click();
+    await expect(content).toHaveAttribute('data-trip-presentation',variant);
+    await expect(page.locator(`button[data-trip-presentation="${variant}"]`)).toHaveAttribute('aria-pressed','true');
+    expect(await page.evaluate(()=>document.querySelector('[data-photo-open]')===window.originalPhoto)).toBe(true);
+    expect(await content.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+    const pos=await positions();
+    if (isMobile) {
+      const order=variant==='description-maps'?['description','maps','photos','videos']:variant==='photo-story'?['photos','description','videos','maps']:['photos','videos','maps','description'];
+      for(let i=1;i<order.length;i++) expect(pos[order[i]].y).toBeGreaterThan(pos[order[i-1]].y);
+    } else if(variant==='photos-top') {
+      expect(Math.abs(pos.videos.y-pos.maps.y)).toBeLessThan(2);
+      expect(pos.photos.width).toBeGreaterThan(pos.videos.width*1.8);
+      expect(pos.description.y).toBeGreaterThan(pos.maps.y);
+    } else if(variant==='photo-story') {
+      expect(Math.abs(pos.photos.y-pos.description.y)).toBeLessThan(2);
+      expect(pos.description.x).toBeGreaterThan(pos.photos.x);
+    } else {
+      expect(Math.abs(pos.description.y-pos.maps.y)).toBeLessThan(2);
+      expect(pos.maps.x).toBeGreaterThan(pos.description.x);
+      expect(pos.photos.y).toBeGreaterThan(pos.maps.y);
+      expect(pos.videos.y).toBeGreaterThan(pos.photos.y);
+    }
+    await page.locator('.layout-introduction').screenshot({path:testInfo.outputPath(`${variant}.png`)});
+  }
+  await page.evaluate(()=>window.compositionFixture.summary.render(window.compositionFixture.layout,true));
+  await expect(content).toHaveAttribute('data-trip-presentation','description-maps');
+  // Collapse does not accidentally turn the grid visible.
+  await content.evaluate(el=>el.hidden=true); await expect(content).toBeHidden();
+  await content.evaluate(el=>el.hidden=false);
+  // A trip with only description gets a full-width row, no empty map column.
+  await page.evaluate(()=>window.compositionFixture.summary.render({id:'empty'},true));
+  expect(await content.evaluate(el=>el.style.getPropertyValue('--trip-grid-areas'))).toBe('"description description"');
+  await expect(page.locator('#layoutDescriptionSummary')).toBeVisible();
+  await page.evaluate(()=>window.compositionFixture.guest());
+  await expect(content).toHaveAttribute('data-trip-presentation','current');
+  const pos=await positions();
+  expect(pos.description.y).toBeGreaterThan(pos.maps.y);
+  expect(await page.evaluate(()=>localStorage.getItem('bike-packing-trip-presentation-v1'))).toBe('description-maps');
+});

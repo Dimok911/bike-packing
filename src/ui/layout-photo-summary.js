@@ -1,3 +1,4 @@
+import { setupTripPresentationControl, tripPresentation, applyTripPresentation } from "./trip-presentation.js";
 import { bindTripMediaScroll } from "./trip-media-scroll.js";
 import { renderTripTrackMap, bindTripTrackMap } from "./trip-track-map.js";
 import { tripTracks } from "../state/trip-track.js";
@@ -45,8 +46,9 @@ export function setupLayoutPhotoViewControl(control, localText, canChoose = () =
     document.dispatchEvent(new CustomEvent("layout-photo-view-change", { detail: button.dataset.layoutPhotoView }));
   });
   control.append(group);
+  const syncPresentation = setupTripPresentationControl(control, localText, canChoose);
   const syncBackdropControls = setupTripBackdropControls(control, localText, canChoose);
-  control.syncLayoutIntroductionPreferences = () => { sync(layoutPhotoView(canChoose())); syncBackdropControls(); };
+  control.syncLayoutIntroductionPreferences = () => { sync(layoutPhotoView(canChoose())); syncBackdropControls(); syncPresentation(); };
 }
 
 export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, localText, canChoose = () => false, onVisibilityChange = () => {} }) {
@@ -61,6 +63,12 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   let signature = "";
   let view = layoutPhotoView(canChoose());
   let isVisible = false;
+  let presentation = tripPresentation(canChoose());
+  const arrange = () => applyTripPresentation(host, presentation);
+  document.addEventListener("trip-presentation-change", event => {
+    presentation = canChoose() ? event.detail : "current";
+    arrange();
+  });
   const card = host.closest(".layout-introduction");
   const backdrop = document.createElement("div");
   backdrop.className = "layout-trip-backdrop";
@@ -102,12 +110,14 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
     host.dataset.photoView = view;
     host.hidden = !isVisible || (!hasTrack && !hasVideos && (view === "hidden" || !hasPhotos));
     syncBackdrop();
+    arrange();
     onVisibilityChange(isVisible);
   });
   return {
     async render(layout, visible) {
       isVisible = visible;
       applyBackdrop();
+      presentation = tripPresentation(canChoose());
       view = layoutPhotoView(canChoose());
       host.dataset.photoView = view;
       arrangeDescription();
@@ -127,6 +137,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
           updatePhotoGalleryUploadProgress(gallery, [media.photos[index]]);
         });
         binding?.refresh?.();
+        arrange();
         syncBackdrop(); return;
       }
       signature = next;
@@ -137,7 +148,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       scrollBinding?.destroy(); scrollBinding = null;
       mapBinding?.destroy(); mapBinding = null;
       host.replaceChildren();
-      if (!visible || (!hasTrack && !media.photos.length && !media.videoUrls.length)) return;
+      if (!visible || (!hasTrack && !media.photos.length && !media.videoUrls.length)) { arrange(); return; }
       const galleries = await Promise.all(media.photos.map(photo => renderGallery([photo], { className: "layout-summary-thumbnail" })));
       if (token !== version) return;
       host.dataset.photoView = view;
@@ -154,6 +165,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       mapBinding = bindTripTrackMap(host, track, localText);
       syncBackdrop();
       host.hidden = !hasTrack && !hasVideos && view === "hidden";
+      arrange();
       onVisibilityChange(visible);
     }
   };
