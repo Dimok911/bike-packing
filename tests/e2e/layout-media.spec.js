@@ -171,8 +171,8 @@ test('photo introduction: admin variants, description placement and horizontal o
     await expect(photos).toHaveAttribute('data-photo-view',variant);
   }
   const list=photos.locator('.layout-photo-summary-list');
-  expect(await list.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
-  await expect(list.locator("figure:visible")).toHaveCount(4);
+  expect(await list.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
+  await expect(list.locator("figure:visible")).toHaveCount(15);
   expect(await photos.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   expect(await root.locator('[data-intro]').evaluate(el=>el.lastElementChild.id)).toBe('layoutDescriptionSummary');
   await root.locator('[data-layout-photo-view="hidden"]').click();
@@ -425,7 +425,7 @@ test('trip video thumbnails open a lazy player below photos with compact navigat
   await expect(page.locator('.trip-video-dialog')).toHaveCount(0);
   const dimensions=await card.evaluate(card=>({header:card.querySelector('.layout-introduction-header').getBoundingClientRect().height,overflow:card.scrollWidth>card.clientWidth+1,videos:card.querySelector('.layout-summary-videos').getBoundingClientRect().bottom,description:card.querySelector('#layoutDescriptionSummary').getBoundingClientRect().top}));
   expect(dimensions.header).toBeLessThanOrEqual(66);expect(dimensions.overflow).toBe(false);expect(dimensions.description).toBeGreaterThan(dimensions.videos);
-  if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
   await videos.locator('.layout-video-card').first().click();
   const player=page.locator('.trip-video-dialog');
   await expect(player).toBeVisible();
@@ -516,7 +516,7 @@ test('trip thumbnail strip accepts a native horizontal touch gesture over images
   await page.route('**/__testsrc/**',async route=>{const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});});
   await page.evaluate(async()=>{
     const {renderPhotoGalleryHtml,bindPhotoGalleries}=await import('/__testsrc/src/ui/photo-gallery.js');
-    document.body.innerHTML='<div class="layout-photo-summary" data-photo-view="strip"><div class="layout-photo-summary-list"></div></div>';
+    document.body.innerHTML='<div class="layout-photo-summary" data-photo-view="grid"><div class="layout-photo-summary-list"></div></div>';
     const host=document.querySelector('.layout-photo-summary-list');host.innerHTML=(await Promise.all(Array.from({length:16},async(_,i)=>`<figure>${await renderPhotoGalleryHtml([{id:`photo-${i}`,status:'pending',localId:`photo-${i}`}],{className:'layout-summary-thumbnail'})}</figure>`))).join('');
     bindPhotoGalleries(document);
   });
@@ -762,7 +762,7 @@ test("GPX route: load, reject malformed replacement, persist, map dialog, discar
   await expect(page.locator(".layout-summary-map")).toHaveCount(0);
 });
 
-test("compact square media tiles keep all photos and video navigation in their full viewers", async ({page}, testInfo) => {
+test("compact horizontal media rows keep all photos and video navigation in their full viewers", async ({page}, testInfo) => {
   await prepareIsolatedRussianGuest(page);
   await page.route("https://www.youtube-nocookie.com/**", route=>route.fulfill({contentType:"text/html",body:"<p>Video test player</p>"}));
   await openApp(page);
@@ -782,14 +782,19 @@ test("compact square media tiles keep all photos and video navigation in their f
   });
   await page.reload(); await waitForApp(page);
   await page.locator("#layoutSelect").selectOption({label:"Плитки поездки (1 поездка)"});
-  await expect(page.locator(".layout-summary-photos [data-photo-open]:visible")).toHaveCount(4);
-  await expect(page.locator(".layout-summary-photos .trip-media-more")).toHaveText("+3");
-  await expect(page.locator(".layout-video-card:visible")).toHaveCount(4);
-  await expect(page.locator(".layout-summary-videos .trip-media-more")).toHaveText("+2");
-  const tile=await page.locator(".layout-summary-thumbnail").first().boundingBox();
-  expect(Math.abs(tile.width-tile.height)).toBeLessThan(2);
+  await expect(page.locator(".layout-summary-photos [data-photo-open]:visible")).toHaveCount(7);
+  await expect(page.locator(".trip-media-more")).toHaveCount(0);
+  await expect(page.locator(".layout-video-card:visible")).toHaveCount(6);
+  await page.setViewportSize({width:390,height:844});
+  for (const selector of [".layout-photo-summary-list", ".layout-video-summary-list"]) {
+    const dimensions=await page.locator(selector).evaluate(list=>({gap:getComputedStyle(list).gap,overflow:list.scrollWidth>list.clientWidth,rows:new Set([...list.children].map(child=>Math.round(child.getBoundingClientRect().top))).size}));
+    expect(dimensions).toEqual({gap:"4px",overflow:true,rows:1});
+    expect(await page.locator(selector).evaluate(list=>{list.scrollLeft=list.scrollWidth;return list.scrollLeft;})).toBeGreaterThan(100);
+    await page.locator(selector).evaluate(list=>{list.scrollLeft=0;});
+  }
+  expect(await page.locator(".layout-summary-videos").evaluate(videos=>videos.getBoundingClientRect().top > document.querySelector(".layout-summary-photos").getBoundingClientRect().bottom)).toBe(true);
   await expect.poll(()=>page.locator(".layout-summary-photos img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
-  await page.screenshot({path:testInfo.outputPath("trip-media-tiles.png")});
+  await page.screenshot({path:testInfo.outputPath("trip-media-rows.png")});
   await page.locator(".layout-summary-photos [data-photo-open]").nth(3).click();
   await expect(page.locator(".photo-lightbox[open]")).toBeVisible();
   await expect(page.locator("[data-photo-lightbox-dot]")).toHaveCount(7);

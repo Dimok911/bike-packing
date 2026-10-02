@@ -26,10 +26,10 @@ export function renderTripVideoCards(urls, localText) {
     const video = tripVideoPreview(url);
     if (!video) return "";
     const name = localText(`Video ${index + 1}`, `Видео ${index + 1}`);
-    return `<a class="layout-video-card${index >= 4 ? " trip-media-overflow" : ""}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
-      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span>${index === 3 && urls.length > 4 ? `<span class="trip-media-more" aria-hidden="true">+${urls.length - 4}</span>` : ""}</span>
+    return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
+      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
       <span class="layout-video-caption"><span>${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span></a>`;
-  }).join("")}</div>${urls.length > 4 ? `<button type="button" class="ghost trip-videos-expand" data-trip-videos-expand>${escapeHtml(localText("Show all videos", "Показать все видео"))}</button>` : ""}</section>`;
+  }).join("")}</div></section>`;
 }
 
 // Bike Packing trip UI: the shared photo gallery is not involved in video playback.
@@ -46,14 +46,6 @@ export function bindTripVideoCards(host, localText) {
     if (opener?.isConnected) opener.focus({ preventScroll: true });
   };
   const onClick = event => {
-    const expand = event.target.closest("[data-trip-videos-expand]");
-    if (expand && host.contains(expand)) {
-      const section = expand.closest(".layout-summary-videos");
-      const expanded = section.classList.toggle("is-expanded");
-      expand.setAttribute("aria-expanded", String(expanded));
-      expand.textContent = expanded ? localText("Collapse videos", "Свернуть видео") : localText("Show all videos", "Показать все видео");
-      return;
-    }
     const link = event.target.closest("[data-trip-video-play]");
     if (!link || !host.contains(link) || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const video = tripVideoPreview(link.href);

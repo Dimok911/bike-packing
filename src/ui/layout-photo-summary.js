@@ -138,19 +138,12 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
       const galleries = await Promise.all(media.photos.map(photo => renderGallery([photo], { className: "layout-summary-thumbnail" })));
       if (token !== version) return;
       host.dataset.photoView = view;
-      host.innerHTML = `${hasPhotos ? `<div class="layout-summary-photos"><strong>${escapeHtml(localText("Photos", "Фото"))}</strong><div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure${index >= 4 ? ' class="trip-media-overflow"' : ""}>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div></div>` : ""}${renderTripVideoCards(media.videoUrls, localText)}${renderTripTrackMap(track, localText)}`;
+      host.innerHTML = `${hasPhotos ? `<div class="layout-summary-photos"><strong>${escapeHtml(localText("Photos", "Фото"))}</strong><div class="layout-photo-summary-list">${media.photos.map((photo, index) => `<figure>${galleries[index]}${photo.caption ? `<figcaption title="${escapeHtml(photo.caption)}">${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`).join("")}</div></div>` : ""}${renderTripVideoCards(media.videoUrls, localText)}${renderTripTrackMap(track, localText)}`;
       host.querySelectorAll("[data-photo-open]").forEach((button, index) => {
         const caption = media.photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`);
         button.setAttribute("aria-label", caption);
         button.querySelector("img").alt = caption;
-        if (index === 3 && media.photos.length > 4) {
-          const more = document.createElement("span");
-          more.className = "trip-media-more";
-          more.textContent = `+${media.photos.length - 4}`;
-          more.setAttribute("aria-hidden", "true");
-          button.append(more);
-          button.setAttribute("aria-label", localText(`Open gallery, ${media.photos.length} photos`, `Открыть галерею, ${media.photos.length} фото`));
-        }
+
       });
       binding = bindGalleries(host);
       videoBinding = bindTripVideoCards(host, localText);
