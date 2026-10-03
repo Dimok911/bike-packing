@@ -33,14 +33,15 @@ export function bindTripMediaScroll(host, localText) {
       previous.disabled = list.scrollLeft <= 1;
       next.disabled = list.scrollLeft >= list.scrollWidth - list.clientWidth - 1;
       const bounds = list.getBoundingClientRect();
-      const left = bounds.left + list.clientLeft, right = left + list.clientWidth;
+      const { left, right } = bounds;
       let before = 0, after = 0;
       if (overflow) for (const child of list.children) {
         if (!child.getClientRects().length) continue;
         const box = child.getBoundingClientRect();
-        // Include a clipped thumbnail: there is still part of it to reveal.
-        if (box.left < left - 1) before++;
-        if (box.right > right + 1) after++;
+        // A partially visible thumbnail is already shown, not another unseen item.
+        // Compare rendered rectangles consistently, including fractional zoom.
+        if (box.right <= left + 1) before++;
+        if (box.left >= right - 1) after++;
       }
       for (const [button, count, direction] of [[previous, before, "left"], [next, after, "right"]]) {
         button.querySelector("[data-trip-media-count]").textContent = count ? String(count) : "";

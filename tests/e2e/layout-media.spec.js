@@ -809,7 +809,7 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     await expect(next).toBeEnabled();
     const expectedCounts=()=>page.locator(selector).evaluate(list=>{
       const r=list.getBoundingClientRect(); const children=[...list.children].map(el=>el.getBoundingClientRect());
-      return [children.filter(el=>el.left<r.left-1).length,children.filter(el=>el.right>r.left+list.clientWidth+1).length];
+      return [children.filter(el=>el.right<=r.left+1).length,children.filter(el=>el.left>=r.right-1).length];
     });
     const displayedCounts=()=>row.locator('[data-trip-media-count]').allTextContents().then(values=>values.map(Number));
     await expect.poll(displayedCounts).toEqual(await expectedCounts());
@@ -1143,4 +1143,41 @@ test("trip maps use chronological order until dragged and retain manual mode aft
   await expect(names).toHaveText(["День 1","День 2","День -1","День 0"]);
   await page.locator("#layoutEditDialog header button").click();await page.locator("#confirmCancelBtn").click();
   await expect(page.locator(".trip-track-name")).toHaveText(["День 0","День 1","День 2","День -1"]);
+});
+
+
+test("media arrow counts exclude partially visible thumbnails at both ends and after resize", async ({page}) => {
+  const {readFile}=await import("node:fs/promises");const {resolve}=await import("node:path");
+  await prepareIsolatedRussianGuest(page);await openApp(page);
+  await page.route("**/__testsrc/**",async route=>{
+    const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];
+    if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();
+    await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});
+  });
+  await page.evaluate(async()=>{
+    const {bindTripMediaScroll}=await import('/__testsrc/src/ui/trip-media-scroll.js');
+    const fixture=document.createElement('section');fixture.id='count-fixture';fixture.style.cssText='width:340px;margin:10px;';
+    fixture.innerHTML='<div class="layout-video-summary-list" style="scroll-snap-type:none">'+Array.from({length:4},(_,i)=>`<div style="flex:0 0 100px;height:80px;background:#ddd">Видео ${i+1}</div>`).join('')+'</div>';
+    document.body.prepend(fixture);bindTripMediaScroll(fixture,(en,ru)=>ru);
+  });
+  const root=page.locator('#count-fixture'),list=root.locator('.layout-video-summary-list');
+  const previous=root.locator('[data-trip-media-scroll="previous"]'),next=root.locator('[data-trip-media-scroll="next"]');
+  const visible=()=>list.evaluate(el=>{const r=el.getBoundingClientRect();return [...el.children].filter(child=>{const c=child.getBoundingClientRect();return c.right>r.left+1&&c.left<r.right-1;}).length;});
+  await expect.poll(visible).toBe(3);
+  await expect(next.locator('[data-trip-media-count]')).toHaveText('1');
+  await expect(previous.locator('[data-trip-media-count]')).toHaveText('');
+  await list.evaluate(el=>{el.scrollLeft=el.scrollWidth;});
+  await expect(next).toBeDisabled();await expect.poll(visible).toBe(3);
+  await expect(previous.locator('[data-trip-media-count]')).toHaveText('1');
+  await expect(next.locator('[data-trip-media-count]')).toHaveText('');
+  // All four are now at least partly visible, even though the row still scrolls.
+  await root.evaluate(el=>{el.style.width='400px';});
+  await list.evaluate(el=>{el.scrollLeft=0;});
+  await expect.poll(visible).toBe(4);
+  await expect(next.locator('[data-trip-media-count]')).toHaveText('');
+  await expect(next).toBeEnabled();
+  // Fractional scaling uses the same rendered-coordinate system for row and cards.
+  await root.evaluate(el=>{el.style.width='340px';el.style.transform='scale(.8)';el.style.transformOrigin='left top';});
+  await expect.poll(visible).toBe(3);
+  await expect(next.locator('[data-trip-media-count]')).toHaveText('1');
 });
