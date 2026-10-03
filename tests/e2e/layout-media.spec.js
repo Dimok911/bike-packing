@@ -1130,7 +1130,7 @@ test("trip maps use chronological order until dragged and retain manual mode aft
   await page.locator("#editLayoutBtn").click();await page.locator("[data-trip-add]").click();
   const file=n=>({name:`day-${n}.gpx`,mimeType:"application/gpx+xml",buffer:Buffer.from(`<gpx><trk><name>День ${n}</name><trkseg><trkpt lat="55" lon="37">${n<0?'':`<time>2026-09-${20+n}T08:00:00Z</time>`}</trkpt><trkpt lat="56" lon="38"/></trkseg></trk></gpx>`)});
   const input=page.locator("[data-trip-gpx-file]"),list=page.locator("[data-trip-gpx-list]");
-  const names=list.locator(".trip-track-editor-card > strong");
+  const names=list.locator("[data-trip-track-caption-edit]");
   await input.setInputFiles([file(-1),file(2),file(1)]);
   await page.evaluate(()=>document.activeElement?.blur());
   await expect(page.locator("#layoutEditDialog")).not.toHaveClass(/keyboard-focus-active/);
@@ -1295,16 +1295,17 @@ test("video thumbnail editor keeps captions, drag order, confirmed removal and G
   const file=n=>({name:`track-${n}.gpx`,mimeType:'application/gpx+xml',buffer:Buffer.from(`<gpx><trk><name>Исходный трек ${n}</name><trkseg><trkpt lat="55" lon="37"><time>2026-10-0${n}T08:00:00Z</time></trkpt><trkpt lat="56" lon="38"/></trkseg></trk></gpx>`)});
   await page.locator('[data-trip-gpx-file]').setInputFiles([file(1),file(2)]);
   await page.locator('[data-trip-track-caption-edit]').first().click();
+  await expect(page.locator('[data-trip-track-caption]').first()).toHaveValue('Исходный трек 1');
   await page.locator('[data-trip-track-caption]').first().fill('Лесная дорога');
   await page.locator('[data-trip-track-caption]').first().press('Enter');
   await expect(dialog).not.toHaveClass(/keyboard-focus-active/);
   await page.locator('[data-trip-track-drag]').first().press('End');
   await expect(page.locator('[data-trip-track-caption-edit]').last()).toHaveText('Лесная дорога');
   await page.locator('#saveEditedLayoutBtn').click();await expect(dialog).toBeHidden();
-  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Первый день <поездки>']);
   await page.reload();await waitForApp(page);
   await page.locator('#layoutSelect').selectOption({label:'Подписанные материалы (1 поездка)'});
-  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Первый день <поездки>']);
   await expect(page.locator('.trip-track-name')).toHaveText(['Исходный трек 2','Лесная дорога']);
   await page.locator('#editLayoutBtn').click();
   await expect(list.locator('[data-layout-video-caption-edit]').last()).toHaveText('Первый день <поездки>');
@@ -1315,5 +1316,5 @@ test("video thumbnail editor keeps captions, drag order, confirmed removal and G
   await list.locator('[data-layout-video-caption]').last().press('Enter');
   await expect(dialog).not.toHaveClass(/keyboard-focus-active/);
   await dialog.locator('header button').click();await page.locator('#confirmCancelBtn').click();
-  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Первый день <поездки>']);
 });

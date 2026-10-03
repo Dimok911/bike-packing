@@ -1,3 +1,4 @@
+import { tripTrackCaption } from "../state/trip-track.js";
 import { layoutTripsSnapshot, tripDisplayName } from "../state/layout-trips.js";
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
@@ -697,7 +698,7 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
         if (!snapshotsEqual(before.videoUrls, trip.videoUrls)) rows.push(localText(`Videos in “${title}”: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`, `Видео в «${title}»: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`));
       }
       if (!snapshotsEqual(before?.tracks || [], trip.tracks || [])) {
-        const names = tracks => (tracks || []).map(track => track.caption || track.name || track.fileName).join(", ") || "—";
+        const names = tracks => (tracks || []).map(tripTrackCaption).join(", ") || "—";
         rows.push(localText(`Tracks in “${title}”: ${names(before?.tracks)} → ${names(trip.tracks)}`, `Треки в «${title}»: ${names(before?.tracks)} → ${names(trip.tracks)}`));
       }
       if (Boolean(before?.publishNotes) !== Boolean(trip.publishNotes)) rows.push(localText(`Notes in “${title}”: ${trip.publishNotes ? "published" : "hidden from publication"}`, `Заметки в «${title}»: ${trip.publishNotes ? "видны в публикации" : "скрыты из публикации"}`));

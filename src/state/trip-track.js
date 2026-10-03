@@ -11,6 +11,11 @@ export function normalizeTrackStartedAt(value) {
   return new Date(time).toISOString();
 }
 
+// An edited empty caption stays empty; otherwise the GPX title is the initial caption.
+export function tripTrackCaption(track) {
+  return typeof track?.caption === "string" ? track.caption.trim() : String(track?.name || track?.fileName || "").trim();
+}
+
 export function normalizeTripTrack(value) {
   if (!value || !Array.isArray(value.segments) || !value.segments.length || value.segments.length > MAX_SEGMENTS) return null;
   let count = 0;
@@ -21,7 +26,7 @@ export function normalizeTripTrack(value) {
   }
   const startedAt = normalizeTrackStartedAt(value.startedAt);
   const caption = String(value.caption || "").trim().slice(0, 2000);
-  return { ...(startedAt ? { startedAt } : {}), ...(caption ? { caption } : {}), name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
+  return { ...(startedAt ? { startedAt } : {}), ...(typeof value.caption === "string" ? { caption } : {}), name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
 }
 
 // Unwrap longitude at the date line; segments remain separate (no invented joins).

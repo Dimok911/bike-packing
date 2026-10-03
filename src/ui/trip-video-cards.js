@@ -22,10 +22,11 @@ export function tripVideoPreview(value) {
 export function renderTripVideoCard(value, index, localText, { showCaption = true } = {}) {
   const video = tripVideoPreview(typeof value === "string" ? value : value?.url);
   if (!video) return "";
-  const name = (typeof value === "object" && value?.caption) || localText(`Video ${index + 1}`, `Видео ${index + 1}`);
+  const caption = typeof value === "object" ? String(value?.caption || "").trim() : "";
+  const name = caption || localText(`Video ${index + 1}`, `Видео ${index + 1}`);
   return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
     <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
-    ${showCaption ? `<span class="layout-video-caption"><span title="${escapeHtml(name)}">${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span>` : ""}</a>`;
+    ${showCaption && caption ? `<span class="layout-video-caption"><span title="${escapeHtml(name)}">${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span>` : ""}</a>`;
 }
 
 export function renderTripVideoCards(videos, localText) {
