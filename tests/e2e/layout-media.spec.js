@@ -805,6 +805,7 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     const next = row.locator('[data-trip-media-scroll="next"]');
     await expect(previous).toBeVisible();
     await expect(previous).toBeDisabled();
+    await expect(previous.locator("[data-trip-media-count]")).toHaveText("");
     await expect(next).toBeEnabled();
     const expectedCounts=()=>page.locator(selector).evaluate(list=>{
       const r=list.getBoundingClientRect(); const children=[...list.children].map(el=>el.getBoundingClientRect());
@@ -823,6 +824,7 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     await expect.poll(()=>page.locator(selector).evaluate(list=>list.scrollLeft)).toBeLessThan(2);
     await page.locator(selector).evaluate(list=>{list.scrollLeft=list.scrollWidth;});
     await expect(next).toBeDisabled();
+    await expect(next.locator("[data-trip-media-count]")).toHaveText("");
     await expect.poll(displayedCounts).toEqual(await expectedCounts());
     expect((await displayedCounts())[1]).toBe(0);
     await page.locator(selector).evaluate(list=>{list.scrollLeft=0;});
