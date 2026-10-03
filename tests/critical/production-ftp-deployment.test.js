@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 function readProjectFile(path) {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -49,4 +52,50 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(docs, /pinned SPKI public key/i);
   assert.match(docs, /retries transient upload and download failures/i);
   assert.match(docs, /live production API contract/i);
+});
+
+
+test("partial staging checks only transferred files and complete verification still checks styles", { skip: process.platform !== "win32" }, () => {
+  const source = readProjectFile("scripts/deploy-production-ftp.ps1");
+  const start = source.indexOf("function Assert-PublicBuild(");
+  const end = source.indexOf("function Assert-ProductionApiContract", start);
+  const directory = mkdtempSync(join(tmpdir(), "bike-partial-deploy-"));
+  const harness = String.raw`
+$ErrorActionPreference = "Stop"
+$ArtifactRoot = $PSScriptRoot
+$script:versionNumber = "1624"
+$ExpectedVersion = "v1624"
+$script:requests = [Collections.Generic.List[string]]::new()
+$script:checks = 0
+function Receive-HttpsFile($url, $path) {
+  $name = [IO.Path]::GetFileName(([uri]$url).AbsolutePath)
+  $script:requests.Add($name)
+  if ($name -eq "index.html") { Set-Content -LiteralPath $path -Value 'app.js?v=1624 styles.css?v=1624' }
+  if ($name -eq "sw.js") { Set-Content -LiteralPath $path -Value 'bike-packing-prototype-v1624' }
+}
+function Assert-FilesEqual($candidate, $received, $label) {
+  $script:checks += 1
+  if ($script:rejectStyles -and $label -eq "HTTPS/styles.css") { throw "Unchanged styles mismatch" }
+}
+` + source.slice(start, end) + String.raw`
+Assert-PublicBuild "https://example.test/stage" $PSScriptRoot "test" -Files @("app.js", "index.html", "sw.js", "release-contract.json")
+if ($script:requests.Count -ne 4 -or $script:requests.Contains("styles.css") -or $script:checks -ne 4) { throw "Partial payload verification failed" }
+$script:requests.Clear()
+Assert-PublicBuild "https://example.test/production" $PSScriptRoot "test"
+if ($script:requests.Count -ne 5 -or -not $script:requests.Contains("styles.css")) { throw "Complete verification skipped unchanged file" }
+$script:rejectStyles = $true
+$rejected = $false
+try { Assert-PublicBuild "https://example.test/production" $PSScriptRoot "test" -Files @("styles.css") } catch { $rejected = $_.Exception.Message -eq "Unchanged styles mismatch" }
+if (-not $rejected) { throw "Hash mismatch was not rejected" }
+Write-Output "partial, complete and unchanged mismatch checks passed"
+`;
+  try {
+    const path = join(directory, "verify.ps1");
+    writeFileSync(path, harness);
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-File", path], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /unchanged mismatch checks passed/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

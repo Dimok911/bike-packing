@@ -1,5 +1,10 @@
 import { snapshotsEqual } from "../utils/json.js";
 
+export function assertHistoryRequestsSucceeded(results) {
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure) throw failure.reason || new Error("History is unavailable");
+}
+
 function historyTimeValue(value) {
   if (!value) return 0;
   const time = new Date(value).getTime();

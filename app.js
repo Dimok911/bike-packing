@@ -1,3 +1,8 @@
+import { syncLayoutPhotoUpload } from "./src/sync/layout-draft-photo-uploads.js";
+import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "./src/sync/photo-upload-queue.js";
+import { findEntityPhotoForUpload, syncPhotoRecordFromUpload } from "./src/vendor/vniipo-photo-upload-engine.js";
+import { hasPendingLocalPhotos, retainLocalPhotoUploads } from "./src/sync/local-photo-state.js";
+import { setupLayoutPhotoViewControl } from "./src/ui/layout-photo-summary.js";
 import { isBuiltinCategory, builtinCategoryAction } from "./src/state/builtin-categories.js";
 import {
   STORAGE_KEY,
@@ -722,6 +727,7 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
+  assertHistoryRequestsSucceeded,
   formatHistoryDateTime,
   historySharedTemplateOptions,
   historyPayloadTitle,
@@ -3126,7 +3132,7 @@ async function init() {
   applyPackingVisualStyle();
   applyStaticTranslations();
   setupModalScrollLock();
-  setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
+  setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog, refs.layoutEditDialog]);
   setupTouchActionButtonFeedback();
   bindExplicitViewportScrollIntent({
     documentRef: document,
@@ -3801,7 +3807,8 @@ function setupPackingVisualStyleQuickControl() {
       type="button"
       class="admin-visual-option"
       data-packing-visual-style="${escapeHtml(option.value)}"
-      title="${escapeHtml(option.label)}"
+      ${option.value === PACKING_VISUAL_STYLE_PRIMARY ? 'data-visual-default="true"' : ""}
+      title="${escapeHtml(option.label + (option.value === PACKING_VISUAL_STYLE_PRIMARY ? localText(" · Default for everyone", " · По умолчанию для всех") : ""))}"
       aria-label="${escapeHtml(option.label)}"
       aria-pressed="${normalizePackingVisualStyle(packingVisualStyle) === option.value ? "true" : "false"}"
     >${escapeHtml(packingVisualStyleButtonLabel(option))}</button>
@@ -3811,6 +3818,15 @@ function setupPackingVisualStyleQuickControl() {
     if (!button) return;
     setPackingVisualStyle(button.dataset.packingVisualStyle);
   });
+  setupLayoutPhotoViewControl(control, localText, isAdminSession);
+  const closeViewOptions = document.createElement("button");
+  closeViewOptions.type = "button";
+  closeViewOptions.className = "admin-visual-close icon-button";
+  closeViewOptions.textContent = "×";
+  closeViewOptions.setAttribute("aria-label", localText("Close view options", "Закрыть варианты вида"));
+  closeViewOptions.addEventListener("click", () => setPackingVisualStylePanelVisible(false));
+  control.append(closeViewOptions);
+  document.body.append(control);
 }
 
 function syncPackingVisualStyleControls() {
@@ -3821,6 +3837,7 @@ function syncPackingVisualStyleControls() {
   });
   const control = document.querySelector("#packingVisualStyleControl");
   control?.classList.toggle("is-visible", canOpenAdminPublishedEdit() && packingVisualStylePanelVisible);
+  control?.syncLayoutIntroductionPreferences?.();
   if (refs.visualStyleMenuBtn) {
     refs.visualStyleMenuBtn.hidden = !canOpenAdminPublishedEdit();
     refs.visualStyleMenuBtn.classList.toggle("active", packingVisualStylePanelVisible);
@@ -4515,6 +4532,7 @@ function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 90
 }
 
 function hasLocalSyncChanges(baseState = loadBaseState()) {
+  if (hasPendingLocalPhotos(state)) return true;
   if (!baseState) return true;
   return !sameJson(serializeState({ forSync: true }), cloneStateForSync(baseState, { forSync: true }));
 }
@@ -5521,6 +5539,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     return false;
   }
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
+  retainLocalPhotoUploads(remoteState, state);
   replaceState(remoteState);
   removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
   setActivePrivateScope();
@@ -5530,7 +5549,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   syncMeta.serverUpdatedAt = updatedAt || null;
   syncMeta.localUpdatedAt = updatedAt || null;
   syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-  if (catalogRepairBase && hasLocalSyncChanges(catalogRepairBase)) {
+  if (hasPendingLocalPhotos(state) || (catalogRepairBase && hasLocalSyncChanges(catalogRepairBase))) {
     syncMeta.dirty = true;
     syncMeta.localUpdatedAt = nowIso();
   }
@@ -5547,6 +5566,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     updateSyncUi(localText("Technical catalog duplicates removed · syncing...", "Каталог очищен от технических дублей · синхронизирую..."));
     scheduleRemoteSave();
   }
+  if (hasPendingLocalPhotos(state)) scheduleRemoteSave();
   updateSyncUi();
   return true;
 }
@@ -6093,12 +6113,13 @@ async function apiFetch(path, options = {}) {
 }
 
 async function apiUploadFormData(path, options = {}) {
+  const { connectionFailureMode = "auto", ...requestOptions } = options;
   try {
-    const response = await apiUploadFormDataRequest(path, options, { isForcedOffline });
+    const response = await apiUploadFormDataRequest(path, requestOptions, { isForcedOffline });
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
-    if (!isForcedOffline() && isNetworkError(error)) {
+    if (!isForcedOffline() && isNetworkError(error) && shouldReportConnectionFailure({ mode: connectionFailureMode, method: "POST" })) {
       connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
     }
     throw error;
@@ -6236,10 +6257,30 @@ async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId 
     const targetListId = listId || await ensureCurrentPackingListId();
     if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
     if (isReadOnlyBikePackingContext()) return false;
-    for (const entry of entries) {
-      const uploaded = await uploadEntityPhoto(targetListId, entry.entity, entry.photo, entry.entityType);
-      changed = uploaded || changed;
-    }
+    const uploadScope = getPhotoCacheScope();
+    const entryByPhoto = new Map(entries.map(entry => [entry.photo, entry]));
+    const currentEntity = photo => {
+      const entry = entryByPhoto.get(photo);
+      const key = { layout: "layouts", item: "items", container: "containers" }[entry?.entityType];
+      return state[key]?.[entry?.entity.id];
+    };
+    const stillOwned = photo => getPhotoCacheScope() === uploadScope && Boolean(currentUser)
+      && Boolean(findEntityPhotoForUpload(currentEntity(photo), photo));
+    const result = await uploadPhotoBatchQueue(entries.map(entry => entry.photo), {
+      concurrency: 1,
+      shouldUploadPhoto: stillOwned,
+      uploadPhoto: photo => uploadPhotoWithOneRetry(photo, {
+        shouldRetryPhoto: candidate => Boolean(candidate.uploadRetryPending) && stillOwned(candidate),
+        uploadPhotoAttempt: (candidate, options) => uploadEntityPhoto(targetListId, currentEntity(candidate), candidate, entryByPhoto.get(candidate).entityType, options)
+      }),
+      onUnexpectedError: photo => {
+        if (!stillOwned(photo)) return;
+        syncPhotoRecordFromUpload(currentEntity(photo), photo);
+        changed = true;
+        schedulePhotoUploadProgressRender();
+      }
+    });
+    changed = result.uploaded || changed;
   } catch {
     // Keep photos queued locally; the next manual or automatic sync will retry.
   } finally {
@@ -6317,18 +6358,30 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     photo,
     entityType,
     dropMissingRemotePhoto,
-    onPhotoProgress,
+    onPhotoProgress: (updatedPhoto, progress) => {
+      if (getPhotoCacheScope() !== uploadPhotoCacheScopeKey) return;
+      const key = { layout: "layouts", item: "items", container: "containers" }[entityType];
+      (entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(state[key]?.[entity.id], updatedPhoto);
+      onPhotoProgress?.(updatedPhoto, progress);
+    },
     retryTemporaryUploadFailure,
     apiFetch,
     apiUploadFormData,
     getCachedPhoto: (id) => getCachedPhoto(id, uploadPhotoCacheScopeKey),
-    putCachedPhoto: (record) => putCachedPhoto(record, uploadPhotoCacheScopeKey),
+    putCachedPhoto: (record) => {
+      const key = { layout: "layouts", item: "items", container: "containers" }[entityType];
+      const retained = findEntityPhotoForUpload(state[key]?.[entity.id], photo);
+      // An uploaded draft has not entered the saved state yet. Remote-cache
+      // pruning must not discard its local bytes before the user presses Save.
+      return putCachedPhoto(retained ? record : { ...record, namespace: "local-draft", cachePurpose: "local-draft" }, uploadPhotoCacheScopeKey);
+    },
     registerCachedPhotoRecord: (task, record) => {
       if (photoObjectUrls.currentScope() !== uploadPhotoCacheScopeKey) return;
       photoObjectUrls.setRecord(task, record);
     },
     markEntityChanged: (targetEntity, targetType, updatedAt) => {
-      if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
+      if (targetType === "layout") touchLayout(targetEntity.id, updatedAt);
+      else if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
       else touchItem(targetEntity.id, updatedAt);
     },
     persistStateSnapshot: () => persistStateSnapshot(state),
@@ -6951,6 +7004,7 @@ async function tryApplyRemoteEntityChanges(listId, freshness, { preferredLayout 
   const request = canRequestEntityChanges({ syncMeta, freshness, listId });
   if (!request.ok) return { applied: false, fallbackRequired: true, reason: request.reason };
   const data = await fetchRemoteListChangesRecord(listId, request.sinceRevision);
+  if (photoUploadInFlight || syncMeta.dirty || hasPendingLocalPhotos(state)) return { applied: false, reason: "local-upload-pending" };
   const result = applyEntityChangesToState(serializeState({ forSync: true }), data);
   if (!result.applied || !result.state) return result;
   const meta = {
@@ -8065,7 +8119,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   if (isForcedOffline()) return;
   if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) return;
-  if (!currentUser || remoteRefreshInFlight) return;
+  if (!currentUser || remoteRefreshInFlight || photoUploadInFlight) return;
   if (recoverUnsyncedLocalChanges("remote-freshness")) return;
   if (syncMeta.dirty) return;
   if (document.hidden) return;
@@ -8096,6 +8150,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
       updateSyncUi();
       return;
     }
+    if (photoUploadInFlight || syncMeta.dirty || hasPendingLocalPhotos(state)) return;
     const preferred = preferredLayout || preferredCurrentLayoutRef();
     let entityChangesApplied = false;
     try {
@@ -8114,7 +8169,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
         message: error?.message || String(error || "")
       });
     }
-    if (!entityChangesApplied) await loadRemoteState({ preferredLayout: preferred });
+    if (!entityChangesApplied && !photoUploadInFlight && !syncMeta.dirty && !hasPendingLocalPhotos(state)) await loadRemoteState({ preferredLayout: preferred });
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;
@@ -9896,6 +9951,8 @@ async function refreshHistoryDialog() {
   refs.historyStatus.className = "dialog-status";
   refs.historyStatus.textContent = t("history.loading");
   refs.historyList.innerHTML = "";
+  historyRecords = [];
+  historyPageState = null;
   try {
     const source = activeHistorySource;
     const result = await loadRemoteHistory(source);
@@ -9978,6 +10035,7 @@ async function loadPrivateRemoteHistory(pageState = null) {
       }), { timeoutMs: LIST_API_TIMEOUT_MS });
       return { target, page: normalizeHistorySummaryPage(data) };
     }));
+    assertHistoryRequestsSucceeded(results);
     const updates = new Map();
     const records = [];
     results.forEach((result) => {
@@ -10053,6 +10111,8 @@ async function loadPrivateRemoteHistory(pageState = null) {
     });
     return { target, page: normalizeHistorySummaryPage(data) };
   }));
+
+  assertHistoryRequestsSucceeded(results);
 
   const records = [];
   const loadedTargets = new Map();

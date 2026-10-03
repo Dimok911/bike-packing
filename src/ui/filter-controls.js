@@ -2,6 +2,8 @@ import {
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG
 } from "../config/constants.js";
+import { renderLayoutChoiceMenu } from "./layout-choice-menu.js";
+import { layoutTripCount, layoutTripCountLabel } from "../state/layout-trips.js";
 import { orderedLayouts } from "../state/layout-order.js";
 import { publicTemplateOptionAccess } from "../public/public-template-availability.js";
 
@@ -234,12 +236,21 @@ export function renderFilterControls({
       publicOptions = [[selectedLayoutValue, label, activeLayout?.adminDemo ? "demo" : "shared", false], ...publicOptions];
     }
   }
+  const withTrips = (label, layout) => {
+    const count = layoutTripCountLabel(layout, uiLanguage);
+    return count ? `${label} (${count})` : label;
+  };
+  const publicLayouts = [...demoTemplates, ...currentSharedLayouts(uiLanguage), ...(linkedSharedListLayout ? [linkedSharedListLayout] : [])];
   const layoutOptions = [
-    ...publicOptions,
+    ...publicOptions.map(option => {
+      const source = Object.values(state.layouts || {}).find(layout => publicLayoutChoiceForLayout(layout) === option[0])
+        || publicLayouts.find(layout => `shared:${layout.id}` === option[0] || demoTemplateChoiceForEntry(layout) === option[0]);
+      return [option[0], withTrips(option[1], source), option[2], option[3], { label: option[1], count: layoutTripCount(source), description: layoutTripCountLabel(source, uiLanguage) }];
+    }),
     ...personalLayouts.map((layout) => [
       layout.id,
-      `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`,
-      "personal"
+      withTrips(`${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`, layout),
+      "personal", false, { label: `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`, count: layoutTripCount(layout), description: layoutTripCountLabel(layout, uiLanguage) }
     ])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
@@ -253,6 +264,7 @@ export function renderFilterControls({
   refs.layoutSelect.title = selectedPublicReadonly
     ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
+  renderLayoutChoiceMenu(refs.layoutSelect, layoutOptions, uiLanguage);
   const sharedLayoutView = isSharedLayoutView();
   refs.newLayoutBtn.textContent = sharedLayoutView
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
@@ -271,7 +283,7 @@ export function renderFilterControls({
   }
   fillSelect(
     refs.layoutCopyFrom,
-    personalLayouts.map((layout) => [layout.id, layoutDisplayNameForLanguage(layout, uiLanguage)]),
+    personalLayouts.map((layout) => [layout.id, withTrips(layoutDisplayNameForLanguage(layout, uiLanguage), layout)]),
     activeEditableLayoutId
   );
   const nextSelectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));

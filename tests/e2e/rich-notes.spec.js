@@ -231,3 +231,190 @@ test('toolbar adds named links to selected text and bags, edits addresses and ca
   expect(popup.url()).toBe('https://example.com/created#bag');
   await popup.close();
 });
+
+
+test('layout notes support formatting, named links, reload and discard', async ({page,isMobile})=>{
+  await fixture(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await activate(page.locator('[data-trip-add]'),isMobile);
+  await paste(page.locator('#layoutEditNotes'), '<p><strong>Проверить</strong> перед поездкой</p>');
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await activate(page.locator('#layoutEditDialog .note-field:has(#layoutEditNotes) [data-note-command="link"]'),isMobile);
+  const panel=page.locator('#layoutEditDialog .note-field:has(#layoutEditNotes) .rich-note-link-panel');
+  await panel.locator('[data-note-link-field="text"]').fill('Инструкция');
+  await panel.locator('[data-note-link-field="url"]').fill('https://example.com/manual');
+  await panel.locator('[data-note-link-field="url"]').blur();
+  await activate(panel.locator('[data-note-link-apply]'),isMobile);
+  await save(page,'#saveEditedLayoutBtn',isMobile);
+  await expect(page.locator('.layout-notes-content strong')).toHaveText('Проверить');
+  await expect(page.locator('.layout-notes-content a')).toHaveAttribute('href','https://example.com/manual');
+  await page.reload(); await waitForApp(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await expect(page.locator('#layoutEditNotesRich a')).toHaveText('Инструкция');
+  await expect(page.locator('#saveEditedLayoutBtn')).toBeDisabled();
+  await page.locator('#layoutEditNotesRich').fill('Не сохранять');
+  await page.evaluate(()=>document.activeElement?.blur());
+  await activate(page.locator('#layoutEditDialog header button'),isMobile);
+  await activate(page.locator('#confirmCancelBtn'),isMobile);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await expect(page.locator('#layoutEditNotesRich strong')).toHaveText('Проверить');
+  await page.screenshot({path:`test-results/v1613-layout-notes-${isMobile?'mobile':'desktop'}.png`});
+});
+
+
+test('history renders safe formatted before/after notes and exact layout quantities', async({page})=>{
+  const {readFile}=await import('node:fs/promises');
+  const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page); await openApp(page);
+  await page.route('**/__testsrc/**',async route=>{
+    const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];
+    if (!relative.startsWith('src/') || relative.includes('..')) return route.abort();
+    await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});
+  });
+  await page.evaluate(async()=>{
+    const {renderHistoryRecordDetails}=await import('/__testsrc/src/ui/history-diff.js');
+    const before={items:{i:{id:'i',name:'Носки',note:'Старое'}},containers:{b:{id:'b',name:'Сумка',note:'Старое'}},layouts:{l:{id:'l',name:'Поход',notes:'Старое',arrangement:{items:{i:'b'},itemQuantities:{i:1}}}}};
+    const after=structuredClone(before);
+    for (const [map,key] of [['items','note'],['containers','note'],['layouts','notes']]) {
+      const entity=Object.values(after[map])[0];
+      entity[key]='Новое инструкция';
+      entity[`${key}Html`]='<p><strong>Новое</strong> <a href="https://example.com/manual">инструкция</a></p><img src=x onerror="window.historyXss=1"><script>window.historyXss=1</script>';
+    }
+    after.layouts.l.arrangement.itemQuantities.i=3;
+    const host=document.createElement('section');host.id='history-render-test';
+    host.innerHTML=renderHistoryRecordDetails({id:1},0,[{id:1}],{recordState:()=>before,currentComparisonState:()=>after});
+    document.body.append(host);
+  });
+  const result=page.locator('#history-render-test');
+  await expect(result.locator('.history-note-comparison')).toHaveCount(3);
+  await expect(result.locator('.note-content strong')).toHaveText(['Новое','Новое','Новое']);
+  await expect(result.locator('a')).toHaveCount(3);
+  await expect(result.locator('a').first()).toHaveAttribute('rel','noopener noreferrer');
+  await expect(result).toContainText('Количество «Носки»: 1 → 3');
+  await expect(result).not.toContainText('Изменено размещение');
+  await expect(result).not.toContainText('<strong>');
+  await expect(result.locator('script,img,[onerror]')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.historyXss)).toBeUndefined();
+  await result.screenshot({path:'test-results/v1613-history-formatted.png'});
+});
+
+
+test('existing links can be edited through visible fields in layout, item and bag notes', async ({page,isMobile}) => {
+  test.setTimeout(60000);
+  await fixture(page);
+  const cases = [
+    ['layoutEditNotes', 'layoutEditDialog', '#editLayoutBtn', '#saveEditedLayoutBtn'],
+    ['layoutTripNotes', 'layoutEditDialog', '#editLayoutBtn', '#saveEditedLayoutBtn'],
+    ['itemNote', 'itemDialog', '[data-item-id="notesItem"] .item-title-hitarea', '#saveItemBtn'],
+    ['rootContainerNote', 'rootContainerDialog', '[data-root-container-id="notesBag"] .container-title', '#saveRootContainerBtn']
+  ];
+  for (const [id,dialog,trigger,saveButton] of cases) {
+    const open = () => activate(id === 'rootContainerNote' ? page.getByRole('heading',{name:'Сумка',exact:true}) : page.locator(trigger),isMobile);
+    await open();
+    if (id === 'layoutEditNotes') await activate(page.locator('[data-trip-add]'),isMobile);
+    await page.locator(`#${id}`).fill('');
+    await paste(page.locator(`#${id}`), '<p><a href="https://example.com/first"><strong>Первая</strong></a> и <a href="https://example.com/second">Вторая</a></p>');
+    await save(page,saveButton,isMobile);
+    await page.reload(); await waitForApp(page);
+    await open();
+    await page.locator(`#${id}Rich`).focus();
+    await activate(page.locator(`#${dialog} .note-field:has(#${id}) [data-note-command="edit-link"]`),isMobile);
+    const panel=page.locator(`#${dialog} .note-field:has(#${id}) .rich-note-link-panel`);
+    await expect(panel.locator('[data-note-edit-link]')).toHaveCount(2);
+    await activate(panel.locator('[data-note-edit-link]').nth(1),isMobile);
+    await expect(panel.locator('[data-note-link-field="text"]')).toHaveValue('Вторая');
+    await expect(panel.locator('[data-note-link-field="url"]')).toHaveValue('https://example.com/second');
+    await panel.locator('[data-note-link-field="text"]').fill('Новая подпись');
+    await panel.locator('[data-note-link-field="url"]').fill('https://example.com/updated');
+    await page.evaluate(()=>document.activeElement?.blur());
+    await expect(page.locator('dialog.keyboard-focus-active')).toHaveCount(0);
+    await activate(panel.getByRole('button',{name:'Сохранить ссылку',exact:true}),isMobile);
+    await expect(page.locator(`#${id}Rich a`)).toHaveCount(2);
+    await expect(page.locator(`#${id}Rich a`).nth(1)).toHaveText('Новая подпись');
+    await save(page,saveButton,isMobile);
+    await page.reload(); await waitForApp(page);
+    await open();
+    await expect(page.locator(`#${id}Rich a`).nth(1)).toHaveAttribute('href','https://example.com/updated');
+    await expect(page.locator(`#${id}Rich a`).first()).toHaveText('Первая');
+    await expect(page.locator(`#${id}Rich strong`)).toHaveText('Первая');
+    await activate(page.locator(`#${dialog} header button[value="cancel"]`),isMobile);
+  }
+});
+
+
+test('formatting controls follow focus without moving either trip field', async ({page,isMobile}) => {
+  await fixture(page);
+  await activate(page.locator('#editLayoutBtn'),isMobile);
+  await activate(page.locator('[data-trip-add]'),isMobile);
+  const description=page.locator('.note-field:has(#layoutEditNotes)');
+  const notes=page.locator('.note-field:has(#layoutTripNotes)');
+  const toolbar=description.locator('.rich-note-toolbar');
+  const notesToolbar=notes.locator('.rich-note-toolbar');
+  const geometry=()=>page.evaluate(()=>{
+    return ['layoutEditNotes','layoutTripNotes'].map(id=>{
+      const el=document.getElementById(id);const field=el.closest('.note-field');
+      return [field.offsetTop,field.offsetHeight,el.offsetHeight];
+    });
+  });
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeHidden();
+  await page.waitForTimeout(350); // Finish the dialog opening animation before measuring focus changes.
+  const before=await geometry();
+  await activate(page.locator('#layoutEditNotes'),isMobile);
+  await expect(toolbar).toBeVisible();await expect(notesToolbar).toBeHidden();
+  expect(await geometry()).toEqual(before);
+  await expect(toolbar.locator('[data-note-command="edit-link"]')).toBeHidden();
+  const attachment=await description.evaluate(field=>{
+    const label=field.querySelector('label').getBoundingClientRect();
+    const surface=field.querySelector('.rich-note-surface').getBoundingClientRect();
+    const input=field.querySelector('textarea').getBoundingClientRect();
+    return {labelGap:surface.top-label.bottom,textInset:input.top-surface.top};
+  });
+  expect(attachment.labelGap).toBeLessThanOrEqual(8);
+  expect(attachment.textInset).toBeLessThanOrEqual(2);
+  await description.screenshot({path:`test-results/v1619-toolbar-active-${isMobile?'mobile':'desktop'}.png`});
+  // Keyboard navigation into the toolbar also keeps it visible.
+  await page.locator('#layoutEditNotes').press('Tab');
+  await expect(toolbar).toBeVisible();
+  await activate(page.locator('#layoutTripNotes'),isMobile);
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeVisible();
+  expect(await geometry()).toEqual(before);
+  await activate(notesToolbar.locator('[data-note-command="link"]'),isMobile);
+  const panel=notes.locator('.rich-note-link-panel');
+  await expect(panel).toBeVisible();await expect(notesToolbar).toBeVisible();
+  await panel.locator('[data-note-link-field="text"]').fill('Ссылка');
+  await panel.locator('[data-note-link-field="url"]').fill('https://example.com/trip');
+  await activate(panel.getByRole('button',{name:'Отмена',exact:true}),isMobile);
+  await expect(notesToolbar).toBeVisible();
+  await activate(page.locator('#layoutEditName'),isMobile);
+  await expect(toolbar).toBeHidden();await expect(notesToolbar).toBeHidden();
+  expect(await geometry()).toEqual(before);
+  await expect(page.locator('#layoutEditNotes')).toHaveValue('');
+  await expect(page.locator('#layoutTripNotes')).toHaveValue('');
+  await page.screenshot({path:`test-results/v1619-toolbar-idle-${isMobile?'mobile':'desktop'}.png`});
+});
+
+
+test('website paste removes layout whitespace while preserving paragraphs, links and preformatted text', async ({page,isMobile}) => {
+  await fixture(page);
+  await activate(page.locator('[data-item-id="notesItem"] .item-title-hitarea'),isMobile);
+  await paste(page.locator('#itemNote'), `<div>
+    <p><br></p>
+    <p><strong>Маршрут</strong> <a href="https://example.com/route">Описание</a></p>
+    <p>&nbsp;</p><div><br></div><p><br><br></p>
+    <p>Второй абзац</p>
+    <pre>  first\n\n    second</pre>
+    <p><br></p>
+  </div>`);
+  const editor=page.locator('#itemNoteRich');
+  await expect(editor.locator('strong')).toHaveText('Маршрут');
+  await expect(editor.locator('a')).toHaveAttribute('href','https://example.com/route');
+  await expect(editor).toHaveText('Маршрут ОписаниеВторой абзац  first\n\n    second');
+  expect(await editor.locator('pre').textContent()).toBe('  first\n\n    second');
+  expect(await page.locator('#itemNote').inputValue()).toBe('Маршрут Описание\nВторой абзац\n  first\n\n    second');
+  await save(page,'#saveItemBtn',isMobile);
+  await page.reload();await waitForApp(page);
+  await activate(page.locator('[data-item-id="notesItem"] .item-title-hitarea'),isMobile);
+  expect(await page.locator('#itemNote').inputValue()).toBe('Маршрут Описание\nВторой абзац\n  first\n\n    second');
+  await expect(editor.locator('a')).toHaveAttribute('href','https://example.com/route');
+});

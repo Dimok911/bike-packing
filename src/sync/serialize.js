@@ -79,6 +79,9 @@ export function stripAppliedArrangementFieldsForSync(cloned) {
 }
 
 export function prunePhotoPayloadForSync(cloned) {
+  Object.values(cloned.layouts || {}).forEach((layout) => {
+    if (Array.isArray(layout.photos)) layout.photos = layout.photos.map(compactPhotoForSync).filter(Boolean);
+  });
   Object.values(cloned.items || {}).forEach((item) => {
     if (Array.isArray(item.photos)) item.photos = item.photos.map(compactPhotoForSync).filter(Boolean);
   });
@@ -98,6 +101,8 @@ export function compactPhotoForSync(photo) {
   if (!url && !thumbUrl) return null;
   const compact = {
     id,
+    ...(typeof photo.tripId === "string" ? { tripId: photo.tripId } : {}),
+    ...(typeof photo.caption === "string" ? { caption: photo.caption.slice(0, 2000) } : {}),
     status: normalizePhotoStatus(photo.status),
     url,
     thumbUrl,

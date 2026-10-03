@@ -194,6 +194,9 @@ export function createDemandDrivenPhotoPreviewLoader({
     if (!task) return false;
     task.scopeKey = String(image.dataset.photoCacheScope || getScopeKey() || "");
     if (task.scopeKey !== String(getScopeKey() || "")) return false;
+    const isCurrentTask = () => task.scopeKey === String(getScopeKey() || "")
+      && task.key === image.dataset.photoLocalId
+      && task.sourceSignature === String(image.dataset.photoSourceSignature || "");
     const current = photoObjectUrls?.sources?.(task.key, task.sourceSignature)?.preview
       || photoObjectUrls?.get?.(task.key, task.sourceSignature)
       || "";
@@ -205,7 +208,7 @@ export function createDemandDrivenPhotoPreviewLoader({
         setPhotoPreviewState(image, "ready");
         return true;
       } catch {
-        setPhotoPreviewState(image, "error");
+        if (isCurrentTask()) setPhotoPreviewState(image, "error");
         return false;
       }
     }
@@ -218,7 +221,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     }
     try {
       const src = await request;
-      if (!image.isConnected || !src || task.scopeKey !== String(getScopeKey() || "")) return false;
+      if (!image.isConnected || !src || !isCurrentTask()) return false;
       image.loading = "eager";
       image.src = src;
       await image.decode?.();
@@ -226,7 +229,7 @@ export function createDemandDrivenPhotoPreviewLoader({
       setPhotoPreviewState(image, "ready");
       return true;
     } catch {
-      if (!cacheOnly && image.isConnected) setPhotoPreviewState(image, "error");
+      if (!cacheOnly && image.isConnected && isCurrentTask()) setPhotoPreviewState(image, "error");
       return false;
     }
   };
@@ -234,7 +237,14 @@ export function createDemandDrivenPhotoPreviewLoader({
   const load = (image, options = {}) => {
     const active = activeImages.get(image);
     if (active) return active.then((loaded) => (loaded || options.cacheOnly) ? loaded : load(image, options));
-    const request = loadImage(image, options).finally(() => activeImages.delete(image));
+    const identity = () => `${image.dataset.photoLocalId}|${image.dataset.photoSourceSignature || ""}|${image.dataset.photoCacheScope || ""}`;
+    const startedIdentity = identity();
+    const request = loadImage(image, options).finally(() => activeImages.delete(image)).then(loaded => {
+      // An upload can bind a server URL while an older local preview is still
+      // resolving. Retry the new identity, never leave the stale failure visible.
+      if (!loaded && image.isConnected && identity() !== startedIdentity) return load(image, options);
+      return loaded;
+    });
     activeImages.set(image, request);
     return request;
   };
@@ -287,7 +297,7 @@ export function createDemandDrivenPhotoPreviewLoader({
       }
       images.forEach((image) => {
         image.dataset.photoCacheScope = scopeKey;
-        if (image.src && !activeImages.has(image)) setPhotoPreviewState(image, "ready");
+        if (image.src && image.complete && image.naturalWidth > 0 && !activeImages.has(image)) setPhotoPreviewState(image, "ready");
         else observer.observe(image);
       });
       return Promise.resolve({ observed: images.length });
@@ -509,7 +519,7 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   const batch = photoUploadBatchSummary(photos);
   const slides = photos.map((photo) => renderPhotoSlide(photo, {
     photoObjectUrls,
-    uploadState: photoUploadProgressState(photo, { batch })
+    uploadState: photoUploadProgressState(photo, { batch, showCompletedBatchProgress: true })
   })).join("");
   const dots = renderPhotoDots(photos.length);
   const uploadState = photoUploadState(photos);
@@ -734,6 +744,22 @@ export function renderPhotoUploadProgress({ active = false, complete = false, in
   `;
 }
 
+export function updatePhotoGallerySources(root, photos) {
+  [...(root?.querySelectorAll?.('[data-photo-open] img') || [])].forEach((image, index) => {
+    const photo = photos[index];
+    if (!photo) return;
+    const full = normalizeRemotePhotoUrl(photo.url || "");
+    const thumb = normalizeRemotePhotoUrl(photo.thumbUrl || photo.url || "");
+    const signature = full ? photoCacheSourceSignature(full, thumb, photo.updatedAt || "") : "";
+    image.dataset.photoLocalId = photo.localId || photo.id || "";
+    image.dataset.photoLocalSourceId = photo.localId || photo.id || "";
+    image.dataset.photoSourceSignature = signature;
+    image.dataset.photoRemoteFullSrc = versionedPhotoUrl(full, photo.updatedAt || photo.id || "");
+    image.dataset.photoRemoteThumbSrc = versionedPhotoUrl(thumb, photo.updatedAt || photo.id || "");
+    if (full) image.dataset.photoFullSrc = image.dataset.photoRemoteFullSrc;
+  });
+}
+
 export function updatePhotoGalleryUploadProgress(root, photos, {
   showCompletedBatchProgress = true,
   showStatus = false
@@ -865,6 +891,7 @@ export function bindPhotoGalleries(root = document, {
   const boardGesturePassThrough = bindPackingBoardPhotoGesturePassThrough(root);
   let compactControls = null;
   const sharedController = bindSharedPhotoGalleries(root, {
+    canRubberBand: event => !event.target?.closest?.('.layout-photo-summary-list'),
     openLightbox: ({ image, gallery, index }) => {
       if (image) openLightbox(image, {
         gallery,
@@ -886,6 +913,7 @@ export function bindPhotoGalleries(root = document, {
   });
   return {
     refresh() {
+      photoPreviewLoader?.observe?.(root);
       sharedController?.refresh?.();
       compactControls.refresh();
     },
@@ -1859,6 +1887,9 @@ export async function openPhotoLightbox(sourceImage, {
   bindImageInteractions = (targetImage) => {
     if (boundLightboxImages.has(targetImage)) return;
     boundLightboxImages.add(targetImage);
+    // Native image dragging cancels the pointer stream used for mouse panning.
+    targetImage.draggable = false;
+    targetImage.addEventListener("dragstart", (event) => event.preventDefault());
     const refreshAutoSize = () => {
       settleImagePresentation(targetImage);
     };

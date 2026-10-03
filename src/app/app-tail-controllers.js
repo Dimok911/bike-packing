@@ -1,5 +1,13 @@
+import { getPhotoCacheScope } from "../sync/photos.js";
+import { syncLayoutPhotoUpload } from "../sync/layout-draft-photo-uploads.js";
+import { createLayoutPhotoSummary } from "../ui/layout-photo-summary.js";
+import { openPhotoLightbox } from "../ui/photo-gallery.js";
+import { layoutMediaSnapshot } from "../state/layout-media.js";
+import { applyLayoutTrips, layoutTripsSnapshot, tripDisplayName } from "../state/layout-trips.js";
+import { createLayoutTripsEditor } from "../ui/layout-trips-editor.js";
+import { bindPhotoDropZone } from "../ui/photo-drop-zone.js";
 import { createRichNoteEditor } from "../ui/rich-note-editor.js";
-import { loadNoteFields, readNoteFields } from "../ui/rich-note-content.js";
+import { loadNoteFields, readNoteFields, renderNoteContent } from "../ui/rich-note-content.js";
 import { itemStockQuantity, itemStockLocations, itemStorageLocations, setItemStockLocations, normalizeStockQuantity, setItemStockQuantity, addPurchasedStock } from "../state/item-stock.js";
 import { createStockLocationsDialog } from "../ui/stock-locations-dialog.js";
 import { layoutPreparation, itemNeedsPreparation, preparationCategoryMatches } from "../state/layout-preparation.js";
@@ -11,7 +19,6 @@ import {
   resolvePhotoPrimaryButtonPhotoCount
 } from "../ui/photo-primary-button.js";
 import {
-  applyLayoutNotes,
   normalizeLayoutNotes
 } from "../state/layout-notes.js";
 import {
@@ -24,7 +31,7 @@ import {
 import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "../sync/photo-upload-queue.js";
 import {
   isLayoutNotesCollapsed,
-  LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
+  LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY,
   setLayoutNotesCollapsed
 } from "../ui/layout-notes-collapse.js";
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
@@ -146,6 +153,8 @@ export function createAppTailControllers(ctx) {
   let rootContainerFormDraftSaving = false;
   let layoutOrderDragId = "";
   let layoutEditInitialSnapshot = null;
+  let layoutMediaEditor = null;
+  let layoutPhotoSummary = null;
   let layoutOrderDraftSections = null;
   let layoutOrderInitialSignature = "";
   let layoutOrderSavePromise = null;
@@ -416,6 +425,8 @@ export function createAppTailControllers(ctx) {
 
   createRichNoteEditor(refs.itemNote);
   createRichNoteEditor(refs.rootContainerNote);
+  createRichNoteEditor(refs.layoutEditNotes);
+  createRichNoteEditor(document.querySelector("#layoutTripNotes"));
 
   let itemStockLocationsDraft = null;
   const stockLocationsDialog = createStockLocationsDialog({
@@ -3050,6 +3061,7 @@ function bindLayoutComparisonView() {
 function renderSummary() {
   const comparison = currentLayoutComparison();
   if (comparison) {
+    renderLayoutPhotoSummary(false);
     renderLayoutComparisonSummary(comparison);
     return;
   }
@@ -3134,53 +3146,84 @@ function metric(value, label) {
   return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
-function layoutNotesSummaryHtml() {
+const selectedLayoutTrips = new Map();
+
+function layoutNotesSummaryHtml(layout) {
+  const notes = normalizeLayoutNotes(layout?.notes);
+  const privateNotes = normalizeLayoutNotes(layout?.privateNotes);
+  const canShowNotes = !isReadOnlyStateScope() || layout?.publishNotes === true;
+  const description = notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
+  const notesSection = privateNotes && canShowNotes ? `<section class="trip-notes-summary"><header><strong>${escapeHtml(localText("Notes", "Заметки"))}</strong>${!isReadOnlyStateScope() ? `<small>${escapeHtml(layout?.publishNotes ? localText("Visible in publication", "Видны в публикации") : localText("Not published", "Не публикуются"))}</small>` : ""}</header><div class="note-content">${renderNoteContent(privateNotes, layout?.privateNotesHtml)}</div></section>` : "";
+  return { description, notesSection };
+}
+
+function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
+  const host = document.querySelector("#layoutPhotoSummary");
+  if (!host) return;
+  const intro = document.querySelector("#layoutIntroduction");
+  const description = document.querySelector("#layoutDescriptionSummary");
   const layoutId = state.activeLayoutId || "";
-  const notes = normalizeLayoutNotes(state.layouts?.[layoutId]?.notes);
-  if (!notes) return "";
-  const storageKey = scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY);
+  const trips = layoutTripsSnapshot(state.layouts?.[layoutId]);
+  const tripIndex = Math.max(0, trips.findIndex(trip => trip.id === selectedLayoutTrips.get(layoutId)));
+  const trip = trips[tripIndex];
+  const storageKey = scopedLocalStorageKey(LAYOUT_INTRODUCTION_COLLAPSE_STORAGE_KEY);
   const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
+  const title = localText("Trips", "Поездки");
   const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
-  const editLabel = t("tooltips.edit");
-  return `
-    <div class="layout-notes-summary ${collapsed ? "collapsed" : ""}">
-      <div class="layout-notes-header">
-        <strong>${escapeHtml(t("layout.notesTitle"))}</strong>
-        <div class="layout-notes-actions">
-          ${canManageActiveLayout() ? `
-            <button
-              type="button"
-              class="edit-button layout-notes-edit-button"
-              data-edit-layout-notes
-              aria-label="${escapeHtml(editLabel)}"
-              title="${escapeHtml(editLabel)}"
-            ><span aria-hidden="true">&#9998;</span></button>
-          ` : ""}
-          <button
-            type="button"
-            class="layout-notes-collapse-button"
-            data-toggle-layout-notes="${escapeHtml(layoutId)}"
-            aria-expanded="${String(!collapsed)}"
-            aria-label="${escapeHtml(`${t("layout.notesTitle")}: ${toggleLabel}`)}"
-            title="${escapeHtml(toggleLabel)}"
-          ><span class="layout-notes-chevron" aria-hidden="true"></span></button>
-        </div>
-      </div>
-      <p ${collapsed ? "hidden" : ""}>${escapeHtml(notes)}</p>
-    </div>
-  `;
+  const header = document.querySelector("#layoutIntroductionHeader");
+  header.innerHTML = `<div class="layout-introduction-title"><strong id="layoutIntroductionTitle">${escapeHtml(title)}</strong><span>${escapeHtml(trips.length ? `${tripIndex + 1} / ${trips.length}` : "")}</span></div>
+    <div class="layout-notes-actions">
+      ${canManageActiveLayout() ? `<button type="button" class="edit-button layout-notes-edit-button" data-edit-layout-notes aria-label="${escapeHtml(t("tooltips.edit"))}" title="${escapeHtml(t("tooltips.edit"))}"><span aria-hidden="true">&#9998;</span></button>` : ""}
+      <button type="button" class="layout-introduction-toggle" data-toggle-layout-introduction aria-controls="layoutIntroductionContent" aria-expanded="${String(!collapsed)}" aria-label="${escapeHtml(`${title}: ${toggleLabel}`)}"><span>${escapeHtml(toggleLabel)}</span><span class="layout-notes-chevron" aria-hidden="true"></span></button>
+    </div>`;
+  intro.classList.toggle("collapsed", collapsed);
+  document.querySelector("#layoutIntroductionContent").hidden = collapsed;
+  header.querySelector("[data-toggle-layout-introduction]").addEventListener("click", () => {
+    setLayoutNotesCollapsed(storageKey, layoutId, !collapsed);
+    renderSummary();
+  });
+  header.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
+  let navigation = intro.querySelector("[data-layout-trip-navigation]");
+  if (!navigation) {
+    navigation = document.createElement("div");
+    navigation.className = "layout-trip-navigation";
+    navigation.dataset.layoutTripNavigation = "";
+    header.querySelector(".layout-notes-actions").before(navigation);
+  }
+  navigation.hidden = !trip;
+  navigation.innerHTML = trip ? `<div class="layout-trip-heading"><strong title="${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}">${escapeHtml(tripDisplayName(trip, tripIndex, uiLanguage))}</strong></div>
+    ${trips.length > 1 ? `<div class="layout-trip-controls"><button type="button" class="ghost" data-trip-prev aria-label="${escapeHtml(localText("Previous trip", "Предыдущая поездка"))}" ${tripIndex === 0 ? "disabled" : ""}>←</button><select aria-label="${escapeHtml(localText("Choose trip", "Выбрать поездку"))}">${trips.map((entry, index) => `<option value="${index}" ${index === tripIndex ? "selected" : ""}>${escapeHtml(tripDisplayName(entry, index, uiLanguage))}</option>`).join("")}</select><button type="button" class="ghost" data-trip-next aria-label="${escapeHtml(localText("Next trip", "Следующая поездка"))}" ${tripIndex === trips.length - 1 ? "disabled" : ""}>→</button></div>` : ""}` : "";
+  const selectTrip = index => { if (trips[index]) { selectedLayoutTrips.set(layoutId, trips[index].id); renderSummary(); document.querySelector("#layoutIntroductionContent").scrollTop = 0; } };
+  const tripHeading = navigation.querySelector(".layout-trip-heading");
+  if (tripHeading) tripHeading.hidden = trips.length > 1;
+  navigation.querySelector("select")?.addEventListener("change", event => selectTrip(Number(event.target.value)));
+  navigation.querySelector("[data-trip-prev]")?.addEventListener("click", () => selectTrip(tripIndex - 1));
+  navigation.querySelector("[data-trip-next]")?.addEventListener("click", () => selectTrip(tripIndex + 1));
+  intro.dataset.hasTrips = String(Boolean(trips.length));
+  intro.hidden = !visible || !trips.length;
+  const story = layoutNotesSummaryHtml(trip);
+  description.innerHTML = visible ? story.description : "";
+  description.hidden = !description.childElementCount;
+  const privateNotes = document.querySelector("#layoutPrivateNotesSummary");
+  privateNotes.innerHTML = visible ? story.notesSection : "";
+  privateNotes.hidden = !privateNotes.childElementCount;
+  if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
+    host,
+    canChoose: isAdminSession,
+    onVisibilityChange: (visible) => { intro.hidden = !visible || intro.dataset.hasTrips !== "true"; },
+    renderGallery: renderPhotoGalleryHtml,
+    bindGalleries: (root) => bindPhotoGalleries(root, {
+      ...photoGalleryBindingOptions(),
+      openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
+    }),
+    localText
+  });
+  layoutPhotoSummary.render(trip ? { ...trip, id: `${layoutId}:${trip.id}` } : null, visible).catch(() => { host.hidden = true; });
 }
 
 function renderSummaryContent(metrics) {
-  refs.summary.innerHTML = `${metrics.join("")}${layoutNotesSummaryHtml()}`;
-  refs.summary.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    const layoutId = button.dataset.toggleLayoutNotes || "";
-    const collapsed = button.getAttribute("aria-expanded") === "true";
-    setLayoutNotesCollapsed(scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY), layoutId, collapsed);
-    renderSummary();
-  });
-  refs.summary.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
+  renderLayoutPhotoSummary();
+  refs.summary.innerHTML = metrics.join("");
 }
 
 function isSharedLayoutView() {
@@ -6861,15 +6904,30 @@ function openLayoutEditDialog() {
     restoreAdminPublishedLayoutContext(layout.id);
   }
   runtime.layoutEditTargetId = layout.id;
+  if (!layoutMediaEditor) layoutMediaEditor = createLayoutTripsEditor({
+    dialog: refs.layoutEditDialog,
+    createPhoto: createItemPhotoFromFile,
+    uploadPhotos: uploadDialogDraftPhotos,
+    getSavedLayout: id => state.layouts?.[id],
+    getUploadScope: getPhotoCacheScope,
+    deleteCachedPhoto,
+    renderGallery: renderPhotoGalleryHtml,
+    bindGalleries: (root) => bindPhotoGalleries(root, {
+      ...photoGalleryBindingOptions(),
+      openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
+    }),
+    confirmRemoveVideo: name => askConfirmDialog({ title: localText("Remove video?", "Удалить видео?"), text: localText(`Remove “${name}” from this trip?`, `Удалить «${name}» из этой поездки?`), okText: localText("Remove video", "Удалить видео"), cancelText: t("buttons.cancel"), tone: "danger" }),
+    confirmRemovePhoto: name => askConfirmDialog({ title: localText("Remove photo?", "Удалить фотографию?"), text: localText(`Remove “${name}” from this trip?`, `Удалить «${name}» из этой поездки?`), okText: localText("Remove photo", "Удалить фото"), cancelText: t("buttons.cancel"), tone: "danger" }),
+    confirmRemove: (name) => askConfirmDialog({ title: localText("Delete trip?", "Удалить поездку?"), text: localText(`Delete “${name}” with its description and photos? The gear list stays the same.`, `Удалить «${name}» вместе с описанием и фотографиями? Состав вещей сохранится.`), okText: localText("Delete trip", "Удалить поездку"), cancelText: t("buttons.cancel"), tone: "danger" }),
+    onChange: updateLayoutEditSaveState,
+    getLimit: () => usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit()),
+    localText,
+    showToast
+  });
+  layoutMediaEditor.open(layout, selectedLayoutTrips.get(layout.id));
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
   refs.layoutEditName.value = layout.name || "";
   const showLanguage = isAdminEditablePublishedLayout(layout.id);
-  const notesLabel = refs.layoutEditNotes?.closest("label");
-  if (notesLabel) {
-    notesLabel.hidden = showLanguage;
-    notesLabel.setAttribute("aria-hidden", String(showLanguage));
-  }
-  if (refs.layoutEditNotes) refs.layoutEditNotes.value = showLanguage ? "" : normalizeLayoutNotes(layout.notes);
   refs.layoutEditLanguageLabel.hidden = !showLanguage;
   refs.layoutEditLanguageLabel.setAttribute("aria-hidden", String(!showLanguage));
   const showLock = !showLanguage;
@@ -7352,7 +7410,7 @@ function getLayoutEditSnapshot() {
   return {
     name: refs.layoutEditName?.value.trim() || "",
     language: adminPublished ? normalizeUiLanguage(refs.layoutEditLanguage?.value || layoutManageLanguage(layout, uiLanguage)) : "",
-    notes: adminPublished ? "" : normalizeLayoutNotes(refs.layoutEditNotes?.value || ""),
+    media: layoutMediaEditor?.signature() || "",
     locked: adminPublished ? false : Boolean(refs.layoutLocked?.checked)
   };
 }
@@ -7362,6 +7420,7 @@ function updateLayoutEditSaveState() {
   const snapshot = getLayoutEditSnapshot();
   const changed = !layoutEditInitialSnapshot || !snapshotsEqual(snapshot, layoutEditInitialSnapshot);
   updateModalSaveButton(refs.saveEditedLayoutBtn, { hasName: Boolean(snapshot.name), changed });
+  if (layoutMediaEditor?.isBusy()) refs.saveEditedLayoutBtn.disabled = true;
 }
 
 function hasSavableLayoutEditChanges() {
@@ -7381,6 +7440,10 @@ function handleLayoutEditFormSubmit(event) {
 }
 
 async function requestCloseLayoutEditDialog() {
+  if (layoutMediaEditor?.isBusy()) {
+    showToast(localText("Please wait for photo preparation to finish.", "Дождитесь окончания подготовки фотографий."), "warning");
+    return;
+  }
   if (!hasSavableLayoutEditChanges()) {
     refs.layoutEditDialog.close("cancel");
     return;
@@ -7394,6 +7457,7 @@ async function requestCloseLayoutEditDialog() {
 }
 
 function handleLayoutEditDialogClose() {
+  layoutMediaEditor?.close(state.layouts?.[runtime.layoutEditTargetId]);
   layoutEditInitialSnapshot = null;
 }
 
@@ -7410,6 +7474,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
   if (refs.saveEditedLayoutBtn?.disabled) return;
   const layout = state.layouts?.[runtime.layoutEditTargetId];
   if (!layout || !canManageLayout(layout.id)) return;
+  if (!layoutMediaEditor?.validate()) return;
   const adminPublished = isAdminEditablePublishedLayout(layout.id);
   const changedAt = nowIso();
   const nextName = refs.layoutEditName.value.trim();
@@ -7441,9 +7506,9 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     uiLanguage,
     uniqueLayoutName
   });
-  const notesChanged = !adminPublished && applyLayoutNotes(layout, refs.layoutEditNotes?.value || "");
+  const mediaChanged = applyLayoutTrips(layout, layoutMediaEditor.snapshot());
   const lockChanged = !adminPublished && applyLayoutLocked(layout, nextLocked);
-  if (!changed && !notesChanged && !lockChanged) {
+  if (!changed && !lockChanged && !mediaChanged) {
     if (closeDialog) refs.layoutEditDialog.close();
     return true;
   }
@@ -7461,6 +7526,9 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
     refs.saveEditedLayoutBtn.disabled = true;
     try {
       await savePublishedTemplateMetadata(layout, previousLayout);
+      if (mediaChanged) {
+        await savePublishedLayoutRecord(layout.id, { published: true });
+      }
       if (closeDialog) refs.layoutEditDialog.close();
       render();
       if (notify) showToast(localText("Template label updated.", "Метка шаблона обновлена."), "success");
@@ -8111,18 +8179,31 @@ function bindPhotoOrderDialogControls() {
 function bindPhotoClipboardControls() {
   [
     [refs.dialog, "item"],
-    [refs.rootContainerDialog, "container"]
+    [refs.rootContainerDialog, "container"],
+    [refs.layoutEditDialog, "layout"]
   ].forEach(([dialog, kind]) => {
     dialog?.addEventListener("paste", (event) => handleDialogPhotoPaste(event, kind));
     dialog?.querySelector(".photo-paste-hint")?.addEventListener("click", (event) =>
       handlePhotoPasteButtonClick(event, kind)
     );
+    bindPhotoDropZone({
+      dialog,
+      zone: dialog?.querySelector(".item-photo-field, [data-layout-media-editor]"),
+      fetchImage: fetchClipboardImageSource,
+      onFiles: (files) => processDialogPhotoPasteFiles(files, kind),
+      canReceive: () => kind === "layout"
+        ? !layoutMediaEditor?.isBusy()
+        : kind === "item" ? !refs.saveItemBtn?.hidden && !runtime.sharedDialogCopyItemId : !refs.saveRootContainerBtn?.hidden,
+      onEmpty: () => showToast(localText("Drop an image file or a direct image link.", "Перетащите файл изображения или прямую ссылку на изображение."), "warning"),
+      onError: (error) => showToast(error.message || localText("Could not add photo.", "Не удалось добавить фото."), "error")
+    });
   });
   document.addEventListener("paste", handleActivePhotoClipboardPaste, true);
 }
 
 async function handleDialogPhotoPaste(event, kind = "item") {
   if (event.__bikePackingActivePhotoPaste) return;
+  const layoutSession = kind === "layout" ? layoutMediaEditor?.sessionToken() : null;
   const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
   const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (directFiles.length) event.preventDefault();
@@ -8131,6 +8212,7 @@ async function handleDialogPhotoPaste(event, kind = "item") {
     fetchImpl: fetchClipboardImageSource
   });
   if (!files.length) return;
+  if (kind === "layout" && (!refs.layoutEditDialog?.open || layoutSession !== layoutMediaEditor?.sessionToken())) return;
   event.preventDefault();
   processDialogPhotoPasteFiles(files, kind, request);
 }
@@ -8152,9 +8234,12 @@ function handleActivePhotoClipboardPaste(event) {
 }
 
 function processDialogPhotoPasteFiles(files, kind, request = null) {
+  if (kind === "layout" && request && request.layoutSession !== layoutMediaEditor?.sessionToken()) return;
   if (request?.handled) return request.processing;
   if (request) request.handled = true;
-  const processing = kind === "container"
+  const processing = kind === "layout"
+    ? (refs.layoutEditDialog?.open ? layoutMediaEditor?.addFiles(files) : null)
+    : kind === "container"
     ? handleRootContainerPhotoInputChange({ target: { files } })
     : handleItemPhotoInputChange({ target: { files } });
   if (request) request.processing = Promise.resolve(processing);
@@ -8170,7 +8255,7 @@ async function waitForPhotoPasteEventFallback(request, timeoutMs = 180) {
 async function handlePhotoPasteButtonClick(event, kind = "item") {
   const button = event.currentTarget;
   if (!button || button.disabled || button.getAttribute("aria-busy") === "true") return;
-  const request = { kind, handled: false, processing: null, pasteEventProcessing: null };
+  const request = { kind, handled: false, processing: null, pasteEventProcessing: null, layoutSession: kind === "layout" ? layoutMediaEditor?.sessionToken() : null };
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
   try {
@@ -8609,8 +8694,8 @@ async function uploadDialogDraftPhotos({
               onPhotoProgress,
               retryTemporaryUploadFailure,
               scheduleProgressRender: () => {
-                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
-                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                const savedRecord = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if ((entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(savedRecord, candidate)) {
                   schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
                 }
               }
@@ -8640,8 +8725,8 @@ async function uploadDialogDraftPhotos({
               onPhotoProgress,
               retryTemporaryUploadFailure,
               scheduleProgressRender: () => {
-                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
-                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                const savedRecord = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if ((entityType === "layout" ? syncLayoutPhotoUpload : syncPhotoRecordFromUpload)(savedRecord, candidate)) {
                   schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
                 }
               }
@@ -8661,7 +8746,8 @@ async function uploadDialogDraftPhotos({
     runtime.photoUploadInFlight = false;
     onAfterUpload();
   }
-  if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(entity, photo))) saveState();
+  const savedEntity = entityType === "layout" ? state.layouts?.[entity.id] : entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+  if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(savedEntity, photo))) saveState();
   return true;
 }
 

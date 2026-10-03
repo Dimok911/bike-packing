@@ -1,3 +1,6 @@
+import { detachPhotoCacheRecordBlobs } from "./photo-cache-write.js";
+import { findEntityPhotoForUpload, setPhotoUploadProgress, markPhotoUploadStarted, clearPhotoUploadProgress } from "../vendor/vniipo-photo-upload-engine.js";
+export { findEntityPhotoForUpload, setPhotoUploadProgress, markPhotoUploadStarted, clearPhotoUploadProgress };
 import {
   PHOTO_UPLOAD_STALL_TIMEOUT_MS,
   PHOTO_UPLOAD_TIMEOUT_MS
@@ -108,11 +111,23 @@ export async function uploadPhotoToPath({
   }
   if (copiedOnServer === true) return true;
 
+  let uploadSource;
+  try {
+    uploadSource = await getPhotoUploadSource(photo, localId, { fetchImpl, getCachedPhoto });
+  } catch (error) {
+    if (!error?.isLocalPhotoReadError) throw error;
+    const targetPhoto = resolvePhoto();
+    applyPhotoPairState(targetPhoto, candidate => {
+      candidate.status = "error";
+      candidate.error = "Не удалось прочитать сохранённый файл фото. Добавьте исходную фотографию заново.";
+      candidate.updatedAt = nowIso();
+    });
+    clearPhotoPairProgress(targetPhoto);
+    onPhotoProgress?.(targetPhoto, 0);
+    scheduleProgressRender();
+    return true;
+  }
   updatePhotoProgress(resolvePhoto(), 0);
-  const uploadSource = await getPhotoUploadSource(photo, localId, {
-    fetchImpl,
-    getCachedPhoto
-  });
   if (!uploadSource?.blob) {
     const targetPhoto = resolvePhoto();
     const changedAt = nowIso();
@@ -239,6 +254,9 @@ export async function uploadPhotoToPath({
   try {
     const data = await apiUploadFormData(path, {
       method: "POST",
+      // This request has photo-specific recovery and error UI. A failed file
+      // attempt does not prove that the entire application is disconnected.
+      connectionFailureMode: "background",
       body: createPhotoUploadFormData(),
       timeoutMs: PHOTO_UPLOAD_TIMEOUT_MS,
       stalledUploadTimeoutMs: PHOTO_UPLOAD_STALL_TIMEOUT_MS,
@@ -276,46 +294,18 @@ export async function uploadPhotoToPath({
   }
 }
 
-export function findEntityPhotoForUpload(entity, sourcePhoto) {
-  const photos = Array.isArray(entity?.photos) ? entity.photos : [];
-  const sourceId = String(sourcePhoto?.id || "");
-  const sourceLocalId = String(sourcePhoto?.localId || "");
-  return photos.find((photo) =>
-    (sourceId && String(photo?.id || "") === sourceId) ||
-    (sourceLocalId && String(photo?.localId || "") === sourceLocalId)
-  ) || null;
-}
-
-export function setPhotoUploadProgress(photo, progress) {
-  if (!photo) return;
-  Object.defineProperty(photo, "uploadProgress", {
-    value: Math.max(0, Math.min(100, Number(progress) || 0)),
-    writable: true,
-    configurable: true,
-    enumerable: false
-  });
-}
-
-export function markPhotoUploadStarted(photo, { nowIsoValue = nowIso() } = {}) {
-  if (!photo) return;
-  if (Object.prototype.hasOwnProperty.call(photo, "uploadRetryPending")) delete photo.uploadRetryPending;
-  photo.status = "uploading";
-  photo.error = "";
-  photo.updatedAt = nowIsoValue;
-  setPhotoUploadProgress(photo, photo.uploadProgress || 0);
-}
-
-export function clearPhotoUploadProgress(photo) {
-  if (!photo || !Object.prototype.hasOwnProperty.call(photo, "uploadProgress")) return;
-  delete photo.uploadProgress;
-}
-
 export async function getPhotoUploadSource(photo, localId, {
   fetchImpl = globalThis.fetch,
   getCachedPhoto
 } = {}) {
-  const cached = typeof getCachedPhoto === "function" ? await getCachedPhoto(localId) : null;
-  if (cached?.blob) return cached;
+  try {
+    const cached = typeof getCachedPhoto === "function" ? await getCachedPhoto(localId) : null;
+    if (cached?.blob) return await detachPhotoCacheRecordBlobs(cached);
+  } catch (cause) {
+    const error = new Error("Could not read cached photo bytes", { cause });
+    error.isLocalPhotoReadError = true;
+    throw error;
+  }
   if (!hasRemotePhotoUrl(photo)) return null;
   const blob = await fetchRemotePhotoBlobForUpload(photo, "file", { fetchImpl });
   if (!blob) return null;

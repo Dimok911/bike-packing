@@ -4608,7 +4608,9 @@ test("shared layout copy opens the created layout before slow photo caching fini
       "source-layout": {
         id: "source-layout",
         name: "Tristan",
-        rootContainerIds: ["source-root"]
+        rootContainerIds: ["source-root"],
+        trips: [{ id: "trip", notes: "Source story" }], photos: [{ id: "p", url: "/photo" }],
+        notes: "Legacy", videoUrl: "https://youtu.be/a"
       }
     },
     containers: { "source-root": { id: "source-root", name: "Frame bag" } },
@@ -4676,6 +4678,8 @@ test("shared layout copy opens the created layout before slow photo caching fini
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(runtime.state.activeLayoutId, "layout-copy");
+  for (const field of ["trips", "photos", "notes", "videoUrl", "videoUrls"]) assert.equal(runtime.state.layouts["layout-copy"][field], undefined, field);
+  assert.equal(sourceState.layouts["source-layout"].trips.length, 1);
   assert.ok(events.indexOf("render") < events.indexOf("photos:start"));
   assert.equal(events.includes("photos:end"), false);
   assert.deepEqual(progressStages.at(-1), [75, "shared.copyStagePhotos"]);

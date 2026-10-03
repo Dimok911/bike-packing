@@ -1,4 +1,5 @@
 import { uniqueLayoutIds } from "./layout-arrangement.js";
+import { hasLayoutMedia } from "./layout-media.js";
 
 export function layoutArrangementScore(targetState, layout) {
   if (!layout || typeof layout !== "object") return 0;
@@ -29,7 +30,7 @@ export function layoutArrangementContentScore(targetState, layout) {
 }
 
 export function isMeaningfulLayout(targetState, layout) {
-  return layoutArrangementContentScore(targetState, layout) > 0;
+  return hasLayoutMedia(layout) || layoutArrangementContentScore(targetState, layout) > 0;
 }
 
 export function bestMeaningfulLayoutId(targetState) {

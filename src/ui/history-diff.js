@@ -1,3 +1,5 @@
+import { tripTrackCaption } from "../state/trip-track.js";
+import { layoutTripsSnapshot, tripDisplayName } from "../state/layout-trips.js";
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
 import { isConflictMetaField } from "../sync/conflict-meta.js";
@@ -7,6 +9,8 @@ import {
   historyRollbackImpact
 } from "../sync/history.js";
 import { escapeHtml } from "../utils/html.js";
+import { renderNoteContent } from "./rich-note-content.js";
+import { getLayoutItemQuantity } from "../state/layout-item-quantity.js";
 import {
   formatCompactJson,
   snapshotsEqual
@@ -395,6 +399,7 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState, localText) {
         details: detailEntries.map((detail) => typeof detail === "string" ? detail : detail.text),
         detailHighlights: detailEntries.map((detail) => typeof detail === "string" ? "" : String(detail.highlight || "")),
         detailContexts: detailEntries.map((detail) => typeof detail === "string" ? null : detail.context || null),
+        detailNotes: detailEntries.map((detail) => typeof detail === "string" ? null : detail.note || null),
         detailRoutes: detailEntries.map((detail) => typeof detail === "string" ? null : detail.route || null)
       });
     }
@@ -631,14 +636,18 @@ function historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toSta
 
 function historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText = historyRuText) {
   const definitions = historyFieldDefinitions(type, localText);
+  const withoutQuantities = (arrangement = {}) => { const { itemQuantities, ...placement } = arrangement || {}; return placement; };
   const placementChanged = type === "layout" && (
     !snapshotsEqual(beforeValue?.rootContainerIds, afterValue?.rootContainerIds)
-    || !snapshotsEqual(beforeValue?.arrangement, afterValue?.arrangement)
+    || !snapshotsEqual(withoutQuantities(beforeValue?.arrangement), withoutQuantities(afterValue?.arrangement))
   );
   const placementDetails = placementChanged
     ? historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toState, localText)
     : [];
+  const noteKey = type === "layout" ? "notes" : "note";
+  const htmlKey = `${noteKey}Html`;
   const rows = definitions
+    .filter(([key]) => ![noteKey, htmlKey].includes(key) && !(type === "layout" && key === "arrangement"))
     .filter(([key]) => !(placementChanged && (key === "rootContainerIds" || key === "arrangement")))
     .filter(([key]) => !snapshotsEqual(beforeValue?.[key], afterValue?.[key]))
     .map(([key, label, format]) => {
@@ -657,6 +666,53 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
     } else {
       rows.push(localText("Changed bag or item placement", "Изменено размещение сумок или вещей"));
     }
+  }
+  if (type === "layout") {
+    const beforeItems = beforeValue?.arrangement?.items || {};
+    const afterItems = afterValue?.arrangement?.items || {};
+    for (const itemId of Object.keys(beforeItems)) {
+      if (!Object.prototype.hasOwnProperty.call(afterItems, itemId)) continue;
+      const before = getLayoutItemQuantity(fromState, beforeValue, itemId);
+      const after = getLayoutItemQuantity(toState, afterValue, itemId);
+      if (before === after) continue;
+      const title = String(toState?.items?.[itemId]?.name || fromState?.items?.[itemId]?.name || itemId);
+      rows.push(localText(`Quantity of “${title}”: ${before} → ${after}`, `Количество «${title}»: ${before} → ${after}`));
+    }
+  }
+  if (type === "layout" && (Array.isArray(beforeValue?.trips) || Array.isArray(afterValue?.trips))) {
+    const beforeTrips = layoutTripsSnapshot(beforeValue);
+    const afterTrips = layoutTripsSnapshot(afterValue);
+    const language = localText("en", "ru");
+    for (const [index, trip] of beforeTrips.entries()) {
+      if (!afterTrips.some(entry => entry.id === trip.id)) rows.push(localText(`Removed trip: “${tripDisplayName(trip, index, language)}”`, `Удалена поездка: «${tripDisplayName(trip, index, language)}»`));
+    }
+    for (const [index, trip] of afterTrips.entries()) {
+      const before = beforeTrips.find(entry => entry.id === trip.id);
+      const title = tripDisplayName(trip, index, language);
+      if (!before) rows.push(localText(`Added trip: “${title}”`, `Добавлена поездка: «${title}»`));
+      else {
+        if (before.name !== trip.name) rows.push(localText(`Trip name: ${tripDisplayName(before, index, language)} → ${title}`, `Название поездки: ${tripDisplayName(before, index, language)} → ${title}`));
+        const photoFields = photos => photos.map(photo => [photo.id, photo.caption || ""]);
+        if (!snapshotsEqual(photoFields(before.photos), photoFields(trip.photos))) rows.push(localText(`Photos in “${title}” changed (${before.photos.length} → ${trip.photos.length})`, `Изменены фотографии в «${title}» (${before.photos.length} → ${trip.photos.length})`));
+        if (!snapshotsEqual(before.videos.map(video => video.caption), trip.videos.map(video => video.caption))) rows.push(localText(`Video captions in “${title}”: ${before.videos.map(video => video.caption || video.url).join(", ")} → ${trip.videos.map(video => video.caption || video.url).join(", ")}`, `Подписи видео в «${title}»: ${before.videos.map(video => video.caption || video.url).join(", ")} → ${trip.videos.map(video => video.caption || video.url).join(", ")}`));
+        if (!snapshotsEqual(before.videoUrls, trip.videoUrls)) rows.push(localText(`Videos in “${title}”: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`, `Видео в «${title}»: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`));
+      }
+      if (!snapshotsEqual(before?.tracks || [], trip.tracks || [])) {
+        const names = tracks => (tracks || []).map(tripTrackCaption).join(", ") || "—";
+        rows.push(localText(`Tracks in “${title}”: ${names(before?.tracks)} → ${names(trip.tracks)}`, `Треки в «${title}»: ${names(before?.tracks)} → ${names(trip.tracks)}`));
+      }
+      if (Boolean(before?.publishNotes) !== Boolean(trip.publishNotes)) rows.push(localText(`Notes in “${title}”: ${trip.publishNotes ? "published" : "hidden from publication"}`, `Заметки в «${title}»: ${trip.publishNotes ? "видны в публикации" : "скрыты из публикации"}`));
+      if ((before?.privateNotes || "") !== (trip.privateNotes || "") || (before?.privateNotesHtml || "") !== (trip.privateNotesHtml || "")) rows.push({ text: localText(`Notes of “${title}”`, `Заметки «${title}»`), note: { before: { text: before?.privateNotes || "", html: before?.privateNotesHtml || "" }, after: { text: trip.privateNotes || "", html: trip.privateNotesHtml || "" } } });
+      if (before?.notes !== trip.notes || before?.notesHtml !== trip.notesHtml) rows.push({ text: localText(`Description of “${title}”`, `Описание «${title}»`), note: { before: { text: before?.notes || "", html: before?.notesHtml || "" }, after: { text: trip.notes, html: trip.notesHtml } } });
+    }
+  } else if (!snapshotsEqual(beforeValue?.[noteKey], afterValue?.[noteKey]) || !snapshotsEqual(beforeValue?.[htmlKey], afterValue?.[htmlKey])) {
+    rows.push({
+      text: localText("Note changed", "Изменена заметка"),
+      note: {
+        before: { text: beforeValue?.[noteKey] || "", html: beforeValue?.[htmlKey] || "" },
+        after: { text: afterValue?.[noteKey] || "", html: afterValue?.[htmlKey] || "" }
+      }
+    });
   }
   return [...placementDetails, ...rows];
 }
@@ -924,7 +980,9 @@ function renderHistoryDiffGroup(title, rows, mode, localText = historyRuText) {
             ${Array.isArray(row.details)
               ? `<div class="history-diff-details">${row.details.map((detail, detailIndex) => `
                 <div class="history-diff-detail-entry">
-                  ${row.detailRoutes?.[detailIndex]
+                  ${row.detailNotes?.[detailIndex]
+                    ? renderHistoryNoteComparison(row.detailNotes[detailIndex], localText)
+                    : row.detailRoutes?.[detailIndex]
                     ? renderHistoryMovementRoute(row.detailRoutes[detailIndex])
                     : `<span>${renderHistoryDetailText(detail, row.detailHighlights?.[detailIndex])}</span>`}
                   ${renderHistoryPlacementContext(row.detailContexts?.[detailIndex], { localText })}
@@ -938,6 +996,15 @@ function renderHistoryDiffGroup(title, rows, mode, localText = historyRuText) {
       </ul>
     </div>
   `;
+}
+
+function renderHistoryNoteComparison(note, localText) {
+  return `<div class="history-note-comparison">${[
+    [localText("Before", "Было"), note.before],
+    [localText("After", "Стало"), note.after]
+  ].map(([label, value]) => `<div class="history-note-version"><strong>${escapeHtml(label)}</strong><div class="note-content">${
+    renderNoteContent(value.text, value.html) || escapeHtml(localText("empty", "пусто"))
+  }</div></div>`).join("")}</div>`;
 }
 
 function renderHistoryDetailText(detail, highlight = "") {

@@ -87,7 +87,7 @@ export async function prepareBackupPhotosForState(targetState, {
     });
     queued += 1;
   };
-  for (const entity of [...Object.values(targetState.items || {}), ...Object.values(targetState.containers || {})]) {
+  for (const entity of [...Object.values(targetState.items || {}), ...Object.values(targetState.containers || {}), ...Object.values(targetState.layouts || {})]) {
     for (const photo of normalizePhotos(entity)) {
       await rewrite(photo);
     }
