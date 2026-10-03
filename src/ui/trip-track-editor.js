@@ -25,7 +25,7 @@ export function createTripTrackEditor({ host, localText, onChange }) {
     status.textContent = busy ? localText("Reading GPX…", "Читаем GPX…") : tracks.length ? tracks.map(track => `${track.name || track.fileName} · GPX`).join("; ") : localText("No tracks yet", "Треки пока не добавлены");
     list.innerHTML = tracks.map((track,index) => {
       const date = track.startedAt ? new Intl.DateTimeFormat(localText("en-GB","ru-RU")).format(new Date(track.startedAt)) : "";
-      return `<div class="trip-track-editor-card" data-trip-track-index="${index}"><button type="button" class="layout-media-drag-handle" data-trip-track-drag ${busy ? "disabled" : ""} aria-label="${escapeHtml(localText(`Reorder map ${index+1}`,`Изменить порядок карты ${index+1}`))}" title="${escapeHtml(localText("Drag to reorder; use arrow keys when focused", "Перетащите; с клавиатуры — стрелки"))}">⠿</button><div class="trip-track-editor-outline">${trackOutlineSvg(track)}</div><strong>${escapeHtml(track.name || track.fileName)}</strong>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<button type="button" class="layout-media-remove" data-trip-gpx-remove="${index}" ${busy ? "disabled" : ""} aria-label="${escapeHtml(localText(`Remove track ${index+1}`,`Удалить трек ${index+1}`))}">×</button></div>`;
+      return `<div class="trip-track-editor-card" data-trip-track-index="${index}"><button type="button" class="layout-media-drag-handle" data-trip-track-drag ${busy ? "disabled" : ""} aria-label="${escapeHtml(localText(`Reorder map ${index+1}`,`Изменить порядок карты ${index+1}`))}" title="${escapeHtml(localText("Drag to reorder; use arrow keys when focused", "Перетащите; с клавиатуры — стрелки"))}">⠿</button><div class="trip-track-editor-outline">${trackOutlineSvg(track)}</div><strong>${escapeHtml(track.name || track.fileName)}</strong><div class="layout-media-caption"><button type="button" data-trip-track-caption-edit title="${escapeHtml(track.caption || localText("Add caption", "Добавить подпись"))}">${escapeHtml(track.caption || localText("Add caption", "Добавить подпись"))}</button><input hidden data-trip-track-caption aria-label="${escapeHtml(localText(`Track caption ${index+1}`, `Подпись трека ${index+1}`))}" maxlength="2000" value="${escapeHtml(track.caption || "")}" /></div>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<button type="button" class="layout-media-remove" data-trip-gpx-remove="${index}" ${busy ? "disabled" : ""} aria-label="${escapeHtml(localText(`Remove track ${index+1}`,`Удалить трек ${index+1}`))}">×</button></div>`;
     }).join("");
   };
   const reorder = bindLayoutMediaReorder({list, dialog: host.closest("dialog") || host, handleSelector: "[data-trip-track-drag]", indexAttribute: "data-trip-track-index", canMove: () => !busy, onMove(from,to) {
@@ -39,7 +39,31 @@ export function createTripTrackEditor({ host, localText, onChange }) {
     order = "date"; tracks = sortTripTracksByDate(tracks); render(); onChange();
   });
   add.addEventListener("click", () => input.click());
+  const finishCaption = field => {
+    const button = field.parentElement.querySelector("button");
+    button.textContent = field.value || localText("Add caption", "Добавить подпись");
+    button.title = button.textContent; field.hidden = true; button.hidden = false;
+  };
+  list.addEventListener("input", event => {
+    if (!event.target.matches("[data-trip-track-caption]")) return;
+    const index = Number(event.target.closest("[data-trip-track-index]").dataset.tripTrackIndex);
+    tracks[index].caption = event.target.value; onChange();
+  });
+  list.addEventListener("focusout", event => {
+    if (event.target.matches("[data-trip-track-caption]")) finishCaption(event.target);
+  });
+  list.addEventListener("keydown", event => {
+    if (!event.target.matches("[data-trip-track-caption]") || !["Enter", "Escape"].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    const button = event.target.parentElement.querySelector("button");
+    finishCaption(event.target); button.focus();
+  });
   list.addEventListener("click", event => {
+    const edit = event.target.closest("[data-trip-track-caption-edit]");
+    if (edit && !busy) {
+      const field = edit.parentElement.querySelector("input");
+      edit.hidden = true; field.hidden = false; field.focus(); field.select(); return;
+    }
     const button = event.target.closest("[data-trip-gpx-remove]");
     if (!button || busy) return;
     tracks.splice(Number(button.dataset.tripGpxRemove),1); render(); onChange();

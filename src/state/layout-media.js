@@ -13,9 +13,17 @@ export function normalizeLayoutVideoUrl(value) {
   } catch { return ""; }
 }
 
+export function layoutVideos(media) {
+  const values = Array.isArray(media?.videos) ? media.videos
+    : Array.isArray(media?.videoUrls) ? media.videoUrls : [media?.videoUrl];
+  return values.map(value => ({
+    url: normalizeLayoutVideoUrl(typeof value === "string" ? value : value?.url),
+    caption: typeof value === "object" ? String(value?.caption || "").trim().slice(0, 2000) : ""
+  })).filter(video => video.url);
+}
+
 export function layoutVideoUrls(media) {
-  const values = Array.isArray(media?.videoUrls) ? media.videoUrls : [media?.videoUrl];
-  return values.map(normalizeLayoutVideoUrl).filter(Boolean);
+  return layoutVideos(media).map(video => video.url);
 }
 
 export function layoutMediaSnapshot(layout) {
@@ -23,14 +31,15 @@ export function layoutMediaSnapshot(layout) {
   return {
     photos: normalizeItemPhotos(record),
     videoUrl: layoutVideoUrls(layout)[0] || "",
-    videoUrls: layoutVideoUrls(layout)
+    videoUrls: layoutVideoUrls(layout),
+    videos: layoutVideos(layout)
   };
 }
 
 export function layoutMediaSignature(media) {
   return JSON.stringify({
     photos: (media?.photos || []).map((photo) => [photo.localId || photo.id, photo.caption || ""]),
-    videoUrls: (Array.isArray(media?.videoUrls) ? media.videoUrls : [media?.videoUrl]).map(value => String(value || "").trim()).filter(Boolean)
+    videos: layoutVideos(media)
   });
 }
 
@@ -46,6 +55,8 @@ export function applyLayoutMedia(layout, media) {
   });
   if (next.photos.length) layout.photos = next.photos;
   else delete layout.photos;
+  if (next.videos.length) layout.videos = next.videos;
+  else delete layout.videos;
   if (next.videoUrls.length) layout.videoUrls = next.videoUrls;
   else delete layout.videoUrls;
   if (next.videoUrl) layout.videoUrl = next.videoUrl;

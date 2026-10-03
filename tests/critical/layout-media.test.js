@@ -135,7 +135,7 @@ test("multiple videos migrate from the old URL, preserve order and reject unsafe
   const legacy={id:"l",trips:[{id:"t",videoUrl:"https://youtu.be/old",notes:"Description"}]};
   const trips=layoutTripsSnapshot(legacy);
   assert.deepEqual(trips[0].videoUrls,["https://youtu.be/old"]);
-  trips[0].videoUrls.push("https://youtu.be/second");
+  trips[0].videos.push({url:"https://youtu.be/second",caption:""});
   applyLayoutTrips(legacy,trips);
   assert.deepEqual(layoutTripsSnapshot(compactLayoutForEntitySync(legacy))[0].videoUrls,["https://youtu.be/old","https://youtu.be/second"]);
   assert.deepEqual(layoutMediaSnapshot({videoUrls:["javascript:alert(1)","https://example.org/video"]}).videoUrls,["https://example.org/video"]);
@@ -323,4 +323,32 @@ test("trip map chronological default and manual mode survive sync and idempotent
   const sorted=layoutTripsSnapshot(synced); sorted[0].trackOrder="date";
   assert.equal(applyLayoutTrips(synced,sorted),true);
   assert.deepEqual(names(tripTracks(synced.trips[0])),["Tie","Old","New","Undated B","Undated A"]);
+});
+
+
+test("video captions stay with reordered duplicates through trips, sync and history", () => {
+  const layout={id:"l",trips:[{id:"t",videoUrls:["https://youtu.be/abcdefghijk","https://youtu.be/abcdefghijk"]}]};
+  const before=structuredClone(layout),trips=layoutTripsSnapshot(layout);
+  trips[0].videos[0].caption="Первый день";trips[0].videos[1].caption="Второй день";
+  trips[0].videos.reverse();applyLayoutTrips(layout,trips);
+  assert.equal(before.trips[0].videos,undefined);
+  const restored=layoutTripsSnapshot(JSON.parse(JSON.stringify(compactLayoutForEntitySync(layout))));
+  assert.deepEqual(restored[0].videos.map(v=>v.caption),["Второй день","Первый день"]);
+  assert.equal(applyLayoutTrips(layout,restored),false);
+  const diff=buildHistoryStateDiff({layouts:{l:before},items:{},containers:{}},{layouts:{l:layout},items:{},containers:{}});
+  assert.match(JSON.stringify(diff),/Подписи видео/);
+  restored[0].videos=[];applyLayoutTrips(layout,restored);
+  assert.deepEqual(layoutTripsSnapshot(layout)[0].videos,[]);
+  assert.deepEqual(layout.trips[0].videoUrls,[]);
+});
+
+
+test("GPX captions survive normalization, sorting, synchronization and history",()=>{
+  const layout={id:"l",trips:[{id:"t",tracks:[{name:"Original",startedAt:"2026-10-01T08:00:00Z",segments:[[[55,37],[56,38]]]}]}]};
+  const before=structuredClone(layout),trips=layoutTripsSnapshot(layout);
+  trips[0].tracks[0].caption="Лесная дорога";applyLayoutTrips(layout,trips);
+  const track=layoutTripsSnapshot(compactLayoutForEntitySync(layout))[0].tracks[0];
+  assert.equal(track.caption,"Лесная дорога");assert.equal(track.name,"Original");assert.equal(track.startedAt,"2026-10-01T08:00:00.000Z");
+  const diff=buildHistoryStateDiff({layouts:{l:before},items:{},containers:{}},{layouts:{l:layout},items:{},containers:{}});
+  assert.match(JSON.stringify(diff),/Лесная дорога/);
 });

@@ -20,7 +20,8 @@ export function normalizeTripTrack(value) {
     segments.push(segment.map(point => point.map(coordinate => Number(coordinate.toFixed(6)))));
   }
   const startedAt = normalizeTrackStartedAt(value.startedAt);
-  return { ...(startedAt ? { startedAt } : {}), name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
+  const caption = String(value.caption || "").trim().slice(0, 2000);
+  return { ...(startedAt ? { startedAt } : {}), ...(caption ? { caption } : {}), name: String(value.name || "").slice(0, 200), fileName: String(value.fileName || "").slice(0, 200), segments };
 }
 
 // Unwrap longitude at the date line; segments remain separate (no invented joins).

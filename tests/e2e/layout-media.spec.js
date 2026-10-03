@@ -72,7 +72,8 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await page.locator("#saveEditedLayoutBtn").click();
   await expect(page.locator("#layoutEditDialog")).toBeVisible();
   await editor.locator("[data-layout-video]").fill("https://youtu.be/example");
-  await expect(editor.locator("[data-layout-video-link]")).toHaveAttribute("href", "https://youtu.be/example");
+  await editor.locator("[data-layout-add-video]").click();
+  await expect(editor.locator("[data-layout-videos] a")).toHaveAttribute("href", "https://youtu.be/example");
   await page.evaluate(()=>document.activeElement?.blur());
   await expect(page.locator("dialog.keyboard-focus-active")).toHaveCount(0);
   await page.locator("#saveEditedLayoutBtn").click();
@@ -114,7 +115,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await page.locator("#editLayoutBtn").click();
   await expect(editor.locator("[data-layout-photo-caption]").first()).toHaveValue("Упакованные сумки");
   await expect(page.locator("#layoutEditNotes")).toHaveValue("Заметки сохраняются");
-  await expect(editor.locator("[data-layout-video]")).toHaveValue("https://youtu.be/example");
+  await expect(editor.locator("[data-layout-videos] a")).toHaveAttribute("href", "https://youtu.be/example");
   await editor.locator("[data-photo-open]").first().click();
   await expect(page.locator(".photo-lightbox-image")).toHaveCount(2);
   await expect(page.locator('[data-photo-lightbox-dot="0"]')).toHaveAttribute('aria-current', 'true');
@@ -198,6 +199,7 @@ test('shared link opens photos and rich description together without editing con
   const photo={id:'shared-photo',url:'https://example.com/shared-bike.svg',thumbUrl:'https://example.com/shared-bike.svg',caption:'Велосипед с сумками',width:320,height:180,status:'synced'};
   const payload={locations:[],categories:[],containers:{},items:{},layouts:{trip:{id:'trip',name:'Поездка на выходные',rootContainerIds:[],notes:'Два дня на велосипеде. Маршрут',notesHtml:'<p><strong>Два дня</strong> на велосипеде. <a href="https://example.com/route">Маршрут</a></p>',photos:[photo],videoUrl:'https://youtu.be/example'}},activeLayoutId:'trip'};
   payload.layouts.trip.trips=[{id:'first',name:'Первая поездка',notes:payload.layouts.trip.notes,notesHtml:payload.layouts.trip.notesHtml,videoUrl:payload.layouts.trip.videoUrl},{id:'second',name:'Вторая поездка',notes:'Новая поездка с тем же набором вещей'}];
+  payload.layouts.trip.trips[0].videos=[{url:'https://youtu.be/example',caption:'Видео для гостей'}];
   payload.layouts.trip.trips[0].privateNotes='Секретная заметка';payload.layouts.trip.trips[0].publishNotes=false;
   payload.layouts.trip.trips[1].privateNotes='Публичная заметка';payload.layouts.trip.trips[1].publishNotes=true;
   payload.layouts.trip.photos[0].tripId='first';
@@ -215,6 +217,7 @@ test('shared link opens photos and rich description together without editing con
   await expect(description.locator('strong').last()).toHaveText('Два дня');
   await expect(description.locator('a')).toHaveAttribute('href','https://example.com/route');
   await expect(page.locator('#layoutIntroduction [data-edit-layout-notes]')).toHaveCount(0);
+  await expect(page.locator('.layout-video-caption > span')).toHaveText('Видео для гостей');
   await expect(description).not.toContainText('Секретная заметка');
   await expect(page.locator('#layoutPrivateNotesSummary')).toBeHidden();
   await page.locator('[data-trip-next]').click();
@@ -371,10 +374,10 @@ test('trip videos, separate notes and stable scrolling card', async ({page,isMob
   await page.locator('#layoutTripNotes').fill('Личная заметка');
   await expect(page.locator('[data-trip-publish-notes]')).not.toBeChecked();
   await page.locator('[data-layout-video]').fill('https://youtu.be/first');await blur();
-  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').nth(1).fill('https://youtu.be/second');await blur();
-  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').nth(2).fill('javascript:alert(1)');await blur();
+  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').fill('https://youtu.be/second');await blur();
+  await page.locator('[data-layout-add-video]').click();await page.locator('[data-layout-video]').fill('javascript:alert(1)');await blur();
   await page.locator('#saveEditedLayoutBtn').click();await expect(page.locator('#layoutEditDialog')).toBeVisible();
-  await page.locator('[data-layout-video]').nth(2).fill('https://youtu.be/third');await blur();
+  await page.locator('[data-layout-video]').fill('https://youtu.be/third');await blur();
   await page.locator('[data-trip-add]').click();await page.locator('[data-trip-name]').fill('Короткая поездка');
   await page.locator('#layoutEditNotes').fill('Один день');await page.locator('#layoutTripNotes').fill('Заметка для публикации');
   await page.locator('[data-trip-publish-notes]').check();await blur();
@@ -401,7 +404,8 @@ test('trip videos, separate notes and stable scrolling card', async ({page,isMob
   await expect(page.locator('#layoutTripNotes')).toHaveValue('Личная заметка');
   await expect(page.locator('[data-trip-publish-notes]')).not.toBeChecked();
   await page.locator('[data-layout-remove-video]').nth(1).click();
-  await expect(page.locator('[data-layout-video]').nth(1)).toHaveValue('https://youtu.be/third');
+  await page.locator('#confirmOkBtn').click();
+  await expect(page.locator('[data-layout-videos] a').nth(1)).toHaveAttribute('href','https://youtu.be/third');
   await page.locator('[data-trip-publish-notes]').check();await blur();await page.locator('#saveEditedLayoutBtn').click();
   await expect(page.locator('#layoutPhotoSummary a')).toHaveCount(2);
   await expect(page.locator('.trip-notes-summary')).toContainText('Видны в публикации');
@@ -1128,6 +1132,8 @@ test("trip maps use chronological order until dragged and retain manual mode aft
   const input=page.locator("[data-trip-gpx-file]"),list=page.locator("[data-trip-gpx-list]");
   const names=list.locator(".trip-track-editor-card > strong");
   await input.setInputFiles([file(-1),file(2),file(1)]);
+  await page.evaluate(()=>document.activeElement?.blur());
+  await expect(page.locator("#layoutEditDialog")).not.toHaveClass(/keyboard-focus-active/);
   await expect(names).toHaveText(["День 1","День 2","День -1"]);
   await list.locator("[data-trip-track-drag]").first().scrollIntoViewIfNeeded();
   const from=await list.locator("[data-trip-track-drag]").first().boundingBox();
@@ -1238,4 +1244,76 @@ test("media rows stop at the last card without trailing blank space on narrow sc
     await expect(previous).toBeDisabled();
     expect(await wrapper.evaluate(el=>Math.abs(el.children[1].scrollLeft))).toBeLessThan(2);
   }
+});
+
+
+test("video thumbnail editor keeps captions, drag order, confirmed removal and GPX captions",async({page,isMobile},testInfo)=>{
+  test.setTimeout(90000);
+  await prepareIsolatedRussianGuest(page);
+  await page.route('https://api-maps.yandex.ru/**',route=>route.abort());
+  await page.route('https://i.ytimg.com/**',route=>route.fulfill({status:404,body:''}));
+  await page.route('https://www.youtube-nocookie.com/embed/**',route=>route.fulfill({contentType:'text/html',body:'<p>Video</p>'}));
+  await openApp(page);await createEmptyLayout(page,'Подписанные материалы');
+  await page.locator('#editLayoutBtn').click();
+  const dialog=page.locator('#layoutEditDialog');
+  // The order control is alongside the name, accessible before any trip fields.
+  const geometry=await dialog.evaluate(el=>{
+    const name=el.querySelector('#layoutEditName').getBoundingClientRect(),order=el.querySelector('#layoutOrderToggleBtn').getBoundingClientRect();
+    return {sameRow:Math.abs(name.bottom-order.bottom)<2,side:order.left>=name.right,overflow:el.scrollWidth>el.clientWidth+1};
+  });
+  expect(geometry).toEqual({sameRow:true,side:true,overflow:false});
+  await page.locator('#layoutOrderToggleBtn').click();await expect(page.locator('#layoutOrderDialog')).toBeVisible();
+  await page.locator('#layoutOrderDialog header button').click();
+  await page.locator('[data-trip-add]').click();
+  const input=page.locator('[data-layout-video]'),list=page.locator('[data-layout-videos]');
+  for(const url of ['https://youtu.be/dQw4w9WgXcQ','https://youtu.be/M7lc1UVf-VE','https://youtu.be/abcdefghijk']){
+    await input.fill(url);await input.press('Enter');
+  }
+  await expect(list.locator('[data-layout-video-index]')).toHaveCount(3);
+  await expect(input).toHaveValue('');
+  await list.locator('[data-layout-video-caption-edit]').first().click();
+  const caption=list.locator('[data-layout-video-caption]').first();
+  await caption.fill('Первый день <поездки>');
+  await caption.press('Enter');
+  await expect(dialog).not.toHaveClass(/keyboard-focus-active/);
+  await list.locator('[data-layout-video-drag]').first().scrollIntoViewIfNeeded();
+  const from=await list.locator('[data-layout-video-drag]').first().boundingBox(),to=await list.locator('[data-layout-video-index]').nth(1).boundingBox();
+  await page.mouse.move(from.x+14,from.y+14);await page.mouse.down();
+  await page.mouse.move(to.x+to.width*.8,to.y+40,{steps:12});
+  await expect(list.locator('.layout-media-drop-placeholder')).toHaveCount(1);
+  await page.mouse.up();
+  await expect(list.locator('[data-layout-video-caption-edit]').nth(1)).toHaveText('Первый день <поездки>');
+  await list.locator('a').nth(1).click();
+  await expect(page.locator('.trip-video-dialog header,.trip-video-dialog .trip-video-player-header').first()).toContainText('Первый день <поездки>');
+  await page.getByRole('button',{name:'Закрыть видео',exact:true}).click();
+  await expect(dialog).toBeVisible();
+  await list.locator('[data-layout-remove-video]').last().click();await page.locator('#confirmCancelBtn').click();
+  await expect(list.locator('[data-layout-video-index]')).toHaveCount(3);
+  await list.locator('[data-layout-remove-video]').last().click();await page.locator('#confirmOkBtn').click();
+  await expect(list.locator('[data-layout-video-index]')).toHaveCount(2);
+  await list.screenshot({path:testInfo.outputPath('video-editor.png')});
+  const file=n=>({name:`track-${n}.gpx`,mimeType:'application/gpx+xml',buffer:Buffer.from(`<gpx><trk><name>Исходный трек ${n}</name><trkseg><trkpt lat="55" lon="37"><time>2026-10-0${n}T08:00:00Z</time></trkpt><trkpt lat="56" lon="38"/></trkseg></trk></gpx>`)});
+  await page.locator('[data-trip-gpx-file]').setInputFiles([file(1),file(2)]);
+  await page.locator('[data-trip-track-caption-edit]').first().click();
+  await page.locator('[data-trip-track-caption]').first().fill('Лесная дорога');
+  await page.locator('[data-trip-track-caption]').first().press('Enter');
+  await expect(dialog).not.toHaveClass(/keyboard-focus-active/);
+  await page.locator('[data-trip-track-drag]').first().press('End');
+  await expect(page.locator('[data-trip-track-caption-edit]').last()).toHaveText('Лесная дорога');
+  await page.locator('#saveEditedLayoutBtn').click();await expect(dialog).toBeHidden();
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
+  await page.reload();await waitForApp(page);
+  await page.locator('#layoutSelect').selectOption({label:'Подписанные материалы (1 поездка)'});
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
+  await expect(page.locator('.trip-track-name')).toHaveText(['Исходный трек 2','Лесная дорога']);
+  await page.locator('#editLayoutBtn').click();
+  await expect(list.locator('[data-layout-video-caption-edit]').last()).toHaveText('Первый день <поездки>');
+  await expect(page.locator('[data-trip-track-caption-edit]').last()).toHaveText('Лесная дорога');
+  // Canceling an edit restores the saved captions and order.
+  await list.locator('[data-layout-video-caption-edit]').last().click();
+  await list.locator('[data-layout-video-caption]').last().fill('Не сохранять');
+  await list.locator('[data-layout-video-caption]').last().press('Enter');
+  await expect(dialog).not.toHaveClass(/keyboard-focus-active/);
+  await dialog.locator('header button').click();await page.locator('#confirmCancelBtn').click();
+  await expect(page.locator('.layout-video-caption > span')).toHaveText(['Видео 1','Первый день <поездки>']);
 });

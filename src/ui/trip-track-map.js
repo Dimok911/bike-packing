@@ -40,7 +40,7 @@ export function renderTripTrackMap(value, localText) {
   return `<section class="layout-summary-map" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong><div class="trip-map-summary-list">${tracks.map((track,index) => renderTrackCard(track,index,localText)).join("")}</div></section>`;
 }
 function renderTrackCard(track, index, localText) {
-  const name = track.name || track.fileName || localText("Trip track", "Трек поездки");
+  const name = track.caption || track.name || track.fileName || localText("Trip track", "Трек поездки");
   const date = track.startedAt ? new Intl.DateTimeFormat(localText("en-GB", "ru-RU"), {day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(track.startedAt)) : "";
   return `<article data-trip-map-card="${index}" class="trip-track-preview"><div class="trip-track-canvas" data-trip-track-canvas>${trackOutlineSvg(track)}</div>
     <small data-trip-map-status role="status"></small><button type="button" class="trip-track-open" data-trip-track-open aria-haspopup="dialog" aria-label="${escapeHtml(localText("Open large map", "Открыть большую карту"))}"><span class="trip-track-name">${escapeHtml(name)}</span>${date ? `<time datetime="${escapeHtml(track.startedAt)}">${escapeHtml(date)}</time>` : ""}<span class="trip-track-expand" aria-hidden="true">↗</span></button></article>`;
@@ -91,7 +91,7 @@ function bindSingleTrackMap(section, track, localText) {
     dialog.className = "trip-track-dialog";
     dialog.setAttribute("data-modal-gesture-surface", "");
     dialog.setAttribute("aria-label", localText("Trip map", "Карта поездки"));
-    dialog.innerHTML = `<header><strong>${escapeHtml(track.name || localText("Trip map", "Карта поездки"))}</strong><div class="trip-track-window-actions"><button type="button" data-trip-map-expand aria-pressed="false" aria-label="${escapeHtml(localText("Expand map to full window", "Развернуть карту на весь экран"))}">⛶</button><button type="button" data-trip-map-close aria-label="${escapeHtml(localText("Close map", "Закрыть карту"))}">×</button></div></header><div class="trip-track-canvas">${trackOutlineSvg(track)}</div><small role="status"></small>`;
+    dialog.innerHTML = `<header><strong>${escapeHtml(track.caption || track.name || localText("Trip map", "Карта поездки"))}</strong><div class="trip-track-window-actions"><button type="button" data-trip-map-expand aria-pressed="false" aria-label="${escapeHtml(localText("Expand map to full window", "Развернуть карту на весь экран"))}">⛶</button><button type="button" data-trip-map-close aria-label="${escapeHtml(localText("Close map", "Закрыть карту"))}">×</button></div></header><div class="trip-track-canvas">${trackOutlineSvg(track)}</div><small role="status"></small>`;
     dialog.querySelector("[data-trip-map-close]").addEventListener("click", close);
     const expand = dialog.querySelector("[data-trip-map-expand]");
     const toggleExpanded = () => {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1640" />
+    <link rel="stylesheet" href="./styles.css?v=1641" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -566,10 +566,16 @@
           <h2 id="layoutEditTitle">Редактировать укладку</h2>
           <button value="cancel" formnovalidate class="icon-button" aria-label="Закрыть">×</button>
         </header>
-        <label>
-          Name
-          <input id="layoutEditName" />
-        </label>
+        <div class="layout-edit-name-row">
+          <label>
+            Name
+            <input id="layoutEditName" />
+          </label>
+          <button id="layoutOrderToggleBtn" class="ghost layout-order-toggle" type="button" aria-expanded="false" aria-controls="layoutOrderDialog">
+            <span class="layout-order-toggle-icon" aria-hidden="true">↕</span>
+            <span class="layout-order-toggle-text">Порядок укладок</span>
+          </button>
+        </div>
         <label id="layoutEditLanguageLabel">
           Template language
           <select id="layoutEditLanguage"></select>
@@ -607,8 +613,11 @@
           <div data-layout-media-list class="layout-media-list"></div>
           <section class="layout-video-editor">
             <strong data-layout-videos-label>Видео поездки</strong>
-            <div data-layout-videos></div>
-            <button type="button" class="ghost" data-layout-add-video>Добавить видео</button>
+            <div class="trip-video-add-row">
+              <input data-layout-video type="url" aria-label="Ссылка на видео" placeholder="https://www.youtube.com/watch?v=…" />
+              <button type="button" class="ghost" data-layout-add-video>Добавить видео</button>
+            </div>
+            <div data-layout-videos class="layout-media-list trip-video-editor-list"></div>
           </section>
         </section>
         <label id="layoutLockedLabel" class="checkbox-row">
@@ -618,10 +627,7 @@
         <footer class="layout-edit-actions">
           <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Delete</button>
           <button id="publishEditedTemplateBtn" class="primary" type="button" hidden>Publish</button>
-          <button id="layoutOrderToggleBtn" class="ghost layout-order-toggle" type="button" aria-expanded="false" aria-controls="layoutOrderDialog">
-            <span class="layout-order-toggle-icon" aria-hidden="true">↕</span>
-            <span class="layout-order-toggle-text">Порядок укладок</span>
-          </button>
+
           <button id="saveEditedLayoutBtn" value="default">Save</button>
         </footer>
       </form>
@@ -910,6 +916,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1640" type="module"></script>
+    <script src="./app.js?v=1641" type="module"></script>
   </body>
 </html>

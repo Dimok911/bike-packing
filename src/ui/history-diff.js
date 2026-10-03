@@ -693,10 +693,11 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
         if (before.name !== trip.name) rows.push(localText(`Trip name: ${tripDisplayName(before, index, language)} → ${title}`, `Название поездки: ${tripDisplayName(before, index, language)} → ${title}`));
         const photoFields = photos => photos.map(photo => [photo.id, photo.caption || ""]);
         if (!snapshotsEqual(photoFields(before.photos), photoFields(trip.photos))) rows.push(localText(`Photos in “${title}” changed (${before.photos.length} → ${trip.photos.length})`, `Изменены фотографии в «${title}» (${before.photos.length} → ${trip.photos.length})`));
+        if (!snapshotsEqual(before.videos.map(video => video.caption), trip.videos.map(video => video.caption))) rows.push(localText(`Video captions in “${title}”: ${before.videos.map(video => video.caption || video.url).join(", ")} → ${trip.videos.map(video => video.caption || video.url).join(", ")}`, `Подписи видео в «${title}»: ${before.videos.map(video => video.caption || video.url).join(", ")} → ${trip.videos.map(video => video.caption || video.url).join(", ")}`));
         if (!snapshotsEqual(before.videoUrls, trip.videoUrls)) rows.push(localText(`Videos in “${title}”: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`, `Видео в «${title}»: ${before.videoUrls.join(", ") || "—"} → ${trip.videoUrls.join(", ") || "—"}`));
       }
       if (!snapshotsEqual(before?.tracks || [], trip.tracks || [])) {
-        const names = tracks => (tracks || []).map(track => track.name || track.fileName).join(", ") || "—";
+        const names = tracks => (tracks || []).map(track => track.caption || track.name || track.fileName).join(", ") || "—";
         rows.push(localText(`Tracks in “${title}”: ${names(before?.tracks)} → ${names(trip.tracks)}`, `Треки в «${title}»: ${names(before?.tracks)} → ${names(trip.tracks)}`));
       }
       if (Boolean(before?.publishNotes) !== Boolean(trip.publishNotes)) rows.push(localText(`Notes in “${title}”: ${trip.publishNotes ? "published" : "hidden from publication"}`, `Заметки в «${title}»: ${trip.publishNotes ? "видны в публикации" : "скрыты из публикации"}`));

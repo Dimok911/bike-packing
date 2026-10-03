@@ -19,17 +19,19 @@ export function tripVideoPreview(value) {
   } catch { return null; }
 }
 
-export function renderTripVideoCards(urls, localText) {
-  if (!urls.length) return "";
+export function renderTripVideoCard(value, index, localText, { showCaption = true } = {}) {
+  const video = tripVideoPreview(typeof value === "string" ? value : value?.url);
+  if (!video) return "";
+  const name = (typeof value === "object" && value?.caption) || localText(`Video ${index + 1}`, `Видео ${index + 1}`);
+  return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
+    <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
+    ${showCaption ? `<span class="layout-video-caption"><span title="${escapeHtml(name)}">${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span>` : ""}</a>`;
+}
+
+export function renderTripVideoCards(videos, localText) {
+  if (!videos.length) return "";
   const title = localText("Videos", "Видео");
-  return `<section class="layout-summary-videos" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong><div class="layout-video-summary-list">${urls.map((url, index) => {
-    const video = tripVideoPreview(url);
-    if (!video) return "";
-    const name = localText(`Video ${index + 1}`, `Видео ${index + 1}`);
-    return `<a class="layout-video-card" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" ${video.embed ? 'data-trip-video-play aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(`${name} · ${video.provider}`)}">
-      <span class="layout-video-cover">${video.thumbnail ? `<img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-trip-video-thumbnail />` : ""}<span class="layout-video-play" aria-hidden="true">▶</span></span>
-      <span class="layout-video-caption"><span>${escapeHtml(name)}</span><small>${escapeHtml(video.provider)}</small></span></a>`;
-  }).join("")}</div></section>`;
+  return `<section class="layout-summary-videos" aria-label="${escapeHtml(title)}"><strong>${escapeHtml(title)}</strong><div class="layout-video-summary-list">${videos.map((video, index) => renderTripVideoCard(video, index, localText)).join("")}</div></section>`;
 }
 
 // Bike Packing trip UI: the shared photo gallery is not involved in video playback.

@@ -6916,6 +6916,7 @@ function openLayoutEditDialog() {
       ...photoGalleryBindingOptions(),
       openLightbox: (image, options) => openPhotoLightbox(image, { ...options, gallery: root })
     }),
+    confirmRemoveVideo: name => askConfirmDialog({ title: localText("Remove video?", "Удалить видео?"), text: localText(`Remove “${name}” from this trip?`, `Удалить «${name}» из этой поездки?`), okText: localText("Remove video", "Удалить видео"), cancelText: t("buttons.cancel"), tone: "danger" }),
     confirmRemovePhoto: name => askConfirmDialog({ title: localText("Remove photo?", "Удалить фотографию?"), text: localText(`Remove “${name}” from this trip?`, `Удалить «${name}» из этой поездки?`), okText: localText("Remove photo", "Удалить фото"), cancelText: t("buttons.cancel"), tone: "danger" }),
     confirmRemove: (name) => askConfirmDialog({ title: localText("Delete trip?", "Удалить поездку?"), text: localText(`Delete “${name}” with its description and photos? The gear list stays the same.`, `Удалить «${name}» вместе с описанием и фотографиями? Состав вещей сохранится.`), okText: localText("Delete trip", "Удалить поездку"), cancelText: t("buttons.cancel"), tone: "danger" }),
     onChange: updateLayoutEditSaveState,
