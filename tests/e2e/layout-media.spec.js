@@ -429,7 +429,7 @@ test('trip video thumbnails open a lazy player below photos with compact navigat
   await expect(videos.locator('img').first()).toBeHidden();
   await expect(page.locator('.trip-video-dialog')).toHaveCount(0);
   const dimensions=await card.evaluate(card=>({header:card.querySelector('.layout-introduction-header').getBoundingClientRect().height,overflow:card.scrollWidth>card.clientWidth+1,videos:card.querySelector('.layout-summary-videos').getBoundingClientRect().bottom,description:card.querySelector('#layoutDescriptionSummary').getBoundingClientRect().top}));
-  expect(dimensions.header).toBeLessThanOrEqual(66);expect(dimensions.overflow).toBe(false);expect(dimensions.description).toBeGreaterThan(dimensions.videos);
+  expect(dimensions.header).toBeLessThanOrEqual(66);expect(dimensions.overflow).toBe(false);expect(dimensions.description).toBeLessThan(dimensions.videos);
   if(isMobile) expect(await videos.locator('.layout-video-summary-list').evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
   await videos.locator('.layout-video-card').first().click();
   const player=page.locator('.trip-video-dialog');
@@ -787,7 +787,7 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     const canvas=document.createElement("canvas"); canvas.width=240; canvas.height=240;
     const context=canvas.getContext("2d"); context.fillStyle="#93bd9e"; context.fillRect(0,0,240,240);
     const image=canvas.toDataURL();
-    layout.trips=[{id:"tiles-trip",name:"Тестовая поездка",videoUrls:Array.from({length:6},(_,i)=>`https://youtu.be/abcdefghij${i}`),track:{name:"Лесной маршрут",fileName:"route.gpx",segments:[[[55.7,37.4],[55.72,37.43],[55.74,37.42]]]}}];
+    layout.trips=[{id:"tiles-trip",name:"Тестовая поездка",videoUrls:Array.from({length:6},(_,i)=>`https://youtu.be/abcdefghij${i}`),tracks:Array.from({length:4},(_,i)=>({name:`Маршрут ${i+1}`,segments:[[[55.7,37.4],[55.72,37.43],[55.74,37.42]]]}))}];
     layout.photos=Array.from({length:7},(_,i)=>({id:`photo-${i}`,tripId:"tiles-trip",url:`https://example.test/tile-${i}.png`,thumbUrl:`https://example.test/tile-${i}.png`,status:"synced",caption:`Фото ${i+1}`}));
     localStorage.setItem(key,JSON.stringify(state));
   });
@@ -797,7 +797,7 @@ test("compact horizontal media rows keep all photos and video navigation in thei
   await expect(page.locator(".trip-media-more")).toHaveCount(0);
   await expect(page.locator(".layout-video-card:visible")).toHaveCount(6);
   await page.setViewportSize({width:390,height:844});
-  for (const selector of [".layout-photo-summary-list", ".layout-video-summary-list"]) {
+  for (const selector of [".layout-photo-summary-list", ".layout-video-summary-list", ".trip-map-summary-list"]) {
     const dimensions=await page.locator(selector).evaluate(list=>({gap:getComputedStyle(list).gap,overflow:list.scrollWidth>list.clientWidth,rows:new Set([...list.children].map(child=>Math.round(child.getBoundingClientRect().top))).size}));
     expect(dimensions).toEqual({gap:"4px",overflow:true,rows:1});
     const row = page.locator(selector).locator("..");
@@ -806,17 +806,28 @@ test("compact horizontal media rows keep all photos and video navigation in thei
     await expect(previous).toBeVisible();
     await expect(previous).toBeDisabled();
     await expect(next).toBeEnabled();
+    const expectedCounts=()=>page.locator(selector).evaluate(list=>{
+      const r=list.getBoundingClientRect(); const children=[...list.children].map(el=>el.getBoundingClientRect());
+      return [children.filter(el=>el.left<r.left-1).length,children.filter(el=>el.right>r.left+list.clientWidth+1).length];
+    });
+    const displayedCounts=()=>row.locator('[data-trip-media-count]').allTextContents().then(values=>values.map(Number));
+    await expect.poll(displayedCounts).toEqual(await expectedCounts());
+    expect(await displayedCounts()).toEqual([0,expect.any(Number)]);
+    expect((await displayedCounts())[1]).toBeGreaterThan(0);
     expect(await page.locator(selector).evaluate(list=>getComputedStyle(list).scrollbarWidth)).toBe("none");
     await next.click();
     await expect.poll(()=>page.locator(selector).evaluate(list=>list.scrollLeft)).toBeGreaterThan(100);
     await expect(previous).toBeEnabled();
+    await expect.poll(async()=>JSON.stringify(await displayedCounts())===JSON.stringify(await expectedCounts())).toBe(true);
     await previous.click();
     await expect.poll(()=>page.locator(selector).evaluate(list=>list.scrollLeft)).toBeLessThan(2);
     await page.locator(selector).evaluate(list=>{list.scrollLeft=list.scrollWidth;});
     await expect(next).toBeDisabled();
+    await expect.poll(displayedCounts).toEqual(await expectedCounts());
+    expect((await displayedCounts())[1]).toBe(0);
     await page.locator(selector).evaluate(list=>{list.scrollLeft=0;});
   }
-  await page.setViewportSize({width:1600,height:1000});
+  await page.setViewportSize({width:2400,height:1000});
   await expect(page.locator('.layout-summary-photos .trip-media-scroll-button:visible, .layout-summary-videos .trip-media-scroll-button:visible')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});
   await expect(page.locator('.layout-summary-photos .trip-media-scroll-button:visible, .layout-summary-videos .trip-media-scroll-button:visible')).toHaveCount(4);
@@ -870,10 +881,18 @@ test("Yandex adapter fits each GPX segment, opens a large map and releases both 
   await expect.poll(()=>page.evaluate(()=>window.mapCalls?.length)).toBe(1);
   expect(await page.evaluate(()=>window.mapCalls[0].segments)).toEqual([[[55,37],[55.1,37.1]],[[55.9,37.9],[56,38]]]);
   await expect(page.locator("#map-fixture [data-trip-map-status]")).toHaveText("");
-  await page.locator("#map-fixture [data-trip-track-open]").click();
+  expect(await page.locator("#map-fixture [data-trip-track-canvas]").evaluate(el=>getComputedStyle(el).cursor)).toBe("pointer");
+  await page.locator("#map-fixture [data-trip-track-canvas]").click({position:{x:20,y:20}});
   await expect.poll(()=>page.evaluate(()=>window.mapCalls.length)).toBe(2);
+  await expect(page.locator(".trip-track-dialog")).toHaveAttribute("data-modal-gesture-surface", "");
+  expect(await page.evaluate(()=>window.mapCalls[1].state.behaviors)).toContain("multiTouch");
   expect(await page.evaluate(()=>window.mapCalls[1].state.behaviors)).toContain("drag");
-  expect(await page.evaluate(()=>window.mapCalls[1].state.controls)).toContain("zoomControl");
+  expect(await page.evaluate(()=>window.mapCalls[1].state.controls)).toEqual(["zoomControl"]);
+  await page.locator("[data-trip-map-expand]").click();
+  await expect(page.locator(".trip-track-dialog")).toHaveClass(/is-fullscreen/);
+  await expect(page.locator("#map-fixture [data-trip-map-card]")).toHaveCount(1);
+  await page.locator("[data-trip-map-expand]").click();
+  await expect(page.locator(".trip-track-dialog")).not.toHaveClass(/is-fullscreen/);
   await page.getByRole("button",{name:"Закрыть карту",exact:true}).click();
   expect(await page.evaluate(()=>window.mapCalls[1].destroyed)).toBe(true);
   await page.evaluate(()=>window.mapBinding.destroy());
@@ -1026,7 +1045,7 @@ test('trip composition previews preserve media, compact empty sections and guest
     const node=el.querySelector(key==='description'?'#layoutDescriptionSummary':`.layout-summary-${key==='maps'?'map':key}`);
     const r=node.getBoundingClientRect();return [key,{x:r.x,y:r.y,width:r.width}];
   })));
-  await expect(page.locator('button[data-trip-presentation="current"]')).toHaveAttribute('data-visual-default','true');
+  await expect(page.locator('button[data-trip-presentation="story-left"]')).toHaveAttribute('data-visual-default','true');
   for (const variant of ['photos-top','photo-story','description-maps','story-left']) {
     await page.locator(`button[data-trip-presentation="${variant}"]`).click();
     await expect(content).toHaveAttribute('data-trip-presentation',variant);
@@ -1068,9 +1087,9 @@ test('trip composition previews preserve media, compact empty sections and guest
   expect(await content.evaluate(el=>el.style.getPropertyValue('--trip-grid-areas'))).toBe('"description description"');
   await expect(page.locator('#layoutDescriptionSummary')).toBeVisible();
   await page.evaluate(()=>window.compositionFixture.guest());
-  await expect(content).toHaveAttribute('data-trip-presentation','current');
+  await expect(content).toHaveAttribute('data-trip-presentation','story-left');
   const pos=await positions();
-  expect(pos.description.y).toBeGreaterThan(pos.maps.y);
+  expect(pos.description.y).toBeLessThan(pos.maps.y);
   expect(await page.evaluate(()=>localStorage.getItem('bike-packing-trip-presentation-v1'))).toBe('story-left');
 });
 

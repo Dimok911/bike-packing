@@ -56,7 +56,7 @@ function bindSingleTrackMap(section, track, localText) {
   let destroyed = false, dialog = null, stopLarge = null, observer = null;
   const fallbackLabel = () => localText("Track outline · map unavailable", "Схема трека · карта недоступна");
   function mount(canvas, status, interactive, onClick) {
-    let closed = false, map = null;
+    let closed = false, map = null, resize = null;
     const fallback = () => {
       map?.destroy(); map = null;
       canvas.innerHTML = trackOutlineSvg(track);
@@ -66,15 +66,17 @@ function bindSingleTrackMap(section, track, localText) {
     if (YANDEX_MAPS_API_KEY) loadYandexMaps().then(async ymaps => {
       if (closed || destroyed) return;
       canvas.replaceChildren();
-      map = new ymaps.Map(canvas, { center: track.segments[0][0], zoom: 10, controls: interactive ? ["zoomControl", "fullscreenControl"] : [], behaviors: interactive ? ["drag", "scrollZoom", "multiTouch"] : [] });
+      map = new ymaps.Map(canvas, { center: track.segments[0][0], zoom: 10, controls: interactive ? ["zoomControl"] : [], behaviors: interactive ? ["drag", "scrollZoom", "multiTouch"] : [] });
       for (const segment of track.segments) map.geoObjects.add(new ymaps.Polyline(segment, {}, { strokeColor: "#ed6723", strokeWidth: 4 }));
       await map.setBounds(map.geoObjects.getBounds(), { checkZoomRange: true, zoomMargin: interactive ? 32 : 16 });
       if (closed || destroyed) return;
       if (map.getZoom() > 17) map.setZoom(17);
       if (onClick) map.events.add("click", onClick);
+      resize = new ResizeObserver(() => map?.container?.fitToViewport());
+      resize.observe(canvas);
       status.textContent = "";
     }).catch(() => { if (!closed && !destroyed) fallback(); });
-    return () => { closed = true; map?.destroy(); map = null; };
+    return () => { closed = true; resize?.disconnect(); map?.destroy(); map = null; };
   }
   const close = () => {
     if (!dialog) return;
@@ -87,15 +89,28 @@ function bindSingleTrackMap(section, track, localText) {
     if (destroyed || dialog) return;
     dialog = document.createElement("dialog");
     dialog.className = "trip-track-dialog";
+    dialog.setAttribute("data-modal-gesture-surface", "");
     dialog.setAttribute("aria-label", localText("Trip map", "Карта поездки"));
-    dialog.innerHTML = `<header><strong>${escapeHtml(track.name || localText("Trip map", "Карта поездки"))}</strong><button type="button" aria-label="${escapeHtml(localText("Close map", "Закрыть карту"))}">×</button></header><div class="trip-track-canvas">${trackOutlineSvg(track)}</div><small role="status"></small>`;
-    dialog.querySelector("button").addEventListener("click", close);
-    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+    dialog.innerHTML = `<header><strong>${escapeHtml(track.name || localText("Trip map", "Карта поездки"))}</strong><div class="trip-track-window-actions"><button type="button" data-trip-map-expand aria-pressed="false" aria-label="${escapeHtml(localText("Expand map to full window", "Развернуть карту на весь экран"))}">⛶</button><button type="button" data-trip-map-close aria-label="${escapeHtml(localText("Close map", "Закрыть карту"))}">×</button></div></header><div class="trip-track-canvas">${trackOutlineSvg(track)}</div><small role="status"></small>`;
+    dialog.querySelector("[data-trip-map-close]").addEventListener("click", close);
+    const expand = dialog.querySelector("[data-trip-map-expand]");
+    const toggleExpanded = () => {
+      const expanded = dialog.classList.toggle("is-fullscreen");
+      expand.setAttribute("aria-pressed", String(expanded));
+      const label = expanded ? localText("Restore map window", "Вернуть обычный размер карты") : localText("Expand map to full window", "Развернуть карту на весь экран");
+      expand.setAttribute("aria-label", label); expand.title = label;
+    };
+    expand.title = expand.getAttribute("aria-label");
+    expand.addEventListener("click", toggleExpanded);
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      if (dialog.classList.contains("is-fullscreen")) toggleExpanded(); else close();
+    });
     dialog.addEventListener("close", close);
     document.body.append(dialog); dialog.showModal();
     stopLarge = mount(dialog.querySelector(".trip-track-canvas"), dialog.querySelector("small"), true);
   };
-  const onClick = event => { if (event.target.closest("[data-trip-track-open], .trip-track-canvas svg")) open(); };
+  const onClick = event => { if (!event.target.closest("a")) open(); };
   section.addEventListener("click", onClick);
   const canvas = section.querySelector("[data-trip-track-canvas]");
   const status = section.querySelector("[data-trip-map-status]");

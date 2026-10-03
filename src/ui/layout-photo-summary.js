@@ -66,7 +66,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
   let presentation = tripPresentation(canChoose());
   const arrange = () => applyTripPresentation(host, presentation);
   document.addEventListener("trip-presentation-change", event => {
-    presentation = canChoose() ? event.detail : "current";
+    presentation = canChoose() ? event.detail : tripPresentation(false);
     arrange();
   });
   const card = host.closest(".layout-introduction");

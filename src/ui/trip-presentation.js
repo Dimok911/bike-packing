@@ -1,19 +1,20 @@
 import { escapeHtml } from "../utils/html.js";
 
 const STORAGE_KEY = "bike-packing-trip-presentation-v1";
+export const DEFAULT_TRIP_PRESENTATION = "story-left";
 const VIEWS = [
-  ["current", "Current", "Текущий"],
+  ["current", "Previous layout", "Прежний"],
   ["photos-top", "Photos above", "Фото сверху"],
   ["photo-story", "Photos and description", "Фото и описание"],
   ["description-maps", "Description and maps", "Описание и карты"],
   ["story-left", "Description and maps on the left", "Описание слева"]
 ];
 export function tripPresentation(canChoose = false) {
-  if (!canChoose) return "current";
+  if (!canChoose) return DEFAULT_TRIP_PRESENTATION;
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return VIEWS.some(([key]) => key === value) ? value : "current";
-  } catch { return "current"; }
+    return VIEWS.some(([key]) => key === value) ? value : DEFAULT_TRIP_PRESENTATION;
+  } catch { return DEFAULT_TRIP_PRESENTATION; }
 }
 
 export function setupTripPresentationControl(control, localText, canChoose) {
@@ -21,7 +22,7 @@ export function setupTripPresentationControl(control, localText, canChoose) {
   group.className = "trip-presentation-control";
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", localText("Trip block", "Блок поездки"));
-  group.innerHTML = `<strong>${escapeHtml(localText("Trip block", "Блок поездки"))}:</strong>${VIEWS.map(([key, en, ru]) => `<button type="button" class="admin-visual-option" data-trip-presentation="${key}" ${key === "current" ? 'data-visual-default="true"' : ""} title="${escapeHtml(localText(en, ru) + (key === "current" ? localText(" · Default for everyone", " · По умолчанию для всех") : ""))}">${escapeHtml(localText(en, ru))}</button>`).join("")}`;
+  group.innerHTML = `<strong>${escapeHtml(localText("Trip block", "Блок поездки"))}:</strong>${VIEWS.map(([key, en, ru]) => `<button type="button" class="admin-visual-option" data-trip-presentation="${key}" ${key === DEFAULT_TRIP_PRESENTATION ? 'data-visual-default="true"' : ""} title="${escapeHtml(localText(en, ru) + (key === DEFAULT_TRIP_PRESENTATION ? localText(" · Default for everyone", " · По умолчанию для всех") : ""))}">${escapeHtml(localText(en, ru))}</button>`).join("")}`;
   const sync = () => group.querySelectorAll("button").forEach(button => {
     const active = button.dataset.tripPresentation === tripPresentation(canChoose());
     button.classList.toggle("active", active);
