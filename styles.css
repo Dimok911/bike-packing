@@ -11321,3 +11321,11 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .layout-edit-name-row label { min-width: 0; }
 .layout-edit-name-row .layout-order-toggle { min-height: 44px; }
 @media (max-width: 560px) { .layout-edit-name-row .layout-order-toggle { width: 44px; padding: 0; } }
+
+/* Trip photo controls use the same compact action row as videos and maps. */
+.layout-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.layout-photo-actions > :is(button, label) { width: auto; max-width: 100%; min-height: 36px; padding: 7px 12px; font-size: 13px; line-height: 1.35; }
+.layout-photo-actions .photo-paste-hint { border-style: solid; cursor: pointer; }
+@media (pointer: coarse) {
+  .layout-photo-actions > :is(button, label) { min-height: 44px; }
+}

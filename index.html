@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1642" />
+    <link rel="stylesheet" href="./styles.css?v=1643" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -598,16 +598,16 @@
           <label class="checkbox-row"><input type="checkbox" data-trip-publish-notes /><span data-trip-publish-notes-label>Показывать заметки в публикации</span></label>
         </section>
         <section data-layout-media-editor class="layout-media-editor">
-          <label>
-            <span data-layout-photos-label>Фотографии</span>
-            <input type="file" accept="image/*" multiple aria-label="Добавить фотографии укладки" hidden />
-          </label>
-          <button data-layout-add-photos type="button" class="ghost">Добавить фотографии</button>
-          <label class="ghost item-photo-pick item-photo-camera-pick">
-            <span data-layout-camera-label>Сделать фото</span>
-            <input data-layout-camera type="file" accept="image/*" capture="environment" />
-          </label>
-          <button class="photo-paste-hint" type="button">Вставить фото или URL из буфера</button>
+          <strong data-layout-photos-label>Фотографии</strong>
+          <input type="file" accept="image/*" multiple aria-label="Добавить фотографии укладки" hidden />
+          <div class="layout-photo-actions">
+            <button data-layout-add-photos type="button" class="ghost">Добавить фотографии</button>
+            <label class="ghost item-photo-pick item-photo-camera-pick">
+              <span data-layout-camera-label>Сделать фото</span>
+              <input data-layout-camera type="file" accept="image/*" capture="environment" />
+            </label>
+            <button class="photo-paste-hint" type="button">Вставить фото или URL из буфера</button>
+          </div>
           <small data-layout-drop-hint>Также можно перетащить фотографии сюда</small>
           <p data-layout-media-status role="status" aria-live="polite"></p>
           <div data-layout-media-list class="layout-media-list"></div>
@@ -916,6 +916,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1642" type="module"></script>
+    <script src="./app.js?v=1643" type="module"></script>
   </body>
 </html>
