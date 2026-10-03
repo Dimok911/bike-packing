@@ -216,9 +216,10 @@ test('shared link opens photos and rich description together without editing con
   await expect(description.locator('a')).toHaveAttribute('href','https://example.com/route');
   await expect(page.locator('#layoutIntroduction [data-edit-layout-notes]')).toHaveCount(0);
   await expect(description).not.toContainText('Секретная заметка');
+  await expect(page.locator('#layoutPrivateNotesSummary')).toBeHidden();
   await page.locator('[data-trip-next]').click();
   await expect(description).toContainText('Новая поездка с тем же набором вещей');
-  await expect(description).toContainText('Публичная заметка');
+  await expect(page.locator('#layoutPrivateNotesSummary')).toContainText('Публичная заметка');
   await expect(photos).toBeHidden();
   await page.locator('[data-trip-prev]').click();
   await expect(photos).toBeVisible();
@@ -384,6 +385,7 @@ test('trip videos, separate notes and stable scrolling card', async ({page,isMob
   const geometry=()=>page.evaluate(()=>({height:document.querySelector('#layoutIntroduction').getBoundingClientRect().height,summary:document.querySelector('#summary').getBoundingClientRect().top-document.querySelector('#layoutIntroduction').getBoundingClientRect().top}));
   await page.waitForTimeout(350); // Let the editor closing transition settle before measuring.
   const first=await geometry();
+  expect(await content.evaluate(el=>el.querySelector('#layoutPrivateNotesSummary').getBoundingClientRect().top>=Math.max(el.querySelector('.layout-summary-videos').getBoundingClientRect().bottom,el.querySelector('#layoutDescriptionSummary').getBoundingClientRect().bottom))).toBe(true);
   expect(await content.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
   await content.evaluate(el=>{el.scrollTop=el.scrollHeight;});
   expect(await content.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
@@ -904,6 +906,8 @@ test("Yandex adapter fits each GPX segment, opens a large map and releases both 
 
 test("compact photo editor supports inline captions, pointer reorder, cancellation and confirmed removal", async ({page,browserName}, testInfo) => {
   test.setTimeout(60000);
+  const originalViewport=page.viewportSize();
+  await page.setViewportSize({width:390,height:844});
   await prepareIsolatedRussianGuest(page); await openApp(page);
   await createEmptyLayout(page,"Компактный редактор");
   const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement("canvas");c.width=160;c.height=100;c.getContext("2d").fillRect(0,0,160,100);return c.toDataURL().split(",")[1];}),"base64");
@@ -921,9 +925,24 @@ test("compact photo editor supports inline captions, pointer reorder, cancellati
   await expect.poll(()=>list.locator(".layout-media-preview img").first().evaluate(image=>image.complete && image.naturalWidth>0)).toBe(true);
   await expect(list.locator("[data-layout-photo-caption]:visible")).toHaveCount(0);
   await list.locator("[data-layout-caption-edit]").first().click();
-  await list.locator("[data-layout-photo-caption]").first().fill("Новая подпись");
+  const caption=list.locator("[data-layout-photo-caption]").first();
+  await expect(page.locator('#layoutEditDialog')).toHaveClass(/keyboard-focus-active/);
+  // Model the viewport contraction after the keyboard opens; focus must survive.
+  await page.evaluate(()=>{
+    Object.defineProperty(window.visualViewport,'height',{configurable:true,value:300});
+    window.visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await expect.poll(()=>caption.evaluate(el=>{
+    const r=el.getBoundingClientRect(),v=visualViewport;
+    return r.top>=v.offsetTop+12 && r.bottom<=v.offsetTop+v.height-56+1;
+  })).toBe(true);
+  await expect(caption).toBeFocused();
+  await caption.fill("Новая подпись");
+  await page.evaluate(()=>{delete window.visualViewport.height;window.visualViewport.dispatchEvent(new Event('resize'));});
   await list.locator("[data-layout-photo-caption]").first().press("Enter");
   await expect(list.locator("[data-layout-caption-edit]").first()).toHaveText("Новая подпись");
+  await expect(page.locator("#layoutEditDialog")).not.toHaveClass(/keyboard-focus-active/);
+  await page.setViewportSize(originalViewport);
   await list.locator("[data-layout-photo-drag]").first().press("ArrowRight");
   await expect(list.locator("[data-layout-caption-edit]").nth(1)).toHaveText("Новая подпись");
   await list.locator("[data-layout-photo-drag]").first().scrollIntoViewIfNeeded();
@@ -1028,7 +1047,7 @@ test('trip composition previews preserve media, compact empty sections and guest
   await page.route('https://api-maps.yandex.ru/**', route=>route.abort());
   await page.evaluate(async () => {
     const {setupLayoutPhotoViewControl,createLayoutPhotoSummary}=await import('/__testsrc/src/ui/layout-photo-summary.js');
-    document.body.innerHTML='<main id="composition" style="padding:12px;max-width:1040px;margin:auto"><div data-options></div><section class="layout-introduction"><header class="layout-introduction-header"><strong>Поездки · Николо-Ленивец</strong></header><div class="layout-introduction-content"><section class="layout-photo-summary"></section><section id="layoutDescriptionSummary"><p>Три дня на велосипеде</p><p>Маршрут через лес, ночёвки в палатке и тихие дороги. Здесь описание поездки и впечатления о маршруте.</p></section></div></section></main>';
+    document.body.innerHTML='<main id="composition" style="padding:12px;max-width:1040px;margin:auto"><div data-options></div><section class="layout-introduction"><header class="layout-introduction-header"><strong>Поездки · Николо-Ленивец</strong></header><div class="layout-introduction-content"><section class="layout-photo-summary"></section><section id="layoutDescriptionSummary"><p>Три дня на велосипеде</p><p>Маршрут через лес, ночёвки в палатке и тихие дороги. Здесь описание поездки и впечатления о маршруте.</p></section><section id="layoutPrivateNotesSummary"><div class="trip-notes-summary">Заметки внизу</div></section></div></section></main>';
     let admin=true;
     const canvas=document.createElement('canvas');canvas.width=180;canvas.height=120;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#669980';ctx.fillRect(0,0,180,120);ctx.fillStyle='#d4cb8c';ctx.fillRect(0,70,180,50);
@@ -1055,6 +1074,10 @@ test('trip composition previews preserve media, compact empty sections and guest
     expect(await page.evaluate(()=>document.querySelector('[data-photo-open]')===window.originalPhoto)).toBe(true);
     expect(await content.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
     const pos=await positions();
+    expect(await content.evaluate(el=>{
+      const notes=el.querySelector('#layoutPrivateNotesSummary').getBoundingClientRect();
+      return [...el.querySelectorAll('.layout-summary-photos,.layout-summary-videos,.layout-summary-map,#layoutDescriptionSummary')].every(part=>part.getBoundingClientRect().bottom<=notes.top+1);
+    })).toBe(true);
     if (isMobile) {
       const order=['description-maps','story-left'].includes(variant)?['description','maps','photos','videos']:variant==='photo-story'?['photos','description','videos','maps']:['photos','videos','maps','description'];
       for(let i=1;i<order.length;i++) expect(pos[order[i]].y).toBeGreaterThan(pos[order[i-1]].y);
@@ -1085,7 +1108,7 @@ test('trip composition previews preserve media, compact empty sections and guest
   await content.evaluate(el=>el.hidden=true); await expect(content).toBeHidden();
   await content.evaluate(el=>el.hidden=false);
   // A trip with only description gets a full-width row, no empty map column.
-  await page.evaluate(()=>window.compositionFixture.summary.render({id:'empty'},true));
+  await page.evaluate(()=>(document.querySelector('#layoutPrivateNotesSummary').hidden=true, window.compositionFixture.summary.render({id:'empty'},true)));
   expect(await content.evaluate(el=>el.style.getPropertyValue('--trip-grid-areas'))).toBe('"description description"');
   await expect(page.locator('#layoutDescriptionSummary')).toBeVisible();
   await page.evaluate(()=>window.compositionFixture.guest());
@@ -1180,4 +1203,39 @@ test("media arrow counts exclude partially visible thumbnails at both ends and a
   await root.evaluate(el=>{el.style.width='340px';el.style.transform='scale(.8)';el.style.transformOrigin='left top';});
   await expect.poll(visible).toBe(3);
   await expect(next.locator('[data-trip-media-count]')).toHaveText('1');
+});
+
+
+test("media rows stop at the last card without trailing blank space on narrow screens",async({page})=>{
+  const {readFile}=await import('node:fs/promises');const {resolve}=await import('node:path');
+  await prepareIsolatedRussianGuest(page);await openApp(page);
+  await page.route('**/__testsrc/**',async route=>{
+    const relative=new URL(route.request().url()).pathname.split('/__testsrc/')[1];
+    if(!relative.startsWith('src/')||relative.includes('..'))return route.abort();
+    await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(relative),'utf8')});
+  });
+  await page.evaluate(async()=>{
+    const {bindTripMediaScroll}=await import('/__testsrc/src/ui/trip-media-scroll.js');
+    document.body.innerHTML='<section id="edge-fixture" style="width:300px;max-width:100%;margin:8px"></section>';
+    const host=document.querySelector('#edge-fixture');
+    for(const name of ['layout-photo-summary-list','layout-video-summary-list','trip-map-summary-list']){
+      const row=document.createElement('div');row.className=name;
+      row.style.cssText='display:flex;gap:4px;overflow-x:auto;padding:0 100px 0 0;box-sizing:content-box;';
+      // Extra scrollable overflow must not become empty space after the final card.
+      row.innerHTML=Array.from({length:5},(_,i)=>`<div style="flex:0 0 120px;height:60px;background:#abc">${i+1}</div>`).join('');
+      host.append(row);
+    }
+    bindTripMediaScroll(host,(en,ru)=>ru);
+  });
+  for(const wrapper of await page.locator('#edge-fixture .trip-media-scroll').all()){
+    const next=wrapper.locator('[data-trip-media-scroll="next"]'),previous=wrapper.locator('[data-trip-media-scroll="previous"]');
+    for(let i=0;i<12 && await next.isEnabled();i++){await next.click();await page.waitForTimeout(300);}
+    await expect(next).toBeDisabled();
+    expect(await wrapper.evaluate(el=>{
+      const list=el.children[1];return Math.abs(list.lastElementChild.getBoundingClientRect().right-list.getBoundingClientRect().right);
+    })).toBeLessThan(2);
+    for(let i=0;i<12 && await previous.isEnabled();i++){await previous.click();await page.waitForTimeout(300);}
+    await expect(previous).toBeDisabled();
+    expect(await wrapper.evaluate(el=>Math.abs(el.children[1].scrollLeft))).toBeLessThan(2);
+  }
 });

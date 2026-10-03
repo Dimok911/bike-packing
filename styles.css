@@ -11261,7 +11261,7 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 .trip-presentation-control { flex-basis: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px; border-top: 1px solid var(--line); font-size: 12px; }
 .trip-presentation-control .admin-visual-option { flex: 0 0 auto; width: auto; min-height: 36px; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
 .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]):not([hidden]) {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: var(--trip-grid-areas); align-content: start; align-items: start; gap: 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: var(--trip-grid-areas); grid-auto-rows: max-content; align-content: start; align-items: start; gap: 16px;
 }
 .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) .layout-photo-summary:not([hidden]) { display: contents; }
 .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) .layout-summary-photos { grid-area: photos; }
@@ -11273,7 +11273,7 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
 }
 @media (max-width: 640px) {
   .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]):not([hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; gap: 12px; }
-  .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) :is(.layout-summary-photos, .layout-summary-videos, .layout-summary-map, #layoutDescriptionSummary) { grid-area: auto; order: var(--trip-part-order); }
+  .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) :is(.layout-summary-photos, .layout-summary-videos, .layout-summary-map, #layoutDescriptionSummary, #layoutPrivateNotesSummary) { grid-area: auto; order: var(--trip-part-order); }
 }
 
 .trip-track-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -11298,3 +11298,11 @@ dialog.trip-video-dialog { width: min(960px, calc(100vw - 24px)); background: va
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M8 3h8M12 3v18M8 21h8' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M8 3h8M12 3v18M8 21h8' fill='none' stroke='%231d2522' stroke-width='2'/%3E%3C/svg%3E") 12 12, text;
   }
 }
+
+#layoutPrivateNotesSummary { min-width: 0; overflow-wrap: anywhere; }
+#layoutPrivateNotesSummary .trip-notes-summary { margin-top: 0; }
+.layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) #layoutPrivateNotesSummary { grid-area: notes; }
+@media (max-width: 640px) {
+  .layout-introduction-content[data-trip-presentation]:not([data-trip-presentation="current"]) #layoutPrivateNotesSummary { grid-area: auto; }
+}
+.trip-media-scroll > :is(.layout-photo-summary-list, .layout-video-summary-list, .trip-map-summary-list) { overscroll-behavior-x: none; scroll-snap-type: none; }

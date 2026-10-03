@@ -104,6 +104,8 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
     const description = intro.querySelector("#layoutDescriptionSummary");
     if (!description) return;
     intro.append(description);
+    const notes = intro.querySelector("#layoutPrivateNotesSummary");
+    if (notes) intro.append(notes);
   };
   document.addEventListener("layout-photo-view-change", event => {
     view = canChoose() ? event.detail : "grid";

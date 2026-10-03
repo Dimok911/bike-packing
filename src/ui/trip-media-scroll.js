@@ -24,6 +24,15 @@ export function bindTripMediaScroll(host, localText) {
     }
     list.before(wrapper);
     wrapper.append(previous, list, next);
+    const scrollLimit = () => {
+      const last = [...list.children].findLast(child => child.getClientRects().length);
+      if (!last || !list.clientWidth) return 0;
+      const bounds = list.getBoundingClientRect();
+      const scale = bounds.width / list.clientWidth || 1;
+      // SDK content may extend the scrollable box. Stop at the card itself.
+      const cardEnd = list.scrollLeft + (last.getBoundingClientRect().right - bounds.right) / scale;
+      return Math.max(0, Math.min(list.scrollWidth - list.clientWidth, cardEnd));
+    };
     const sync = () => {
       // Compare with the full wrapper so removing the buttons cannot oscillate
       // around the overflow threshold as their own space is reclaimed.
@@ -31,7 +40,7 @@ export function bindTripMediaScroll(host, localText) {
       wrapper.classList.toggle("has-overflow", overflow);
       previous.hidden = next.hidden = !overflow;
       previous.disabled = list.scrollLeft <= 1;
-      next.disabled = list.scrollLeft >= list.scrollWidth - list.clientWidth - 1;
+      next.disabled = list.scrollLeft >= scrollLimit() - 1;
       const bounds = list.getBoundingClientRect();
       const { left, right } = bounds;
       let before = 0, after = 0;
@@ -50,8 +59,8 @@ export function bindTripMediaScroll(host, localText) {
         button.title = `${button.getAttribute("aria-label")} · ${description}`;
       }
     };
-    const move = direction => list.scrollBy({
-      left: direction * Math.max(1, list.clientWidth * 0.85),
+    const move = direction => list.scrollTo({
+      left: Math.max(0, Math.min(scrollLimit(), list.scrollLeft + direction * Math.max(1, list.clientWidth * 0.85))),
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
     });
     const goBack = () => move(-1);

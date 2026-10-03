@@ -3154,7 +3154,7 @@ function layoutNotesSummaryHtml(layout) {
   const canShowNotes = !isReadOnlyStateScope() || layout?.publishNotes === true;
   const description = notes ? `<div class="layout-notes-content note-content">${renderNoteContent(notes, layout?.notesHtml)}</div>` : "";
   const notesSection = privateNotes && canShowNotes ? `<section class="trip-notes-summary"><header><strong>${escapeHtml(localText("Notes", "Заметки"))}</strong>${!isReadOnlyStateScope() ? `<small>${escapeHtml(layout?.publishNotes ? localText("Visible in publication", "Видны в публикации") : localText("Not published", "Не публикуются"))}</small>` : ""}</header><div class="note-content">${renderNoteContent(privateNotes, layout?.privateNotesHtml)}</div></section>` : "";
-  return description + notesSection;
+  return { description, notesSection };
 }
 
 function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
@@ -3201,8 +3201,12 @@ function renderLayoutPhotoSummary(visible = getCurrentView() === "packing") {
   navigation.querySelector("[data-trip-next]")?.addEventListener("click", () => selectTrip(tripIndex + 1));
   intro.dataset.hasTrips = String(Boolean(trips.length));
   intro.hidden = !visible || !trips.length;
-  description.innerHTML = visible ? layoutNotesSummaryHtml(trip) : "";
+  const story = layoutNotesSummaryHtml(trip);
+  description.innerHTML = visible ? story.description : "";
   description.hidden = !description.childElementCount;
+  const privateNotes = document.querySelector("#layoutPrivateNotesSummary");
+  privateNotes.innerHTML = visible ? story.notesSection : "";
+  privateNotes.hidden = !privateNotes.childElementCount;
   if (!layoutPhotoSummary) layoutPhotoSummary = createLayoutPhotoSummary({
     host,
     canChoose: isAdminSession,

@@ -53,7 +53,8 @@ export function applyTripPresentation(host, value) {
     photos: host.hidden || host.dataset.photoView === "hidden" ? null : host.querySelector(".layout-summary-photos"),
     videos: host.hidden ? null : host.querySelector(".layout-summary-videos"),
     maps: host.hidden ? null : host.querySelector(".layout-summary-map"),
-    description: content.querySelector("#layoutDescriptionSummary:not([hidden])")
+    description: content.querySelector("#layoutDescriptionSummary:not([hidden])"),
+    notes: content.querySelector("#layoutPrivateNotesSummary:not([hidden])")
   };
   const arrangements = {
     "photos-top": [["photos"], ["videos", "maps"], ["description"]],
@@ -62,8 +63,8 @@ export function applyTripPresentation(host, value) {
     "story-left": [["description", "photos"], ["maps", "videos"]]
   };
   let order = 0;
-  const rows = (arrangements[value] || []).map(row => row.filter(key => parts[key])).filter(row => row.length);
+  const rows = [...(arrangements[value] || []), ["notes"]].map(row => row.filter(key => parts[key])).filter(row => row.length);
   for (const row of rows) for (const key of row) parts[key].style.setProperty("--trip-part-order", String(order++));
-  if (value === "story-left") ["description", "maps", "photos", "videos"].forEach((key,index) => parts[key]?.style.setProperty("--trip-part-order", String(index)));
+  if (value === "story-left") ["description", "maps", "photos", "videos", "notes"].forEach((key,index) => parts[key]?.style.setProperty("--trip-part-order", String(index)));
   content.style.setProperty("--trip-grid-areas", rows.map(row => `"${row.length === 1 ? `${row[0]} ${row[0]}` : row.join(" ")}"`).join(" ") || "none");
 }

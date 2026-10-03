@@ -3132,7 +3132,7 @@ async function init() {
   applyPackingVisualStyle();
   applyStaticTranslations();
   setupModalScrollLock();
-  setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
+  setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog, refs.layoutEditDialog]);
   setupTouchActionButtonFeedback();
   bindExplicitViewportScrollIntent({
     documentRef: document,
