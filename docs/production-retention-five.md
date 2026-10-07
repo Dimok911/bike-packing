@@ -1,6 +1,6 @@
 # Bike Packing Production: five-release retention
 
-Status (2026-10-07): applicable; dry-run and retained-release recovery drill complete. **No hosting files deleted, no automatic cleanup enabled.** This is a separate operational plan, not an application release. Scope: disk space on the static hosting `vniipo-help.ru`, below `/www/vniipo-help.ru/`; not VPS RAM.
+Status (2026-10-07): initial cleanup completed. **1,604 obsolete application files (540.6 MB) removed; five successful releases and protected data verified.** See [the completion report](production-retention-cleanup-20261007.md). The dry-run details below are preserved as the original plan. No unattended cleanup is enabled.
 
 ## Policy
 
@@ -29,7 +29,7 @@ At 2026-10-07 18:14 UTC, 27 distinct required source files were downloaded from 
 
 Evidence and restored files are retained locally under `ftp-upload/retention-20261007/` (ignored, not uploaded): `plan.json`, `release-evidence.json`, `recovery-verification.json`, `download/`, `restore-drill/v1639` through `v1643`. Do not remove these evidence files until the cleanup and backup policy are settled.
 
-## Remaining work before actual hosting cleanup
+## Original checklist (see completion report for executed scope)
 
 - [x] Isolate Production and protect current files, photos and release dependencies.
 - [x] Identify five successful publications; verify complete file recovery.

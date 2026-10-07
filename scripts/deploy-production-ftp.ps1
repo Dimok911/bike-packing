@@ -20,6 +20,10 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
 }
 $ArtifactRoot = (Resolve-Path $ArtifactRoot).Path.TrimEnd("\")
 $ConfigPath = (Resolve-Path $ConfigPath).Path
+$retentionLockPath = Join-Path (Split-Path -Parent $ConfigPath) "production-retention.lock.json"
+if (Test-Path -LiteralPath $retentionLockPath) {
+  throw "Production retention cleanup is active; publication must wait until its lock is released."
+}
 $curlPath = "C:\Windows\System32\curl.exe"
 $productionRemotePath = "www/vniipo-help.ru/bike-packing"
 $productionParentPath = "www/vniipo-help.ru"

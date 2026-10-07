@@ -99,3 +99,22 @@ Write-Output "partial, complete and unchanged mismatch checks passed"
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("publication stops at an active cleanup lock before reading credentials or contacting hosting", { skip: process.platform !== "win32" }, () => {
+  const directory = mkdtempSync(join(tmpdir(), "bike-retention-lock-"));
+  try {
+    const configPath = join(directory, "sftp.json");
+    // Deliberately invalid credentials: the lock must reject first.
+    writeFileSync(configPath, "{}");
+    writeFileSync(join(directory, "production-retention.lock.json"), "{}");
+    const scriptPath = new URL("../../scripts/deploy-production-ftp.ps1", import.meta.url);
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-File", decodeURIComponent(scriptPath.pathname).replace(/^\/(?=[A-Za-z]:)/, ""), "-ArtifactRoot", directory, "-ConfigPath", configPath], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout + result.stderr, /Production retention cleanup is active/);
+    assert.doesNotMatch(result.stdout + result.stderr, /Missing required FTP setting/);
+  } finally {
+    assert.ok(directory.startsWith(join(tmpdir(), "bike-retention-lock-")));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

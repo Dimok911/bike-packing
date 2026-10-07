@@ -43,3 +43,29 @@ test('recovery verification rejects changed or corrupted bytes', () => {
   const expected=sha256('correct'); verifyBytes(Buffer.from('correct'),expected);
   assert.throws(()=>verifyBytes(Buffer.from('corrupt'),expected));
 });
+
+import { assertDeletionFile, assertUnchangedRoot } from '../../scripts/production-retention-guards.mjs';
+test('delete guard rejects live, photos, staging, foreign roots and unreviewed names', () => {
+  const accepted = {path:'bike-packing-backup-before-v4-old/app.js',bytes:2,sha256:sha256('ok')};
+  const allowed=new Map([[accepted.path,2]]);assert.equal(assertDeletionFile(accepted,allowed),accepted.path);
+  for(const p of ['bike-packing/app.js','shared-ui/app.js','_releases/vdoc/app.js','bike-packing-stage-v4-old/app.js','bike-packing-backup-v4-experiment/app.js','bike-packing-backup-before-v4-old/photos/a.jpg','bike-packing-backup-before-v4-old/../app.js','bike-packing-backup-before-v4-old/app.js\r\nDELE live'])assert.throws(()=>assertDeletionFile({...accepted,path:p},allowed));
+  assert.throws(()=>assertDeletionFile({...accepted,bytes:3},allowed));
+  assert.throws(()=>assertDeletionFile({...accepted,sha256:''},allowed));
+});
+test('new files or symlinks in an old directory stop cleanup', () => {
+  const root='bike-packing-backup-v4-old';const files=[{path:root+'/app.js',bytes:2}];
+  assertUnchangedRoot(files,files,[],root);
+  assert.throws(()=>assertUnchangedRoot(files,[...files,{path:root+'/photo.jpg',bytes:20}],[],root));
+  assert.throws(()=>assertUnchangedRoot(files,files,[root+'/assets -> ../live/assets'],root));
+  assert.throws(()=>assertUnchangedRoot(files,[],[],root));
+});
+
+import { resumeCleanup } from '../../scripts/production-retention-guards.mjs';
+test('resume recovers an unjournaled partial batch without deleting extra files', () => {
+  const files=['app.js','styles.css','index.html'].map(p=>({path:'bike-packing-backup-v1-old/'+p,bytes:1,sha256:sha256(p)}));
+  const state=resumeCleanup(files,[files[2]],[],{deleted:[files[0]]});
+  assert.deepEqual(state.missing,files.slice(0,2));assert.deepEqual(state.remaining,[files[2]]);
+  assert.throws(()=>resumeCleanup(files,[files[2],{path:'bike-packing-backup-v1-old/photo.jpg',bytes:9}],[],{deleted:[files[0]]}));
+  assert.throws(()=>resumeCleanup(files,files,[],{deleted:[files[0]]}));
+  assert.throws(()=>resumeCleanup(files,[],[],{deleted:[{...files[0],sha256:sha256('different')}]}));
+});
