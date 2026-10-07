@@ -22,7 +22,7 @@ export function comparableValueForMerge(type, value) {
   });
   if (type === "item") stripItemPlacementFields(comparable);
   if (type === "container") stripContainerArrangementFields(comparable);
-  if ((type === "item" || type === "container") && Array.isArray(comparable.photos)) {
+  if (Array.isArray(comparable.photos)) {
     comparable.photos = comparable.photos.map(comparablePhotoForMerge).filter(Boolean);
   }
   return comparable;
@@ -160,6 +160,8 @@ function comparablePhotoForMerge(photo) {
   if (!id) return null;
   return {
     id,
+    ...(typeof photo.tripId === "string" ? { tripId: photo.tripId } : {}),
+    ...(typeof photo.caption === "string" ? { caption: photo.caption } : {}),
     width: Number.isFinite(Number(photo.width)) ? Number(photo.width) : 0,
     height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0
   };

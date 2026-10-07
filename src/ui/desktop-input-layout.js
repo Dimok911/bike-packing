@@ -25,6 +25,7 @@ export const DEFAULT_DESKTOP_INPUT_LAYOUT_SELECTOR = [
   "#rootContainerNote",
   "#layoutEditName",
   "#layoutEditNotes",
+  "#layoutTripNotes",
   "#layoutName",
   "#addToContainerSearch",
   "#newSubcontainerName",

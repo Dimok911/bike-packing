@@ -253,3 +253,28 @@ test("CRITICAL demand-driven photos: bulk caching requires an explicit offline-l
   assert.match(gallery, /prefetchAdjacent:\s*false/);
   assert.match(gallery, /entryIndex === initialIndex \? \(directFullSrc \|\| previewSrc\) : ""/);
 });
+
+
+test("a preview source changed by upload recovers from the stale cache read without page reload", async () => {
+  const image=fakeImage();image.dataset.photoSourceSignature='';image.dataset.photoRemoteThumbSrc='';
+  const gate=deferred();let reads=0;
+  const loader=createDemandDrivenPhotoPreviewLoader({
+    photoObjectUrls:{get:()=>'',sources:(key,signature)=>({preview:signature==='server-v1'?'blob:ready':''})},
+    getCachedPhotoForPreview:async()=>{reads++;await gate.promise;return null;},
+    intersectionObserverFactory:null
+  });
+  const pending=loader.load(image);
+  await waitFor(()=>reads===1);
+  image.dataset.photoSourceSignature='server-v1';image.dataset.photoRemoteThumbSrc='https://example.test/thumb';
+  gate.resolve();
+  assert.equal(await pending,true);
+  assert.equal(image.src,'blob:ready');assert.equal(image.dataset.photoLoadState,'ready');
+  assert.equal(image.status.hidden,true);
+});
+
+test("observing a failed image with a src schedules recovery instead of marking it ready", async()=>{
+  const image=fakeImage();image.src='blob:revoked';image.complete=true;image.naturalWidth=0;image.dataset.photoLoadState='error';let observed=0;
+  const loader=createDemandDrivenPhotoPreviewLoader({intersectionObserverFactory:()=>({observe(){observed++;},unobserve(){},disconnect(){}})});
+  await loader.observe({querySelectorAll:()=>[image]});
+  assert.equal(observed,1);assert.equal(image.dataset.photoLoadState,'error');
+});

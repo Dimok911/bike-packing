@@ -1,3 +1,4 @@
+import { layoutTripCountLabel } from "../state/layout-trips.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 import { managedTemplateOptionLabel } from "../public/template-publication.js";
 
@@ -82,7 +83,10 @@ export function layoutCreateCopySourceOptions({
     ? Object.values(layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId)
     : Object.values(layouts || {}).filter((layout) => layout?.[guestDemoCopyFlag]);
   if (templates) return adminPublicLayoutOptions;
-  const personalOptions = personalLayouts.map((layout) => [layout.id, layout.name, "personal"]);
+  const personalOptions = personalLayouts.map(layout => {
+    const count = layoutTripCountLabel(layout, currentDocumentLanguage());
+    return [layout.id, count ? `${layout.name} (${count})` : layout.name, "personal"];
+  });
   return includeTemplates ? [...adminPublicLayoutOptions, ...personalOptions] : personalOptions;
 }
 

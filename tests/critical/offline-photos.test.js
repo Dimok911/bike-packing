@@ -1641,6 +1641,7 @@ test("CRITICAL offline-photos: photo upload flow syncs only after server respons
     },
     apiUploadFormData: async (path, options) => {
       assert.equal(path, "/bike-packing/lists/list-1/photos");
+      assert.equal(options.connectionFailureMode, "background");
       assert.equal(photo.status, "uploading");
       options.onUploadProgress(99);
       assert.equal(photo.uploadProgress, 99);
@@ -3434,4 +3435,90 @@ test("CRITICAL offline layouts: removing one or all selections requires confirma
   assert.match(appSource, /!input\.checked && previous\.has\(layoutId\)[\s\S]*?await confirmRemoval\(\[layoutId\]\)/);
   assert.match(appSource, /#offlineClearLayouts[\s\S]*?await confirmRemoval\(selected, \{ clearAll: true \}\)/);
   assert.match(appSource, /connectionStatusController\.currentProblem\(\)[\s\S]*?вернуть удалённые фотографии получится только после выхода в интернет/);
+});
+
+
+test("photo preparation waits for storage commit and rejects a late IndexedDB abort", async () => {
+  const {photoDbStore}=await import('../../src/sync/photos.js');
+  for(const abort of [false,true]) {
+    const request={result:'stored'};let transaction;let settled=false;let closed=false;
+    const db={close(){closed=true;},transaction(){transaction={objectStore:()=>({put:()=>request})};return transaction;}};
+    const write=photoDbStore('readwrite',store=>store.put({id:'photo'}),{openDb:async()=>db});
+    const outcome=write.then(value=>{settled=true;return {value};},error=>{settled=true;return {error};});
+    await Promise.resolve();request.onsuccess?.();await Promise.resolve();
+    assert.equal(settled,false,'a successful request is not a committed file');
+    if(abort){transaction.error=new Error('storage-aborted');transaction.onabort();}
+    else transaction.oncomplete();
+    const result=await outcome;
+    if(abort)assert.match(result.error.message,/storage-aborted/);else assert.equal(result.value,'stored');
+    assert.equal(closed,true);
+  }
+});
+
+
+test("Bike Packing adapters use the pinned shared uploader without duplicating its mechanisms", async () => {
+  const engine=await import('../../src/vendor/vniipo-photo-upload-engine.js');
+  const queue=await import('../../src/sync/photo-upload-queue.js');
+  const lock=await import('../../src/sync/photo-upload-lock.js');
+  const preparation=await import('../../src/sync/photos.js');
+  const metadata=await import('../../src/state/item-photos.js');
+  const progress=await import('../../src/sync/photo-upload-flow.js');
+  const manifest=JSON.parse(readFileSync(new URL('../../src/vendor/vniipo-photo-upload-engine-manifest.json',import.meta.url),'utf8'));
+  const bytes=readFileSync(new URL('../../src/vendor/vniipo-photo-upload-engine.js',import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),manifest.sha256);
+  assert.equal(engine.version,manifest.version);
+  assert.equal(engine.contractVersion,manifest.contractVersion);
+  for(const name of ['uploadPhotoBatchQueue','uploadPhotoWithOneRetry'])assert.equal(queue[name],engine[name]);
+  assert.equal(lock.acquirePhotoUploadSlot,engine.acquirePhotoUploadSlot);
+  for(const name of ['materializeSelectedPhotoFile','resizeImageFile','paintImageOnJpegCanvas','clonePhotoUploadBlob'])assert.equal(preparation[name],engine[name]);
+  for(const name of ['markPhotoUploadBatch','photoUploadBatchSummary','syncPhotoRecordFromUpload'])assert.equal(metadata[name],engine[name]);
+  for(const name of ['markPhotoUploadStarted','setPhotoUploadProgress','findEntityPhotoForUpload'])assert.equal(progress[name],engine[name]);
+});
+
+import { detachPhotoCacheRecordBlobs } from "../../src/sync/photo-cache-write.js";
+test('photo cache adapter detaches bytes with GIF type and record metadata intact',async()=>{
+  const blob=new Blob(['GIF89a original animation'],{type:'image/gif'});
+  const record={id:'scoped-id',blob,thumbBlob:blob,fileName:'photo.gif',namespace:'offline-remote',fullBlobVerified:true};
+  const next=await detachPhotoCacheRecordBlobs(record);
+  assert.notEqual(next.blob,blob);assert.equal(next.blob,next.thumbBlob);
+  assert.equal(await next.blob.text(),await blob.text());assert.equal(next.blob.type,'image/gif');
+  assert.equal(next.fileName,record.fileName);assert.equal(next.namespace,record.namespace);
+  assert.equal(next.fullBlobVerified,true);assert.equal(record.blob,blob);
+});
+
+test('photo cache adapter finishes both reads before allowing a database write',async()=>{
+  let finishFull,finishThumb;const events=[];
+  const full={size:1,type:'image/jpeg',arrayBuffer:()=>{events.push('full');return new Promise(resolve=>finishFull=resolve);}};
+  const thumb={size:1,type:'image/jpeg',arrayBuffer:()=>{events.push('thumb');return new Promise(resolve=>finishThumb=resolve);}};
+  const operation=detachPhotoCacheRecordBlobs({id:'a',blob:full,thumbBlob:thumb}).then(()=>events.push('write'));
+  assert.deepEqual(events,['full']);finishFull(new Uint8Array([1]).buffer);await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(events,['full','thumb']);finishThumb(new Uint8Array([2]).buffer);await operation;
+  assert.deepEqual(events,['full','thumb','write']);
+});
+
+test('photo cache adapter rejects unreadable/truncated cache without starting a write',async()=>{
+  let writes=0;
+  for(const blob of [
+    {size:3,arrayBuffer:async()=>new Uint8Array([1]).buffer},
+    {size:1,arrayBuffer:async()=>{throw new DOMException('Gone','NotFoundError');}},
+    {size:0,arrayBuffer:async()=>new ArrayBuffer(0)}
+  ]) await assert.rejects(detachPhotoCacheRecordBlobs({blob}).then(()=>writes++));
+  assert.equal(writes,0);
+});
+
+
+test("unreadable cached bytes produce a photo error without starting a network upload", async()=>{
+  const photo={id:'broken',localId:'broken',status:'pending'};let sent=0;
+  const result=await uploadPhotoToPath({path:'/bike-packing/lists/list/photos',listId:'list',entity:{id:'layout',photos:[photo]},entityType:'layout',photo,
+    apiFetch:async()=>({}),apiUploadFormData:async()=>{sent++;},getCachedPhoto:async()=>({blob:{size:100,type:'image/jpeg',arrayBuffer:async()=>{throw new DOMException('Missing','NotFoundError');}}})});
+  assert.equal(result,true);assert.equal(sent,0);assert.equal(photo.status,'error');
+  assert.match(photo.error,/прочитать сохранённый файл/);assert.equal(photo.uploadProgress,undefined);
+});
+
+
+test("remote photo download failures are not mislabeled as unreadable local files",async()=>{
+  const photo={id:'remote',url:'https://example.test/photo',status:'pending'};const failure=new Error('connection reset');
+  await assert.rejects(uploadPhotoToPath({path:'/bike-packing/lists/list/photos',listId:'list',entity:{id:'layout',photos:[photo]},entityType:'layout',photo,
+    apiFetch:async()=>({}),apiUploadFormData:async()=>({}),getCachedPhoto:async()=>null,fetchImpl:async()=>{throw failure;}}),error=>error===failure);
+  assert.notEqual(photo.status,'error');
 });

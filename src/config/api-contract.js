@@ -1,6 +1,7 @@
 export const REQUIRED_ADMIN_API_VERSION = "2026-08-30.split-services-bridge-v1";
 
 export const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "tripNotesPublicationVisibility",
   "slidingSessionRenewal",
   "dictionaryPhysicalEntityRows",
   "dictionaryCustomEntityRows",

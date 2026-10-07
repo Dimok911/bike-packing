@@ -1,0 +1,27 @@
+# Production v1616: trips attached to a common layout
+
+A layout now contains multiple trip stories with names, rich descriptions, photos/captions/order and video links. The gear arrangement remains common to all trips. Edit layout owns trip creation, selection, renaming and confirmed removal; cancelling the layout form discards all trip changes. Existing layout descriptions/media appear as the first trip without a write on load and are materialized only when edited.
+
+The top card shows one trip at a time, with previous/next buttons and a trip selector. Fullscreen galleries stay within the selected trip. The card retains default expansion, browser/user/layout collapse preferences, compact photo variant В for regular users, administrator display options and consistent section spacing. Layout selectors and personal copy-source selectors show correctly pluralized trip counts; zero counts are omitted. Copies retain stories and photos. History renders trip names and formatted description changes and reports photo/video edits.
+
+Data contract: layout.trips contains metadata (id, name, notes, notesHtml, videoUrl); photos remain in the existing layout.photos asset pool and carry tripId. Photo normalization, synchronization and conflict comparison preserve the association. Existing upload, offline cache and backup paths keep discovering the same top-level pool. Draft switching retains unsaved local assets across trips, while final cancellation cleans only new unretained assets. Concurrent uploads keep live transport metadata on save. The existing dedicated API accepts these fields without a backend deployment or service interruption. No shared module changed.
+
+Validation: 895 critical checks, source syntax and production build passed. Ten targeted Chromium/mobile WebKit runs passed for photos, rich notes/link editing, trips, shared pages and combined collapse. Five extended runs passed for shared-page trip switching, copying with trip counts and asset retention across drafts/reload/discard. The local upload extension is intentionally skipped on Windows WebKit because that build cannot store Blob objects in IndexedDB; Chromium covers real local imports, and mobile WebKit covers already-synced images. Desktop and mobile trip-card screenshots were inspected.
+
+Publication uses only app.js, index.html, styles.css, sw.js and release-contract.json, selected by live SHA-256 comparison. No photographs are uploaded, moved or deleted. GitHub Actions is omitted under the owner's explicit instruction. Evidence lives in ftp-upload/v1616/{critical-final.log,browser-final.log,trips-extended.log,production-comparison.json,publication.log}.
+
+## Publication
+
+Published 2026-09-27 from 53067785f157fdf3a1abf4980dc1b521d88d5e6c (PR https://github.com/Dimok911/bike-packing/pull/34).
+
+Rollback: /www/vniipo-help.ru/bike-packing-backup-before-v1616-20260927T095105Z/. All five files passed staged FTPS and public HTTPS SHA-256 checks; zero photographs transferred. Dedicated API remains d42beebe9c65d5b71c7f21b5ba36da47322746ac.
+
+Live verification confirmed v1616, the layout selector suffix “1 поездка”, a first trip with the existing description and all three photos loaded, default expansion, and the trip editor with Add trip and the correct description label. Save was disabled on opening; the form was closed without changing personal content. Screenshot: primary repository test-results/v1616-live-trips.png.
+
+Published hashes:
+
+- app.js: 6702C3D7DC814F54F7A4CF10A4D38251BB4DCB0CB1552F9A215BD845F7E453E3
+- index.html: 0693354DDA52D87BBF18C9A66D71785128CF842952385935302F3504DA7DBF06
+- styles.css: 9A28042F70A92ED9A71EB28B65857060F60A98EEF86F940A8063E660D95D39E7
+- sw.js: 25E12C83AA2DDAF23EC068CEFB611EC1E85D05C1C00CF1E701B716EF1AA04507
+- release-contract.json: A3656D38580F04D04ABED858B81BF9C8D8FB34C098E26F838617085A3DB086D5

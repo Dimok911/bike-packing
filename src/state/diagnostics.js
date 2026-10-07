@@ -1,4 +1,7 @@
+import { hasLayoutMedia } from "./layout-media.js";
+
 export function isMeaningfulPackingState(targetState) {
+  if (Object.values(targetState?.layouts || {}).some(hasLayoutMedia)) return true;
   return Boolean(
     targetState &&
     Object.keys(targetState.items || {}).length &&
@@ -19,6 +22,7 @@ export function isPackingStateShape(targetState) {
 export function isSuspiciousEmptyPackingState(targetState) {
   return Boolean(
     targetState &&
+    !Object.values(targetState.layouts || {}).some(hasLayoutMedia) &&
     !Object.keys(targetState.items || {}).length &&
     !Object.keys(targetState.containers || {}).length
   );

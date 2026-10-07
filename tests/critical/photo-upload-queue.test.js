@@ -170,3 +170,46 @@ test("CRITICAL photo upload: progress stays in the gallery instead of a fixed he
   assert.match(stylesSource, /\.photo-gallery-dots\s*\{[^}]*z-index:\s*10;/s);
   assert.doesNotMatch(stylesSource, /\.photo-upload-progress\s*\{[^}]*position:\s*fixed;/s);
 });
+
+test("recent completed photos retain badges across trip, item and bag editor save snapshots", async () => {
+  const { createPhotoDraftFromRecord } = await import("../../src/state/item-photos.js");
+  const { applyLayoutTrips, layoutTripsSnapshot } = await import("../../src/state/layout-trips.js");
+  const { renderPhotoGalleryHtml } = await import("../../src/ui/photo-gallery.js");
+  for (const kind of ["layout", "item", "container"]) {
+    const oldPhoto = { id: "old", status: "synced", url: "/old" };
+    const photos = Array.from({ length: 10 }, (_, i) => ({
+      id: String(i), localId: String(i), status: i < 5 ? "synced" : "pending",
+      ...(i < 5 ? { url: "/photo-" + i } : {})
+    }));
+    // A completed first picker batch must remain visible while the next uploads.
+    markPhotoUploadBatch(photos.slice(0, 5), { batchId: "first" });
+    markPhotoUploadBatch(photos.slice(5), { batchId: "second" });
+    const record = { id: kind, photos: [oldPhoto], trips: [{ id: "trip", name: "Trip" }] };
+    if (kind === "layout") {
+      applyLayoutTrips(record, [{ id: "trip", name: "Trip", photos: [oldPhoto, ...photos] }]);
+    } else {
+      const draft = createPhotoDraftFromRecord(record);
+      draft.photos.push(...photos);
+      record.photos = [...draft.photos];
+    }
+    const html = kind === "layout"
+      ? await renderPhotoGalleryHtml(layoutTripsSnapshot(record)[0].photos)
+      : renderItemPhotoHtml(record);
+    assert.equal((html.match(/class="photo-upload-complete"/g) || []).length, 5, kind);
+    assert.equal((html.match(/class="photo-upload-progress"/g) || []).length, 5, kind);
+    // Completing later uploads must not change badges on already uploaded photos.
+    for (const photo of photos.slice(5)) {
+      Object.assign(photo, { status: "synced", url: "/photo-" + photo.id });
+      syncPhotoRecordFromUpload(record, photo);
+    }
+    // Reopen and edit: snapshots must keep ephemeral status without leaking it into sync.
+    const draft = createPhotoDraftFromRecord(record);
+    record.photos = [...draft.photos];
+    const complete = kind === "layout"
+      ? await renderPhotoGalleryHtml(layoutTripsSnapshot(record)[0].photos)
+      : renderItemPhotoHtml(record);
+    assert.equal((complete.match(/class="photo-upload-complete"/g) || []).length, 10, kind);
+    assert.doesNotMatch(JSON.stringify(record), /uploadBatch|uploadProgress/);
+    assert.equal(record.photos[0].uploadBatchId, undefined);
+  }
+});

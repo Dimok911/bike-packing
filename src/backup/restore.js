@@ -31,7 +31,11 @@ export function backupLayoutMatchesCurrent(layout, existing) {
   const restored = clonePlain(layout);
   if (existing.locked && !restored.locked) restored.locked = true;
   const existingNotes = normalizeLayoutNotes(existing.notes);
-  if (existing.locked && existingNotes && !normalizeLayoutNotes(restored.notes)) restored.notes = existingNotes;
+  if (existing.locked && existingNotes && !normalizeLayoutNotes(restored.notes)) {
+    restored.notes = existingNotes;
+    if (existing.notesHtml) restored.notesHtml = existing.notesHtml;
+    else delete restored.notesHtml;
+  }
   return JSON.stringify(comparableBackupLayout(restored)) === JSON.stringify(comparableBackupLayout(existing));
 }
 
@@ -100,6 +104,7 @@ export function summarizeBackupLayouts({
   };
   [...itemIds].forEach((id) => collectNewPhotoIds(backupState.items?.[id], currentState.items?.[id]));
   [...containerIds].forEach((id) => collectNewPhotoIds(backupState.containers?.[id], currentState.containers?.[id]));
+  rows.forEach(({ layout, existing }) => collectNewPhotoIds(layout, restoreMode === "copy" ? null : existing));
   const unchangedLayouts = rows.filter((row) => row.matchesCurrent);
   const newItems = [...itemIds].filter((id) => !currentState.items?.[id]);
   const newContainers = [...containerIds].filter((id) => !currentState.containers?.[id]);
@@ -186,6 +191,8 @@ export function restoreSelectedBackupLayoutsToState({
       if (existingWasLocked && !restoredLayout.locked) restoredLayout.locked = true;
       if (existingWasLocked && existingNotes && !normalizeLayoutNotes(restoredLayout.notes)) {
         restoredLayout.notes = existingNotes;
+        if (existing.notesHtml) restoredLayout.notesHtml = existing.notesHtml;
+        else delete restoredLayout.notesHtml;
       }
       if (!createCopy && existing?.id) delete targetState.layouts[existing.id];
       getLayoutContainerIdSet(sourceState, layout).forEach((containerId) => {
@@ -199,6 +206,9 @@ export function restoreSelectedBackupLayoutsToState({
         if (result.created) markEdited(targetState.items[itemId], changedAt);
       });
       targetState.layouts[targetLayoutId] = restoredLayout;
+      normalizePhotos(restoredLayout).forEach((photo) => {
+        if (photo.id) importedPhotoIds.add(photo.id);
+      });
       targetState.activeLayoutId = targetLayoutId;
       restoredLayoutIds.push(targetLayoutId);
     });

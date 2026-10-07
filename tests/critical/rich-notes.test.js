@@ -28,3 +28,17 @@ test('format-only changes participate in content identity and history for items 
     assert.ok(conflictDiffFieldDefinitions({type}).some(([key])=>key==='noteHtml'));
   }
 });
+
+
+import { applyLayoutNotes } from '../../src/state/layout-notes.js';
+import { compactLayoutForEntitySync } from '../../src/sync/serialize.js';
+import { backupLayoutMatchesCurrent } from '../../src/backup/restore.js';
+test('layout formatting persists, participates in changes and is cleared with the note',()=>{
+  const layout={id:'a', notes:'Text'};
+  assert.equal(applyLayoutNotes(layout,'Text','<strong>Text</strong>'),true);
+  assert.equal(compactLayoutForEntitySync(layout).notesHtml,'<strong>Text</strong>');
+  assert.equal(applyLayoutNotes(layout,'Text','<strong>Text</strong>'),false);
+  assert.equal(backupLayoutMatchesCurrent({id:'a'}, {...layout,locked:true}),true);
+  assert.equal(applyLayoutNotes(layout,''),true);
+  assert.equal(layout.notes,undefined);assert.equal(layout.notesHtml,undefined);
+});
