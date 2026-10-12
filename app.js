@@ -3418,17 +3418,6 @@ async function init() {
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
   refs.localUndoBtn?.addEventListener("click", undoLastLocalAction);
-  refs.findDuplicatesBtn?.addEventListener("click", () => {
-    appTailRuntime.catalogDuplicatesOnly = !appTailRuntime.catalogDuplicatesOnly;
-    if (appTailRuntime.catalogDuplicatesOnly) {
-      resetContentFilterControls({ refs, runtime: appTailRuntime, clearTimeout: window.clearTimeout });
-      appTailRuntime.itemUsageFilter = "all";
-      appTailRuntime.rootContainerUsageFilter = "all";
-      if (!["items", "bags"].includes(getCurrentView())) switchView("items");
-    }
-    closeTopMenu();
-    render();
-  });
   refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
   refs.topMenu.addEventListener("click", (event) => {
     if (event.target.closest("button")) closeTopMenu();
@@ -10752,12 +10741,6 @@ function switchView(view) {
 }
 
 function render() {
-  if (refs.findDuplicatesBtn) {
-    refs.findDuplicatesBtn.setAttribute("aria-pressed", String(Boolean(appTailRuntime.catalogDuplicatesOnly)));
-    refs.findDuplicatesBtn.textContent = appTailRuntime.catalogDuplicatesOnly
-      ? localText("Show all items and bags", "Показать все вещи и сумки")
-      : localText("Find duplicates", "Поиск дубликатов");
-  }
   ensureGuestPublicScope();
   capturePackingScroll();
   document.body.classList.toggle("shared-layout-view", isSharedLayoutView());

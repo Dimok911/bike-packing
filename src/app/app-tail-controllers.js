@@ -3131,7 +3131,7 @@ function getSummaryWeight(view, items, isFiltered) {
 }
 
 function getItemsViewSummaryItems() {
-  return filterCatalogDuplicates(getItemsForActiveCatalog(), runtime.catalogDuplicatesOnly)
+  return filterCatalogDuplicates(getItemsForActiveCatalog(), runtime.itemUsageFilter === "duplicates")
     .filter((item) => matchesItemFieldsFilter(item, { includeContainerPath: true }));
 }
 
@@ -4803,10 +4803,11 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
 
 function renderDuplicateFilterNotice(root) {
   renderCatalogDuplicatesNotice(root, {
-    enabled: runtime.catalogDuplicatesOnly,
+    enabled: (root === refs.itemsView ? runtime.itemUsageFilter : runtime.rootContainerUsageFilter) === "duplicates",
     language: uiLanguage,
     onClear: () => {
-      runtime.catalogDuplicatesOnly = false;
+      if (root === refs.itemsView) runtime.itemUsageFilter = "all";
+      else runtime.rootContainerUsageFilter = "all";
       render();
     }
   });
@@ -5043,7 +5044,6 @@ function renderRootContainersEditor() {
   runtime.selectedCatalogRootIds = normalizeCatalogSelection(runtime.selectedCatalogRootIds, roots.map((container) => container.id));
   if (runtime.selectedCatalogRootAnchorId && !roots.some((container) => container.id === runtime.selectedCatalogRootAnchorId)) runtime.selectedCatalogRootAnchorId = "";
   const counts = rootContainerUsageCountsForCatalog(state, {
-    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
     isRootContainerInActiveCatalog,
@@ -9376,7 +9376,6 @@ function getActiveLayoutItems() {
 
 function getItemsForItemsView() {
   return itemsForItemsViewForState(getItemsForActiveCatalog(), {
-    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isFilterContextActive,
     isItemAwayFromHomeAndBike,
     isItemInActiveLayout,
@@ -9401,7 +9400,6 @@ function itemCreatedTime(item) {
 
 function getItemsUsageCounts() {
   return itemUsageCountsForCatalog(getItemsForActiveCatalog(), {
-    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isItemAwayFromHomeAndBike,
     isItemInActiveLayout,
     isItemWithoutWeight,
@@ -9527,7 +9525,6 @@ function getRootContainers() {
 
 function getRootContainersForSettings() {
   return rootContainersForSettingsForState(state, {
-    duplicatesOnly: runtime.catalogDuplicatesOnly,
     containerCreatedTime,
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,

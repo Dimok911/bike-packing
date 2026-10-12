@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { createGuestWorkspace, createItemInContainer, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
+import { createGuestWorkspace, createItemInContainer, createRootContainer, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
 
 test.beforeEach(async ({ page }) => prepareIsolatedRussianGuest(page));
 const selectView = (page, view) => page.locator(`.tab[data-view="${view}"]`).evaluate((tab) => tab.click());
 
-test("duplicate finder filters items and bags and has an explicit exit", async ({ page }) => {
+test("duplicate filters live in each catalog and stay independent", async ({ page }) => {
   const { container } = await createGuestWorkspace(page, { layoutName: "Проверка дубликатов", containerName: "Сумка А", itemName: "Насос" });
   await createItemInContainer(page, container, "Палатка");
+  await createRootContainer(page, "Рюкзак");
   await selectView(page, "items");
   await page.locator('[data-list-item-id]').filter({ hasText: "Насос" }).locator('[data-copy-item]').click();
   await page.locator('#confirmOkBtn').click();
@@ -14,15 +15,23 @@ test("duplicate finder filters items and bags and has an explicit exit", async (
   await selectView(page, "bags");
   await page.locator('[data-copy-root]').first().click();
   await page.locator('#confirmOkBtn').click();
-  await page.locator('#menuBtn').click();
-  await page.locator('#findDuplicatesBtn').click();
+  await expect(page.locator("#findDuplicatesBtn")).toHaveCount(0);
+  await expect(page.locator("#bagsView [data-copy-root]")).toHaveCount(3);
+  await page.locator("#rootContainerUsageFilter").selectOption("duplicates");
   await expect(page.locator('#bagsView [data-copy-root]')).toHaveCount(2);
   await expect(page.locator('#bagsView .catalog-duplicates-notice')).toBeVisible();
   await selectView(page, "items");
+  await expect(page.locator("#itemUsageFilter")).toHaveValue("all");
+  await expect(page.locator("#itemsView [data-list-item-id]")).toHaveCount(3);
+  await page.locator("#itemUsageFilter").selectOption("duplicates");
   await expect(page.locator('#itemsView [data-list-item-id]')).toHaveCount(2);
   await expect(page.locator('#itemsView')).not.toContainText("Палатка");
-  await page.locator('#itemsView [data-clear-duplicate-filter]').click();
+  await page.locator("#itemUsageFilter").selectOption("all");
   await expect(page.locator('#itemsView [data-list-item-id]')).toHaveCount(3);
+  await selectView(page, "bags");
+  await expect(page.locator("#rootContainerUsageFilter")).toHaveValue("duplicates");
+  await page.locator("#rootContainerUsageFilter").selectOption("all");
+  await expect(page.locator("#bagsView [data-copy-root]")).toHaveCount(3);
 });
 
 test("local undo restores an offline rename after a browser reload", async ({ page }) => {

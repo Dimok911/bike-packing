@@ -26,7 +26,7 @@ export function itemsForItemsView(items, {
   itemUsageFilter = "all",
   matchesItemsViewFilters = () => true
 } = {}) {
-  const filtered = filterCatalogDuplicates(items || [], duplicatesOnly).filter((item) => {
+  const filtered = filterCatalogDuplicates(items || [], duplicatesOnly || itemUsageFilter === "duplicates").filter((item) => {
     if (!isFilterContextActive() && !matchesItemsViewFilters(item)) return false;
     if (itemUsageFilter === "current") return isItemInActiveLayout(item);
     if (itemUsageFilter === "away") return isItemAwayFromHomeAndBike(item);
@@ -76,7 +76,7 @@ export function rootContainersForSettings(targetState, {
   const candidates = Object.values(targetState?.containers || {}).filter((container) =>
     isPrivateCatalogContainerRecord(container.id, container) && isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
   );
-  const roots = filterCatalogDuplicates(candidates, duplicatesOnly).filter((container) => {
+  const roots = filterCatalogDuplicates(candidates, duplicatesOnly || rootContainerUsageFilter === "duplicates").filter((container) => {
     if (!isPrivateCatalogContainerRecord(container.id, container)) return false;
     if (!isRootContainerForEditor(container)) return false;
     if (!isRootContainerInActiveCatalog(container)) return false;

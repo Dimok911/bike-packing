@@ -63,6 +63,7 @@ export function renderRootContainersEditorHtml({
               <option value="all"${rootContainerUsageFilter === "all" ? " selected" : ""}>${tr(t, "rootContainers.usage.all", `Все сумки и места (${counts.all})`, { count: counts.all })}</option>
               <option value="current"${rootContainerUsageFilter === "current" ? " selected" : ""}>${tr(t, "rootContainers.usage.current", `В текущей укладке (${counts.current})`, { count: counts.current })}</option>
               <option value="unused"${rootContainerUsageFilter === "unused" ? " selected" : ""}>${tr(t, "rootContainers.usage.unused", `Вне текущей укладки (${counts.unused})`, { count: counts.unused })}</option>
+              <option value="duplicates"${rootContainerUsageFilter === "duplicates" ? " selected" : ""}>${tr(t, "catalog.duplicates", "Дубликаты")}</option>
             </select>
           </label>
           <button id="rootContainerSortBtn" class="ghost item-sort-button ${rootContainerSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">

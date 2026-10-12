@@ -28,7 +28,6 @@ export function createRefs(root = document) {
     adminReportsBtn: root.querySelector("#adminReportsBtn"),
     menuBtn: root.querySelector("#menuBtn"),
     topMenu: root.querySelector("#topMenu"),
-    findDuplicatesBtn: root.querySelector("#findDuplicatesBtn"),
     localUndoBtn: root.querySelector("#localUndoBtn"),
     historyBtn: root.querySelector("#historyBtn"),
     backupBtn: root.querySelector("#backupBtn"),
