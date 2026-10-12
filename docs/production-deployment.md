@@ -3,9 +3,16 @@
 Frontend production is published through two independent channels. A release is
 complete only when both channels serve the same application version.
 
+Temporary override through 2026-11-07: GitHub Actions are paused under the
+owner's quota cooldown. Publish and verify the main hosting directly with local
+checks; do not push an event that triggers Actions. Record GitHub Pages as
+unchanged rather than claiming that both destinations were updated.
+
 ## Build artifact
 
-Run the required checks and build from `main`. Upload the contents of:
+Run the required checks and build from the actual deployed Production baseline,
+using the current release branch recorded in AGENTS.md. The old local `main`
+is not the release source of truth. Upload the contents of:
 
 `www/vniipo-help.ru/bike-packing`
 
@@ -46,8 +53,12 @@ The FTP connection root and the production directory are different levels:
 Use the project deployment script instead of composing FTP commands manually:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/deploy-production-ftp.ps1 -ExpectedVersion vNNN
+pwsh -NoProfile -File scripts/deploy-production-ftp.ps1 -ExpectedVersion vNNN
 ```
+
+For application-only updates, use PowerShell 7 and pass `-IncrementalManifest`
+with the reviewed deployed/release SHA-256 comparison. The incremental route
+preserves all existing photograph directories and backs up replaced files.
 
 The script reads `.vscode/sftp.json` without printing it, passes credentials to
 the approved `C:\Windows\System32\curl.exe` through UTF-8 stdin, refuses any

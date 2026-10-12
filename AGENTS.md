@@ -1,5 +1,17 @@
 # Project routing
 
+## Production working baseline
+
+The main workspace was aligned to Production on 2026-10-13. Continue from
+the current `codex/production-copy-undo-v1644` branch (live release v1645),
+not the old local `main` baseline v1595. Before each new change and publication,
+compare the working version/contract with the actual deployed version.
+The earlier uncommitted workspace is preserved in the named Git stash
+`workspace before production alignment 2026-10-13 copy undo` and in
+`ftp-upload/copy-undo-v1644/workspace-before/`. Remaining unrelated local
+media-copy changes are intentionally left uncommitted and are not part of v1645.
+Do not reapply that whole stash over the current Production tree.
+
 ## Acceptance before Experiment transfer
 
 Do not send or integrate the fullscreen gallery swipe/zoom fixes into Experiment
