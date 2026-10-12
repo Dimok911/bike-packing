@@ -1,6 +1,7 @@
 import { createEmptyLayoutArrangement, uniqueLayoutIds } from "./layout-arrangement.js";
 import { clonePlain } from "../utils/json.js";
 import { layoutMediaSnapshot } from "./layout-media.js";
+import { isolateTemporaryContainersForLayout } from "./layout-temporary-containers.js";
 
 function normalizeTemplateCopyIdentityValue(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -467,6 +468,7 @@ export function createLayoutCopyRecordFromSource({
   });
   record._historyCopySourceLayoutId = String(sourceLayout.id || "");
   record._historyCopySourceLayoutName = String(sourceLayout.name || "");
+  isolateTemporaryContainersForLayout(state, record);
   return record;
 }
 

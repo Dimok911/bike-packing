@@ -1,4 +1,5 @@
 import { createItemDuplicateRecord } from "./item-ops.js";
+import { makeCopyName } from "./names.js";
 import {
   createEmptyLayoutArrangement,
   uniqueLayoutIds
@@ -159,6 +160,7 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
   mapRecordToTarget = () => {},
   normalizeContainerColor = (value) => value,
   sourceIsPublicCopy = false,
+  preserveItemNames = sourceIsPublicCopy,
   targetParentId = null,
   targetState = null
 } = {}) {
@@ -175,6 +177,7 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
 
   const copiedPlacements = {};
   const copiedItemContainers = {};
+  const copiedItemNames = new Set(Object.values(targetState.items).map((item) => item?.name));
 
   const copyItemTree = async (itemId, parentId) => {
     const item = sourceSnapshot.items?.[itemId];
@@ -184,10 +187,15 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
       changedAt,
       cloneEntity,
       containerId: parentId,
+      copyName: (name) => {
+        const nextName = makeCopyName(name, copiedItemNames);
+        copiedItemNames.add(nextName);
+        return nextName;
+      },
       copyPhotos,
       currentEditMeta,
       id: nextId,
-      preserveName: true
+      preserveName: preserveItemNames
     });
     if (!record) return "";
     targetState.items[nextId] = record;

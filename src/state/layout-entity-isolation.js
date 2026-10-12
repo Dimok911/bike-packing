@@ -1,9 +1,20 @@
 import { clonePlain } from "../utils/json.js";
+import { isolateTemporaryContainersForLayout } from "./layout-temporary-containers.js";
 
 const REPAIR_BASE_STATE_KEY = "__layoutEntityRepairBaseState";
 
 export function isolateLinkedLayoutEntities(targetState) {
-  return repairAccidentalIsolatedLayoutEntities(targetState);
+  const report = repairAccidentalIsolatedLayoutEntities(targetState);
+  const touchedLayouts = new Set(report.layoutIds);
+  Object.values(targetState?.layouts || {}).filter(Boolean)
+    .sort((left, right) => String(left.id).localeCompare(String(right.id), "en"))
+    .forEach((layout) => {
+      const replacements = isolateTemporaryContainersForLayout(targetState, layout);
+      report.clonedContainers += replacements.size;
+      if (replacements.size) touchedLayouts.add(layout.id);
+    });
+  report.layoutIds = [...touchedLayouts];
+  return report;
 }
 
 export function repairAccidentalIsolatedLayoutEntities(targetState) {
@@ -46,7 +57,7 @@ export function repairAccidentalIsolatedLayoutEntities(targetState) {
 }
 
 export function layoutEntityRepairChanged(report) {
-  return Boolean((report?.mergedContainers || 0) || (report?.mergedItems || 0));
+  return Boolean((report?.clonedContainers || 0) || (report?.mergedContainers || 0) || (report?.mergedItems || 0));
 }
 
 export function rememberLayoutEntityRepairBaseState(targetState, baseState, report) {

@@ -1,6 +1,7 @@
 import { devices, expect, test } from "@playwright/test";
 import {
   createEmptyLayout,
+  createRootContainer,
   openApp,
   prepareIsolatedRussianGuest
 } from "./guest-test-helpers.js";
@@ -9,6 +10,43 @@ test.use({ ...devices["iPhone 15"] });
 
 test.beforeEach(async ({ page }) => {
   await prepareIsolatedRussianGuest(page);
+});
+
+test("iPhone zoomed packing scroll follows its host after hidden board rerenders", async ({ page }) => {
+  await openApp(page);
+  await createEmptyLayout(page, "Проверка прокрутки");
+  await createRootContainer(page, "Высокая сумка");
+  await page.addStyleTag({ content: '#packingView .board > .container-card { min-height: 2600px; }' });
+  for (const view of ["items", "bags", "items"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    await page.evaluate(() => localStorage.setItem("bike-packing-board-zoom-v1", "0.7"));
+    await page.locator('#metaToggleBtn').evaluate((button) => button.click());
+    await selectViewWithoutAutoScroll(page, "packing");
+    await expect.poll(() => page.locator('#packingView .board').getAttribute('data-packing-board-zoom')).toBe("0.7");
+    const result = await page.evaluate(() => {
+      const host = document.querySelector('.app[data-viewport-scroll-host]');
+      const board = document.querySelector('#packingView .board');
+      host.scrollTop = 180;
+      const initial = host.scrollTop;
+      const rect = board.getBoundingClientRect();
+      const x = rect.left + 100;
+      const y = Math.max(rect.top + 60, 600);
+      const send = (type, nextY, active) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        const point = { clientX: x, clientY: nextY, identifier: 88 };
+        Object.defineProperty(event, 'touches', { value: active ? [point] : [] });
+        Object.defineProperty(event, 'changedTouches', { value: [point] });
+        board.dispatchEvent(event);
+      };
+      send('touchstart', y, true);
+      send('touchmove', y - 160, true);
+      const moved = host.scrollTop - initial;
+      send('touchcancel', y - 160, false);
+      return { moved, documentTop: document.scrollingElement.scrollTop };
+    });
+    expect(result.moved).toBeGreaterThan(100);
+    expect(result.documentTop).toBe(0);
+  }
 });
 
 async function selectViewWithoutAutoScroll(page, view) {

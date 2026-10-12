@@ -1124,6 +1124,10 @@ import {
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
 import { syncMainViewScrollHost } from "./src/ui/main-view-scroll-host.js";
+import {
+  applyLocalUndoEntry, createLocalUndoEntry, LOCAL_UNDO_STORAGE_KEY,
+  localUndoReferencesPhoto, readLocalUndoEntries, writeLocalUndoEntries
+} from "./src/state/local-undo.js";
 import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
@@ -1691,7 +1695,7 @@ const appTailControllerDeps = {
   currentPageScrollPosition, currentPublicTemplateStatusMessage, currentPublishedTemplateBlockReason, currentSessionMode, currentSharedLayouts,
   currentUsageLimit, currentUser, currentUserEmail, currentUserId, currentUserIdFromStorage,
   currentUserSyncKey, currentViewScope, cycleDictionarySortMode, defaultBike3dViewState, defaultDemoState,
-  defaultRootContainerLocation, deleteCachedPhoto, deleteItemFromState, deletePublishedDemoTemplateRecord, deletePublishedSharedTemplateRecord, deleteRemotePhotoIfPossible,
+  defaultRootContainerLocation, deleteCachedPhoto: deleteUndoableCachedPhoto, deleteItemFromState, deletePublishedDemoTemplateRecord, deletePublishedSharedTemplateRecord, deleteRemotePhotoIfPossible,
   deleteRootContainerFromState, deleteUnusedLayoutContainerEntityFromState, demoAdminPathForPublicListId, demoAdminPathForPublicListIdFromScope, demoAdminStatePathForPublicListId,
   demoAdminStatePathForPublicListIdFromScope, demoCopyActionText, demoCopyLayoutName, demoCopyPreferredTemplateName, demoCopyTemplateListId,
   demoLanguageFromLayoutChoice, demoLanguageFromLayoutChoiceValue, demoLayoutChoiceForLanguage, demoLayoutChoiceForLanguageValue, demoLayoutChoiceForTemplate,
@@ -3413,6 +3417,18 @@ async function init() {
   });
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
+  refs.localUndoBtn?.addEventListener("click", undoLastLocalAction);
+  refs.findDuplicatesBtn?.addEventListener("click", () => {
+    appTailRuntime.catalogDuplicatesOnly = !appTailRuntime.catalogDuplicatesOnly;
+    if (appTailRuntime.catalogDuplicatesOnly) {
+      resetContentFilterControls({ refs, runtime: appTailRuntime, clearTimeout: window.clearTimeout });
+      appTailRuntime.itemUsageFilter = "all";
+      appTailRuntime.rootContainerUsageFilter = "all";
+      if (!["items", "bags"].includes(getCurrentView())) switchView("items");
+    }
+    closeTopMenu();
+    render();
+  });
   refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
   refs.topMenu.addEventListener("click", (event) => {
     if (event.target.closest("button")) closeTopMenu();
@@ -4474,6 +4490,18 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     if (sync && !applyingRemoteState) markCurrentGuestWorkspaceForLoginHandoff();
+    if (sync && !applyingRemoteState && !appTailRuntime.applyingLocalUndo && !isPublicLayoutContext()) {
+      try {
+        const previous = JSON.parse(localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY)));
+        const entry = createLocalUndoEntry(previous, state);
+        if (entry) {
+          const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+          writeLocalUndoEntries(localStorage, key, [...readLocalUndoEntries(localStorage, key), entry]);
+        }
+      } catch {
+        // A full local history must never prevent saving the current workspace.
+      }
+    }
     persistStateSnapshot(state);
   } else if (!isAdminEditablePublishedLayout()) {
     if (sync && !applyingRemoteState) {
@@ -5831,6 +5859,11 @@ function activateOfflineRememberedSession(
 }
 
 function toggleTopMenu(event) {
+  if (refs.localUndoBtn) {
+    refs.localUndoBtn.textContent = localText("Undo last local action", "Отменить последнее локальное действие");
+    refs.localUndoBtn.disabled = !canUseLocalEditableState() || isReadOnlyStateScope() || isPublicLayoutContext()
+      || !readLocalUndoEntries(localStorage, scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)).length;
+  }
   event.stopPropagation();
   const open = refs.topMenu.hidden;
   refs.topMenu.hidden = !open;
@@ -6397,8 +6430,28 @@ function schedulePhotoUploadProgressRender({ refreshPhotoDialogs = true } = {}) 
   });
 }
 
+function localHistoryNeedsPhoto(id, scope = localStorageScopeKey) {
+  if (!id) return false;
+  if (scope === localStorageScopeKey && [state.items, state.containers, state.layouts].some((records) =>
+    Object.values(records || {}).some((record) => (record?.photos || []).some((photo) => photo?.id === id || photo?.localId === id))
+  )) return true;
+  return localUndoReferencesPhoto(readLocalUndoEntries(localStorage, scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY, scope)), String(id || ""));
+}
+
+async function deleteUndoableCachedPhoto(id) {
+  const scope = localStorageScopeKey;
+  const photoScope = getPhotoCacheScope();
+  // Editor deletion happens before its synchronous saveState call records undo.
+  await Promise.resolve();
+  if (localHistoryNeedsPhoto(id, scope)) return;
+  return deleteCachedPhoto(id, photoScope);
+}
+
 async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item") {
   if (!currentUser || isForcedOffline() || !photo?.id) return;
+  const undoScope = localStorageScopeKey;
+  await Promise.resolve();
+  if (undoScope !== localStorageScopeKey || localHistoryNeedsPhoto(photo.id, undoScope) || localHistoryNeedsPhoto(photo.localId, undoScope)) return;
   if (isAdminEditablePublishedLayout(getPublishedEditLayoutId())) return;
   if (isReadOnlyBikePackingContext()) return;
   if (hasRemotePhotoUrl(photo) && !photoRecordIdMatchesRemoteSource(photo)) return;
@@ -9365,7 +9418,7 @@ async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, 
   return false;
 }
 
-async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false } = {}) {
+async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false, privateSource = false, targetParentId = null } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!targetLayout || !sourceSnapshot) return "cancel";
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
@@ -9373,16 +9426,16 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
   const sourceIsPublicCopy = publicSource ||
     snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
-  if (!(targetIsPublic || sourceIsPublicCopy) || !publicSourceSnapshot) {
+  if (privateSource || !(targetIsPublic || sourceIsPublicCopy) || !publicSourceSnapshot) {
     if (targetIsPublic) return "copy-all";
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
-    const missingPlan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
+    const missingPlan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot, targetParentId);
     const duplicate = await askConfirmDialog({
       title: localText("Some elements are already in the layout", "Такие элементы уже есть в укладке"),
       text: localText(`“${targetLayout.name || "Layout"}” already contains part of this bag/branch. Create separate copies instead of adding them again?`, `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`),
-      okText: localText("Duplicate", "Дублировать"),
-      alternateText: missingPlan.canCopyMissingItems ? localText("Missing only", "Только недостающие") : "",
+      okText: localText("Create copies of all items", "Создать копии всех вещей"),
+      alternateText: missingPlan.canCopyMissingItems ? localText("Add without duplicates", "Добавить без дубликатов") : "",
       cancelText: localText("Do not copy", "Не копировать"),
       highlightText: localText(
         `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items are already in the target layout${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} containers/pouches and ${missingPlan.missingItems.length} items can be added without duplicates` : ""}`,
@@ -9476,21 +9529,25 @@ async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayo
   return copiedCount;
 }
 
-async function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId) {
+async function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId, { targetParentId = null, targetIndex = null } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
-  const plan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
+  const plan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot, targetParentId);
   if (!targetLayout || !plan.canCopyMissingItems) return 0;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
   let firstAddedItemId = "";
-  const firstRestoredContainerId = plan.missingContainers.find((entry) =>
+  let firstRestoredContainerId = plan.missingContainers.find((entry) =>
     state.containers?.[entry?.sourceContainerId]
   )?.sourceContainerId || "";
   const restored = linkMissingContainerTreeToLayoutState(state, sourceSnapshot, targetLayoutId, {
     changedAt,
     missingContainers: plan.missingContainers,
     missingItems: plan.missingItems,
+    targetIndex,
+    onContainerIdsReplaced: (replacements) => {
+      firstRestoredContainerId = replacements.get(firstRestoredContainerId) || firstRestoredContainerId;
+    },
     normalizeLayoutArrangement,
     touchLayout
   });
@@ -9807,10 +9864,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
 }
 
 async function openHistoryDialog() {
-  if (isForcedOffline()) {
-    showToast(localText("History is unavailable in offline mode.", "История недоступна в офлайн-режиме."), "error");
-    return;
-  }
+  if (isForcedOffline() || navigator.onLine === false || isOfflineRememberedSession()) return undoLastLocalAction();
   if (!currentUser) {
     showToast(localText("History is available after sign-in.", "История доступна после входа."), "error");
     return;
@@ -9829,6 +9883,50 @@ async function openHistoryDialog() {
   renderHistorySourceControls();
   openModalDialog(refs.historyDialog);
   refreshHistoryDialog();
+}
+
+async function undoLastLocalAction() {
+  closeTopMenu();
+  if (!canUseLocalEditableState() || isReadOnlyStateScope() || isPublicLayoutContext()) return;
+  const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  const entries = readLocalUndoEntries(localStorage, key);
+  const entry = entries.at(-1);
+  if (!entry) {
+    showToast(localText("No local actions to undo yet.", "Пока нет локальных действий для отмены."));
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: localText("Undo last local action?", "Отменить последнее локальное действие?"),
+    text: localText("This device keeps up to 20 recent local actions, including offline edits.", "На этом устройстве сохраняется до 20 последних локальных действий, в том числе без интернета."),
+    highlightText: (entry.names || []).slice(0, 8).join(", "),
+    okText: localText("Undo", "Отменить действие"),
+    tone: "safe"
+  });
+  if (!confirmed || key !== scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY) || isPublicLayoutContext()
+    || isReadOnlyStateScope() || !canUseLocalEditableState()) return;
+  const currentEntries = readLocalUndoEntries(localStorage, key);
+  if (JSON.stringify(currentEntries.at(-1)) !== JSON.stringify(entry)) return;
+  const restored = applyLocalUndoEntry(state, entry);
+  if (!restored) {
+    showToast(localText("These data have changed since this action. Local undo cannot overwrite the newer changes.", "После этого действия данные уже изменились. Локальная отмена не может перезаписать более новые изменения."), "error");
+    return;
+  }
+  const changedAt = nowIso();
+  for (const { path } of entry.changes) {
+    if (["items", "containers", "layouts"].includes(path[0]) && restored[path[0]]?.[path[1]]) {
+      Object.assign(restored[path[0]][path[1]], currentEditMeta(changedAt));
+    }
+  }
+  appTailRuntime.applyingLocalUndo = true;
+  try {
+    replaceState(restored);
+    saveState({ captureArrangement: false });
+    writeLocalUndoEntries(localStorage, key, currentEntries.slice(0, -1));
+  } finally {
+    appTailRuntime.applyingLocalUndo = false;
+  }
+  render();
+  showToast(localText("Local action undone.", "Локальное действие отменено."), "success");
 }
 
 function historyDemoTemplateOptions() {
@@ -10654,6 +10752,12 @@ function switchView(view) {
 }
 
 function render() {
+  if (refs.findDuplicatesBtn) {
+    refs.findDuplicatesBtn.setAttribute("aria-pressed", String(Boolean(appTailRuntime.catalogDuplicatesOnly)));
+    refs.findDuplicatesBtn.textContent = appTailRuntime.catalogDuplicatesOnly
+      ? localText("Show all items and bags", "Показать все вещи и сумки")
+      : localText("Find duplicates", "Поиск дубликатов");
+  }
   ensureGuestPublicScope();
   capturePackingScroll();
   document.body.classList.toggle("shared-layout-view", isSharedLayoutView());

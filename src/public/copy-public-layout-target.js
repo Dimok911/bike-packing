@@ -1,3 +1,5 @@
+import { isolateTemporaryContainersForLayout } from "../state/layout-temporary-containers.js";
+
 function touchRecord(record, changedAt, touch) {
   if (!record || typeof touch !== "function") return;
   touch(record, changedAt);
@@ -200,6 +202,8 @@ export function linkMissingContainerTreeToLayoutState(targetState, sourceSnapsho
   missingContainers = [],
   missingItems = [],
   normalizeLayoutArrangement = () => {},
+  onContainerIdsReplaced = () => {},
+  targetIndex = null,
   touchLayout = () => {}
 } = {}) {
   const targetLayout = targetState?.layouts?.[targetLayoutId];
@@ -283,7 +287,26 @@ export function linkMissingContainerTreeToLayoutState(targetState, sourceSnapsho
     itemCount += 1;
   });
   if (!containerCount && !itemCount) return { containerCount: 0, itemCount: 0 };
+  arrangement.itemQuantities = arrangement.itemQuantities || {};
+  missingItemContainerById.forEach((containerId, itemId) => {
+    if (arrangement.items[itemId] !== containerId) return;
+    arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(sourceSnapshot.items?.[itemId]?.quantity) || 1));
+  });
+  const rootId = sourceSnapshot.rootId;
+  if (missingContainerById.has(rootId) && targetIndex !== null) {
+    const parentId = arrangement.containers[rootId]?.parentId;
+    const parent = arrangement.containers[parentId];
+    if (parent) {
+      parent.order = parent.order.filter((entry) => !(entry.type === "container" && entry.id === rootId));
+      parent.order.splice(Math.max(0, Math.min(Number(targetIndex) || 0, parent.order.length)), 0, { type: "container", id: rootId });
+    } else {
+      arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== rootId);
+      arrangement.rootContainerIds.splice(Math.max(0, Math.min(Number(targetIndex) || 0, arrangement.rootContainerIds.length)), 0, rootId);
+      targetLayout.rootContainerIds = [...arrangement.rootContainerIds];
+    }
+  }
   normalizeLayoutArrangement(targetLayout, targetState);
+  onContainerIdsReplaced(isolateTemporaryContainersForLayout(targetState, targetLayout));
   touchLayout(targetLayoutId, changedAt);
   return { containerCount, itemCount };
 }
@@ -377,5 +400,6 @@ export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapsh
   }
   normalizeLayoutArrangement(targetLayout, targetState);
   touchLayout(targetLayoutId, changedAt);
-  return rootId;
+  const replacements = isolateTemporaryContainersForLayout(targetState, targetLayout, { applyToCurrentState: true });
+  return replacements.get(rootId) || rootId;
 }

@@ -1,4 +1,5 @@
 import { sortCatalogRecords } from "./catalog-sort.js";
+import { filterCatalogDuplicates } from "./catalog-duplicates.js";
 import {
   createItemUsageCounts,
   createRootContainerUsageCounts
@@ -15,6 +16,7 @@ export function itemsForActiveCatalog(targetState, {
 }
 
 export function itemsForItemsView(items, {
+  duplicatesOnly = false,
   isFilterContextActive = () => false,
   isItemAwayFromHomeAndBike = () => false,
   isItemInActiveLayout = () => false,
@@ -24,7 +26,7 @@ export function itemsForItemsView(items, {
   itemUsageFilter = "all",
   matchesItemsViewFilters = () => true
 } = {}) {
-  const filtered = (items || []).filter((item) => {
+  const filtered = filterCatalogDuplicates(items || [], duplicatesOnly).filter((item) => {
     if (!isFilterContextActive() && !matchesItemsViewFilters(item)) return false;
     if (itemUsageFilter === "current") return isItemInActiveLayout(item);
     if (itemUsageFilter === "away") return isItemAwayFromHomeAndBike(item);
@@ -36,12 +38,13 @@ export function itemsForItemsView(items, {
 }
 
 export function itemUsageCountsForCatalog(items, {
+  duplicatesOnly = false,
   isItemAwayFromHomeAndBike = () => false,
   isItemInActiveLayout = () => false,
   isItemWithoutWeight = () => false,
   matchesItemsViewFilters = () => true
 } = {}) {
-  return createItemUsageCounts(items || [], {
+  return createItemUsageCounts(filterCatalogDuplicates(items || [], duplicatesOnly), {
     matchesItem: matchesItemsViewFilters,
     isAwayFromHomeAndBike: isItemAwayFromHomeAndBike,
     isWithoutWeight: isItemWithoutWeight,
@@ -60,6 +63,7 @@ export function rootContainersForEditor(targetState, {
 }
 
 export function rootContainersForSettings(targetState, {
+  duplicatesOnly = false,
   containerCreatedTime = () => 0,
   isPrivateCatalogContainerRecord = () => true,
   isRootContainerForEditor = () => true,
@@ -69,7 +73,10 @@ export function rootContainersForSettings(targetState, {
   rootContainerSortMode = "name",
   rootContainerUsageFilter = "all"
 } = {}) {
-  const roots = Object.values(targetState?.containers || {}).filter((container) => {
+  const candidates = Object.values(targetState?.containers || {}).filter((container) =>
+    isPrivateCatalogContainerRecord(container.id, container) && isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
+  );
+  const roots = filterCatalogDuplicates(candidates, duplicatesOnly).filter((container) => {
     if (!isPrivateCatalogContainerRecord(container.id, container)) return false;
     if (!isRootContainerForEditor(container)) return false;
     if (!isRootContainerInActiveCatalog(container)) return false;
@@ -82,12 +89,16 @@ export function rootContainersForSettings(targetState, {
 }
 
 export function rootContainerUsageCountsForCatalog(targetState, {
+  duplicatesOnly = false,
   isPrivateCatalogContainerRecord = () => true,
   isRootContainerForEditor = () => true,
   isRootContainerInActiveCatalog = () => true,
   isRootContainerInActiveLayout = () => false
 } = {}) {
-  return createRootContainerUsageCounts(Object.values(targetState?.containers || {}), {
+  const candidates = Object.values(targetState?.containers || {}).filter((container) =>
+    isPrivateCatalogContainerRecord(container.id, container) && isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
+  );
+  return createRootContainerUsageCounts(filterCatalogDuplicates(candidates, duplicatesOnly), {
     isEligible: (container) =>
       isPrivateCatalogContainerRecord(container.id, container) &&
       isRootContainerForEditor(container) &&

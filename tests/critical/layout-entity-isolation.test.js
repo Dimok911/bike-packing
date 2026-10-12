@@ -105,6 +105,7 @@ test("CRITICAL legacy safety: nested old cross-namespace shared ids survive temp
       },
       "shared-child": {
         id: "shared-child",
+        nestable: true,
         parentId: "private-root",
         itemIds: ["shared-item"],
         childIds: [],

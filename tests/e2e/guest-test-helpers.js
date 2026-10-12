@@ -48,7 +48,10 @@ export async function createRootContainer(page, containerName) {
   await page.locator("#createRootForLayoutBtn").click();
   await expect(page.locator("#rootContainerDialog")).toBeVisible();
   await page.locator("#rootContainerName").fill(containerName);
-  await page.locator("#saveRootContainerBtn").click();
+  // Windows WebKit can drop the first synthesized tap after scrolling a tall
+  // dialog. Fixture setup invokes Save directly; gesture tests dispatch touch.
+  if (await page.evaluate(() => /iPhone|iPad|iPod/.test(navigator.userAgent) || navigator.maxTouchPoints > 0)) await page.locator("#saveRootContainerBtn").evaluate((button) => button.click());
+  else await page.locator("#saveRootContainerBtn").click();
 
   const container = page.locator("#packingView [data-root-container-id]").filter({ hasText: containerName });
   await expect(container).toHaveCount(1);
@@ -63,7 +66,8 @@ export async function createItemInContainer(page, container, itemName, { weight 
   await page.locator("#itemName").fill(itemName);
   await page.locator("#itemWeight").fill(weight);
   await page.locator("#itemQuantity").fill(quantity);
-  await page.locator("#saveItemBtn").click();
+  if (await page.evaluate(() => /iPhone|iPad|iPod/.test(navigator.userAgent) || navigator.maxTouchPoints > 0)) await page.locator("#saveItemBtn").evaluate((button) => button.click());
+  else await page.locator("#saveItemBtn").click();
 
   const item = container.locator("[data-item-id]").filter({ hasText: itemName });
   await expect(item).toHaveCount(1);

@@ -367,6 +367,7 @@ export function summarizeLayoutTreeIdDuplicates({
 export function planLayoutTreeMissingItems({
   sourceSnapshot,
   targetLayout,
+  targetParentId = null,
   getLayoutContainerIdSet = () => new Set(),
   getLayoutItemIdSet = () => new Set()
 }) {
@@ -390,6 +391,7 @@ export function planLayoutTreeMissingItems({
   const sourceContainerIds = Object.keys(sourceContainers);
   const missingContainerIdSet = new Set(sourceContainerIds.filter((containerId) => !targetContainerIds.has(containerId)));
   const hasTargetAncestor = (containerId) => {
+    if (targetParentId !== null && (!targetParentId || targetContainerIds.has(targetParentId))) return true;
     let parentId = sourceParentByContainerId.get(containerId) || "";
     const seen = new Set([containerId]);
     while (parentId) {
@@ -404,7 +406,7 @@ export function planLayoutTreeMissingItems({
     .filter((containerId) => missingContainerIdSet.has(containerId) && hasTargetAncestor(containerId))
     .map((containerId) => ({
       sourceContainerId: containerId,
-      targetParentId: sourceParentByContainerId.get(containerId) || ""
+      targetParentId: sourceParentByContainerId.get(containerId) || targetParentId || ""
     }));
   const restorableContainerIds = new Set([
     ...targetContainerIds,

@@ -1,5 +1,26 @@
 # Project routing
 
+## Acceptance before Experiment transfer
+
+Do not send or integrate the fullscreen gallery swipe/zoom fixes into Experiment
+until the user explicitly confirms that the result is satisfactory and approves
+the transfer. Production publication and passing automated checks do not imply
+user acceptance. The user reported no visible improvement with v1602 on iPhone
+and its earlier Experiment handoff was withdrawn. On 2026-09-09 the user accepted
+v1603 / gallery 2.4.1 in the Shared Services task ("норм, принимается"). The user
+then explicitly approved its Experiment transfer ("согласую"). Transfer of this
+accepted version is authorized through the existing Experiment task, which owns
+the integration sequence alongside its ongoing work. On 2026-09-11 the user also
+accepted Production v1604 (desktop touchscreen fullscreen paging) and explicitly
+approved its Experiment transfer: "ага, норм, закинь это в эксперимент для
+выравнивания". The v1604 handoff was sent to the existing Experiment task;
+integration and publication remain owned by that task. The user subsequently
+accepted Production v1605 (desktop touchscreen/trackpad zoom) and approved its
+Experiment transfer: "норм, отправь для выравнивания в эксперимент". The v1605
+handoff was sent to the same existing Experiment task, which owns its sequence
+and retains its separate publication constraints. Future fixes still require
+acceptance and transfer approval.
+
 ## Incremental publication and photographs
 
 For application code, style, and gallery behavior updates, publish application

@@ -2025,6 +2025,19 @@ button.ghost.context-toggle.active:focus-visible {
   margin-top: 18px;
 }
 
+.catalog-duplicates-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
 .hidden {
   display: none !important;
 }

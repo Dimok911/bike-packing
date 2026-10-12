@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1643" />
+    <link rel="stylesheet" href="./styles.css?v=1644" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -43,6 +43,8 @@
               <button id="compareLayoutsMenuBtn" class="ghost menu-item auth-required" type="button">Сравнить укладки</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
+              <button id="localUndoBtn" class="ghost menu-item" type="button">Отменить последнее локальное действие</button>
+              <button id="findDuplicatesBtn" class="ghost menu-item" type="button" aria-pressed="false">Поиск дубликатов</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
               <button id="helpLimitsBtn" class="ghost menu-item" type="button">Помощь</button>
               <button id="adminReportsBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Отчёты</button>
@@ -916,6 +918,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1643" type="module"></script>
+    <script src="./app.js?v=1644" type="module"></script>
   </body>
 </html>

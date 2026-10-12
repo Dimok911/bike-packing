@@ -539,7 +539,7 @@ export function bindPackingBoardZoom(board, {
     zoomRange &&
     windowRef?.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches
   );
-  const verticalScrollHost = scrollHostForBoard(board, documentRef);
+  let verticalScrollHost = scrollHostForBoard(board, documentRef);
   const gestureSurface = documentRef;
   let zoom = 1;
   let pinching = false;
@@ -667,15 +667,31 @@ export function bindPackingBoardZoom(board, {
   };
 
   const requestVerticalScrollClamp = () => {
+    if (!board.getBoundingClientRect?.()?.width) return;
+    refreshVerticalScrollHost();
     if (!verticalScrollHost || Math.abs(zoom - 1) < 0.005 || verticalClampFrame !== null) return;
     const requestFrame = windowRef?.requestAnimationFrame || ((callback) => callback());
     verticalClampFrame = requestFrame(() => {
       verticalClampFrame = null;
+      if (!board.getBoundingClientRect?.()?.width) return;
       const maxScrollTop = verticalScrollMaximum();
       if ((Number(verticalScrollHost.scrollTop) || 0) > maxScrollTop + 0.5) {
         verticalScrollHost.scrollTop = maxScrollTop;
       }
     });
+  };
+
+  // render() also rebuilds the hidden board while catalogs use the document
+  // scroller. Returning to packing switches iOS to .app without rebuilding it.
+  const refreshVerticalScrollHost = () => {
+    const nextHost = scrollHostForBoard(board, documentRef);
+    if (nextHost === verticalScrollHost) return;
+    verticalScrollHost?.removeEventListener?.("scroll", requestVerticalScrollClamp);
+    stopPageMomentum();
+    if (verticalClampFrame !== null) windowRef?.cancelAnimationFrame?.(verticalClampFrame);
+    verticalClampFrame = null;
+    verticalScrollHost = nextHost;
+    verticalScrollHost?.addEventListener?.("scroll", requestVerticalScrollClamp, { passive: true });
   };
 
   const stopPageMomentum = () => {
@@ -1137,6 +1153,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onWheel = (event) => {
+    refreshVerticalScrollHost();
     if (!isNativeGestureInsideBoard(event)) return;
     if (!event?.ctrlKey) {
       if (
@@ -1193,6 +1210,7 @@ export function bindPackingBoardZoom(board, {
   const onTouchStart = (event) => {
     if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     if (packingBoardGestureTargetsFixedScrollbar(event, { documentRef })) return;
+    refreshVerticalScrollHost();
     stopPresentation();
     stopPageMomentum();
     stopBoardMomentum();
@@ -1586,6 +1604,7 @@ export function bindPackingBoardZoom(board, {
     scrollSettleMs = 360
   } = {}) => {
     if (!element || !board.contains?.(element)) return false;
+    refreshVerticalScrollHost();
     stopPresentation();
     stopZoomMomentum();
     stopZoomSettle();
@@ -1683,6 +1702,8 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onTargetResize = () => {
+    if (!board.getBoundingClientRect?.()?.width) return;
+    refreshVerticalScrollHost();
     if (!baseColumnWidth && measureBaseColumnWidth()) {
       applyZoom(zoom);
       return;

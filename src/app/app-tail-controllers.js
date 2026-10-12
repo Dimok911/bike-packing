@@ -84,6 +84,8 @@ import {
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
+import { renderCatalogDuplicatesNotice } from "../ui/catalog-duplicates.js";
+import { filterCatalogDuplicates } from "../state/catalog-duplicates.js";
 import {
   isContainerAvailableForLayoutRoot,
   isContainerAvailableForNestedPicker
@@ -2422,7 +2424,9 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     Object.values(sourceSnapshot.items || {}).some((item) => item?.publicCatalogLayoutId)
   );
   const crossesPublicNamespace = copyCrossesPublicNamespaceBoundary({ sourceIsPublic, targetIsPublic });
-  const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
+  const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "", {
+    targetParentId, publicSource: sourceIsPublic, privateSource: !sourceIsPublic && !targetIsPublic
+  });
   if (copyAction === "cancel") return;
   if (copyAction === "copy-missing") {
     const copiedCount = await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
@@ -2430,7 +2434,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     return;
   }
   if (copyAction === "copy-missing-local") {
-    const copiedCount = await copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    const copiedCount = await copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId, { targetParentId, targetIndex });
     if (copiedCount) closeSourceEditorAfterCopy("container", sourceSnapshot.rootId || containerId);
     return;
   }
@@ -2472,9 +2476,10 @@ function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
   });
 }
 
-function layoutMissingItemPlanForContainerTree(layoutId, sourceSnapshot) {
+function layoutMissingItemPlanForContainerTree(layoutId, sourceSnapshot, targetParentId = null) {
   return planLayoutTreeMissingItems({
     sourceSnapshot,
+    targetParentId,
     targetLayout: state.layouts[layoutId],
     getLayoutContainerIdSet,
     getLayoutItemIdSet
@@ -2499,13 +2504,13 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
     });
   });
   if (!linkedRootId) return false;
-  markRecentlyAddedContainer(sourceSnapshot.rootId, targetLayoutId);
+  markRecentlyAddedContainer(linkedRootId, targetLayoutId);
   saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   if (refs.containerPickerDialog.open) refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
-  requestAnimationFrame(() => focusRecentlyAddedContainer(sourceSnapshot.rootId));
+  requestAnimationFrame(() => focusRecentlyAddedContainer(linkedRootId));
   showToast(localText("The bag or pouch was added to the selected layout without duplicates.", "Сумка или пакет добавлены в выбранную укладку без создания дублей."), "success");
   return true;
 }
@@ -2583,6 +2588,7 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
       mapRecordToTarget,
       normalizeContainerColor,
       sourceIsPublicCopy,
+      preserveItemNames: publicSource || targetIsPublic,
       targetParentId: targetParentId || null,
       targetState: state
     });
@@ -3125,7 +3131,8 @@ function getSummaryWeight(view, items, isFiltered) {
 }
 
 function getItemsViewSummaryItems() {
-  return getItemsForActiveCatalog().filter((item) => matchesItemFieldsFilter(item, { includeContainerPath: true }));
+  return filterCatalogDuplicates(getItemsForActiveCatalog(), runtime.catalogDuplicatesOnly)
+    .filter((item) => matchesItemFieldsFilter(item, { includeContainerPath: true }));
 }
 
 function getSummaryRootContainers() {
@@ -4468,6 +4475,7 @@ function renderItems() {
     runtime.selectedCatalogItemIds = new Set();
     runtime.selectedCatalogItemAnchorId = "";
     renderSharedItemsView();
+    renderDuplicateFilterNotice(refs.itemsView);
     return;
   }
   const items = getItemsForItemsView();
@@ -4489,6 +4497,7 @@ function renderItems() {
     t
   });
   syncNewEntityFormDraftCatalogCards();
+  renderDuplicateFilterNotice(refs.itemsView);
   refs.itemsView.querySelectorAll("[data-stock-step]").forEach((button) => {
     button.addEventListener("click", () => {
       if (isSharedLayoutView() || isPublicLayoutContext()) return;
@@ -4792,11 +4801,23 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
   renderBags();
 }
 
+function renderDuplicateFilterNotice(root) {
+  renderCatalogDuplicatesNotice(root, {
+    enabled: runtime.catalogDuplicatesOnly,
+    language: uiLanguage,
+    onClear: () => {
+      runtime.catalogDuplicatesOnly = false;
+      render();
+    }
+  });
+}
+
 function renderBags() {
   if (isSharedLayoutView()) {
     runtime.selectedCatalogRootIds = new Set();
     runtime.selectedCatalogRootAnchorId = "";
     renderSharedBagsView();
+    renderDuplicateFilterNotice(refs.bagsView);
     return;
   }
   refs.bagsView.innerHTML = `
@@ -4806,6 +4827,7 @@ function renderBags() {
     </div>
   `;
   bindLayoutEditor();
+  renderDuplicateFilterNotice(refs.bagsView);
   bindRootContainersEditor();
   bindEmptyContentFilterReset(refs.bagsView);
   bindSettingsPointerDrag();
@@ -5021,6 +5043,7 @@ function renderRootContainersEditor() {
   runtime.selectedCatalogRootIds = normalizeCatalogSelection(runtime.selectedCatalogRootIds, roots.map((container) => container.id));
   if (runtime.selectedCatalogRootAnchorId && !roots.some((container) => container.id === runtime.selectedCatalogRootAnchorId)) runtime.selectedCatalogRootAnchorId = "";
   const counts = rootContainerUsageCountsForCatalog(state, {
+    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
     isRootContainerInActiveCatalog,
@@ -9353,6 +9376,7 @@ function getActiveLayoutItems() {
 
 function getItemsForItemsView() {
   return itemsForItemsViewForState(getItemsForActiveCatalog(), {
+    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isFilterContextActive,
     isItemAwayFromHomeAndBike,
     isItemInActiveLayout,
@@ -9377,6 +9401,7 @@ function itemCreatedTime(item) {
 
 function getItemsUsageCounts() {
   return itemUsageCountsForCatalog(getItemsForActiveCatalog(), {
+    duplicatesOnly: runtime.catalogDuplicatesOnly,
     isItemAwayFromHomeAndBike,
     isItemInActiveLayout,
     isItemWithoutWeight,
@@ -9502,6 +9527,7 @@ function getRootContainers() {
 
 function getRootContainersForSettings() {
   return rootContainersForSettingsForState(state, {
+    duplicatesOnly: runtime.catalogDuplicatesOnly,
     containerCreatedTime,
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,

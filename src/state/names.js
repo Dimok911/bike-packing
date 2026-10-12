@@ -1,6 +1,6 @@
 import { looksLikeMojibakeText } from "../utils/text.js";
 
-export function makeCopyName(name, existingNames, suffix = "копия") {
+export function makeCopyName(name, existingNames, suffix = "copy") {
   const baseName = `${name} ${suffix}`;
   const names = new Set([...existingNames].map((value) => String(value || "")));
   if (!names.has(baseName)) return baseName;
