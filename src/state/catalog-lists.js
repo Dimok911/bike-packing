@@ -1,5 +1,5 @@
 import { sortCatalogRecords } from "./catalog-sort.js";
-import { filterCatalogDuplicates } from "./catalog-duplicates.js";
+import { catalogDuplicateGroups, filterCatalogDuplicates, isBrokenCatalogItem } from "./catalog-duplicates.js";
 import {
   createItemUsageCounts,
   createRootContainerUsageCounts
@@ -26,11 +26,16 @@ export function itemsForItemsView(items, {
   itemUsageFilter = "all",
   matchesItemsViewFilters = () => true
 } = {}) {
-  const filtered = filterCatalogDuplicates(items || [], duplicatesOnly || itemUsageFilter === "duplicates").filter((item) => {
+  if (duplicatesOnly || itemUsageFilter === "duplicates") {
+    return sortCatalogRecords(catalogDuplicateGroups(items || [], (item) => isFilterContextActive() || matchesItemsViewFilters(item)).flat(),
+      itemSortMode, { createdTime: itemCreatedTime });
+  }
+  const filtered = (items || []).filter((item) => {
     if (!isFilterContextActive() && !matchesItemsViewFilters(item)) return false;
     if (itemUsageFilter === "current") return isItemInActiveLayout(item);
     if (itemUsageFilter === "away") return isItemAwayFromHomeAndBike(item);
     if (itemUsageFilter === "no-weight") return isItemWithoutWeight(item);
+    if (itemUsageFilter === "broken") return isBrokenCatalogItem(item);
     if (itemUsageFilter === "unused") return !isItemInActiveLayout(item);
     return true;
   });
@@ -44,12 +49,15 @@ export function itemUsageCountsForCatalog(items, {
   isItemWithoutWeight = () => false,
   matchesItemsViewFilters = () => true
 } = {}) {
-  return createItemUsageCounts(filterCatalogDuplicates(items || [], duplicatesOnly), {
+  const counts = createItemUsageCounts(filterCatalogDuplicates(items || [], duplicatesOnly), {
     matchesItem: matchesItemsViewFilters,
     isAwayFromHomeAndBike: isItemAwayFromHomeAndBike,
     isWithoutWeight: isItemWithoutWeight,
     isInCurrentLayout: isItemInActiveLayout
   });
+  counts.duplicates = catalogDuplicateGroups(items || [], matchesItemsViewFilters).flat().length;
+  counts.broken = (items || []).filter((item) => isBrokenCatalogItem(item) && matchesItemsViewFilters(item)).length;
+  return counts;
 }
 
 export function rootContainersForEditor(targetState, {
@@ -76,6 +84,10 @@ export function rootContainersForSettings(targetState, {
   const candidates = Object.values(targetState?.containers || {}).filter((container) =>
     isPrivateCatalogContainerRecord(container.id, container) && isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
   );
+  if (duplicatesOnly || rootContainerUsageFilter === "duplicates") {
+    return sortCatalogRecords(catalogDuplicateGroups(candidates, matchesRootContainerFieldsFilter).flat(),
+      rootContainerSortMode, { createdTime: containerCreatedTime });
+  }
   const roots = filterCatalogDuplicates(candidates, duplicatesOnly || rootContainerUsageFilter === "duplicates").filter((container) => {
     if (!isPrivateCatalogContainerRecord(container.id, container)) return false;
     if (!isRootContainerForEditor(container)) return false;
@@ -90,6 +102,7 @@ export function rootContainersForSettings(targetState, {
 
 export function rootContainerUsageCountsForCatalog(targetState, {
   duplicatesOnly = false,
+  matchesRootContainerFieldsFilter = () => true,
   isPrivateCatalogContainerRecord = () => true,
   isRootContainerForEditor = () => true,
   isRootContainerInActiveCatalog = () => true,
@@ -98,11 +111,13 @@ export function rootContainerUsageCountsForCatalog(targetState, {
   const candidates = Object.values(targetState?.containers || {}).filter((container) =>
     isPrivateCatalogContainerRecord(container.id, container) && isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
   );
-  return createRootContainerUsageCounts(filterCatalogDuplicates(candidates, duplicatesOnly), {
+  const counts = createRootContainerUsageCounts(filterCatalogDuplicates(candidates, duplicatesOnly), {
     isEligible: (container) =>
       isPrivateCatalogContainerRecord(container.id, container) &&
       isRootContainerForEditor(container) &&
       isRootContainerInActiveCatalog(container),
     isInCurrentLayout: isRootContainerInActiveLayout
   });
+  counts.duplicates = catalogDuplicateGroups(candidates, matchesRootContainerFieldsFilter).flat().length;
+  return counts;
 }

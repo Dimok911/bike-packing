@@ -2038,6 +2038,20 @@ button.ghost.context-toggle.active:focus-visible {
   background: var(--accent-soft);
 }
 
+.catalog-duplicate-group {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.catalog-duplicate-group > h3 { margin: 0 0 12px; font-size: 14px; }
+.catalog-duplicate-group-records {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+
 .hidden {
   display: none !important;
 }

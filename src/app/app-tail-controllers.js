@@ -85,7 +85,6 @@ import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
 import { renderCatalogDuplicatesNotice } from "../ui/catalog-duplicates.js";
-import { filterCatalogDuplicates } from "../state/catalog-duplicates.js";
 import {
   isContainerAvailableForLayoutRoot,
   isContainerAvailableForNestedPicker
@@ -3131,7 +3130,8 @@ function getSummaryWeight(view, items, isFiltered) {
 }
 
 function getItemsViewSummaryItems() {
-  return filterCatalogDuplicates(getItemsForActiveCatalog(), runtime.itemUsageFilter === "duplicates")
+  if (["duplicates", "broken"].includes(runtime.itemUsageFilter)) return getItemsForItemsView();
+  return getItemsForActiveCatalog()
     .filter((item) => matchesItemFieldsFilter(item, { includeContainerPath: true }));
 }
 
@@ -3140,7 +3140,7 @@ function getSummaryRootContainers() {
 }
 
 function isSummaryFiltered(view = getCurrentView()) {
-  if (view === "items") return hasActiveContentFilter();
+  if (view === "items") return ["duplicates", "broken"].includes(runtime.itemUsageFilter) || hasActiveContentFilter();
   if (view === "bags") return runtime.rootContainerUsageFilter !== "all" || hasActiveContentFilter("bags");
   return hasActiveContentFilter() || (state.collectionMode && state.showOnlyUnpacked);
 }
@@ -5044,6 +5044,7 @@ function renderRootContainersEditor() {
   runtime.selectedCatalogRootIds = normalizeCatalogSelection(runtime.selectedCatalogRootIds, roots.map((container) => container.id));
   if (runtime.selectedCatalogRootAnchorId && !roots.some((container) => container.id === runtime.selectedCatalogRootAnchorId)) runtime.selectedCatalogRootAnchorId = "";
   const counts = rootContainerUsageCountsForCatalog(state, {
+    matchesRootContainerFieldsFilter,
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
     isRootContainerInActiveCatalog,

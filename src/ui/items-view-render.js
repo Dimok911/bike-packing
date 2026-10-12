@@ -1,4 +1,5 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
+import { renderCatalogDuplicateGroups } from "./catalog-duplicates.js";
 import { itemStorageLocations } from "../state/item-stock.js";
 import { renderEmptyState } from "./empty-state.js";
 import { formatItemWeight, renderItemQuantityText } from "./item-format.js";
@@ -45,7 +46,8 @@ export function renderItemsViewHtml({
               <option value="away"${itemUsageFilter === "away" ? " selected" : ""}>${tr(t, "items.usage.away", `Не дома и не на веле (${counts.away})`, { count: counts.away })}</option>
               <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>${tr(t, "items.usage.noWeight", `Без веса (${counts.noWeight})`, { count: counts.noWeight })}</option>
               <option value="unused"${itemUsageFilter === "unused" ? " selected" : ""}>${tr(t, "items.usage.unused", `Вне текущей укладки (${counts.unused})`, { count: counts.unused })}</option>
-              <option value="duplicates"${itemUsageFilter === "duplicates" ? " selected" : ""}>${tr(t, "catalog.duplicates", "Дубликаты")}</option>
+              <option value="duplicates"${itemUsageFilter === "duplicates" ? " selected" : ""}>${tr(t, "catalog.duplicates", `Дубликаты (${counts.duplicates || 0})`, { count: counts.duplicates || 0 })}</option>
+              <option value="broken"${itemUsageFilter === "broken" ? " selected" : ""}>${tr(t, "catalog.broken", `Сломанные (${counts.broken || 0})`, { count: counts.broken || 0 })}</option>
             </select>
           </label>
           <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">
@@ -53,7 +55,7 @@ export function renderItemsViewHtml({
           </button>
         </div>
       </div>
-      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, {
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${(itemUsageFilter === "duplicates" ? renderCatalogDuplicateGroups(items, renderListItem, t) : items.map(renderListItem).join("")) || renderEmptyState(emptyText, {
         filtered: emptyFiltered,
         resetFiltersText
       })}</div>
@@ -93,13 +95,14 @@ export function renderSharedItemsViewHtml({
               <option value="all"${itemUsageFilter === "all" ? " selected" : ""}>${tr(t, "items.usage.all", `Все вещи (${counts.all})`, { count: counts.all })}</option>
               <option value="current"${itemUsageFilter === "current" ? " selected" : ""}>${tr(t, "items.usage.current", `В текущей укладке (${counts.current})`, { count: counts.current })}</option>
               <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>${tr(t, "items.usage.noWeight", `Без веса (${counts.noWeight})`, { count: counts.noWeight })}</option>
-              <option value="duplicates"${itemUsageFilter === "duplicates" ? " selected" : ""}>${tr(t, "catalog.duplicates", "Дубликаты")}</option>
+              <option value="duplicates"${itemUsageFilter === "duplicates" ? " selected" : ""}>${tr(t, "catalog.duplicates", `Дубликаты (${counts.duplicates || 0})`, { count: counts.duplicates || 0 })}</option>
+              <option value="broken"${itemUsageFilter === "broken" ? " selected" : ""}>${tr(t, "catalog.broken", `Сломанные (${counts.broken || 0})`, { count: counts.broken || 0 })}</option>
             </select>
           </label>
           <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">${label}</button>
         </div>
       </div>
-      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, {
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${(itemUsageFilter === "duplicates" ? renderCatalogDuplicateGroups(items, renderListItem, t) : items.map(renderListItem).join("")) || renderEmptyState(emptyText, {
         filtered: emptyFiltered,
         resetFiltersText
       })}</div>
