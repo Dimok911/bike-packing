@@ -1,6 +1,6 @@
 # History investigation — 2026-10-13
 
-Follow-up: [v1648 correction and verification](production-v1648-20261014.md).
+Follow-up: [final v1650 correction and authenticated verification](production-v1650-20261014.md).
 The observations below describe the incident before that release.
 
 Read-only inspection of the user's open Production Chrome tab and the history
