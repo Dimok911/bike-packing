@@ -2450,13 +2450,6 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
       }
       return;
     }
-    if (route === "duplicate-explicit") {
-      await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
-        sourceContainerId: containerId,
-        targetIndex
-      });
-      return;
-    }
     return;
   }
   await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {

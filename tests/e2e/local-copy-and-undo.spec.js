@@ -1,8 +1,59 @@
 import { expect, test } from "@playwright/test";
-import { createGuestWorkspace, createItemInContainer, createRootContainer, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
+import { createEmptyLayout, createGuestWorkspace, createItemInContainer, createRootContainer, prepareIsolatedRussianGuest, waitForApp } from "./guest-test-helpers.js";
 
 test.beforeEach(async ({ page }) => prepareIsolatedRussianGuest(page));
 const selectView = (page, view) => page.locator(`.tab[data-view="${view}"]`).evaluate((tab) => tab.click());
+
+test("bag copy offers only missing items and an expandable list of existing items", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const { container } = await createGuestWorkspace(page, { layoutName: "Исходная", containerName: "Исходная сумка", itemName: "Насос" });
+  await createItemInContainer(page, container, "Палатка");
+  await createEmptyLayout(page, "Целевая");
+  await createRootContainer(page, "Другая сумка");
+  await page.locator('#layoutSelect').selectOption({ label: 'Исходная' });
+  await page.locator('#packingView [data-item-id]').filter({ hasText: 'Насос' }).locator('.item-title-hitarea').click();
+  await page.locator('#itemCopyToContainerBtn').evaluate(button => button.click());
+  await page.locator('#containerPickerLayoutSelect').selectOption({ label: 'Целевая' });
+  await page.locator('#containerPickerBoard [data-pick-container]').filter({ hasText: 'Другая сумка' }).click();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Целевая');
+  const openCopy = async () => {
+    await page.locator('#layoutSelect').selectOption({ label: 'Исходная' });
+    await selectView(page, 'packing');
+    await page.locator('#packingView [data-root-container-id]').filter({ hasText: 'Исходная сумка' }).locator('.container-title h2').first().click();
+    await page.locator('#rootContainerCopyToContainerBtn').evaluate(button => button.click());
+    await page.locator('#containerPickerLayoutSelect').selectOption({ label: 'Целевая' });
+    await page.locator('#containerPickerBoard [data-pick-root-index]').first().click();
+    await expect(page.locator('#confirmDialog')).toBeVisible();
+  };
+  await openCopy();
+  await expect(page.locator('#confirmDialog button:visible')).toHaveText(['Добавить без дубликатов', 'Не копировать']);
+  await expect(page.locator('#confirmDialog header .icon-button')).toBeHidden();
+  await expect(page.locator('#confirmText')).toContainText('1 вещей уже есть');
+  await expect(page.locator('#confirmText')).toContainText('1 вещей можно добавить без дублей');
+  const details = page.locator('#confirmDialog .copy-duplicate-details');
+  await expect(details.locator('li')).toBeHidden();
+  await details.locator('summary').click();
+  await expect(details.locator('li')).toHaveText(['Насос']);
+  await page.screenshot({ path: testInfo.outputPath('copy-existing-items.png'), fullPage: true });
+  await page.locator('#confirmCancelBtn').click();
+  await page.reload(); await waitForApp(page);
+  await page.locator('#layoutSelect').selectOption({ label: 'Целевая' });
+  await expect(page.locator('#packingView [data-item-id]')).toHaveCount(1);
+  await openCopy();
+  await page.locator('#confirmOkBtn').click();
+  await expect(page.locator('#layoutSelect option:checked')).toHaveText('Целевая');
+  await expect(page.locator('#packingView [data-item-id]')).toHaveCount(2);
+  await expect(page.locator('#packingView [data-root-container-id]').filter({ hasText: 'Другая сумка' }).locator('[data-item-id]')).toHaveCount(1);
+  await selectView(page, 'items');
+  await expect(page.locator('#itemsView [data-list-item-id]')).toHaveCount(2);
+  await expect(page.locator('#itemsView')).not.toContainText('copy');
+  await openCopy();
+  await expect(page.locator('#confirmOkBtn')).toBeDisabled();
+  await page.locator('#confirmDialog summary').click();
+  await expect(page.locator('#confirmDialog li')).toHaveCount(2);
+  expect((await page.locator('#confirmDialog li').allTextContents()).sort()).toEqual(['Насос', 'Палатка']);
+  await page.locator('#confirmCancelBtn').click();
+});
 
 test("duplicate filters live in each catalog and stay independent", async ({ page }) => {
   const { container } = await createGuestWorkspace(page, { layoutName: "Проверка дубликатов", containerName: "Сумка А", itemName: "Насос" });

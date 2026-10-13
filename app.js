@@ -1077,6 +1077,7 @@ import {
   printHtmlDocument
 } from "./src/ui/print.js";
 import { createConfirmDialogController } from "./src/ui/confirm-dialog.js";
+import { containerCopyMissingConfirm } from "./src/ui/container-copy-confirm.js";
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
 import {
   defaultBike3dViewState,
@@ -9420,20 +9421,11 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
     const missingPlan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot, targetParentId);
-    const duplicate = await askConfirmDialog({
-      title: localText("Some elements are already in the layout", "Такие элементы уже есть в укладке"),
-      text: localText(`“${targetLayout.name || "Layout"}” already contains part of this bag/branch. Create separate copies instead of adding them again?`, `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`),
-      okText: localText("Create copies of all items", "Создать копии всех вещей"),
-      alternateText: missingPlan.canCopyMissingItems ? localText("Add without duplicates", "Добавить без дубликатов") : "",
-      cancelText: localText("Do not copy", "Не копировать"),
-      highlightText: localText(
-        `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items are already in the target layout${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} containers/pouches and ${missingPlan.missingItems.length} items can be added without duplicates` : ""}`,
-        `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} контейнеров/пакетов и ${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`
-      ),
-      tone: "safe"
-    });
-    if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing-local";
-    if (duplicate) return "copy-all";
+    const addMissing = await askConfirmDialog(containerCopyMissingConfirm({
+      targetName: targetLayout.name, duplicates, missingPlan,
+      items: state.items, sourceItems: sourceSnapshot.items, language: uiLanguage
+    }));
+    if (addMissing === true && missingPlan.canCopyMissingItems) return "copy-missing-local";
     refs.containerPickerDialog.close();
     showToast(localText("Copy skipped: the elements are already in the target layout.", "Копирование пропущено: элементы уже есть в целевой укладке."), "success");
     return "cancel";
@@ -9441,20 +9433,11 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
   const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, publicSourceSnapshot);
   if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
   const missingPlan = publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
-  const duplicate = await askConfirmDialog({
-    title: localText("Already copied to this layout", "Уже скопировано в эту укладку"),
-    text: localText(`“${sourceName || "Element"}” is already in “${targetLayout.name || "Layout"}” as a demo/template copy. Create another separate copy?`, `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`),
-    okText: localText("Duplicate all", "Дублировать всё"),
-    alternateText: missingPlan.canCopyMissingItems ? localText("Missing only", "Только недостающие") : "",
-    cancelText: localText("Do not copy", "Не копировать"),
-    highlightText: localText(
-      `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items were found by source ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} items can be added without duplicates` : ""}`,
-      `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`
-    ),
-    tone: "safe"
-  });
-  if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing";
-  if (duplicate) return "copy-all";
+  const addMissing = await askConfirmDialog(containerCopyMissingConfirm({
+    targetName: targetLayout.name, duplicates, missingPlan,
+    items: state.items, sourceItems: sourceSnapshot.items, language: uiLanguage
+  }));
+  if (addMissing === true && missingPlan.canCopyMissingItems) return "copy-missing";
   showToast(localText("Copy skipped: this demo/template copy is already in the target layout.", "Копирование пропущено: такая demo/shared копия уже есть в целевой укладке."), "success");
   return "cancel";
 }

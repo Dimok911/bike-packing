@@ -8,7 +8,6 @@ export function privateContainerTreeCopyRoute({
 
   const hasDuplicates = Boolean(duplicateContainerIds.length || duplicateItemIds.length);
   if (!hasDuplicates) return "link-existing";
-  if (copyAction === "copy-all") return "duplicate-explicit";
   return "cancel";
 }
 

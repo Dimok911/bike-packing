@@ -1,5 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { containerCopyMissingConfirm } from "../../src/ui/container-copy-confirm.js";
+
+test("copy confirmation lists every existing item safely and disables adding when nothing is missing", () => {
+  const options = { targetName: "Target", duplicates: { containerIds: ["bag"], itemIds: ["a", "b"] },
+    missingPlan: { canCopyMissingItems: true, missingContainers: [{}], missingItems: [{}] },
+    items: { a: { name: "<img src=x onerror=alert(1)>" }, b: { name: "Насос" }, missing: { name: "Палатка" } } };
+  const confirm = containerCopyMissingConfirm(options);
+  assert.equal(confirm.okText, "Добавить без дубликатов");
+  assert.equal(confirm.hideClose, true);
+  assert.equal(confirm.okDisabled, false);
+  assert.equal(confirm.alternateText, undefined);
+  assert.equal((confirm.highlightHtml.match(/<li>/g) || []).length, 2);
+  assert.ok(confirm.highlightHtml.includes("Насос"));
+  assert.ok(confirm.highlightHtml.includes("&lt;img"));
+  assert.ok(!confirm.highlightHtml.includes("<img"));
+  assert.ok(!confirm.highlightHtml.includes("Палатка"));
+  const empty = containerCopyMissingConfirm({ ...options, missingPlan: { canCopyMissingItems: false, missingItems: [] } });
+  assert.equal(empty.okDisabled, true);
+  assert.ok(empty.highlightHtml.includes("Недостающих элементов для добавления нет"));
+});
 import { planLayoutTreeMissingItems } from "../../src/public/copy-duplicates.js";
 import {
   linkExistingContainerTreeToLayoutState,
@@ -242,7 +262,7 @@ test("CRITICAL private copy: a linked nested bag keeps the selected slot", () =>
   assert.deepEqual(state.layouts.target.arrangement.containers.parent.order, state.containers.parent.order);
 });
 
-test("CRITICAL private copy: duplicate policy distinguishes link, missing and explicit duplicate routes", () => {
+test("CRITICAL private copy: duplicate policy permits linking or missing-only and rejects creating duplicates", () => {
   assert.equal(privateContainerTreeCopyRoute({
     copyAction: "copy-all",
     duplicateContainerIds: [],
@@ -259,7 +279,7 @@ test("CRITICAL private copy: duplicate policy distinguishes link, missing and ex
     copyAction: "copy-all",
     duplicateContainerIds: ["bag-a"],
     duplicateItemIds: []
-  }), "duplicate-explicit");
+  }), "cancel");
 
   assert.equal(privateContainerTreeCopyRoute({
     copyAction: "",

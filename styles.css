@@ -8894,6 +8894,11 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel.photo-lightbox-controlled-pa
   white-space: pre-line;
 }
 
+.copy-duplicate-details { margin-top: 12px; white-space: normal; }
+.copy-duplicate-details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.copy-duplicate-details ul { margin: 8px 0 0; padding-left: 24px; }
+.copy-duplicate-details li { margin: 6px 0; overflow-wrap: anywhere; }
+
 .confirm-highlight {
   display: block;
   margin-top: 10px;

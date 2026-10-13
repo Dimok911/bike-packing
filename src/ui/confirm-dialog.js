@@ -16,7 +16,7 @@ export function confirmMessageHtml({ text, highlightText = "", highlightHtml = "
     ? `<strong class="confirm-highlight-count">${escapeHtml(highlightCount)}</strong>`
     : "";
   const bodyHtml = highlightHtml || `${countHtml}${escapeHtml(highlightText)}`;
-  return `${escapeHtml(text)}<span class="${highlightClass}">${bodyHtml}</span>`;
+  return `${escapeHtml(text)}<div class="${highlightClass}">${bodyHtml}</div>`;
 }
 
 export function createConfirmDialogController({ refs, openModalDialog }) {
@@ -39,6 +39,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     tone = "",
     hideClose = false,
     hideCancel = false,
+    okDisabled = false,
     keepOpenOnOk = false,
     onOk = null,
     onCancel = null
@@ -47,11 +48,13 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     const closeBtn = refs.confirmCloseBtn || refs.confirmDialog.querySelector("header .icon-button");
     const previousCloseHidden = closeBtn?.hidden || false;
     const previousCancelHidden = refs.confirmCancelBtn.hidden;
+    const previousOkDisabled = refs.confirmOkBtn.disabled;
     refs.confirmTitle.textContent = title;
     refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightHtml, highlightCount, tone });
     refs.confirmCancelBtn.textContent = cancelText;
     refs.confirmCancelBtn.hidden = Boolean(hideCancel);
     refs.confirmOkBtn.textContent = okText;
+    refs.confirmOkBtn.disabled = Boolean(okDisabled);
     if (closeBtn) closeBtn.hidden = Boolean(hideClose);
     if (refs.confirmAlternateBtn) {
       refs.confirmAlternateBtn.textContent = alternateText || "";
@@ -84,6 +87,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         refs.confirmDialog.classList.remove("danger-confirm-dialog");
         if (closeBtn) closeBtn.hidden = previousCloseHidden;
         refs.confirmCancelBtn.hidden = previousCancelHidden;
+        refs.confirmOkBtn.disabled = previousOkDisabled;
         setConfirmButtonOrder();
       };
       const handleClose = () => {
@@ -110,6 +114,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
       };
       refs.confirmOkBtn.onclick = (event) => {
         event.preventDefault();
+        if (refs.confirmOkBtn.disabled) return;
         runAction(onOk);
         if (keepOpenOnOk) {
           refs.confirmOkBtn.disabled = true;
