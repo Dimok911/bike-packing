@@ -2238,11 +2238,6 @@ function activateLocalStorageScope(scopeKey) {
   currentPackingListMeta = null;
   applyLoadedStateToCurrentScope(nextState, { createFallbackLayout });
   if (nextScope === GUEST_STORAGE_SCOPE) guestWorkspaceSessionTracker.reset(state);
-  else {
-    const undoKey = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
-    writeLocalUndoEntries(localStorage, undoKey, pendingLocalUndoEntries(
-      readLocalUndoEntries(localStorage, undoKey), state, loadBaseState()));
-  }
   explicitLayoutChoice = { id: "", at: 0 };
   return true;
 }
@@ -5573,6 +5568,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     return false;
   }
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
+  const confirmedHistoryState = cloneStateForSync(catalogRepairBase || remoteState, { forSync: true });
   retainLocalPhotoUploads(remoteState, state);
   replaceState(remoteState);
   removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
@@ -5591,6 +5587,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
   rememberCurrentSyncAccount();
   saveSyncMeta();
+  reconcileLocalHistoryWithConfirmedState(confirmedHistoryState);
   repairPrivateMojibakeLayoutNames();
   appUnlocked = true;
   initialRemoteLoadPending = false;
@@ -8098,6 +8095,7 @@ function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
 
 async function loadRemoteState(options = {}) {
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
+  const historyScope = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
   remoteStateLoadPromise = loadRemoteStateFlow({
     runtime: {
       get appUnlocked() { return appUnlocked; },
@@ -8128,6 +8126,10 @@ async function loadRemoteState(options = {}) {
       formatMergeConflicts,
       hasLocalSavedState,
       hasLocalSyncChanges,
+      verifyLocalHistoryFromServer,
+      reconcileLocalHistoryWithConfirmedState: confirmed => {
+        if (historyScope === scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)) reconcileLocalHistoryWithConfirmedState(confirmed);
+      },
       isForeignLocalSyncState,
       isMeaningfulPackingState,
       isNetworkError,
@@ -8216,6 +8218,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
       return;
     }
     if (!listFreshnessChanged(syncMeta, freshness)) {
+      await verifyLocalHistoryFromServer(listId);
       updateSyncUi();
       return;
     }
@@ -9881,6 +9884,43 @@ async function openHistoryDialog() {
   renderHistorySourceControls();
   openModalDialog(refs.historyDialog);
   refreshHistoryDialog();
+}
+
+function hasPendingLocalHistory() {
+  return readLocalUndoEntries(localStorage, scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)).length > 0;
+}
+
+async function verifyLocalHistoryFromServer(listId) {
+  if (!currentUser || !listId || !hasPendingLocalHistory() || isForcedOffline()) return;
+  const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  try {
+    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/state`, {
+      timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+    });
+    if (key !== scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)) return;
+    if (listId !== (currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId)) return;
+    const record = normalizeRemoteListRecord(data);
+    const confirmed = normalizeRemoteState(record?.payload);
+    if (confirmed) reconcileLocalHistoryWithConfirmedState(confirmed);
+  } catch {
+    // A connection indicator or cached revision is not proof of saved edits.
+    // Leave the journal intact; the next successful check can confirm it.
+  }
+}
+
+function reconcileLocalHistoryWithConfirmedState(confirmedState) {
+  if (!currentUser || !confirmedState) return;
+  const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  const entries = readLocalUndoEntries(localStorage, key);
+  if (!entries.length) return;
+  const pending = pendingLocalUndoEntries(entries, state, confirmedState, {
+    pendingPhotos: hasPendingLocalPhotos(state),
+    normalize: value => cloneStateForSync(value, { forSync: true })
+  });
+  if (pending.length === entries.length) return;
+  writeLocalUndoEntries(localStorage, key, pending);
+  updateHistoryMenu();
+  if (refs.localHistoryDialog?.open) renderLocalHistory();
 }
 
 function capturePendingLocalHistory() {

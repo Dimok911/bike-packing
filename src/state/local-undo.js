@@ -95,14 +95,18 @@ export function captureLocalUndoAcknowledgement(storage, key) {
     readLocalUndoEntries(storage, key).filter(entry => !sent.has(JSON.stringify(entry))));
 }
 
-export function pendingLocalUndoEntries(entries, current, confirmed) {
-  if (!current || !confirmed) return entries;
+export function pendingLocalUndoEntries(entries, current, confirmed, { normalize = value => value, pendingPhotos = false } = {}) {
+  // Sync serialization excludes pending uploads; their apparent equality must
+  // not acknowledge the local action that introduced those photographs.
+  if (!current || !confirmed || pendingPhotos) return entries;
+  const normalizedConfirmed = normalize(confirmed);
+  const matchesConfirmed = value => !createLocalUndoEntry(normalizedConfirmed, normalize(value));
   let cursor = current;
-  if (!createLocalUndoEntry(confirmed, cursor)) return [];
+  if (matchesConfirmed(cursor)) return [];
   for (let index = entries.length - 1; index >= 0; index--) {
     cursor = applyLocalUndoEntry(cursor, entries[index]);
     if (!cursor) break;
-    if (!createLocalUndoEntry(confirmed, cursor)) return entries.slice(index);
+    if (matchesConfirmed(cursor)) return entries.slice(index);
   }
   return entries;
 }

@@ -240,8 +240,11 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
 for (const failFirstComparison of [false, true]) {
 test(`history list automatically omits technical pages and counts only visible entries (retry: ${failFirstComparison})`, async ({ page }) => {
   let comparisonFailed = false;
-  const before = { items: { pump: { id: "pump", name: "Насос" } }, containers: {},
-    layouts: { a: { id: "a", name: "Моя укладка", rootContainerIds: [], arrangement: { items: {}, containers: {} } } }, activeLayoutId: "a" };
+  const before = { items: { pump: { id: "pump", name: "Насос", weight: 100, quantity: 1 } },
+    containers: { bag: { id: "bag", name: "Сумка", nestable: true } }, locations: [], categories: [],
+    layouts: { a: { id: "a", name: "Моя укладка", rootContainerIds: ["bag"], arrangement: {
+      rootContainerIds: ["bag"], items: { pump: "bag" }, containers: { bag: { parentId: "", childIds: [], itemIds: ["pump"], order: [{ type: "item", id: "pump" }] } }, itemQuantities: { pump: 1 }, packedItems: {}
+    } } }, activeLayoutId: "a" };
   const after = structuredClone(before); after.items.pump.name = "Насос Full";
   const technical = structuredClone(after); technical.layouts.a.arrangement.itemQuantityMigrationVersion = 3;
   const action = { entityType: "items", operation: "changed", title: "Техническая запись" };
@@ -269,7 +272,26 @@ test(`history list automatically omits technical pages and counts only visible e
     return route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false}' });
   });
   await page.goto("/"); await waitForApp(page);
-  await page.locator('#menuBtn').click(); await page.locator('#historyBtn').click();
+  // Reproduce a journal left by an older release even though the server already
+  // contains the action. A stale baseline prevents the old activation shortcut.
+  await page.evaluate(payload => {
+    const suffix = "::id:history-user";
+    const stateKey = "bike-packing-prototype-state-v1" + suffix;
+    const saved = payload;
+    localStorage.setItem(stateKey, JSON.stringify(saved));
+    const staleBase = structuredClone(saved); staleBase.items.pump.weight = 999;
+    localStorage.setItem("bike-packing-prototype-base-state-v1" + suffix, JSON.stringify(staleBase));
+    localStorage.setItem("bike-packing-local-undo-v1" + suffix, JSON.stringify([{
+      createdAt: "2026-10-13T20:25:00Z", names: ["Насос Full"],
+      changes: [{ path: ["items", "pump", "name"], before: { exists: true, value: "Насос" }, after: { exists: true, value: "Насос Full" } }]
+    }]));
+  }, technical);
+  await page.reload(); await waitForApp(page);
+  await page.locator('#menuBtn').click();
+  await expect(page.locator('#localUndoBtn')).not.toBeVisible();
+  await expect(page.locator('#historyBtn')).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-local-undo-v1::id:history-user")))).toEqual([]);
+  await page.locator('#historyBtn').click();
   if (failFirstComparison) {
     await expect(page.locator('[data-history-retry]')).toBeVisible();
     await expect(page.locator('#historyList [data-history-record]')).toHaveCount(0);

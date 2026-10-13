@@ -148,6 +148,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           renderPreservingPackingScroll();
           await offerPendingGuestLoginHandoffAfterRemoteLoad();
           setPersonalLayoutsLoadedStatus();
+          await dependencies.verifyLocalHistoryFromServer?.(startupListId);
           updateSyncUi();
           return;
         }
@@ -207,6 +208,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
     if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
+    if (remoteState) dependencies.reconcileLocalHistoryWithConfirmedState?.(remoteState);
     if (remoteState) syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
     const serverTimeText = remoteUpdatedAt(record);
     const serverTime = timeValue(serverTimeText);

@@ -1,3 +1,4 @@
+import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -147,4 +148,54 @@ for (const mode of ["entities", "payload", "failed", "blocked"]) test(`local jou
     isTimeoutError: () => false, isTemporaryServerStorageError: () => false
   } });
   assert.equal(readLocalUndoEntries(storage, "account").length, ["entities", "payload"].includes(mode) ? 0 : 1);
+});
+
+
+test("confirmed history comparison excludes local-only drafts but preserves unsent edits and photos", () => {
+  const before = fixture(), confirmed = structuredClone(before); confirmed.items.a.name = "Full";
+  const entry = createLocalUndoEntry(before, confirmed);
+  const current = structuredClone(confirmed);
+  current.layouts.preview = { id: "preview", localOnly: true, name: "Preview" };
+  const normalize = value => {
+    const copy = structuredClone(value);
+    for (const [id, layout] of Object.entries(copy.layouts || {})) if (layout.localOnly) delete copy.layouts[id];
+    return copy;
+  };
+  assert.deepEqual(pendingLocalUndoEntries([entry], current, confirmed, { normalize }), []);
+  const edited = structuredClone(current); edited.items.a.weight = 80;
+  const newer = createLocalUndoEntry(current, edited);
+  assert.deepEqual(pendingLocalUndoEntries([entry, newer], edited, confirmed, { normalize }), [newer]);
+  const withPhoto = structuredClone(current); withPhoto.items.a.photos = [{ localId: "unsent" }];
+  const photoEntry = createLocalUndoEntry(current, withPhoto);
+  assert.deepEqual(pendingLocalUndoEntries([entry, photoEntry], withPhoto, confirmed, { normalize }), [photoEntry]);
+});
+
+
+test("pending uploads cannot be acknowledged by sync serialization that omits their photos", () => {
+  const before = fixture(), after = structuredClone(before);
+  after.items.a.photos = [{ localId: "pending-local-photo" }];
+  const entries = [createLocalUndoEntry(before, after)];
+  const normalize = () => fixture();
+  assert.deepEqual(pendingLocalUndoEntries(entries, after, before, { normalize, pendingPhotos: true }), entries);
+});
+
+
+test("cached startup verifies the local journal without applying a server state or saving it", async () => {
+  const state = fixture(), noop = () => {};
+  const runtime = { currentUser: { id: "a" }, state, syncMeta: {}, initialRemoteLoadPending: true };
+  let checks = 0;
+  await loadRemoteStateFlow({ runtime, dependencies: {
+    isSharedListLinkRoute: () => false, isPublicLayoutContext: () => false,
+    setLayoutLoadStatus: noop, clearStaleDirtyFlagIfNoLocalChanges: noop,
+    currentPackingListId: () => "personal", fetchRemoteListFreshnessRecord: async () => ({}),
+    hasLocalSavedState: () => true, hasLocalSyncChanges: () => false, canUseCachedStartupState: () => true,
+    verifyLocalHistoryFromServer: async id => { assert.equal(id, "personal"); checks++; },
+    rememberRemoteIntegrityMeta: noop, rememberCurrentSyncAccount: noop,
+    serializeState: () => state, saveBaseState: noop, saveSyncMeta: noop,
+    repairPrivateMojibakeLayoutNames: noop, renderPreservingPackingScroll: noop,
+    setPersonalLayoutsLoadedStatus: noop, updateSyncUi: noop,
+    fetchRemoteStateRecord: () => assert.fail("journal verification must not trigger state replacement")
+  } });
+  assert.equal(checks, 1);
+  assert.equal(runtime.state, state);
 });
