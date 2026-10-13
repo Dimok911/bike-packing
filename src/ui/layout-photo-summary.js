@@ -159,6 +159,7 @@ export function createLayoutPhotoSummary({ host, renderGallery, bindGalleries, l
         const caption = media.photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`);
         button.setAttribute("aria-label", caption);
         button.querySelector("img").alt = caption;
+        button.querySelector("img").dataset.photoCaption = media.photos[index].caption || "";
 
       });
       binding = bindGalleries(host);

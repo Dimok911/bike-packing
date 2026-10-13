@@ -1105,6 +1105,7 @@ export async function openPhotoLightbox(sourceImage, {
       <span data-photo-lightbox-status-text>${loadingFullLabel}</span>
     </div>
     ${dotsHtml}
+    <div class="photo-lightbox-caption${hasNavigation ? " photo-lightbox-caption-with-dots" : ""}" aria-live="polite"${initialEntry?.caption ? "" : " hidden"}>${escapeHtml(initialEntry?.caption || "")}</div>
     ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next vpg-fullscreen-control vpg-fullscreen-nav" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
@@ -1115,6 +1116,7 @@ export async function openPhotoLightbox(sourceImage, {
   const track = overlay.querySelector(".photo-lightbox-track");
   const lightboxImages = [...overlay.querySelectorAll(".photo-lightbox-image")];
   const lightboxDots = [...overlay.querySelectorAll(".photo-lightbox-dot")];
+  const lightboxCaption = overlay.querySelector(".photo-lightbox-caption");
   let image = lightboxImages[initialIndex];
   const loadStatus = overlay.querySelector(".photo-lightbox-load-status");
   const loadStatusText = overlay.querySelector("[data-photo-lightbox-status-text]");
@@ -1345,6 +1347,8 @@ export async function openPhotoLightbox(sourceImage, {
   const updateLightboxDots = (visibleIndex) => {
     if (visibleIndex === indicatedIndex) return;
     indicatedIndex = visibleIndex;
+    lightboxCaption.textContent = entries[visibleIndex]?.caption || "";
+    lightboxCaption.hidden = !lightboxCaption.textContent;
     lightboxDots.forEach((dot, dotIndex) => {
       const active = dotIndex === visibleIndex;
       dot.classList.toggle("active", active);
@@ -2172,6 +2176,7 @@ function photoLightboxEntry(image) {
   );
   return {
     image,
+    caption: image.dataset.photoCaption || "",
     localId: image.dataset.photoLocalSourceId || image.dataset.photoLocalId || "",
     previewSrc,
     fullSrc,

@@ -87,8 +87,13 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await expect(summary.locator('figcaption')).toHaveText(['Упакованные сумки','Велосипед целиком']);
   await summary.locator('[data-photo-open]').nth(1).click();
   await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute('aria-current','true');
+  await expect(page.locator('.photo-lightbox-caption')).toHaveText('Велосипед целиком');
   await navigatePhoto(-1);
   await expect(page.locator('[data-photo-lightbox-dot="0"]')).toHaveAttribute('aria-current','true');
+  await expect(page.locator('.photo-lightbox-caption')).toHaveText('Упакованные сумки');
+  const captionBox = await page.locator('.photo-lightbox-caption').boundingBox();
+  const dotsBox = await page.locator('.photo-lightbox-dots').boundingBox();
+  expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(dotsBox.y);
   await page.keyboard.press('Escape');
   // Guest users always see В, including after an admin preference remains in storage.
   await expect(page.locator('#packingVisualStyleControl')).toBeHidden();
@@ -118,6 +123,7 @@ test("layout photos: captions, reorder, fullscreen, persistence, discard and vid
   await expect(editor.locator("[data-layout-videos] a")).toHaveAttribute("href", "https://youtu.be/example");
   await editor.locator("[data-photo-open]").first().click();
   await expect(page.locator(".photo-lightbox-image")).toHaveCount(2);
+  await expect(page.locator('.photo-lightbox-caption')).toHaveText('Упакованные сумки');
   await expect(page.locator('[data-photo-lightbox-dot="0"]')).toHaveAttribute('aria-current', 'true');
   await navigatePhoto(1);
   await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute('aria-current', 'true');

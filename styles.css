@@ -7349,6 +7349,31 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel.photo-lightbox-controlled-pa
   display: none;
 }
 
+.photo-lightbox-caption {
+  position: fixed;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: max-content;
+  max-width: min(720px, calc(100% - 36px));
+  max-height: 25dvh;
+  overflow-y: auto;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(10, 15, 14, 0.8);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+}
+
+.photo-lightbox-caption[hidden] { display: none; }
+.photo-lightbox-caption-with-dots { bottom: max(52px, calc(env(safe-area-inset-bottom) + 44px)); }
+
 .photo-lightbox-dots {
   position: fixed;
   left: 50%;

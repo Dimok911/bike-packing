@@ -50,7 +50,10 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     list.querySelectorAll("[data-photo-open]").forEach((button, index) => {
       button.setAttribute("aria-label", photos[index].caption || localText(`Open photo ${index + 1}`, `Открыть фото ${index + 1}`));
       const image = button.querySelector("img");
-      if (image) image.alt = photos[index].caption || "";
+      if (image) {
+        image.alt = photos[index].caption || "";
+        image.dataset.photoCaption = photos[index].caption || "";
+      }
     });
     galleryBinding = bindGalleries(list);
     refreshUploads();
@@ -78,6 +81,8 @@ export function createLayoutMediaEditor({ dialog, createPhoto, deleteCachedPhoto
     const button=row.querySelector("[data-layout-caption-edit]");
     button.textContent=input.value || localText("Add caption", "Добавить подпись");
     button.title=button.textContent;
+    const image=row.querySelector("[data-photo-open] img");
+    if(image) { image.alt=input.value; image.dataset.photoCaption=input.value; }
     const open=row.querySelector("[data-photo-open]");
     if(open)open.setAttribute("aria-label", input.value || localText(`Open photo ${Number(row.dataset.layoutPhotoIndex)+1}`, `Открыть фото ${Number(row.dataset.layoutPhotoIndex)+1}`));
     input.hidden=true; button.hidden=false;

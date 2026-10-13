@@ -102,7 +102,10 @@ export async function loadVisibleHistoryPage(pageState, {
     const records = [...page.records];
     for (let index = 0; index < records.length; index++) {
       if (!isCurrent()) return null;
-      const detail = await inspectRecord(records[index], index);
+      const record = records[index];
+      const detail = record.comparisonVersion === "visible-v1" && record.hasUserVisibleChanges === true
+        ? { record, hasUserVisibleChanges: true }
+        : await inspectRecord(record, index);
       if (!isCurrent()) return null;
       if (typeof detail?.hasUserVisibleChanges !== "boolean") {
         throw new Error("History comparison is unavailable");
@@ -130,6 +133,7 @@ export function historySummaryRequestPath(path, { cursor = "", limit = 25 } = {}
   const separator = String(path || "").includes("?") ? "&" : "?";
   const params = new URLSearchParams({
     view: "summary",
+    comparison: "visible-v1",
     limit: String(Math.max(1, Number(limit) || 25))
   });
   if (cursor) params.set("cursor", String(cursor));

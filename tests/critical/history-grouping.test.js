@@ -993,6 +993,7 @@ test("CRITICAL history: the timeline requests lightweight paginated summaries", 
   });
   const url = new URL(path, "https://example.test");
   assert.equal(url.searchParams.get("view"), "summary");
+  assert.equal(url.searchParams.get("comparison"), "visible-v1");
   assert.equal(url.searchParams.get("limit"), "25");
   assert.equal(url.searchParams.get("cursor"), "next page");
 
@@ -1674,4 +1675,18 @@ test("progress never flashes checkpoints superseded by same-day actions", async 
   });
   assert.deepEqual(progress, [[2]]);
   assert.deepEqual(result.records.map(row => row.id), [2]);
+});
+
+
+test("versioned verified summaries show without downloading snapshots; older APIs still verify", async () => {
+  let inspections = 0;
+  const verified = { id: 3, comparisonVersion: "visible-v1", hasUserVisibleChanges: true,
+    action: { entityType: "items", operation: "changed", title: "Pump" } };
+  const result = await loadVisibleHistoryPage(null, {
+    loadPage: async () => ({ records: [verified, { ...verified, id: 2, comparisonVersion: "unknown" }], pageState: {} }),
+    hasMore: () => false,
+    inspectRecord: async record => { inspections++; return { record, hasUserVisibleChanges: false }; }
+  });
+  assert.equal(inspections, 1);
+  assert.deepEqual(result.records.map(record => record.id), [3]);
 });

@@ -237,8 +237,10 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
 });
 
 
-for (const failFirstComparison of [false, true]) {
+for (const failFirstComparison of [false, true, "verified"]) {
 test(`history list automatically omits technical pages and counts only visible entries (retry: ${failFirstComparison})`, async ({ page }) => {
+  const verifiedSummary = failFirstComparison === "verified";
+  let detailRequests = 0;
   let comparisonFailed = false;
   let finishOlderDetail;
   const olderDetailGate = new Promise(resolve => { finishOlderDetail = resolve; });
@@ -260,15 +262,20 @@ test(`history list automatically omits technical pages and counts only visible e
     else if (path.endsWith("/bike-packing/lists")) data = { ok: true, lists: [list] };
     else if (path.endsWith("/history-list/history")) {
       expect(url.searchParams.get("limit")).toBe("5");
+      expect(url.searchParams.get("comparison")).toBe("visible-v1");
       requests.push(url.searchParams.get("cursor") || "first");
+      if (verifiedSummary) return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,records:[
+        {id:2,listId:list.id,action:{entityType:"items",operation:"changed",title:"Насос Full"},comparisonVersion:"visible-v1",hasUserVisibleChanges:true,createdAt:"2026-10-13T20:25:00Z"},
+        {id:1,listId:list.id,snapshotKind:"daily",comparisonVersion:"visible-v1",hasUserVisibleChanges:true,createdAt:"2026-10-12T20:25:00Z"}
+      ],page:{hasMore:false,nextCursor:""}})});
       data = url.searchParams.has("cursor")
         ? { ok: true, records: [{ id: 2, listId: list.id, action, createdAt: "2026-10-13T20:25:00Z" }, { id: 1, listId: list.id, snapshotKind: "daily", createdAt: "2026-10-12T20:25:00Z" }], page: { hasMore: false, nextCursor: "" } }
         : { ok: true, records: [{ id: 3, listId: list.id, action, createdAt: "2026-10-14T00:05:00Z" }], page: { hasMore: true, nextCursor: "older" } };
-    } else if (path.endsWith("/history-list/history/3") && failFirstComparison && !comparisonFailed) {
+    } else if (path.endsWith("/history-list/history/3") && failFirstComparison === true && !comparisonFailed) {
       comparisonFailed = true;
       return route.fulfill({ status: 502, contentType: "application/json", body: '{"ok":false}' });
     } else if (path.endsWith("/history-list/history/3")) data = { ok: true, record: { id: 3, payload: after }, comparisonPayload: technical, action };
-    else if (path.endsWith("/history-list/history/2")) data = { ok: true, record: { id: 2, payload: before }, comparisonPayload: after, action };
+    else if (path.endsWith("/history-list/history/2")) { detailRequests++; data = { ok: true, record: { id: 2, payload: before }, comparisonPayload: after, action }; }
     else if (path.endsWith("/history-list/history/1")) {
       await olderDetailGate;
       data = { ok: true, record: { id: 1, snapshotKind: "daily", payload: before }, comparisonPayload: after };
@@ -298,26 +305,35 @@ test(`history list automatically omits technical pages and counts only visible e
   await expect(page.locator('#historyBtn')).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-local-undo-v1::id:history-user")))).toEqual([]);
   await page.locator('#historyBtn').click();
-  if (failFirstComparison) {
+  if (failFirstComparison === true) {
     await expect(page.locator('[data-history-retry]')).toBeVisible();
     await expect(page.locator('#historyList [data-history-record]')).toHaveCount(0);
     await expect(page.locator('#historyDetailDialog')).not.toBeVisible();
     expect(requests).toEqual(['first']);
     await page.locator('[data-history-retry]').click();
   }
-  await expect(page.locator('#historyList [data-history-record]')).toHaveCount(1);
-  await expect(page.locator('#historyStatus')).toContainText('загружаю');
-  await page.locator('#historyList [data-history-detail]').click();
-  await expect(page.locator('#historyDetailContent')).toContainText('Насос → Насос Full');
-  finishOlderDetail();
-  await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
+  if (verifiedSummary) {
+    await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
+    expect(detailRequests).toBe(0);
+    await page.locator('#historyList [data-history-detail]').first().click();
+    await expect(page.locator('#historyDetailContent')).toContainText('Насос → Насос Full');
+    expect(detailRequests).toBe(1);
+    finishOlderDetail();
+  } else {
+    await expect(page.locator('#historyList [data-history-record]')).toHaveCount(1);
+    await expect(page.locator('#historyStatus')).toContainText('загружаю');
+    await page.locator('#historyList [data-history-detail]').click();
+    await expect(page.locator('#historyDetailContent')).toContainText('Насос → Насос Full');
+    finishOlderDetail();
+    await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
+  }
   await expect(page.locator('#historyDetailDialog')).toBeVisible();
   await page.locator('#historyDetailDialog [aria-label="Закрыть"]').click();
   await expect(page.locator('#historyStatus')).toContainText('найдено версий: 2');
   await expect(page.locator('#historyList')).toContainText('Изменена вещь «Насос Full»');
   await expect(page.locator('#historyList')).not.toContainText('Техническая запись');
   await expect(page.locator('#historyList [data-history-load-more]')).toHaveCount(0);
-  expect(requests).toEqual(failFirstComparison ? ['first', 'first', 'older'] : ['first', 'older']);
+  expect(requests).toEqual(verifiedSummary ? ['first'] : failFirstComparison ? ['first', 'first', 'older'] : ['first', 'older']);
   await expect(page.locator('#historyList')).toContainText('Итоговая точка дня');
   await expect(page.locator('#historyList')).not.toContainText('Без пользовательских изменений');
   await page.locator('#historyList [data-history-record]').filter({ hasText: 'Итоговая точка дня' }).locator('[data-history-detail]').click();
