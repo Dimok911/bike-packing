@@ -3,7 +3,7 @@
 ## Production working baseline
 
 The main workspace was aligned to Production on 2026-10-13. Continue from
-the current `codex/production-copy-undo-v1644` branch (live release v1654),
+the current `codex/production-copy-undo-v1644` branch (live release v1655),
 not the old local `main` baseline v1595. Before each new change and publication,
 compare the working version/contract with the actual deployed version.
 The earlier uncommitted workspace is preserved in the named Git stash
