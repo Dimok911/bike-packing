@@ -1639,3 +1639,39 @@ test("history visibility stops empty pagination at the end or a repeated cursor"
     assert.equal(calls, 1);
   }
 });
+
+
+test("history publishes the first verified action while the next comparison is still pending", async () => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const secondStarted = new Promise(resolve => { started = resolve; });
+  const progress = [];
+  const records = [3, 2, 1].map(id => ({ id, action: { title: "Unverified" } }));
+  const pending = loadVisibleHistoryPage(null, {
+    loadPage: async () => ({ records, pageState: { hasMore: false } }), hasMore: () => false,
+    inspectRecord: async record => {
+      if (record.id === 2) { started(); await gate; }
+      return { record: { ...record, action: { title: "Verified" } }, hasUserVisibleChanges: record.id !== 1 };
+    },
+    onProgress: rows => progress.push(rows)
+  });
+  await secondStarted;
+  assert.deepEqual(progress.map(rows => rows.map(row => row.id)), [[3]]);
+  assert.equal(progress[0][0].action.title, "Verified");
+  release();
+  assert.deepEqual((await pending).records.map(row => row.id), [3, 2]);
+});
+
+test("progress never flashes checkpoints superseded by same-day actions", async () => {
+  const progress = [];
+  const result = await loadVisibleHistoryPage(null, {
+    loadPage: async () => ({ records: [
+      { id: 3, snapshotKind: "daily", createdAt: "2026-10-14T20:00:00Z" },
+      { id: 2, createdAt: "2026-10-14T19:00:00Z", action: {} }
+    ], pageState: {} }), hasMore: () => false,
+    inspectRecord: async record => ({ record, hasUserVisibleChanges: true }),
+    onProgress: rows => progress.push(rows.map(row => row.id))
+  });
+  assert.deepEqual(progress, [[2]]);
+  assert.deepEqual(result.records.map(row => row.id), [2]);
+});

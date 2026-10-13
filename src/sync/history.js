@@ -82,12 +82,14 @@ export function restorableHistorySummaryRecords(records) {
   });
 }
 
-// Only publish a page after every comparison succeeds. Inspect sequentially to
-// avoid flooding the history endpoint; a failed page can be retried unchanged.
+// Publish only verified actions, without waiting for the rest of the page.
+// Daily checkpoints wait until page completion because same-day actions may
+// replace them. Requests remain sequential; a failed page is safe to retry.
 export async function loadVisibleHistoryPage(pageState, {
   loadPage,
   inspectRecord,
   hasMore,
+  onProgress = null,
   isCurrent = () => true
 }) {
   const visited = new Set();
@@ -110,6 +112,11 @@ export async function loadVisibleHistoryPage(pageState, {
         hasUserVisibleChanges: detail.hasUserVisibleChanges,
         action: detail.record?.action || records[index].action
       };
+      if (onProgress && detail.hasUserVisibleChanges) {
+        const verifiedActions = restorableHistorySummaryRecords(records.slice(0, index + 1)
+          .filter(record => String(record.snapshotKind || record.snapshot_kind || "undo") !== "daily"));
+        if (verifiedActions.length) onProgress(verifiedActions);
+      }
     }
     if (!isCurrent()) return null;
     pageState = page.pageState;

@@ -240,6 +240,8 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
 for (const failFirstComparison of [false, true]) {
 test(`history list automatically omits technical pages and counts only visible entries (retry: ${failFirstComparison})`, async ({ page }) => {
   let comparisonFailed = false;
+  let finishOlderDetail;
+  const olderDetailGate = new Promise(resolve => { finishOlderDetail = resolve; });
   const before = { items: { pump: { id: "pump", name: "Насос", weight: 100, quantity: 1 } },
     containers: { bag: { id: "bag", name: "Сумка", nestable: true } }, locations: [], categories: [],
     layouts: { a: { id: "a", name: "Моя укладка", rootContainerIds: ["bag"], arrangement: {
@@ -257,6 +259,7 @@ test(`history list automatically omits technical pages and counts only visible e
     else if (path.endsWith("/bike-packing/authorization")) data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
     else if (path.endsWith("/bike-packing/lists")) data = { ok: true, lists: [list] };
     else if (path.endsWith("/history-list/history")) {
+      expect(url.searchParams.get("limit")).toBe("5");
       requests.push(url.searchParams.get("cursor") || "first");
       data = url.searchParams.has("cursor")
         ? { ok: true, records: [{ id: 2, listId: list.id, action, createdAt: "2026-10-13T20:25:00Z" }, { id: 1, listId: list.id, snapshotKind: "daily", createdAt: "2026-10-12T20:25:00Z" }], page: { hasMore: false, nextCursor: "" } }
@@ -266,7 +269,10 @@ test(`history list automatically omits technical pages and counts only visible e
       return route.fulfill({ status: 502, contentType: "application/json", body: '{"ok":false}' });
     } else if (path.endsWith("/history-list/history/3")) data = { ok: true, record: { id: 3, payload: after }, comparisonPayload: technical, action };
     else if (path.endsWith("/history-list/history/2")) data = { ok: true, record: { id: 2, payload: before }, comparisonPayload: after, action };
-    else if (path.endsWith("/history-list/history/1")) data = { ok: true, record: { id: 1, snapshotKind: "daily", payload: before }, comparisonPayload: after };
+    else if (path.endsWith("/history-list/history/1")) {
+      await olderDetailGate;
+      data = { ok: true, record: { id: 1, snapshotKind: "daily", payload: before }, comparisonPayload: after };
+    }
     else if (path.endsWith("/bike-packing/lists/history-list")) data = { ok: true, record: list };
     if (data) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
     return route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false}' });
@@ -299,7 +305,14 @@ test(`history list automatically omits technical pages and counts only visible e
     expect(requests).toEqual(['first']);
     await page.locator('[data-history-retry]').click();
   }
+  await expect(page.locator('#historyList [data-history-record]')).toHaveCount(1);
+  await expect(page.locator('#historyStatus')).toContainText('загружаю');
+  await page.locator('#historyList [data-history-detail]').click();
+  await expect(page.locator('#historyDetailContent')).toContainText('Насос → Насос Full');
+  finishOlderDetail();
   await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
+  await expect(page.locator('#historyDetailDialog')).toBeVisible();
+  await page.locator('#historyDetailDialog [aria-label="Закрыть"]').click();
   await expect(page.locator('#historyStatus')).toContainText('найдено версий: 2');
   await expect(page.locator('#historyList')).toContainText('Изменена вещь «Насос Full»');
   await expect(page.locator('#historyList')).not.toContainText('Техническая запись');

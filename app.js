@@ -10127,7 +10127,7 @@ function renderHistorySourceControls() {
 async function refreshHistoryDialog() {
   const generation = ++historyRequestGeneration;
   const source = activeHistorySource;
-  historyLoadMoreInFlight = false;
+  historyLoadMoreInFlight = true;
   refs.historyStatus.className = "dialog-status";
   refs.historyStatus.textContent = t("history.loading");
   refs.historyList.innerHTML = "";
@@ -10149,20 +10149,29 @@ async function refreshHistoryDialog() {
     historyRecords = restorableHistorySummaryRecords(result.records);
     historyPageState = result.pageState;
     historyComparisonState = null;
+    historyLoadMoreInFlight = false;
     renderHistoryRecords(historyRecords);
   } catch (error) {
     if (generation !== historyRequestGeneration) return;
+    historyLoadMoreInFlight = false;
+    renderHistoryRecords(historyRecords);
     refs.historyStatus.className = "dialog-status error";
     refs.historyStatus.textContent = `${t("history.loadFailed")} ${error.message}`;
-    refs.historyList.innerHTML = `<button type="button" class="ghost" data-history-retry>${escapeHtml(localText("Retry loading", "Повторить загрузку"))}</button>`;
+    refs.historyList.insertAdjacentHTML("beforeend", `<button type="button" class="ghost" data-history-retry>${escapeHtml(localText("Retry loading", "Повторить загрузку"))}</button>`);
     refs.historyList.querySelector("[data-history-retry]").addEventListener("click", refreshHistoryDialog);
   }
 }
 
 function loadVisibleRemoteHistory(source, pageState, generation) {
+  const previousRecords = [...historyRecords];
   return loadVisibleHistoryPage(pageState, {
     loadPage: cursor => loadRemoteHistory(source, cursor),
     inspectRecord: loadHistoryRecordDetail,
+    onProgress: verifiedRecords => {
+      if (generation !== historyRequestGeneration || !refs.historyDialog.open) return;
+      historyRecords = restorableHistorySummaryRecords([...previousRecords, ...verifiedRecords]);
+      renderHistoryRecords(historyRecords);
+    },
     hasMore: historyPageHasMore,
     isCurrent: () => generation === historyRequestGeneration && refs.historyDialog.open
   });
@@ -10209,7 +10218,7 @@ async function loadRemoteHistory(source = "private", pageState = null) {
 
   }
   const cursor = pageState?.type === "single" ? pageState.cursor : "";
-  const data = await apiFetch(historySummaryRequestPath(path, { cursor, limit: 25 }));
+  const data = await apiFetch(historySummaryRequestPath(path, { cursor, limit: 5 }));
   const page = normalizeHistorySummaryPage(data);
   return {
     records: page.records.map((record) => ({
@@ -10232,7 +10241,7 @@ async function loadPrivateRemoteHistory(pageState = null) {
     const results = await Promise.allSettled(pendingTargets.map(async (target) => {
       const data = await apiFetch(historySummaryRequestPath(target.path, {
         cursor: target.cursor,
-        limit: 25
+        limit: 5
       }), { timeoutMs: LIST_API_TIMEOUT_MS });
       return { target, page: normalizeHistorySummaryPage(data) };
     }));
@@ -10307,7 +10316,7 @@ async function loadPrivateRemoteHistory(pageState = null) {
     };
   });
   const results = await Promise.allSettled(targets.map(async (target) => {
-    const data = await apiFetch(historySummaryRequestPath(target.path, { limit: 25 }), {
+    const data = await apiFetch(historySummaryRequestPath(target.path, { limit: 5 }), {
       timeoutMs: LIST_API_TIMEOUT_MS
     });
     return { target, page: normalizeHistorySummaryPage(data) };
@@ -10390,6 +10399,7 @@ function renderHistoryRecords(records) {
   }
   refs.historyStatus.className = "dialog-status success";
   refs.historyStatus.textContent = t("history.found", { source: historySourceLabel(), count: records.length });
+  if (historyLoadMoreInFlight) refs.historyStatus.textContent += localText(" · loading...", " · загружаю...");
   refs.historyList.innerHTML = records.map((record, index) => renderHistoryRecordArticleHtml(record, index, records, {
     activeSource: activeHistorySource,
     formatDateTime: (value) => formatHistoryDateTime(value, { language: uiLanguage }),
