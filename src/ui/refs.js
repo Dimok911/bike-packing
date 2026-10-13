@@ -29,6 +29,8 @@ export function createRefs(root = document) {
     menuBtn: root.querySelector("#menuBtn"),
     topMenu: root.querySelector("#topMenu"),
     localUndoBtn: root.querySelector("#localUndoBtn"),
+    localHistoryDialog: root.querySelector("#localHistoryDialog"),
+    localHistoryList: root.querySelector("#localHistoryList"),
     historyBtn: root.querySelector("#historyBtn"),
     backupBtn: root.querySelector("#backupBtn"),
     helpLimitsBtn: root.querySelector("#helpLimitsBtn"),

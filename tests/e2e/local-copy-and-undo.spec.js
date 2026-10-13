@@ -218,9 +218,18 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
   await waitForApp(page);
   await page.locator('#menuBtn').click();
   await expect(page.locator('#localUndoBtn')).toBeEnabled();
+  await expect(page.locator('#historyBtn')).not.toBeVisible();
+  await expect(page.locator('#localUndoBtn')).toHaveText('Локальная история');
   await page.locator('#localUndoBtn').click();
+  await expect(page.locator('#localHistoryDialog')).toBeVisible();
+  await expect(page.locator('#localHistoryList')).toContainText('Офлайн имя');
+  await page.locator('#localHistoryList [data-local-history-undo]').first().click();
   await expect(page.locator('#confirmDialog')).toContainText("Офлайн имя");
+  await page.locator('#confirmCancelBtn').click();
+  await expect(page.locator('#localHistoryList')).toContainText('Офлайн имя');
+  await page.locator('#localHistoryList [data-local-history-undo]').first().click();
   await page.locator('#confirmOkBtn').click();
+  await page.locator('#localHistoryDialog [aria-label="Закрыть"]').click();
   await selectView(page, "items");
   await expect(page.locator('#itemsView [data-list-item-id]')).toHaveCount(1);
   await expect(page.locator('#itemsView')).toContainText("Насос");
@@ -228,7 +237,9 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
 });
 
 
-test("history list automatically omits technical pages and counts only visible entries", async ({ page }) => {
+for (const failFirstComparison of [false, true]) {
+test(`history list automatically omits technical pages and counts only visible entries (retry: ${failFirstComparison})`, async ({ page }) => {
+  let comparisonFailed = false;
   const before = { items: { pump: { id: "pump", name: "Насос" } }, containers: {},
     layouts: { a: { id: "a", name: "Моя укладка", rootContainerIds: [], arrangement: { items: {}, containers: {} } } }, activeLayoutId: "a" };
   const after = structuredClone(before); after.items.pump.name = "Насос Full";
@@ -247,6 +258,9 @@ test("history list automatically omits technical pages and counts only visible e
       data = url.searchParams.has("cursor")
         ? { ok: true, records: [{ id: 2, listId: list.id, action, createdAt: "2026-10-13T20:25:00Z" }, { id: 1, listId: list.id, snapshotKind: "daily", createdAt: "2026-10-12T20:25:00Z" }], page: { hasMore: false, nextCursor: "" } }
         : { ok: true, records: [{ id: 3, listId: list.id, action, createdAt: "2026-10-14T00:05:00Z" }], page: { hasMore: true, nextCursor: "older" } };
+    } else if (path.endsWith("/history-list/history/3") && failFirstComparison && !comparisonFailed) {
+      comparisonFailed = true;
+      return route.fulfill({ status: 502, contentType: "application/json", body: '{"ok":false}' });
     } else if (path.endsWith("/history-list/history/3")) data = { ok: true, record: { id: 3, payload: after }, comparisonPayload: technical, action };
     else if (path.endsWith("/history-list/history/2")) data = { ok: true, record: { id: 2, payload: before }, comparisonPayload: after, action };
     else if (path.endsWith("/history-list/history/1")) data = { ok: true, record: { id: 1, snapshotKind: "daily", payload: before }, comparisonPayload: after };
@@ -256,12 +270,19 @@ test("history list automatically omits technical pages and counts only visible e
   });
   await page.goto("/"); await waitForApp(page);
   await page.locator('#menuBtn').click(); await page.locator('#historyBtn').click();
+  if (failFirstComparison) {
+    await expect(page.locator('[data-history-retry]')).toBeVisible();
+    await expect(page.locator('#historyList [data-history-record]')).toHaveCount(0);
+    await expect(page.locator('#historyDetailDialog')).not.toBeVisible();
+    expect(requests).toEqual(['first']);
+    await page.locator('[data-history-retry]').click();
+  }
   await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
   await expect(page.locator('#historyStatus')).toContainText('найдено версий: 2');
   await expect(page.locator('#historyList')).toContainText('Изменена вещь «Насос Full»');
   await expect(page.locator('#historyList')).not.toContainText('Техническая запись');
   await expect(page.locator('#historyList [data-history-load-more]')).toHaveCount(0);
-  expect(requests).toEqual(['first', 'older']);
+  expect(requests).toEqual(failFirstComparison ? ['first', 'first', 'older'] : ['first', 'older']);
   await expect(page.locator('#historyList')).toContainText('Итоговая точка дня');
   await expect(page.locator('#historyList')).not.toContainText('Без пользовательских изменений');
   await page.locator('#historyList [data-history-record]').filter({ hasText: 'Итоговая точка дня' }).locator('[data-history-detail]').click();
@@ -275,3 +296,5 @@ test("history list automatically omits technical pages and counts only visible e
   await expect(page.locator('#confirmDialog')).not.toContainText('более поздних');
   await page.locator('#confirmCancelBtn').click();
 });
+
+}

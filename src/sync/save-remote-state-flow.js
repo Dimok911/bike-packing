@@ -62,6 +62,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     return;
   }
   repairCollapsedActiveLayoutBeforeSave();
+  const acknowledgeLocalUndo = dependencies.captureLocalUndoAcknowledgement?.();
   try {
     await uploadPendingPhotos();
     if (isSuspiciousEmptyPackingState(runtime.state)) {
@@ -114,6 +115,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
       rememberCurrentSyncAccount();
       saveBaseState(serializeState({ forSync: true }));
       saveSyncMeta();
+      acknowledgeLocalUndo?.();
       updateSyncUi();
       if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
       return;
@@ -145,6 +147,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
+    acknowledgeLocalUndo?.();
     updateSyncUi();
     if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
   } catch (error) {

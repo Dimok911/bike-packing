@@ -87,6 +87,36 @@ export function localUndoReferencesPhoto(entries, id) {
   return Boolean(id) && entries.some((entry) => entry.changes.some((change) => contains(change.before?.value)));
 }
 
+// Capture the journal before sending data. An acknowledgement must never erase
+// actions added while the request was in flight, or another account's journal.
+export function captureLocalUndoAcknowledgement(storage, key) {
+  const sent = new Set(readLocalUndoEntries(storage, key).map(entry => JSON.stringify(entry)));
+  return () => writeLocalUndoEntries(storage, key,
+    readLocalUndoEntries(storage, key).filter(entry => !sent.has(JSON.stringify(entry))));
+}
+
+export function pendingLocalUndoEntries(entries, current, confirmed) {
+  if (!current || !confirmed) return entries;
+  let cursor = current;
+  if (!createLocalUndoEntry(confirmed, cursor)) return [];
+  for (let index = entries.length - 1; index >= 0; index--) {
+    cursor = applyLocalUndoEntry(cursor, entries[index]);
+    if (!cursor) break;
+    if (!createLocalUndoEntry(confirmed, cursor)) return entries.slice(index);
+  }
+  return entries;
+}
+
+export function applyLocalUndoThrough(state, entries, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= entries.length) return null;
+  let restored = state;
+  for (let i = entries.length - 1; i >= index; i--) {
+    restored = applyLocalUndoEntry(restored, entries[i]);
+    if (!restored) return null;
+  }
+  return restored;
+}
+
 export function readLocalUndoEntries(storage, key) {
   try {
     const entries = JSON.parse(storage.getItem(key));

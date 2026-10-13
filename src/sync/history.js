@@ -82,9 +82,8 @@ export function restorableHistorySummaryRecords(records) {
   });
 }
 
-// Inspect one summary page with bounded requests before displaying it. Empty
-// technical pages must not prevent reaching older user actions. A failed
-// inspection is unknown, never evidence that an action should be hidden.
+// Only publish a page after every comparison succeeds. Inspect sequentially to
+// avoid flooding the history endpoint; a failed page can be retried unchanged.
 export async function loadVisibleHistoryPage(pageState, {
   loadPage,
   inspectRecord,
@@ -99,20 +98,19 @@ export async function loadVisibleHistoryPage(pageState, {
     const page = await loadPage(pageState);
     if (!isCurrent()) return null;
     const records = [...page.records];
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(3, records.length) }, async () => {
-      while (next < records.length && isCurrent()) {
-        const index = next++;
-        try {
-          const detail = await inspectRecord(records[index], index);
-          if (detail?.hasUserVisibleChanges === false) {
-            records[index] = { ...records[index], hasUserVisibleChanges: false };
-          } else if (detail?.hasUserVisibleChanges === true) {
-            records[index] = { ...records[index], action: detail.record.action || records[index].action };
-          }
-        } catch { /* Keep the original summary available for a later retry. */ }
+    for (let index = 0; index < records.length; index++) {
+      if (!isCurrent()) return null;
+      const detail = await inspectRecord(records[index], index);
+      if (!isCurrent()) return null;
+      if (typeof detail?.hasUserVisibleChanges !== "boolean") {
+        throw new Error("History comparison is unavailable");
       }
-    }));
+      records[index] = {
+        ...records[index],
+        hasUserVisibleChanges: detail.hasUserVisibleChanges,
+        action: detail.record?.action || records[index].action
+      };
+    }
     if (!isCurrent()) return null;
     pageState = page.pageState;
     const visible = restorableHistorySummaryRecords(records);

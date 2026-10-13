@@ -1129,7 +1129,7 @@ import {
 } from "./src/ui/viewport-scroll-host.js";
 import { syncMainViewScrollHost } from "./src/ui/main-view-scroll-host.js";
 import {
-  applyLocalUndoEntry, createLocalUndoEntry, LOCAL_UNDO_STORAGE_KEY,
+  applyLocalUndoEntry, applyLocalUndoThrough, captureLocalUndoAcknowledgement, pendingLocalUndoEntries, createLocalUndoEntry, LOCAL_UNDO_STORAGE_KEY,
   localUndoReferencesPhoto, readLocalUndoEntries, writeLocalUndoEntries
 } from "./src/state/local-undo.js";
 import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
@@ -2238,6 +2238,11 @@ function activateLocalStorageScope(scopeKey) {
   currentPackingListMeta = null;
   applyLoadedStateToCurrentScope(nextState, { createFallbackLayout });
   if (nextScope === GUEST_STORAGE_SCOPE) guestWorkspaceSessionTracker.reset(state);
+  else {
+    const undoKey = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+    writeLocalUndoEntries(localStorage, undoKey, pendingLocalUndoEntries(
+      readLocalUndoEntries(localStorage, undoKey), state, loadBaseState()));
+  }
   explicitLayoutChoice = { id: "", at: 0 };
   return true;
 }
@@ -3422,7 +3427,7 @@ async function init() {
   });
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
-  refs.localUndoBtn?.addEventListener("click", undoLastLocalAction);
+  refs.localUndoBtn?.addEventListener("click", openLocalHistoryDialog);
   refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
   refs.topMenu.addEventListener("click", (event) => {
     if (event.target.closest("button")) closeTopMenu();
@@ -5272,6 +5277,7 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
   syncMeta.dirty = true;
   syncMeta.localUpdatedAt = nowIso();
   saveSyncMeta();
+  const acknowledgeLocalUndo = capturePendingLocalHistory();
   await assertEntitySyncListFreshnessApi();
 
   const baseState = loadBaseState();
@@ -5308,6 +5314,7 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
     rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
+    acknowledgeLocalUndo();
     updateSyncUi();
   } catch (error) {
     syncMeta.dirty = true;
@@ -5857,12 +5864,19 @@ function activateOfflineRememberedSession(
   return true;
 }
 
+function updateHistoryMenu() {
+  if (!refs.localUndoBtn || !refs.historyBtn) return;
+  const editable = canUseLocalEditableState() && !isReadOnlyStateScope() && !isPublicLayoutContext();
+  const local = editable && (isForcedOffline() || navigator.onLine === false || !currentUser
+    || readLocalUndoEntries(localStorage, scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)).length > 0);
+  refs.localUndoBtn.textContent = localText("Local history", "Локальная история");
+  refs.localUndoBtn.hidden = !local;
+  refs.localUndoBtn.disabled = !editable;
+  refs.historyBtn.hidden = Boolean(local) || !currentUser || isForcedOffline() || navigator.onLine === false;
+}
+
 function toggleTopMenu(event) {
-  if (refs.localUndoBtn) {
-    refs.localUndoBtn.textContent = localText("Undo last local action", "Отменить последнее локальное действие");
-    refs.localUndoBtn.disabled = !canUseLocalEditableState() || isReadOnlyStateScope() || isPublicLayoutContext()
-      || !readLocalUndoEntries(localStorage, scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)).length;
-  }
+  updateHistoryMenu();
   event.stopPropagation();
   const open = refs.topMenu.hidden;
   refs.topMenu.hidden = !open;
@@ -6111,6 +6125,7 @@ function renderSyncUi(effectiveMessage = "") {
 }
 
 function updateSyncUi(message = "") {
+  updateHistoryMenu();
   stableSyncStatusMessageController ||= createStableSyncStatusMessageController({
     render: renderSyncUi
   });
@@ -7844,6 +7859,7 @@ const queuedSaveRemoteState = createQueuedRemoteSave((options = {}) => saveRemot
       get uiLanguage() { return uiLanguage; }
     },
     dependencies: {
+      captureLocalUndoAcknowledgement: capturePendingLocalHistory,
       blockDestructiveLocalSave,
       canLocalStateOverrideRemote,
       clearStaleDirtyFlagIfNoLocalChanges,
@@ -9846,7 +9862,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
 }
 
 async function openHistoryDialog() {
-  if (isForcedOffline() || navigator.onLine === false || isOfflineRememberedSession()) return undoLastLocalAction();
+  if (isForcedOffline() || navigator.onLine === false || isOfflineRememberedSession()) return openLocalHistoryDialog();
   if (!currentUser) {
     showToast(localText("History is available after sign-in.", "История доступна после входа."), "error");
     return;
@@ -9867,48 +9883,98 @@ async function openHistoryDialog() {
   refreshHistoryDialog();
 }
 
-async function undoLastLocalAction() {
+function capturePendingLocalHistory() {
+  const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  const acknowledge = captureLocalUndoAcknowledgement(localStorage, key);
+  return () => {
+    acknowledge();
+    if (key !== scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY)) return;
+    updateHistoryMenu();
+    if (refs.localHistoryDialog?.open) renderLocalHistory();
+  };
+}
+
+function openLocalHistoryDialog() {
+  closeTopMenu();
+  if (!canUseLocalEditableState() || isReadOnlyStateScope() || isPublicLayoutContext()) return;
+  renderLocalHistory();
+  openModalDialog(refs.localHistoryDialog);
+}
+
+function renderLocalHistory() {
+  const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  const entries = readLocalUndoEntries(localStorage, key);
+  refs.localHistoryDialog.querySelector("h2").textContent = localText("Local history", "Локальная история");
+  refs.localHistoryDialog.querySelector(".dialog-note").textContent = localText(
+    "Up to 20 unsynced actions on this device. They remain after a reload and leave this list after successful sync. Undo requires confirmation.",
+    "До 20 несинхронизированных действий на этом устройстве. Сохраняются после перезагрузки и уходят из этого списка после успешной синхронизации. Отмена — с подтверждением.");
+  let cursor = state;
+  refs.localHistoryList.innerHTML = entries.map((entry, index) => ({ entry, index })).reverse().map(({ entry, index }) => {
+    const after = cursor;
+    const before = cursor && applyLocalUndoEntry(cursor, entry);
+    cursor = before;
+    const record = { payload: before, createdAt: entry.createdAt };
+    const action = before && historyRecordAction(record, 0, [], {
+      recordState: value => value.payload, currentComparisonState: () => after
+    });
+    const title = action ? historyActionDescription(action, { localText }) : (entry.names || []).join(", ") || localText("Local action", "Локальное действие");
+    const details = before ? renderHistoryRecordDetailsHtml(record, 0, [record], {
+      activeSource: "private", currentComparisonState: () => after, recordState: value => value.payload,
+      formatDateTime: value => formatHistoryDateTime(value, { language: uiLanguage }), localText,
+      recordTitle: () => title, restoreScopeText: "", restoreComparisonTitle: localText("Changes", "Изменения"), summarizePayload: summarizeHistoryPayload
+    }) : escapeHtml(localText("Newer changes prevent undoing this action.", "Более новые изменения не позволяют отменить это действие."));
+    return `<article class="history-record" data-local-history-record><details><summary>${escapeHtml(title)} · ${escapeHtml(formatHistoryDateTime(entry.createdAt, { language: uiLanguage }))}</summary>${details}</details><button type="button" class="ghost" data-local-history-undo="${index}"${before ? "" : " disabled"}>${escapeHtml(index === entries.length - 1 ? localText("Undo", "Отменить") : localText("Undo from here", "Отменить начиная отсюда"))}</button></article>`;
+  }).join("") || `<p>${escapeHtml(localText("No unsynced local actions.", "Нет несинхронизированных локальных действий."))}</p>`;
+  refs.localHistoryList.querySelectorAll("[data-local-history-undo]").forEach(button => {
+    button.addEventListener("click", () => undoLastLocalAction(Number(button.dataset.localHistoryUndo), key));
+  });
+}
+
+async function undoLastLocalAction(selectedIndex = null, expectedKey = "") {
   closeTopMenu();
   if (!canUseLocalEditableState() || isReadOnlyStateScope() || isPublicLayoutContext()) return;
   const key = scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY);
+  if (expectedKey && key !== expectedKey) return;
   const entries = readLocalUndoEntries(localStorage, key);
-  const entry = entries.at(-1);
-  if (!entry) {
-    showToast(localText("No local actions to undo yet.", "Пока нет локальных действий для отмены."));
-    return;
-  }
+  const index = Number.isInteger(selectedIndex) ? selectedIndex : entries.length - 1;
+  const entry = entries[index];
+  if (!entry) return;
+  const count = entries.length - index;
   const confirmed = await askConfirmDialog({
-    title: localText("Undo last local action?", "Отменить последнее локальное действие?"),
-    text: localText("This device keeps up to 20 recent local actions, including offline edits.", "На этом устройстве сохраняется до 20 последних локальных действий, в том числе без интернета."),
+    title: count === 1 ? localText("Undo local action?", "Отменить локальное действие?") : localText(`Undo ${count} local actions?`, `Отменить локальные действия: ${count}?`),
+    text: count === 1
+      ? localText("Return to the state before this action. Server history is unchanged.", "Вернуть состояние до этого действия. Серверная история не изменится.")
+      : localText(`This action and ${count - 1} later local actions will be undone.`, `Будет отменено это действие и следующие за ним локальные действия: ${count - 1}.`),
     highlightText: (entry.names || []).slice(0, 8).join(", "),
-    okText: localText("Undo", "Отменить действие"),
-    tone: "safe"
+    okText: localText("Undo", "Отменить действие"), tone: "safe"
   });
   if (!confirmed || key !== scopedLocalStorageKey(LOCAL_UNDO_STORAGE_KEY) || isPublicLayoutContext()
     || isReadOnlyStateScope() || !canUseLocalEditableState()) return;
   const currentEntries = readLocalUndoEntries(localStorage, key);
-  if (JSON.stringify(currentEntries.at(-1)) !== JSON.stringify(entry)) return;
-  const restored = applyLocalUndoEntry(state, entry);
+  if (JSON.stringify(currentEntries) !== JSON.stringify(entries)) {
+    if (refs.localHistoryDialog.open) renderLocalHistory();
+    showToast(localText("History changed; choose the action again.", "История изменилась. Выберите действие заново."));
+    return;
+  }
+  const restored = applyLocalUndoThrough(state, entries, index);
   if (!restored) {
-    showToast(localText("These data have changed since this action. Local undo cannot overwrite the newer changes.", "После этого действия данные уже изменились. Локальная отмена не может перезаписать более новые изменения."), "error");
+    showToast(localText("Newer changes prevent undoing this action.", "Более новые изменения не позволяют отменить это действие."), "error");
     return;
   }
   const changedAt = nowIso();
-  for (const { path } of entry.changes) {
-    if (["items", "containers", "layouts"].includes(path[0]) && restored[path[0]]?.[path[1]]) {
-      Object.assign(restored[path[0]][path[1]], currentEditMeta(changedAt));
-    }
+  for (const item of entries.slice(index)) for (const { path } of item.changes) {
+    if (["items", "containers", "layouts"].includes(path[0]) && restored[path[0]]?.[path[1]]) Object.assign(restored[path[0]][path[1]], currentEditMeta(changedAt));
   }
   appTailRuntime.applyingLocalUndo = true;
   try {
     replaceState(restored);
+    writeLocalUndoEntries(localStorage, key, entries.slice(0, index));
     saveState({ captureArrangement: false });
-    writeLocalUndoEntries(localStorage, key, currentEntries.slice(0, -1));
-  } finally {
-    appTailRuntime.applyingLocalUndo = false;
-  }
+  } finally { appTailRuntime.applyingLocalUndo = false; }
   render();
-  showToast(localText("Local action undone.", "Локальное действие отменено."), "success");
+  updateHistoryMenu();
+  if (refs.localHistoryDialog.open) renderLocalHistory();
+  showToast(localText("Local changes undone.", "Локальные изменения отменены."), "success");
 }
 
 function historyDemoTemplateOptions() {
@@ -10022,6 +10088,11 @@ async function refreshHistoryDialog() {
   const generation = ++historyRequestGeneration;
   const source = activeHistorySource;
   historyLoadMoreInFlight = false;
+  refs.historyStatus.className = "dialog-status";
+  refs.historyStatus.textContent = t("history.loading");
+  refs.historyList.innerHTML = "";
+  historyRecords = [];
+  historyPageState = null;
   if (canOpenAdminPublishedEdit()) {
     try {
       const catalog = await apiFetch("/bike-packing/admin/template-records", { silentErrors: true });
@@ -10032,11 +10103,6 @@ async function refreshHistoryDialog() {
   }
   if (generation !== historyRequestGeneration) return;
   renderHistorySourceControls();
-  refs.historyStatus.className = "dialog-status";
-  refs.historyStatus.textContent = t("history.loading");
-  refs.historyList.innerHTML = "";
-  historyRecords = [];
-  historyPageState = null;
   try {
     const result = await loadVisibleRemoteHistory(source, null, generation);
     if (!result || generation !== historyRequestGeneration) return;
@@ -10048,6 +10114,8 @@ async function refreshHistoryDialog() {
     if (generation !== historyRequestGeneration) return;
     refs.historyStatus.className = "dialog-status error";
     refs.historyStatus.textContent = `${t("history.loadFailed")} ${error.message}`;
+    refs.historyList.innerHTML = `<button type="button" class="ghost" data-history-retry>${escapeHtml(localText("Retry loading", "Повторить загрузку"))}</button>`;
+    refs.historyList.querySelector("[data-history-retry]").addEventListener("click", refreshHistoryDialog);
   }
 }
 
@@ -10357,7 +10425,8 @@ async function loadHistoryRecordDetail(record, index = 0) {
     throw new Error(localText("The history entry has no detail address.", "У записи истории нет адреса деталей."));
   }
   const data = await apiFetch(`${historyPath}/${encodeURIComponent(historyId)}`, {
-    timeoutMs: LIST_API_TIMEOUT_MS
+    timeoutMs: LIST_API_TIMEOUT_MS,
+    silentErrors: true
   });
   const detailRecord = {
     ...record,
@@ -10380,6 +10449,9 @@ async function loadHistoryRecordDetail(record, index = 0) {
       ? isCheckpoint ? hasHistoryStateChanges(recordState, comparisonState) : Boolean(detailRecord.action)
       : null;
   const detail = { record: detailRecord, comparisonState, hasUserVisibleChanges };
+  if (hasUserVisibleChanges === null) {
+    throw new Error(localText("The history comparison could not be loaded.", "Не удалось загрузить сравнение версий."));
+  }
   if (generation === historyRequestGeneration) historyDetailCache.set(cacheKey, detail);
   return detail;
 }
@@ -10403,15 +10475,13 @@ async function openHistoryRecordDetails(recordKey) {
   if (refs.historyDetailRestoreBtn) {
     refs.historyDetailRestoreBtn.textContent = historyUndoActionText(record, index, records);
   }
-  openModalDialog(refs.historyDetailDialog);
-  syncHistoryActionButtonTooltips(refs.historyDetailDialog);
+  const generation = historyRequestGeneration;
+  const selectedKey = selectedHistoryDetailRecordKey;
   try {
-    const selectedKey = selectedHistoryDetailRecordKey;
     const detail = await loadHistoryRecordDetail(record, index);
-    if (selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDetailDialog?.open) return;
+    if (generation !== historyRequestGeneration || selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDialog?.open) return;
     if (detail.hasUserVisibleChanges === false) {
       historyRecords = historyRecords.filter((item, itemIndex) => historyRecordKey(item, itemIndex) !== selectedKey);
-      refs.historyDetailDialog.close();
       renderHistoryRecords(historyRecords);
       return;
     }
@@ -10441,13 +10511,17 @@ async function openHistoryRecordDetails(recordKey) {
         summarizePayload: summarizeHistoryPayload
       });
     }
+    openModalDialog(refs.historyDetailDialog);
+    syncHistoryActionButtonTooltips(refs.historyDetailDialog);
   } catch (error) {
+    if (generation !== historyRequestGeneration || selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDialog?.open) return;
     if (refs.historyDetailContent) {
       refs.historyDetailContent.textContent = localText(
         `Could not load version details: ${error.message}`,
         `Не удалось загрузить детали версии: ${error.message}`
       );
     }
+    openModalDialog(refs.historyDetailDialog);
   }
 }
 

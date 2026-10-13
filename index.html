@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1652" />
+    <link rel="stylesheet" href="./styles.css?v=1653" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -43,7 +43,7 @@
               <button id="compareLayoutsMenuBtn" class="ghost menu-item auth-required" type="button">Сравнить укладки</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
-              <button id="localUndoBtn" class="ghost menu-item" type="button">Отменить последнее локальное действие</button>
+              <button id="localUndoBtn" class="ghost menu-item" type="button" hidden>Локальная история</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
               <button id="helpLimitsBtn" class="ghost menu-item" type="button">Помощь</button>
               <button id="adminReportsBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Отчёты</button>
@@ -796,6 +796,17 @@
       </form>
     </dialog>
 
+    <dialog id="localHistoryDialog">
+      <form method="dialog" class="dialog-card history-dialog-card">
+        <header>
+          <h2>Локальная история</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note"></p>
+        <div id="localHistoryList" class="history-list"></div>
+      </form>
+    </dialog>
+
     <dialog id="historyDialog">
       <form method="dialog" class="dialog-card history-dialog-card">
         <header>
@@ -917,6 +928,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1652" type="module"></script>
+    <script src="./app.js?v=1653" type="module"></script>
   </body>
 </html>

@@ -1581,24 +1581,38 @@ test("history visibility skips technical-only pages and preserves real actions a
   assert.deepEqual(pages, raw, "visibility must not delete or mutate server snapshots");
 });
 
-test("history visibility bounds parallel requests and keeps failed or incomplete details", async () => {
-  const action = { entityType: "items", operation: "changed", title: "Item" };
-  const records = Array.from({ length: 8 }, (_, i) => ({ id: 8 - i, action }));
-  let active = 0, maximum = 0;
-  const result = await loadVisibleHistoryPage(null, {
+test("history visibility stops on a failed comparison and retries without exposing summaries", async () => {
+  const action = { entityType: "items", operation: "changed", title: "Unverified" };
+  const records = [3, 2, 1].map(id => ({ id, action }));
+  const inspected = [];
+  let fail = true, active = 0, maximum = 0;
+  const options = {
     loadPage: async () => ({ records, pageState: { hasMore: false } }),
     inspectRecord: async record => {
+      inspected.push(record.id);
       active++; maximum = Math.max(maximum, active);
-      await new Promise(resolve => setTimeout(resolve, 1));
-      active--;
-      if (record.id === 8) throw Error("offline");
-      return { record: { ...record, action: { ...action, title: "Verified" } }, hasUserVisibleChanges: record.id === 7 ? null : record.id === 6 };
+      await new Promise(resolve => setTimeout(resolve, 1)); active--;
+      if (fail && record.id === 2) throw Error("502");
+      return { record: { ...record, action: { ...action, title: "Verified" } }, hasUserVisibleChanges: record.id === 1 };
     },
     hasMore: page => page.hasMore
-  });
-  assert.equal(maximum, 3);
-  assert.deepEqual(result.records.map(r => r.id), [8, 7, 6]);
-  assert.equal(result.records[2].action.title, "Verified");
+  };
+  await assert.rejects(loadVisibleHistoryPage(null, options), /502/);
+  assert.deepEqual(inspected, [3, 2]);
+  fail = false;
+  const result = await loadVisibleHistoryPage(null, options);
+  assert.equal(maximum, 1);
+  assert.deepEqual(result.records.map(r => r.id), [1]);
+  assert.equal(result.records[0].action.title, "Verified");
+  assert.equal(records[0].action.title, "Unverified");
+});
+
+test("history visibility does not publish incomplete comparisons", async () => {
+  await assert.rejects(loadVisibleHistoryPage(null, {
+    loadPage: async () => ({ records: [{ id: 1, action: {} }], pageState: {} }),
+    inspectRecord: async () => ({ hasUserVisibleChanges: null }),
+    hasMore: () => false
+  }), /comparison is unavailable/);
 });
 
 test("history visibility cancels obsolete loads when the history source changes", async () => {

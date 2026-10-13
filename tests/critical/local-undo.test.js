@@ -1,6 +1,7 @@
+import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyLocalUndoEntry, createLocalUndoEntry, localUndoReferencesPhoto, readLocalUndoEntries, writeLocalUndoEntries } from "../../src/state/local-undo.js";
+import { applyLocalUndoEntry, applyLocalUndoThrough, captureLocalUndoAcknowledgement, pendingLocalUndoEntries, createLocalUndoEntry, localUndoReferencesPhoto, readLocalUndoEntries, writeLocalUndoEntries } from "../../src/state/local-undo.js";
 
 const fixture = () => ({ items: { a: { id: "a", name: "Pump", weight: 50, containerId: "bag" } }, containers: { bag: { id: "bag", name: "Bag" } },
   layouts: { main: { id: "main", name: "Main", arrangement: { items: { a: "bag" }, containers: { bag: { itemIds: ["a"] } } } } }, locations: [], categories: [] });
@@ -82,4 +83,68 @@ test("a layout locked after an action blocks local undo while undoing the lock i
   locked.layouts.main.locked = true;
   assert.equal(applyLocalUndoEntry(locked, entry), null);
   assert.deepEqual(applyLocalUndoEntry(locked, createLocalUndoEntry(after, locked)), after);
+});
+
+
+test("sync acknowledgement removes only captured actions and keeps another account and in-flight edits", () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const before = fixture(), after = structuredClone(before); after.items.a.name = "Full";
+  const entry = createLocalUndoEntry(before, after);
+  writeLocalUndoEntries(storage, "a", [entry]); writeLocalUndoEntries(storage, "b", [entry]);
+  const acknowledge = captureLocalUndoAcknowledgement(storage, "a");
+  const later = structuredClone(after); later.items.a.weight = 70;
+  const newEntry = createLocalUndoEntry(after, later);
+  writeLocalUndoEntries(storage, "a", [entry, newEntry]);
+  acknowledge();
+  assert.deepEqual(readLocalUndoEntries(storage, "a"), [newEntry]);
+  assert.deepEqual(readLocalUndoEntries(storage, "b"), [entry]);
+});
+
+test("legacy journal reconciliation retains only steps after the confirmed baseline", () => {
+  const first = fixture(), second = structuredClone(first); second.items.a.name = "Full";
+  const third = structuredClone(second); third.items.a.weight = 70;
+  const entries = [createLocalUndoEntry(first, second), createLocalUndoEntry(second, third)];
+  assert.deepEqual(pendingLocalUndoEntries(entries, third, second), entries.slice(1));
+  assert.deepEqual(pendingLocalUndoEntries(entries, third, third), []);
+  assert.deepEqual(pendingLocalUndoEntries(entries, third, null), entries);
+  const foreign = fixture(); foreign.items.a.name = "Other device";
+  assert.deepEqual(pendingLocalUndoEntries(entries, third, foreign), entries);
+});
+
+test("local history restores a selected step and later steps atomically, rejecting conflicts", () => {
+  const before = fixture(), after = structuredClone(before); after.items.a.name = "Full";
+  const latest = structuredClone(after); latest.items.a.weight = 70;
+  const entries = [createLocalUndoEntry(before, after), createLocalUndoEntry(after, latest)];
+  assert.deepEqual(applyLocalUndoThrough(latest, entries, 1), after);
+  assert.deepEqual(applyLocalUndoThrough(latest, entries, 0), before);
+  latest.items.a.name = "Remote";
+  assert.equal(applyLocalUndoThrough(latest, entries, 0), null);
+  assert.equal(latest.items.a.weight, 70);
+});
+
+
+for (const mode of ["entities", "payload", "failed", "blocked"]) test(`local journal acknowledgement follows confirmed ${mode} save`, async () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const before = fixture(), after = structuredClone(before); after.items.a.name = "Full";
+  const entry = createLocalUndoEntry(before, after);
+  writeLocalUndoEntries(storage, "account", [entry]);
+  const runtime = { currentUser: { id: "a" }, state: after, syncMeta: { dirty: true }, uiLanguage: "en" };
+  const noop = () => {};
+  await saveRemoteStateFlow({ runtime, dependencies: {
+    captureLocalUndoAcknowledgement: () => captureLocalUndoAcknowledgement(storage, "account"),
+    clearStaleDirtyFlagIfNoLocalChanges: () => false, isReadOnlyBikePackingContext: () => false,
+    repairCollapsedActiveLayoutBeforeSave: noop, uploadPendingPhotos: async () => {},
+    isSuspiciousEmptyPackingState: () => mode === "blocked", blockDestructiveLocalSave: () => false,
+    loadBaseState: () => before, syncChangedBikePackingEntities: async () => ({ attempted: mode === "entities" }),
+    hasLegacyPayloadChanges: () => mode !== "entities",
+    saveRemoteStateRecord: async () => { if (mode === "failed") throw Error("offline"); return { record: {} }; },
+    remoteUpdatedAt: () => "2026-10-14T00:00:00Z", rememberRemoteIntegrityMeta: noop,
+    rememberCurrentSyncAccount: noop, saveBaseState: noop, serializeState: () => after,
+    saveSyncMeta: noop, updateSyncUi: noop, showToast: noop,
+    isReadOnlyBikePackingError: () => false, isNetworkError: () => true,
+    isTimeoutError: () => false, isTemporaryServerStorageError: () => false
+  } });
+  assert.equal(readLocalUndoEntries(storage, "account").length, ["entities", "payload"].includes(mode) ? 0 : 1);
 });
