@@ -4,6 +4,44 @@ import { createEmptyLayout, createGuestWorkspace, createItemInContainer, createR
 test.beforeEach(async ({ page }) => prepareIsolatedRussianGuest(page));
 const selectView = (page, view) => page.locator(`.tab[data-view="${view}"]`).evaluate((tab) => tab.click());
 
+test("history shows a pouch rename without phantom deletions or moves", async ({ page }, testInfo) => {
+  const { readFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+  await page.goto("/");
+  await waitForApp(page);
+  await page.route("**/__testsrc/**", async route => {
+    const relative = new URL(route.request().url()).pathname.split("/__testsrc/")[1];
+    if (!relative.startsWith("src/") || relative.includes("..")) return route.abort();
+    await route.fulfill({ contentType: "text/javascript", body: await readFile(resolve(relative), "utf8") });
+  });
+  await page.evaluate(async () => {
+    const { renderHistoryRecordDetails } = await import("/__testsrc/src/ui/history-diff.js");
+    const { isolateLinkedLayoutEntities } = await import("/__testsrc/src/state/layout-entity-isolation.js");
+    const arrangement = { rootContainerIds: ["bag"], containers: {
+      bag: { parentId: "", itemIds: [], childIds: ["p"], order: [{ type: "container", id: "p" }] },
+      p: { parentId: "bag", childIds: [], itemIds: ["i"], order: [{ type: "item", id: "i" }] }
+    }, items: { i: "p" } };
+    const before = { containers: { bag: { id: "bag", name: "Сумка", nestable: true }, p: { id: "p", name: "Ремонт Light" } },
+      items: { i: { id: "i", name: "Насос" } }, layouts: Object.fromEntries(["a", "b", "c"].map(id => [id, { id, name: id, rootContainerIds: ["bag"], arrangement: structuredClone(arrangement) }])) };
+    const after = structuredClone(before); isolateLinkedLayoutEntities(after);
+    after.containers[after.layouts.a.arrangement.items.i].name = "Ремонт Full";
+    delete after.containers[after.layouts.b.arrangement.items.i];
+    const record = { payload: before, createdAt: "2026-10-13T20:25:00Z" };
+    document.querySelector("#historyDetailContent").innerHTML = renderHistoryRecordDetails(record, 0, [record], {
+      recordState: r => r.payload, currentComparisonState: () => after
+    });
+    document.querySelector("#historyDetailTitle").textContent = "История переименования";
+    document.querySelector("#historyDetailDialog").showModal();
+  });
+  const content = page.locator("#historyDetailContent");
+  await expect(content).toContainText("Ремонт Light");
+  await expect(content).toContainText("Ремонт Full");
+  await expect(content).not.toContainText("Удалено");
+  await expect(content).not.toContainText("перемещена");
+  await expect(content.locator(".history-diff-group.changed li")).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath("history-rename.png") });
+});
+
 test("bag copy offers only missing items and an expandable list of existing items", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const { container } = await createGuestWorkspace(page, { layoutName: "Исходная", containerName: "Исходная сумка", itemName: "Насос" });

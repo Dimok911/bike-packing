@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  STARTUP_CACHE_INTEGRITY_VERSION,
   canUseCachedStartupState,
   hasListFreshnessSignal,
   listFreshnessChanged,
@@ -397,7 +398,7 @@ test("CRITICAL sync-save: equal normalized state still persists recovered quanti
 });
 
 test("CRITICAL offline-start: entity changes cannot bypass a required full cache refresh", () => {
-  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 6 }), true);
+  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: STARTUP_CACHE_INTEGRITY_VERSION }), true);
   assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 5 }), false);
   assert.equal(startupCacheAllowsEntityChanges({}), false);
 });
@@ -1006,7 +1007,7 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
       hasLocalState: true,
       syncMeta: {
         dirty: false,
-        cacheIntegrityVersion: 6,
+        cacheIntegrityVersion: STARTUP_CACHE_INTEGRITY_VERSION,
         listId: "list-1",
         serverUpdatedAt: "2026-05-27T20:00:00.000Z",
         stateRevision: 7,
@@ -1071,7 +1072,7 @@ test("CRITICAL offline-start: incomplete local cache cannot mask server items be
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 6,
+      cacheIntegrityVersion: STARTUP_CACHE_INTEGRITY_VERSION,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
@@ -1103,7 +1104,7 @@ test("CRITICAL offline-start: startup tries entity changes before full state whe
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 6,
+      cacheIntegrityVersion: STARTUP_CACHE_INTEGRITY_VERSION,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7

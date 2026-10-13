@@ -1,6 +1,28 @@
 import { clonePlain } from "../utils/json.js";
 import { publicCopyStableHash } from "../public/copy-duplicates.js";
 
+export function temporaryContainerId(layoutId, sourceId) {
+  return `pouch-${publicCopyStableHash(JSON.stringify([layoutId, sourceId])).slice(6)}-${publicCopyStableHash(JSON.stringify([sourceId, layoutId])).slice(6)}`;
+}
+
+// Repair only identities that can be proved from the migration's two hashes.
+// Never infer identity from a display name or overwrite an existing record.
+export function recoverMissingTemporaryContainers(state) {
+  let recovered = 0;
+  const originals = Object.entries(state?.containers || {});
+  for (const [layoutId, layout] of Object.entries(state?.layouts || {})) {
+    const placements = layout?.arrangement?.containers || {};
+    for (const [sourceId, source] of originals) {
+      if (!source || source.nestable === true) continue;
+      const id = temporaryContainerId(layout.id || layoutId, sourceId);
+      if (!placements[id] || !placements[id].parentId || state.containers[id]) continue;
+      state.containers[id] = { ...clonePlain(source), ...clonePlain(placements[id]), id };
+      recovered += 1;
+    }
+  }
+  return recovered;
+}
+
 // Catalog bags/items are shared; a non-reusable nested pouch belongs to one layout.
 export function isolateTemporaryContainersForLayout(state, layout, { applyToCurrentState = false } = {}) {
   const replacements = new Map();
@@ -15,7 +37,7 @@ export function isolateTemporaryContainersForLayout(state, layout, { applyToCurr
     if (!shared) continue;
     // Stable across devices loading the same legacy state; never use the old
     // "-isolated-" marker, whose records are intentionally merged by repair.
-    const baseId = `pouch-${publicCopyStableHash(JSON.stringify([layout.id, id])).slice(6)}-${publicCopyStableHash(JSON.stringify([id, layout.id])).slice(6)}`;
+    const baseId = temporaryContainerId(layout.id, id);
     let copyId = baseId;
     for (let suffix = 2; state.containers[copyId]; suffix += 1) copyId = `${baseId}-${suffix}`;
     state.containers[copyId] = { ...clonePlain(source), ...clonePlain(placement), id: copyId };

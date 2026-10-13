@@ -23,6 +23,7 @@ import {
   conflictDiffFieldDefinitions
 } from "./conflict-format.js";
 import { historyPlacementDetailEntries } from "./history-placement.js";
+import { comparableHistorySnapshots } from "../sync/history-snapshot.js";
 
 const HISTORY_TECHNICAL_FIELDS = new Set([
   "originListId",
@@ -153,6 +154,7 @@ function historyFieldDefinitions(type, localText = historyRuText) {
 export function buildHistoryStateDiff(fromState = {}, toState = {}, {
   localText = historyRuText
 } = {}) {
+  [fromState, toState] = comparableHistorySnapshots(fromState, toState);
   return {
     items: diffHistoryMap("item", fromState.items || {}, toState.items || {}, fromState, toState, localText),
     containers: diffHistoryMap("container", fromState.containers || {}, toState.containers || {}, fromState, toState, localText),
@@ -183,10 +185,11 @@ export function historyRecordAction(record, index, records, {
   if (kind === "daily") return null;
   const recordedAction = record?.action && typeof record.action === "object" ? record.action : null;
   if (recordedAction && recordedAction.entityType !== "layouts") return recordedAction;
-  const beforeState = recordState(record);
+  let beforeState = recordState(record);
   const newerRecord = historyNewerRecord(record, index, records);
-  const afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();
+  let afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();
   if (!beforeState || !afterState) return recordedAction;
+  [beforeState, afterState] = comparableHistorySnapshots(beforeState, afterState);
   const copyAction = historyLayoutCopyAction(beforeState, afterState);
   if (copyAction) return copyAction;
   const placementAction = historyLayoutPlacementAction(beforeState, afterState);

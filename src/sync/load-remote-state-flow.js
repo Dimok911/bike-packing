@@ -1,4 +1,5 @@
 import { STARTUP_CACHE_INTEGRITY_VERSION } from "./list-freshness.js";
+import { layoutEntityRepairBaseState } from "../state/layout-entity-isolation.js";
 
 export function startupCacheAllowsEntityChanges(syncMeta) {
   return Number(syncMeta?.cacheIntegrityVersion) === STARTUP_CACHE_INTEGRITY_VERSION;
@@ -33,6 +34,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     filterAutoResolvedMergeConflicts,
     formatMergeConflicts,
     hasLocalSavedState,
+    hasLocalSyncChanges = () => false,
     isForeignLocalSyncState,
     isMeaningfulPackingState,
     isNetworkError,
@@ -122,7 +124,8 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         const freshness = await fetchRemoteListFreshnessRecord(startupListId);
         const accountMatches = isForeignLocalSyncState ? !isForeignLocalSyncState() : true;
         const hasLocalStateForStartup = hasLocalSavedState();
-        if (canUseCachedStartupState?.({
+        const pendingLocalChanges = hasLocalSyncChanges();
+        if (!pendingLocalChanges && canUseCachedStartupState?.({
           accountMatches,
           currentListId: startupListId,
           hasLocalState: hasLocalStateForStartup,
@@ -150,6 +153,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         }
         if (
           accountMatches &&
+          !pendingLocalChanges &&
           hasLocalStateForStartup &&
           !syncMeta.dirty &&
           startupCacheAllowsEntityChanges(syncMeta) &&
@@ -368,6 +372,13 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       renderPreservingPackingScroll();
       updateSyncUi(localText("Conflicts merged · sending to the server...", "Конфликты объединены · отправляю на сервер..."));
       await saveRemoteState({ notify: notifyDirtySave });
+      return;
+    }
+
+    if (layoutEntityRepairBaseState(remoteState)) {
+      // Equal normalized states do not prove the migration exists remotely.
+      // Keep the actual remote baseline so all new pouch records are sent.
+      await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
       return;
     }
 

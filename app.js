@@ -422,6 +422,8 @@ import {
   stateStats
 } from "./src/state/diagnostics.js";
 import { repairPlacementRegressionFromReference } from "./src/state/regression-repair.js";
+import { recoverMissingTemporaryContainers } from "./src/state/layout-temporary-containers.js";
+import { historySnapshot } from "./src/sync/history-snapshot.js";
 import {
   isolateLinkedLayoutEntities,
   layoutEntityRepairBaseState,
@@ -3700,7 +3702,7 @@ function hasStoredLocalValue(key, scope = localStorageScopeKey) {
 function loadBaseState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(BASE_STATE_KEY)));
-    return normalizeRemoteState(parsed, { repairCatalog: false });
+    return historySnapshot(parsed);
   } catch {
     return null;
   }
@@ -5329,6 +5331,8 @@ function pruneAdminPublishedDraftsForSync(cloned) {
 function normalizeRemoteState(payload, { repairCatalog = true } = {}) {
   if (!payload || typeof payload !== "object") return null;
   const normalized = JSON.parse(JSON.stringify(payload));
+  const beforeRecovery = repairCatalog ? historySnapshot(payload) : null;
+  const recoveredContainers = repairCatalog ? recoverMissingTemporaryContainers(normalized) : 0;
   if (!normalized.locations || !normalized.categories || !normalized.containers || !normalized.items || !normalized.layouts) {
     return null;
   }
@@ -5349,7 +5353,10 @@ function normalizeRemoteState(payload, { repairCatalog = true } = {}) {
   const catalogRepairReport = repairCatalog
     ? isolateLinkedLayoutEntities(normalized)
     : { mergedContainers: 0, mergedItems: 0 };
-  rememberLayoutEntityRepairBaseState(normalized, baseBeforeCatalogRepair, catalogRepairReport);
+  rememberLayoutEntityRepairBaseState(normalized, recoveredContainers ? beforeRecovery : baseBeforeCatalogRepair, {
+    ...catalogRepairReport,
+    clonedContainers: (catalogRepairReport.clonedContainers || 0) + recoveredContainers
+  });
   normalizeItemCategories(normalized);
   migrateContainerOrder(normalized);
   applyLayoutArrangement(normalized.activeLayoutId, normalized);
@@ -8102,6 +8109,7 @@ async function loadRemoteState(options = {}) {
       filterAutoResolvedMergeConflicts,
       formatMergeConflicts,
       hasLocalSavedState,
+      hasLocalSyncChanges,
       isForeignLocalSyncState,
       isMeaningfulPackingState,
       isNetworkError,
@@ -10265,13 +10273,18 @@ function renderHistoryRecords(records) {
     latestRestoreText: t("history.undoLatest"),
     publishText: t("history.publishVersion"),
     recordKey: historyRecordKey,
-    recordMetaText: (record, _payload, recordIndex, recordList) =>
-      String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
+    recordMetaText: (record, _payload, recordIndex, recordList) => {
+      const detail = historyDetailCache.get(historyRecordKey(record, recordIndex));
+      if (detail) return detail.record.action
+        ? historyActionDescription(detail.record.action, { localText })
+        : localText("No user-visible changes", "Без пользовательских изменений");
+      return String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
         ? t("history.dailyCheckpoint")
         : historyActionDescription(historyRecordAction(record, recordIndex, recordList, {
           currentComparisonState: currentHistoryComparisonState,
           recordState: historyRecordState
-        }), { localText }),
+        }), { localText });
+    },
     recordState: historyRecordState,
     recordTitle: historyRecordTitle,
     restoreTextForRecord: historyUndoActionText,
@@ -10336,9 +10349,13 @@ async function loadHistoryRecordDetail(record, index = 0) {
     action: data?.action || record?.action || null,
     historyPath
   };
-  const comparisonState = activeHistorySource === "private"
-    ? normalizeRemoteState(data?.comparisonPayload)
-    : normalizePublishedStatePayload(data?.comparisonPayload);
+  const comparisonState = historySnapshot(data?.comparisonPayload);
+  if (detailRecord.action?.entityType !== "templates") {
+    detailRecord.action = historyRecordAction({ ...detailRecord, action: null }, 0, [], {
+      recordState: historyRecordState,
+      currentComparisonState: () => comparisonState
+    });
+  }
   const detail = { record: detailRecord, comparisonState };
   historyDetailCache.set(cacheKey, detail);
   return detail;
@@ -10369,6 +10386,10 @@ async function openHistoryRecordDetails(recordKey) {
     const selectedKey = selectedHistoryDetailRecordKey;
     const detail = await loadHistoryRecordDetail(record, index);
     if (selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDetailDialog?.open) return;
+    renderHistoryRecords(historyRecords);
+    if (refs.historyDetailTitle) refs.historyDetailTitle.textContent = detail.record.action
+      ? historyActionDescription(detail.record.action, { localText })
+      : localText("No user-visible changes", "Без пользовательских изменений");
     if (refs.historyDetailContent) {
       refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(detail.record, 0, [detail.record], {
         activeSource: activeHistorySource,
@@ -10401,21 +10422,21 @@ async function openHistoryRecordDetails(recordKey) {
 
 function historyRecordState(record, source = activeHistorySource) {
   return historyRecordStateForSync(record, source, {
-    normalizePublishedStatePayload,
-    normalizeRemoteState
+    normalizePublishedStatePayload: historySnapshot,
+    normalizeRemoteState: historySnapshot
   });
 }
 
 function currentHistoryComparisonState() {
   if (activeHistorySource === "demo") {
-    return historyComparisonState ? normalizePublishedStatePayload(historyComparisonState) : null;
+    return historySnapshot(historyComparisonState);
   }
   if (activeHistorySource === "shared") {
-    return historyComparisonState ? normalizePublishedStatePayload(historyComparisonState) : null;
+    return historySnapshot(historyComparisonState);
   }
   return historyComparisonState
-    ? normalizeRemoteState(historyComparisonState)
-    : normalizeRemoteState(serializeState({ forSync: true }));
+    ? historySnapshot(historyComparisonState)
+    : historySnapshot(serializeState({ forSync: true }));
 }
 
 function historySourceLabel(source = activeHistorySource) {
@@ -10440,7 +10461,7 @@ async function restoreHistoryRecord(recordKey) {
   if (activeHistorySource === "demo" || activeHistorySource === "shared") {
     try {
       const detail = await loadHistoryRecordDetail(record, index);
-      const restoredState = historyRecordState(detail.record);
+      const restoredState = normalizePublishedStatePayload(historyRecordState(detail.record));
       if (!restoredState) throw new Error(localText("Version data is empty.", "Данные версии пусты."));
       await publishPublicHistoryRecord(detail.record, restoredState, {
         index,
