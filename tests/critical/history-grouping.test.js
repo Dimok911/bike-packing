@@ -12,6 +12,7 @@ import {
   historyRecordTitle,
   historySummaryRequestPath,
   normalizeHistorySummaryPage,
+  loadVisibleHistoryPage,
   restorableHistoryRecords,
   restorableHistorySummaryRecords,
   summarizeHistoryPayload
@@ -1559,5 +1560,68 @@ test("format-only changes produce one note comparison for items, bags and layout
     const row = buildHistoryStateDiff(before, after)[map].changed[0];
     assert.deepEqual(row.details, ["Изменена заметка"]);
     assert.deepEqual(row.detailNotes[0], { before: {text:"Text",html:""}, after:{text:"Text",html:"<strong>Text</strong>"} });
+  }
+});
+
+
+test("history visibility skips technical-only pages and preserves real actions and checkpoints", async () => {
+  const action = { entityType: "containers", operation: "changed", title: "Full" };
+  const pages = [
+    { records: [{ id: 4, action }, { id: 3, action, snapshotKind: "daily" }], pageState: { cursor: "older", hasMore: true } },
+    { records: [{ id: 2, action }, { id: 1, snapshotKind: "daily", snapshotDay: "2026-09-01" }], pageState: { hasMore: false } }
+  ];
+  const raw = structuredClone(pages), cursors = [];
+  const result = await loadVisibleHistoryPage(null, {
+    loadPage: async cursor => { cursors.push(cursor); return pages[cursors.length - 1]; },
+    inspectRecord: async record => ({ record: { ...record, action }, hasUserVisibleChanges: record.id < 3 }),
+    hasMore: page => page.hasMore
+  });
+  assert.deepEqual(result.records.map(r => r.id), [2, 1]);
+  assert.deepEqual(cursors, [null, { cursor: "older", hasMore: true }]);
+  assert.deepEqual(pages, raw, "visibility must not delete or mutate server snapshots");
+});
+
+test("history visibility bounds parallel requests and keeps failed or incomplete details", async () => {
+  const action = { entityType: "items", operation: "changed", title: "Item" };
+  const records = Array.from({ length: 8 }, (_, i) => ({ id: 8 - i, action }));
+  let active = 0, maximum = 0;
+  const result = await loadVisibleHistoryPage(null, {
+    loadPage: async () => ({ records, pageState: { hasMore: false } }),
+    inspectRecord: async record => {
+      active++; maximum = Math.max(maximum, active);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      active--;
+      if (record.id === 8) throw Error("offline");
+      return { record: { ...record, action: { ...action, title: "Verified" } }, hasUserVisibleChanges: record.id === 7 ? null : record.id === 6 };
+    },
+    hasMore: page => page.hasMore
+  });
+  assert.equal(maximum, 3);
+  assert.deepEqual(result.records.map(r => r.id), [8, 7, 6]);
+  assert.equal(result.records[2].action.title, "Verified");
+});
+
+test("history visibility cancels obsolete loads when the history source changes", async () => {
+  let current = true, inspections = 0;
+  const result = await loadVisibleHistoryPage(null, {
+    loadPage: async () => { current = false; return { records: [{ id: 1, action: {} }], pageState: {} }; },
+    inspectRecord: () => { inspections++; },
+    hasMore: () => true,
+    isCurrent: () => current
+  });
+  assert.equal(result, null);
+  assert.equal(inspections, 0);
+});
+
+test("history visibility stops empty pagination at the end or a repeated cursor", async () => {
+  for (const more of [false, true]) {
+    let calls = 0;
+    const result = await loadVisibleHistoryPage(null, {
+      loadPage: async () => { calls++; return { records: [{ id: 1, action: {} }], pageState: null }; },
+      inspectRecord: async () => ({ hasUserVisibleChanges: false }),
+      hasMore: () => more
+    });
+    assert.deepEqual(result.records, []);
+    assert.equal(calls, 1);
   }
 });

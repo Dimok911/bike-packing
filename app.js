@@ -740,6 +740,7 @@ import {
   historyRecordTitle,
   historySummaryRequestPath,
   normalizeHistorySummaryPage,
+  loadVisibleHistoryPage,
   restorableHistoryRecords,
   restorableHistorySummaryRecords,
   sortHistoryRecords,
@@ -1271,6 +1272,7 @@ let historyRecords = [];
 let historyComparisonState = null;
 let historyPageState = null;
 let historyLoadMoreInFlight = false;
+let historyRequestGeneration = 0;
 const historyDetailCache = new Map();
 let activeHistorySource = "private";
 let selectedHistoryDetailRecordKey = "";
@@ -10017,6 +10019,9 @@ function renderHistorySourceControls() {
 }
 
 async function refreshHistoryDialog() {
+  const generation = ++historyRequestGeneration;
+  const source = activeHistorySource;
+  historyLoadMoreInFlight = false;
   if (canOpenAdminPublishedEdit()) {
     try {
       const catalog = await apiFetch("/bike-packing/admin/template-records", { silentErrors: true });
@@ -10025,6 +10030,7 @@ async function refreshHistoryDialog() {
       // The already loaded local/public catalogs still keep history usable on older APIs.
     }
   }
+  if (generation !== historyRequestGeneration) return;
   renderHistorySourceControls();
   refs.historyStatus.className = "dialog-status";
   refs.historyStatus.textContent = t("history.loading");
@@ -10032,17 +10038,26 @@ async function refreshHistoryDialog() {
   historyRecords = [];
   historyPageState = null;
   try {
-    const source = activeHistorySource;
-    const result = await loadRemoteHistory(source);
-    if (source !== activeHistorySource) return;
+    const result = await loadVisibleRemoteHistory(source, null, generation);
+    if (!result || generation !== historyRequestGeneration) return;
     historyRecords = restorableHistorySummaryRecords(result.records);
     historyPageState = result.pageState;
     historyComparisonState = null;
     renderHistoryRecords(historyRecords);
   } catch (error) {
+    if (generation !== historyRequestGeneration) return;
     refs.historyStatus.className = "dialog-status error";
     refs.historyStatus.textContent = `${t("history.loadFailed")} ${error.message}`;
   }
+}
+
+function loadVisibleRemoteHistory(source, pageState, generation) {
+  return loadVisibleHistoryPage(pageState, {
+    loadPage: cursor => loadRemoteHistory(source, cursor),
+    inspectRecord: loadHistoryRecordDetail,
+    hasMore: historyPageHasMore,
+    isCurrent: () => generation === historyRequestGeneration && refs.historyDialog.open
+  });
 }
 
 async function loadCurrentHistoryComparisonState(source = activeHistorySource) {
@@ -10231,17 +10246,18 @@ async function loadMoreHistoryRecords() {
   historyLoadMoreInFlight = true;
   renderHistoryRecords(historyRecords);
   const source = activeHistorySource;
+  const generation = historyRequestGeneration;
   let loadError = null;
   try {
-    const result = await loadRemoteHistory(source, historyPageState);
-    if (source !== activeHistorySource) return;
+    const result = await loadVisibleRemoteHistory(source, historyPageState, generation);
+    if (!result || generation !== historyRequestGeneration) return;
     historyPageState = result.pageState;
     historyRecords = restorableHistorySummaryRecords([...historyRecords, ...result.records]);
   } catch (error) {
     loadError = error;
   } finally {
-    historyLoadMoreInFlight = false;
-    if (source === activeHistorySource) {
+    if (generation === historyRequestGeneration) {
+      historyLoadMoreInFlight = false;
       renderHistoryRecords(historyRecords);
       if (loadError) {
         refs.historyStatus.className = "dialog-status error";
@@ -10274,13 +10290,12 @@ function renderHistoryRecords(records) {
     publishText: t("history.publishVersion"),
     recordKey: historyRecordKey,
     recordMetaText: (record, _payload, recordIndex, recordList) => {
+      if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") return t("history.dailyCheckpoint");
       const detail = historyDetailCache.get(historyRecordKey(record, recordIndex));
       if (detail) return detail.record.action
         ? historyActionDescription(detail.record.action, { localText })
         : localText("No user-visible changes", "Без пользовательских изменений");
-      return String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
-        ? t("history.dailyCheckpoint")
-        : historyActionDescription(historyRecordAction(record, recordIndex, recordList, {
+      return historyActionDescription(historyRecordAction(record, recordIndex, recordList, {
           currentComparisonState: currentHistoryComparisonState,
           recordState: historyRecordState
         }), { localText });
@@ -10333,6 +10348,7 @@ function findHistoryRecordByKey(recordKey) {
 }
 
 async function loadHistoryRecordDetail(record, index = 0) {
+  const generation = historyRequestGeneration;
   const cacheKey = historyRecordKey(record, index);
   if (historyDetailCache.has(cacheKey)) return historyDetailCache.get(cacheKey);
   const historyPath = String(record?.historyPath || "").trim();
@@ -10350,14 +10366,21 @@ async function loadHistoryRecordDetail(record, index = 0) {
     historyPath
   };
   const comparisonState = historySnapshot(data?.comparisonPayload);
-  if (detailRecord.action?.entityType !== "templates") {
+  const recordState = historyRecordState(detailRecord);
+  if (recordState && comparisonState && detailRecord.action?.entityType !== "templates") {
     detailRecord.action = historyRecordAction({ ...detailRecord, action: null }, 0, [], {
       recordState: historyRecordState,
       currentComparisonState: () => comparisonState
     });
   }
-  const detail = { record: detailRecord, comparisonState };
-  historyDetailCache.set(cacheKey, detail);
+  const isCheckpoint = String(detailRecord.snapshotKind || detailRecord.snapshot_kind || "undo") === "daily";
+  const hasUserVisibleChanges = detailRecord.action?.entityType === "templates"
+    ? true
+    : recordState && comparisonState
+      ? isCheckpoint ? hasHistoryStateChanges(recordState, comparisonState) : Boolean(detailRecord.action)
+      : null;
+  const detail = { record: detailRecord, comparisonState, hasUserVisibleChanges };
+  if (generation === historyRequestGeneration) historyDetailCache.set(cacheKey, detail);
   return detail;
 }
 
@@ -10386,10 +10409,18 @@ async function openHistoryRecordDetails(recordKey) {
     const selectedKey = selectedHistoryDetailRecordKey;
     const detail = await loadHistoryRecordDetail(record, index);
     if (selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDetailDialog?.open) return;
+    if (detail.hasUserVisibleChanges === false) {
+      historyRecords = historyRecords.filter((item, itemIndex) => historyRecordKey(item, itemIndex) !== selectedKey);
+      refs.historyDetailDialog.close();
+      renderHistoryRecords(historyRecords);
+      return;
+    }
     renderHistoryRecords(historyRecords);
-    if (refs.historyDetailTitle) refs.historyDetailTitle.textContent = detail.record.action
-      ? historyActionDescription(detail.record.action, { localText })
-      : localText("No user-visible changes", "Без пользовательских изменений");
+    if (refs.historyDetailTitle) refs.historyDetailTitle.textContent = String(detail.record.snapshotKind || detail.record.snapshot_kind || "undo") === "daily"
+      ? t("history.dailyCheckpoint")
+      : detail.record.action
+        ? historyActionDescription(detail.record.action, { localText })
+        : localText("No user-visible changes", "Без пользовательских изменений");
     if (refs.historyDetailContent) {
       refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(detail.record, 0, [detail.record], {
         activeSource: activeHistorySource,

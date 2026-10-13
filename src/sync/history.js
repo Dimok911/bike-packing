@@ -57,6 +57,7 @@ export function restorableHistoryRecords(records, currentState, {
 export function restorableHistorySummaryRecords(records) {
   const sorted = sortHistoryRecords(Array.isArray(records) ? records : []);
   const meaningful = sorted.filter((record) => {
+    if (record.hasUserVisibleChanges === false) return false;
     const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
     return kind === "daily" || Boolean(record?.action);
   });
@@ -79,6 +80,45 @@ export function restorableHistorySummaryRecords(records) {
     seen.add(key);
     return true;
   });
+}
+
+// Inspect one summary page with bounded requests before displaying it. Empty
+// technical pages must not prevent reaching older user actions. A failed
+// inspection is unknown, never evidence that an action should be hidden.
+export async function loadVisibleHistoryPage(pageState, {
+  loadPage,
+  inspectRecord,
+  hasMore,
+  isCurrent = () => true
+}) {
+  const visited = new Set();
+  while (isCurrent()) {
+    const cursor = JSON.stringify(pageState ?? null);
+    if (visited.has(cursor)) return { records: [], pageState };
+    visited.add(cursor);
+    const page = await loadPage(pageState);
+    if (!isCurrent()) return null;
+    const records = [...page.records];
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, records.length) }, async () => {
+      while (next < records.length && isCurrent()) {
+        const index = next++;
+        try {
+          const detail = await inspectRecord(records[index], index);
+          if (detail?.hasUserVisibleChanges === false) {
+            records[index] = { ...records[index], hasUserVisibleChanges: false };
+          } else if (detail?.hasUserVisibleChanges === true) {
+            records[index] = { ...records[index], action: detail.record.action || records[index].action };
+          }
+        } catch { /* Keep the original summary available for a later retry. */ }
+      }
+    }));
+    if (!isCurrent()) return null;
+    pageState = page.pageState;
+    const visible = restorableHistorySummaryRecords(records);
+    if (visible.length || !hasMore(pageState)) return { records: visible, pageState };
+  }
+  return null;
 }
 
 export function historySummaryRequestPath(path, { cursor = "", limit = 25 } = {}) {

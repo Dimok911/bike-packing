@@ -226,3 +226,52 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
   await expect(page.locator('#itemsView')).toContainText("Насос");
   await expect(page.locator('#itemsView')).not.toContainText("Офлайн имя");
 });
+
+
+test("history list automatically omits technical pages and counts only visible entries", async ({ page }) => {
+  const before = { items: { pump: { id: "pump", name: "Насос" } }, containers: {},
+    layouts: { a: { id: "a", name: "Моя укладка", rootContainerIds: [], arrangement: { items: {}, containers: {} } } }, activeLayoutId: "a" };
+  const after = structuredClone(before); after.items.pump.name = "Насос Full";
+  const technical = structuredClone(after); technical.layouts.a.arrangement.itemQuantityMigrationVersion = 3;
+  const action = { entityType: "items", operation: "changed", title: "Техническая запись" };
+  const list = { id: "history-list", title: "Мой список", payload: technical };
+  const requests = [];
+  await page.route("**/letters-vniipo/api/**", async route => {
+    const url = new URL(route.request().url()), path = url.pathname;
+    let data;
+    if (path.endsWith("/auth/me")) data = { ok: true, user: { id: "history-user", email: "history@example.test" }, session: { expiresAt: "2030-01-01T00:00:00Z" } };
+    else if (path.endsWith("/bike-packing/authorization")) data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
+    else if (path.endsWith("/bike-packing/lists")) data = { ok: true, lists: [list] };
+    else if (path.endsWith("/history-list/history")) {
+      requests.push(url.searchParams.get("cursor") || "first");
+      data = url.searchParams.has("cursor")
+        ? { ok: true, records: [{ id: 2, listId: list.id, action, createdAt: "2026-10-13T20:25:00Z" }, { id: 1, listId: list.id, snapshotKind: "daily", createdAt: "2026-10-12T20:25:00Z" }], page: { hasMore: false, nextCursor: "" } }
+        : { ok: true, records: [{ id: 3, listId: list.id, action, createdAt: "2026-10-14T00:05:00Z" }], page: { hasMore: true, nextCursor: "older" } };
+    } else if (path.endsWith("/history-list/history/3")) data = { ok: true, record: { id: 3, payload: after }, comparisonPayload: technical, action };
+    else if (path.endsWith("/history-list/history/2")) data = { ok: true, record: { id: 2, payload: before }, comparisonPayload: after, action };
+    else if (path.endsWith("/history-list/history/1")) data = { ok: true, record: { id: 1, snapshotKind: "daily", payload: before }, comparisonPayload: after };
+    else if (path.endsWith("/bike-packing/lists/history-list")) data = { ok: true, record: list };
+    if (data) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
+    return route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false}' });
+  });
+  await page.goto("/"); await waitForApp(page);
+  await page.locator('#menuBtn').click(); await page.locator('#historyBtn').click();
+  await expect(page.locator('#historyList [data-history-record]')).toHaveCount(2);
+  await expect(page.locator('#historyStatus')).toContainText('найдено версий: 2');
+  await expect(page.locator('#historyList')).toContainText('Изменена вещь «Насос Full»');
+  await expect(page.locator('#historyList')).not.toContainText('Техническая запись');
+  await expect(page.locator('#historyList [data-history-load-more]')).toHaveCount(0);
+  expect(requests).toEqual(['first', 'older']);
+  await expect(page.locator('#historyList')).toContainText('Итоговая точка дня');
+  await expect(page.locator('#historyList')).not.toContainText('Без пользовательских изменений');
+  await page.locator('#historyList [data-history-record]').filter({ hasText: 'Итоговая точка дня' }).locator('[data-history-detail]').click();
+  await expect(page.locator('#historyDetailTitle')).toHaveText('Итоговая точка дня');
+  await page.locator('#historyDetailDialog [aria-label="Закрыть"]').click();
+  await page.locator('#historyList [data-history-record]').filter({ hasText: 'Насос Full' }).locator('[data-history-detail]').click();
+  await expect(page.locator('#historyDetailContent')).toContainText('Насос → Насос Full');
+  await page.locator('#historyDetailDialog [aria-label="Закрыть"]').click();
+  await page.locator('#historyList [data-history-record]').filter({ hasText: 'Насос Full' }).locator('[data-restore-history]').click();
+  await expect(page.locator('#confirmDialog')).toBeVisible();
+  await expect(page.locator('#confirmDialog')).not.toContainText('более поздних');
+  await page.locator('#confirmCancelBtn').click();
+});
