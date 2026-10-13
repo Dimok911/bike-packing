@@ -27,8 +27,14 @@ export function comparableHistorySnapshots(before, after) {
       const candidates = Object.keys(to.containers || {}).filter((key) =>
         key === baseId || (key.startsWith(`${baseId}-`) && /^[1-9]\d*$/.test(key.slice(baseId.length + 1)) && Number(key.slice(baseId.length + 1)) >= 2)
       );
-      if (candidates.length !== 1 || oldArrangement.containers[candidates[0]]) continue;
-      const nextId = candidates[0];
+      // Old clients could allocate a suffixed ID while an earlier catalog-only
+      // copy was already present. The actual layout placement disambiguates
+      // these identities; matching display names cannot do that safely.
+      const placedCandidates = candidates.filter(key => newArrangement.containers[key]);
+      const matchingCandidates = !newArrangement.containers[id] && placedCandidates.length
+        ? placedCandidates : candidates;
+      if (matchingCandidates.length !== 1 || oldArrangement.containers[matchingCandidates[0]]) continue;
+      const nextId = matchingCandidates[0];
       if (!to.containers?.[nextId]) continue;
       if (!from.containers[nextId]) from.containers[nextId] = { ...clonePlain(source), id: nextId };
       if (!newArrangement.containers[id] && newArrangement.containers[nextId]) replacements.set(id, nextId);

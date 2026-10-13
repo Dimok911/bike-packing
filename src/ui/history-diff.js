@@ -639,7 +639,10 @@ function historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toSta
 
 function historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText = historyRuText) {
   const definitions = historyFieldDefinitions(type, localText);
-  const withoutQuantities = (arrangement = {}) => { const { itemQuantities, ...placement } = arrangement || {}; return placement; };
+  const withoutQuantities = (arrangement = {}) => {
+    const { itemQuantities, itemQuantityMigrationVersion, ...placement } = arrangement || {};
+    return placement;
+  };
   const placementChanged = type === "layout" && (
     !snapshotsEqual(beforeValue?.rootContainerIds, afterValue?.rootContainerIds)
     || !snapshotsEqual(withoutQuantities(beforeValue?.arrangement), withoutQuantities(afterValue?.arrangement))
