@@ -20,16 +20,18 @@ export function comparableHistorySnapshots(before, after) {
     const replacements = new Map();
     for (const [id, placement] of Object.entries(oldArrangement.containers)) {
       const source = from.containers?.[id];
-      if (!source || source.nestable === true || !placement?.parentId || newArrangement.containers[id]) continue;
+      if (!source || source.nestable === true || !placement?.parentId) continue;
       const baseId = temporaryContainerId(layout.id || layoutId, id);
-      const candidates = Object.keys(newArrangement.containers).filter((key) =>
+      // Entity sync writes the new catalog record before its layout placement.
+      // The intermediate history snapshot still points at the original ID.
+      const candidates = Object.keys(to.containers || {}).filter((key) =>
         key === baseId || (key.startsWith(`${baseId}-`) && /^[1-9]\d*$/.test(key.slice(baseId.length + 1)) && Number(key.slice(baseId.length + 1)) >= 2)
       );
       if (candidates.length !== 1 || oldArrangement.containers[candidates[0]]) continue;
       const nextId = candidates[0];
       if (!to.containers?.[nextId]) continue;
-      replacements.set(id, nextId);
-      from.containers[nextId] = { ...clonePlain(source), id: nextId };
+      if (!from.containers[nextId]) from.containers[nextId] = { ...clonePlain(source), id: nextId };
+      if (!newArrangement.containers[id] && newArrangement.containers[nextId]) replacements.set(id, nextId);
     }
     if (!replacements.size) continue;
     const replace = (id) => replacements.get(id) || id;

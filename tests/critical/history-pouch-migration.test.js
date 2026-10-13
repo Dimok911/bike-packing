@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isolateLinkedLayoutEntities } from "../../src/state/layout-entity-isolation.js";
-import { recoverMissingTemporaryContainers } from "../../src/state/layout-temporary-containers.js";
+import { recoverMissingTemporaryContainers, temporaryContainerId } from "../../src/state/layout-temporary-containers.js";
 import { historySnapshot } from "../../src/sync/history-snapshot.js";
 import { buildHistoryStateDiff } from "../../src/ui/history-diff.js";
 import { buildChangedEntitySyncEntries } from "../../src/sync/entity-sync.js";
@@ -52,6 +52,26 @@ test("history: rename survives identity migration while real moves and removals 
   assert.equal(diff.layouts.changed.length, 1);
   delete after.items.pump;
   assert.equal(buildHistoryStateDiff(before, after).items.removed.length, 1);
+});
+
+test("history: catalog-first entity sync reports rename before the layout phase arrives", () => {
+  const before = fixture(), intermediate = structuredClone(before);
+  const id = temporaryContainerId("a", "pouch");
+  intermediate.containers[id] = { ...before.containers.pouch, id, name: "Full" };
+  const diff = buildHistoryStateDiff(before, intermediate);
+  assert.equal(diff.containers.added.length, 0);
+  assert.equal(diff.containers.changed.length, 1);
+  assert.match(diff.containers.changed[0].details.join(" "), /Light.*Full/);
+  const after = structuredClone(before); isolateLinkedLayoutEntities(after);
+  after.containers[id].name = "Full";
+  const layoutPhase = buildHistoryStateDiff(intermediate, after);
+  assert.deepEqual(layoutPhase.containers.changed, [], "do not overwrite the already stored independent name");
+  assert.deepEqual(layoutPhase.layouts.changed, []);
+  const resumed = structuredClone(intermediate);
+  isolateLinkedLayoutEntities(resumed);
+  assert.equal(resumed.layouts.a.arrangement.items.pump, id);
+  assert.equal(resumed.containers[id].name, "Full");
+  assert.equal(resumed.containers[`${id}-2`], undefined);
 });
 
 test("recovered migration catalog entries stay absent from the remote baseline and are sent", () => {

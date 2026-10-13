@@ -39,8 +39,11 @@ export function isolateTemporaryContainersForLayout(state, layout, { applyToCurr
     // "-isolated-" marker, whose records are intentionally merged by repair.
     const baseId = temporaryContainerId(layout.id, id);
     let copyId = baseId;
-    for (let suffix = 2; state.containers[copyId]; suffix += 1) copyId = `${baseId}-${suffix}`;
-    state.containers[copyId] = { ...clonePlain(source), ...clonePlain(placement), id: copyId };
+    const isPlaced = (candidate) => Object.values(state.layouts || {}).some(other => other?.arrangement?.containers?.[candidate]);
+    // A prior entity-sync phase may already have saved this exact migration
+    // record, including a user rename, before the layout references arrived.
+    for (let suffix = 2; state.containers[copyId] && isPlaced(copyId); suffix += 1) copyId = `${baseId}-${suffix}`;
+    state.containers[copyId] = { ...clonePlain(state.containers[copyId] || source), ...clonePlain(placement), id: copyId };
     if (Object.hasOwn(state.collapsedContainers || {}, id)) {
       state.collapsedContainers[copyId] = state.collapsedContainers[id];
     }
