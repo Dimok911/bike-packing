@@ -115,7 +115,11 @@ export function mergeStateFromBase(baseState, localState, remoteState, {
   merged.collapsedContainers = cloneValue(localState.collapsedContainers || remoteState.collapsedContainers || {});
   merged.packedItems = mergeRecordMap("packed", baseState.packedItems || {}, localState.packedItems || {}, remoteState.packedItems || {}, conflicts, mergeRecordMapOptions);
 
-  ["activeLayoutId", "collapseDefaultsVersion"].forEach((key) => {
+  // The open tab is device-local and deliberately absent from sync payloads.
+  // A raw server baseline must not turn two navigation choices into a conflict.
+  merged.activeLayoutId = [localState.activeLayoutId, remoteState.activeLayoutId]
+    .find(id => id && merged.layouts[id]) || Object.keys(merged.layouts)[0] || "";
+  ["collapseDefaultsVersion"].forEach((key) => {
     merged[key] = mergeScalarField(key, baseState[key], localState[key], remoteState[key], conflicts, mergeScalarFieldOptions);
   });
   merged.itemDisplayMode = normalizeItemDisplayMode(localState.itemDisplayMode);

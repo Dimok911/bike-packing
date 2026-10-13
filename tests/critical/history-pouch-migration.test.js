@@ -8,6 +8,10 @@ import { buildChangedEntitySyncEntries } from "../../src/sync/entity-sync.js";
 import { cloneStateForSyncPayload } from "../../src/sync/serialize.js";
 import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { rememberLayoutEntityRepairBaseState } from "../../src/state/layout-entity-isolation.js";
+import { mergeStateFromBase } from "../../src/sync/state-merge.js";
+import { snapshotsEqual } from "../../src/utils/json.js";
+import { createQueuedRemoteSave } from "../../src/sync/save-queue.js";
+import { handleRemoteSaveConflictFlow } from "../../src/sync/save-remote-state-flow.js";
 
 function fixture() {
   const arrangement = {
@@ -21,6 +25,44 @@ function fixture() {
     items: { pump: { id: "pump", name: "Pump" } },
     layouts: Object.fromEntries(["a", "b"].map(id => [id, { id, name: id, rootContainerIds: ["bag"], arrangement: structuredClone(arrangement) }])) };
 }
+
+test("raw sync baseline preserves the local open layout without hiding data conflicts", () => {
+  const base = fixture(), local = structuredClone(base), remote = structuredClone(base);
+  local.activeLayoutId = "a"; remote.activeLayoutId = "b";
+  local.items.pump.name = "Local pump"; remote.items.pump.name = "Remote pump";
+  const result = mergeStateFromBase(base, local, remote, { valuesEqual: snapshotsEqual });
+  assert.equal(result.merged.activeLayoutId, "a");
+  assert.deepEqual(result.conflicts.map(c => c.type), ["item"]);
+  delete remote.layouts.a;
+  const removed = mergeStateFromBase(base, structuredClone(base), remote, { valuesEqual: snapshotsEqual });
+  assert.equal(removed.merged.activeLayoutId, "b");
+});
+
+test("conflict recovery inside an active save completes instead of awaiting its own queue", async () => {
+  const base = fixture(), remote = structuredClone(base);
+  const noop = () => {};
+  let writes = 0;
+  const runtime = { state: fixture(), syncMeta: {}, uiLanguage: "en" };
+  const save = createQueuedRemoteSave(async options => {
+    if (options.forceOverwrite) { writes += 1; return; }
+    // The actual asynchronous preflight starts after the save queue is active.
+    await Promise.resolve();
+    await handleRemoteSaveConflictFlow({ data: { record: { payload: remote } } }, { runtime, dependencies: {
+      normalizeRemoteState: s => s, stateIntegrityMetaFromResponse: () => ({}), remoteUpdatedAt: () => "now",
+      rememberConflictRemoteMeta: noop, updateSyncUi: noop, blockRemoteIntegrityFailureIfNeeded: () => false,
+      canLocalStateOverrideRemote: () => true, loadBaseState: () => base,
+      mergeStateFromBase: (b,l,r) => mergeStateFromBase(b,l,r,{valuesEqual:snapshotsEqual}),
+      filterAutoResolvedMergeConflicts: x => x, isOwnLayoutEchoConflict: () => false,
+      replaceState: s => { runtime.state = s; }, nowIso: () => "now", saveSyncMeta: noop,
+      renderPreservingPackingScroll: noop, saveRemoteState: save
+    } });
+  });
+  let timeout;
+  try {
+    await Promise.race([save({}), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("save queue deadlock")), 500); })]);
+    assert.equal(writes, 1);
+  } finally { clearTimeout(timeout); }
+});
 
 test("history: migration and an incomplete pouch snapshot never invent removals or moves", () => {
   const before = fixture(), after = structuredClone(before);

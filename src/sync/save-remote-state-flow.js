@@ -323,7 +323,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
         "The layout was changed on this device · sending without a conflict dialog...",
         "Раскладка изменена на этом устройстве · отправляю без окна конфликта..."
       ));
-      await saveRemoteState({ notify, forceOverwrite: true });
+      await saveRemoteState({ notify, forceOverwrite: true, _reentrant: true });
       return;
     }
     const resolution = await askConflictResolution(mergeResult.conflicts);
@@ -351,7 +351,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     saveSyncMeta();
     renderPreservingPackingScroll();
     updateSyncUi(localText("Conflicts merged · sending to the server...", "Конфликты объединены · отправляю на сервер..."));
-    await saveRemoteState({ notify, forceOverwrite: true });
+    await saveRemoteState({ notify, forceOverwrite: true, _reentrant: true });
     return;
   }
   if (mergeResult?.merged && !mergeResult.conflicts.length) {
@@ -361,7 +361,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     runtime.syncMeta.serverUpdatedAt = updatedAt || runtime.syncMeta.serverUpdatedAt;
     saveSyncMeta();
     renderPreservingPackingScroll();
-    await saveRemoteState({ notify, forceOverwrite: true });
+    await saveRemoteState({ notify, forceOverwrite: true, _reentrant: true });
     return;
   }
   const useLocal = await askConfirmDialog({
@@ -374,7 +374,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     cancelText: localText("Load server version", "Загрузить серверную")
   });
   if (useLocal) {
-    await saveRemoteState({ notify, forceOverwrite: true });
+    await saveRemoteState({ notify, forceOverwrite: true, _reentrant: true });
     return;
   }
   if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
