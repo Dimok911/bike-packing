@@ -1,9 +1,11 @@
 # Bike Packing Production: five-release retention
 
-Latest verified run (2026-10-14, 02:05 Moscow): live v1656; retained v1656,
-v1655, v1654, v1653 and v1652. Four application files from v1651 (2,214,222 bytes) were removed
+Latest verified run (2026-10-14, 11:01 Moscow): live v1657; retained v1657,
+v1656, v1655, v1654 and v1653. Four application files from v1652 (2,215,563 bytes) were removed
 after full archive recovery and renewed reference checks.
-See [the release and cleanup report](production-v1656-20261014.md).
+See [the release and cleanup report](production-v1657-20261014.md).
+The preceding four-file v1651 cleanup is recorded in the
+[v1656 report](production-v1656-20261014.md).
 The preceding four-file v1650 cleanup is recorded in the
 [v1655 report](production-v1655-20261014.md).
 The preceding four-file v1649 cleanup is recorded in the
