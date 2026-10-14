@@ -89,15 +89,19 @@ export async function loadVisibleHistoryPage(pageState, {
   loadPage,
   inspectRecord,
   hasMore,
+  minimumRecords = 1,
   onProgress = null,
   isCurrent = () => true
 }) {
   const visited = new Set();
+  const verified = [];
+  const target = Math.max(1, Number(minimumRecords) || 1);
   while (isCurrent()) {
     const cursor = JSON.stringify(pageState ?? null);
-    if (visited.has(cursor)) return { records: [], pageState };
+    if (visited.has(cursor)) return { records: restorableHistorySummaryRecords(verified), pageState };
     visited.add(cursor);
-    const page = await loadPage(pageState);
+    const remaining = Math.max(1, target - restorableHistorySummaryRecords(verified).length);
+    const page = await loadPage(pageState, remaining);
     if (!isCurrent()) return null;
     const records = [...page.records];
     for (let index = 0; index < records.length; index++) {
@@ -115,16 +119,17 @@ export async function loadVisibleHistoryPage(pageState, {
         hasUserVisibleChanges: detail.hasUserVisibleChanges,
         action: detail.record?.action || records[index].action
       };
+      verified.push(records[index]);
       if (onProgress && detail.hasUserVisibleChanges) {
-        const verifiedActions = restorableHistorySummaryRecords(records.slice(0, index + 1)
+        const verifiedActions = restorableHistorySummaryRecords(verified
           .filter(record => String(record.snapshotKind || record.snapshot_kind || "undo") !== "daily"));
         if (verifiedActions.length) onProgress(verifiedActions);
       }
     }
     if (!isCurrent()) return null;
     pageState = page.pageState;
-    const visible = restorableHistorySummaryRecords(records);
-    if (visible.length || !hasMore(pageState)) return { records: visible, pageState };
+    const visible = restorableHistorySummaryRecords(verified);
+    if (visible.length >= target || !hasMore(pageState)) return { records: visible, pageState };
   }
   return null;
 }

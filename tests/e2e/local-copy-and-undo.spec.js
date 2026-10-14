@@ -237,6 +237,54 @@ test("local undo restores an offline rename after a browser reload", async ({ pa
 });
 
 
+test("history fills ten visible rows and loads the next ten only when scrolled", async ({ page }) => {
+  const payload = { items: {}, containers: {}, locations: [], categories: [], layouts: {
+    a: { id: "a", name: "Моя укладка", rootContainerIds: [], arrangement: { rootContainerIds: [], items: {}, containers: {} } }
+  }, activeLayoutId: "a" };
+  const requests = [];
+  let detailRequests = 0;
+  await page.route("**/letters-vniipo/api/**", async route => {
+    const url = new URL(route.request().url()), path = url.pathname;
+    let data;
+    const list = { id: "paged-history", title: "Мой список", payload };
+    if (path.endsWith("/auth/me")) data = { ok: true, user: { id: "pagination-user", email: "pagination@example.test" }, session: { expiresAt: "2030-01-01T00:00:00Z" } };
+    else if (path.endsWith("/bike-packing/authorization")) data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
+    else if (path.endsWith("/bike-packing/lists")) data = { ok: true, lists: [list] };
+    else if (path.endsWith("/paged-history/history")) {
+      const cursor = Number(url.searchParams.get("cursor") || 0);
+      const limit = Number(url.searchParams.get("limit"));
+      requests.push({ cursor, limit });
+      // A raw page with ten snapshots has only two meaningful entries.
+      const count = cursor === 0 ? 2 : Math.min(limit, 23 - cursor);
+      const next = cursor + count;
+      data = { ok: true, records: Array.from({ length: count }, (_, index) => ({
+        id: 100 - cursor - index, listId: list.id, createdAt: new Date(Date.UTC(2026, 9, 14, 0, 0, 100 - cursor - index)).toISOString(),
+        comparisonVersion: "visible-v1", hasUserVisibleChanges: true,
+        action: { entityType: "items", operation: "changed", title: `Вещь ${100 - cursor - index}` }
+      })), page: { hasMore: next < 23, nextCursor: String(next) } };
+    } else if (/\/history\/\d+$/.test(path)) detailRequests++;
+    else if (path.endsWith("/bike-packing/lists/paged-history")) data = { ok: true, record: list };
+    return route.fulfill({ status: data ? 200 : 503, contentType: "application/json", body: JSON.stringify(data || { ok: false }) });
+  });
+  await page.goto("/"); await waitForApp(page);
+  await page.locator('#menuBtn').click();
+  await page.locator('#historyBtn').click();
+  const rows = page.locator('#historyList [data-history-record]');
+  await expect(rows).toHaveCount(10);
+  await expect(page.locator('#historyStatus')).toContainText('загружено записей: 10');
+  expect(requests).toEqual([{ cursor: 0, limit: 10 }, { cursor: 2, limit: 8 }]);
+  await page.locator('#historyList').evaluate(list => { list.scrollTop = list.scrollHeight; });
+  await expect(rows).toHaveCount(20);
+  await expect(page.locator('#historyStatus')).toContainText('загружено записей: 20');
+  expect(requests.at(-1)).toEqual({ cursor: 10, limit: 10 });
+  await page.locator('#historyList').evaluate(list => { list.scrollTop = list.scrollHeight; });
+  await expect(rows).toHaveCount(23);
+  await expect(page.locator('[data-history-load-more]')).toHaveCount(0);
+  expect(requests).toHaveLength(4);
+  expect(detailRequests).toBe(0);
+  expect(new Set(await rows.evaluateAll(entries => entries.map(entry => entry.dataset.historyRecord))).size).toBe(23);
+});
+
 for (const failFirstComparison of [false, true, "verified"]) {
 test(`history list automatically omits technical pages and counts only visible entries (retry: ${failFirstComparison})`, async ({ page }) => {
   const verifiedSummary = failFirstComparison === "verified";
@@ -261,7 +309,7 @@ test(`history list automatically omits technical pages and counts only visible e
     else if (path.endsWith("/bike-packing/authorization")) data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
     else if (path.endsWith("/bike-packing/lists")) data = { ok: true, lists: [list] };
     else if (path.endsWith("/history-list/history")) {
-      expect(url.searchParams.get("limit")).toBe("5");
+      expect(url.searchParams.get("limit")).toBe("10");
       expect(url.searchParams.get("comparison")).toBe("visible-v1");
       requests.push(url.searchParams.get("cursor") || "first");
       if (verifiedSummary) return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,records:[
@@ -329,7 +377,7 @@ test(`history list automatically omits technical pages and counts only visible e
   }
   await expect(page.locator('#historyDetailDialog')).toBeVisible();
   await page.locator('#historyDetailDialog [aria-label="Закрыть"]').click();
-  await expect(page.locator('#historyStatus')).toContainText('найдено версий: 2');
+  await expect(page.locator('#historyStatus')).toContainText('загружено записей: 2');
   await expect(page.locator('#historyList')).toContainText('Изменена вещь «Насос Full»');
   await expect(page.locator('#historyList')).not.toContainText('Техническая запись');
   await expect(page.locator('#historyList [data-history-load-more]')).toHaveCount(0);

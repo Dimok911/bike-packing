@@ -10165,7 +10165,8 @@ async function refreshHistoryDialog() {
 function loadVisibleRemoteHistory(source, pageState, generation) {
   const previousRecords = [...historyRecords];
   return loadVisibleHistoryPage(pageState, {
-    loadPage: cursor => loadRemoteHistory(source, cursor),
+    minimumRecords: 10,
+    loadPage: (cursor, remaining) => loadRemoteHistory(source, cursor, remaining),
     inspectRecord: loadHistoryRecordDetail,
     onProgress: verifiedRecords => {
       if (generation !== historyRequestGeneration || !refs.historyDialog.open) return;
@@ -10200,7 +10201,7 @@ function historyPageHasMore(pageState = historyPageState) {
   return Boolean(pageState.hasMore);
 }
 
-async function loadRemoteHistory(source = "private", pageState = null) {
+async function loadRemoteHistory(source = "private", pageState = null, limit = 10) {
   let path = "";
   if (source === "demo") {
     const target = selectedHistoryDemoTarget();
@@ -10214,11 +10215,11 @@ async function loadRemoteHistory(source = "private", pageState = null) {
     if (!sharedId) throw new Error("Нет shared-укладок для истории.");
     path = `/bike-packing/admin/shared-layouts/${encodeURIComponent(sharedId)}/history`;
   } else {
-    return loadPrivateRemoteHistory(pageState);
+    return loadPrivateRemoteHistory(pageState, limit);
 
   }
   const cursor = pageState?.type === "single" ? pageState.cursor : "";
-  const data = await apiFetch(historySummaryRequestPath(path, { cursor, limit: 5 }));
+  const data = await apiFetch(historySummaryRequestPath(path, { cursor, limit }));
   const page = normalizeHistorySummaryPage(data);
   return {
     records: page.records.map((record) => ({
@@ -10235,13 +10236,13 @@ async function loadRemoteHistory(source = "private", pageState = null) {
   };
 }
 
-async function loadPrivateRemoteHistory(pageState = null) {
+async function loadPrivateRemoteHistory(pageState = null, limit = 10) {
   if (pageState?.type === "private") {
     const pendingTargets = pageState.targets.filter((target) => target.hasMore);
     const results = await Promise.allSettled(pendingTargets.map(async (target) => {
       const data = await apiFetch(historySummaryRequestPath(target.path, {
         cursor: target.cursor,
-        limit: 5
+        limit
       }), { timeoutMs: LIST_API_TIMEOUT_MS });
       return { target, page: normalizeHistorySummaryPage(data) };
     }));
@@ -10316,7 +10317,7 @@ async function loadPrivateRemoteHistory(pageState = null) {
     };
   });
   const results = await Promise.allSettled(targets.map(async (target) => {
-    const data = await apiFetch(historySummaryRequestPath(target.path, { limit: 5 }), {
+    const data = await apiFetch(historySummaryRequestPath(target.path, { limit }), {
       timeoutMs: LIST_API_TIMEOUT_MS
     });
     return { target, page: normalizeHistorySummaryPage(data) };

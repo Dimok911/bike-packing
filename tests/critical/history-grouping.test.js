@@ -1582,6 +1582,45 @@ test("history visibility skips technical-only pages and preserves real actions a
   assert.deepEqual(pages, raw, "visibility must not delete or mutate server snapshots");
 });
 
+test("history fills ten visible entries across partial pages, then resumes from the last cursor", async () => {
+  const action = { title: "Pump", entityType: "items", operation: "changed" };
+  const row = id => ({ id, action, comparisonVersion: "visible-v1", hasUserVisibleChanges: true });
+  const pages = [
+    { records: [row(20), row(19)], pageState: { cursor: "second", hasMore: true } },
+    { records: [row(18), row(17), row(16)], pageState: { cursor: "third", hasMore: true } },
+    { records: [15, 14, 13, 12, 11].map(row), pageState: { cursor: "fourth", hasMore: true } },
+    { records: [10, 9].map(row), pageState: { hasMore: false } }
+  ];
+  const requests = [], progress = [];
+  const options = {
+    minimumRecords: 10,
+    loadPage: async (cursor, limit) => { requests.push({ cursor, limit }); return pages[requests.length - 1]; },
+    inspectRecord: () => { throw Error("Verified summary must not download snapshots"); },
+    hasMore: page => page.hasMore,
+    onProgress: records => progress.push(records.map(record => record.id))
+  };
+  const first = await loadVisibleHistoryPage(null, options);
+  assert.deepEqual(first.records.map(record => record.id), [20, 19, 18, 17, 16, 15, 14, 13, 12, 11]);
+  assert.deepEqual(requests.map(request => request.limit), [10, 8, 5]);
+  assert.deepEqual(progress.map(records => records.length), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const next = await loadVisibleHistoryPage(first.pageState, options);
+  assert.deepEqual(requests[3], { cursor: { cursor: "fourth", hasMore: true }, limit: 10 });
+  assert.deepEqual(next.records.map(record => record.id), [10, 9]);
+  assert.equal(next.pageState.hasMore, false);
+});
+
+test("history retains accumulated entries when a cursor repeats", async () => {
+  let calls = 0;
+  const result = await loadVisibleHistoryPage(null, {
+    minimumRecords: 10,
+    loadPage: async () => { calls++; return { records: [{ id: 1, action: {} }], pageState: null }; },
+    inspectRecord: async record => ({ record, hasUserVisibleChanges: true }),
+    hasMore: () => true
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.records.map(record => record.id), [1]);
+});
+
 test("history visibility stops on a failed comparison and retries without exposing summaries", async () => {
   const action = { entityType: "items", operation: "changed", title: "Unverified" };
   const records = [3, 2, 1].map(id => ({ id, action }));
