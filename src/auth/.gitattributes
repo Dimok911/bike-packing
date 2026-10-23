@@ -1,0 +1,4 @@
+auth-failover-client.js text eol=lf
+auth-ha-config.js text eol=lf
+shared-auth-fetch.js text eol=lf
+auth-vendor.json text eol=lf

@@ -1,0 +1,8 @@
+{
+  "source": "Dimok911/vniipo-auth",
+  "files": {
+    "auth-failover-client.js": "a36d541f55ce95b9bcdd8e0833497bca255839571c3bcffc4e955044addf29d0",
+    "auth-ha-config.js": "d8762838122c6f723f81715ed6192986826cd2fb6c54ba45bf1a3e24d6df15b9",
+    "shared-auth-fetch.js": "279e663cf509067a5c3e5c4227e496b5b4f788de954869ffbb943c616f994695"
+  }
+}

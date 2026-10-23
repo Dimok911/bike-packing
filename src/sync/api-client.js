@@ -1,3 +1,5 @@
+import {createSharedAuthFetch} from '../auth/shared-auth-fetch.js';
+const sharedAuthFetch=createSharedAuthFetch({fetchImpl:(...args)=>globalThis.fetch(...args)});
 import {
   API_BASE,
   API_TIMEOUT_MS
@@ -38,13 +40,15 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
   if (isForcedOffline()) {
     throw createNetworkError("принудительный офлайн-режим");
   }
-  const { timeoutMs = API_TIMEOUT_MS, silentErrors = false, ...fetchOptions } = options;
+  const authPath=/^\/auth\//.test(path);
+  const defaultTimeout=path==='/auth/request-magic-link'?65000:authPath?20000:API_TIMEOUT_MS;
+  const { timeoutMs = defaultTimeout, silentErrors = false, ...fetchOptions } = options;
   const isFormDataBody = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await sharedAuthFetch(`${API_BASE}${path}`, {
       ...fetchOptions,
       credentials: "include",
       cache: fetchOptions.cache || "no-store",
