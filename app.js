@@ -984,6 +984,7 @@ import {
   parseWeightInput
 } from "./src/utils/weight.js";
 import { createRefs } from "./src/ui/refs.js";
+import {mountMailChannelRetry} from './src/auth/mail-channel-retry.js';
 import { highlightSearchText } from "./src/ui/search-highlight.js";
 import {
   bindPhotoGalleries,
@@ -1347,6 +1348,7 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+let authMailRetry;
 const stickyFilterControlsController = createStickyFilterControlsController({
   documentRef: document,
   isSearchEditing: () => isSearchInputEditing(),
@@ -3413,6 +3415,7 @@ async function init() {
   }));
   refs.forceOfflineBtn.addEventListener("click", toggleForcedOfflineMode);
   refs.authForm.addEventListener("submit", submitAuthDialog);
+  authMailRetry=mountMailChannelRetry({form:refs.authForm,email:refs.authEmail,className:'ghost',label:()=>localText('Email not received — try another delivery method','Письмо не пришло — отправить другим способом'),send:channel=>submitAuthDialog(null,channel)});
   refs.authConfirmTitle?.addEventListener("click", () => revealAuthMagicLinkConfirmation());
   refs.authConfirmBtn?.addEventListener("click", confirmAuthMagicLink);
   refs.authMagicLink?.addEventListener("keydown", (event) => {
@@ -6741,8 +6744,8 @@ function openAuthDialog() {
   }, 0);
 }
 
-async function submitAuthDialog(event) {
-  event.preventDefault();
+async function submitAuthDialog(event,deliveryChannel='auto') {
+  event?.preventDefault();
   if (isForcedOffline()) {
     refs.authDialogStatus.className = "dialog-status error";
     refs.authDialogStatus.textContent = localText(
@@ -6762,14 +6765,16 @@ async function submitAuthDialog(event) {
     refs.authEmail.focus();
     return;
   }
+  if(!refs.authForm.reportValidity()||!authMailRetry.begin())return;
   try {
     refs.authSubmitBtn.disabled = true;
     refs.authDialogStatus.className = "dialog-status";
     refs.authDialogStatus.textContent = localText("Sending link...", "Отправляем ссылку...");
     updateSyncUi(localText("Sending sign-in link...", "Отправляем ссылку для входа..."));
-    await apiFetch("/auth/request-magic-link", {
+    const delivery=await apiFetch("/auth/request-magic-link", {
       method: "POST",
       body: JSON.stringify({
+        ...(deliveryChannel==='auto'?{}:{deliveryChannel}),
         email,
         language: uiLanguage,
         redirectUrl: location.origin === "https://vniipo-help.ru"
@@ -6777,6 +6782,7 @@ async function submitAuthDialog(event) {
           : location.href
       })
     });
+    authMailRetry.accepted(delivery,email);
     prepareGuestLoginHandoff(email);
     saveAuthEmail(email);
     refs.authDialogStatus.className = "dialog-status success";
@@ -6796,6 +6802,7 @@ async function submitAuthDialog(event) {
     ));
   } finally {
     refs.authSubmitBtn.disabled = false;
+    authMailRetry.finish();
   }
 }
 
