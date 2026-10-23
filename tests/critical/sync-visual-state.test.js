@@ -153,10 +153,7 @@ test("Safari navigator.onLine=false cannot prevent a real API request", async ()
     configurable: true,
     value: async () => {
       requestCount += 1;
-      return {
-        ok: true,
-        json: async () => ({ ok: true, user: { id: "user-1" } })
-      };
+      return Response.json({ok:true,user:{id:'user-1'},session:{id:'session-1'}});
     }
   });
   try {
