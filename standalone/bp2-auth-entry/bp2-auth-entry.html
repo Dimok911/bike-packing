@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1">
+ <meta name="referrer" content="no-referrer">
+ <meta name="robots" content="noindex,nofollow">
+ <title>Вход — Experiment</title>
+ <link rel="stylesheet" href="./styles.css">
+ <style>
+  .bp2-entry-shell{max-width:480px;margin:32px auto;padding:16px}
+  .bp2-entry-shell .dialog-card{width:100%;box-sizing:border-box}
+  .bp2-entry-shell footer,.bp2-entry-shell [data-bp2-entry-actions]{display:flex;flex-wrap:wrap;gap:12px}
+  .bp2-entry-shell [hidden]{display:none!important}
+  .bp2-entry-shell button{white-space:normal}
+ </style>
+</head>
+<body>
+ <main class="bp2-entry-shell">
+  <section class="dialog-card auth-dialog-card" aria-labelledby="entry-title">
+   <header><h1 id="entry-title">Вход</h1></header>
+   <p class="dialog-note">Подтвердите вход в Experiment по ссылке из письма.</p>
+   <p class="dialog-status" data-entry-status role="status" aria-live="polite"></p>
+   <button type="button" data-confirm-entry>Подтвердить вход</button>
+   <div data-bp2-entry-actions hidden>
+    <button type="button" data-bp2-confirm-account hidden>Использовать этот аккаунт</button>
+    <button type="button" class="ghost" data-bp2-retry hidden>Продолжить вход</button>
+   </div>
+   <footer>
+    <button type="button" class="ghost" data-bp2-cancel>Отмена</button>
+    <a data-entry-back href="https://experiment.vniipo-help.ru/">Вернуться в приложение</a>
+   </footer>
+  </section>
+ </main>
+ <script type="module" src="./src/app/bp2-confirmation-entry.js"></script>
+</body>
+</html>
