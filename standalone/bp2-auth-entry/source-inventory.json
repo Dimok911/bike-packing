@@ -1,0 +1,66 @@
+{
+  "bp2-auth-entry.html": {
+    "sha256": "503908e2f97b83b0de035abf83609f17e54ec3b752a84c7e05a58e1bbce01a1d",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "styles.css": {
+    "sha256": "dabdfee44e54dae470b028cb1e5d6afe8543c93d6017e0f98ab3db3a95b73cfd",
+    "provenance": "published-ui-long-scroll-20261020"
+  },
+  "src/app/bp2-confirmation-entry.js": {
+    "sha256": "5099295c1f810351e3bfa1c2f26a5c9e10b6672463ef5dcede185ec76b9dc747",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/ui/bp2-confirmation-entry.js": {
+    "sha256": "7525d283edd35311d9500ba1b4d15ae437e754d74aba4cede27fb428754aba7b",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/auth-entry-page.js": {
+    "sha256": "f8c809927bcddcab0ef907a13468803907f7ca0b0cf12e7d6f12925fffa011c9",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/auth-ha-config.js": {
+    "sha256": "95f8ba8435a6c8ee346f6e0c01ade362e499797beb01e74b21d6c1d33982c36e",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/bp2/entry-session-handoff.js": {
+    "sha256": "03429feea6839ed238785afab0911ef42f8670ec307b584068e30b92f28ef063",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/auth-entry-client.js": {
+    "sha256": "214c5ecb1dbe0bac924e84b6e46408b09475d23b8c4651503d085b8f35be863d",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/bp2/shared-session-issuer.js": {
+    "sha256": "cc9e8b4e1dd7de9d6a6296b8b18f3f5b212e8b6812a0b003982ba7a7fc8202c2",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/bp2/personal-app-auth.js": {
+    "sha256": "55e7e6b908c88b10401fffef414720c9897b4cee31d73e7fd00fc7a7ed03e1f1",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/auth-failover-client.js": {
+    "sha256": "2ea9cd2ee2abd29f2afe6ab10ed1a0e0b46b22632511115472ab8fefa8f3186c",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/shared-auth-fetch.js": {
+    "sha256": "279e663cf509067a5c3e5c4227e496b5b4f788de954869ffbb943c616f994695",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/config/constants.js": {
+    "sha256": "5506a323b52eeaf5af40a38f48fa14e6295b9c265c0bf623e3ea58312f87777a",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/auth/magic-link-confirmation.js": {
+    "sha256": "1af8842b1579e8b03410a18f10989085d58ee0d4b23ae8d326d684f7db653a87",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/ui/profile-settings.js": {
+    "sha256": "d5a6c218cda5ba26e5c7dee0d9cb14b4798bd4971f3127a5ada19d6b4e5c3e97",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  },
+  "src/utils/html.js": {
+    "sha256": "b3b8371632560a28287c439c78dc896dd595ba21f24729b30e787b38c3184c4b",
+    "provenance": "reviewed-auth-and-bp2-candidate"
+  }
+}
