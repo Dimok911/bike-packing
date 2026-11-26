@@ -51,13 +51,14 @@ export function resolveSyncVisualState({
   message = "",
   adminApiWarning = false,
   forcedOffline = false,
+  networkOffline = false,
   rememberedOffline = false,
   readOnlyScope = false,
   dirty = false
 } = {}) {
   const lowerMessage = message.toLowerCase();
   if (adminApiWarning) return "error";
-  if (forcedOffline) return "offline";
+  if (forcedOffline || networkOffline) return "offline";
   if (ERROR_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "error";
   if (!loggedIn && unlocked) return readOnlyScope ? "synced" : "offline";
   if (rememberedOffline) return dirty ? "dirty" : "offline";

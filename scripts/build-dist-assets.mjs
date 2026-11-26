@@ -76,72 +76,12 @@ async function writeReleaseContract(appVersion) {
   );
 }
 
-function buildServiceWorkerSource(cacheName, assets) {
-  return `const CACHE_NAME = ${JSON.stringify(cacheName)};
-const ASSETS = ${JSON.stringify(assets, null, 2)};
-
-self.addEventListener("install", (event) => {
-  self.skipWaiting();
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    ).then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
-});
-
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  const isApiRequest =
-    url.origin !== self.location.origin ||
-    url.pathname.includes("/letters-vniipo/api/") ||
-    url.pathname.endsWith("/bike-packing-data.json");
-  if (isApiRequest) return;
-  if (event.request.mode === "navigate" || url.pathname.endsWith("/") || url.pathname.endsWith("/index.html")) {
-    event.respondWith(serveAppShell(event.request));
-    return;
-  }
-  event.respondWith(
-    caches.match(event.request, { ignoreVary: true }).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    })
-  );
-});
-
-async function serveAppShell(request) {
-  // CRITICAL: offline-start. Online must refresh HTML; offline must fall back to cached app shell.
-  const cached = await caches.match("./index.html") || await caches.match("./") || await caches.match(request);
-  try {
-    const response = await fetch(request, { cache: "reload" });
-    if (response && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
-      await cache.put("./index.html", response.clone());
-      await cache.put("./", response.clone());
-    }
-    return response;
-  } catch {
-    if (cached) return cached;
-    return new Response("<!doctype html><title>Bike packing</title><meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1\\"><p>The app shell is not cached on this device yet. Open it once with internet, then it will work offline.</p>", {
-      status: 503,
-      headers: { "Content-Type": "text/html; charset=utf-8" }
-    });
-  }
-}
-`;
+async function buildServiceWorkerSource(cacheName, assets) {
+  // Keep runtime behavior identical in source and the published worker.
+  const source = await fs.readFile(path.join(rootDir, "sw.js"), "utf8");
+  return source
+    .replace(/const CACHE_NAME = [^;]+;/, () => "const CACHE_NAME = " + JSON.stringify(cacheName) + ";")
+    .replace(/const ASSETS = \[[\s\S]*?\];/, () => "const ASSETS = " + JSON.stringify(assets, null, 2) + ";");
 }
 
 await fs.mkdir(distDir, { recursive: true });
@@ -159,5 +99,5 @@ files
   .map((asset) => versionRuntimeAsset(asset, appVersion))
   .forEach((asset) => precache.add(asset));
 
-const serviceWorker = buildServiceWorkerSource(`bike-packing-prototype-${appVersion}`, [...precache].sort());
+const serviceWorker = await buildServiceWorkerSource(`bike-packing-prototype-${appVersion}`, [...precache].sort());
 await fs.writeFile(path.join(distDir, "sw.js"), serviceWorker, "utf8");

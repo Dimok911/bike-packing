@@ -27,7 +27,7 @@ test("CRITICAL offline-start: app, index and service worker cache versions stay 
 test("CRITICAL offline-start: navigation refreshes online and falls back to cached app shell", () => {
   const serviceWorker = read("sw.js");
   const serveAppShell = serviceWorker.slice(serviceWorker.indexOf("async function serveAppShell"));
-  const cachedIndex = serveAppShell.indexOf('caches.match("./index.html")');
+  const cachedIndex = serveAppShell.indexOf('cache.match(new URL("./index.html"');
   const fetchIndex = serveAppShell.indexOf("fetch(request");
   const cachedFallbackIndex = serveAppShell.indexOf("if (cached) return cached");
 
@@ -44,7 +44,7 @@ test("CRITICAL offline-start: no-store cannot bypass cached same-origin runtime 
   assert.doesNotMatch(serviceWorker, /event\.request\.cache\s*===\s*["']no-store["']/);
   assert.doesNotMatch(buildScript, /event\.request\.cache\s*===\s*["']no-store["']/);
   assert.match(serviceWorker, /if \(isApiRequest\) return/);
-  assert.match(buildScript, /if \(isApiRequest\) return/);
+  assert.ok(buildScript.includes('fs.readFile(path.join(rootDir, "sw.js"), "utf8")'));
 });
 
 test("CRITICAL offline-start: cached runtime assets ignore response Vary headers", () => {
@@ -53,7 +53,7 @@ test("CRITICAL offline-start: cached runtime assets ignore response Vary headers
   const cacheMatch = 'caches.match(event.request, { ignoreVary: true })';
 
   assert.ok(worker.includes(cacheMatch));
-  assert.ok(builder.includes(cacheMatch));
+  assert.ok(builder.includes('fs.readFile(path.join(rootDir, "sw.js"), "utf8")'));
 });
 
 test("CRITICAL offline-start: app registration activates waiting service workers", () => {

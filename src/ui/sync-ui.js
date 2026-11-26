@@ -100,6 +100,7 @@ export function updateSyncUiControls({
   currentAdminApiWarning = () => "",
   currentPublicTemplateStatusMessage = () => "",
   currentUser = null,
+  connectionState = "",
   currentUserEmail = () => "",
   disablePackingVisualStylePanel = () => {},
   document,
@@ -177,6 +178,7 @@ export function updateSyncUiControls({
     refs.mobileAdminApiWarning.textContent = adminApiWarning || "";
   }
   const syncVisualState = resolveSyncVisualState({
+    networkOffline: connectionState === "offline",
     loggedIn,
     unlocked,
     message,

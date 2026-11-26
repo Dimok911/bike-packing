@@ -39,12 +39,15 @@ test("startup language defaults to English and uses the UI language only for a k
   assert.equal(resolveAppStartupLanguage({ uiLanguage: "en", authenticated: true }), "en");
 });
 
-test("CRITICAL offline-start: normal startup stays covered until auth, catalogs, and the final render settle", () => {
+test("CRITICAL offline-start: normal startup waits briefly for auth then exposes local data while auth continues", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   const startupFlow = source.slice(source.indexOf("  appUnlocked = true;"), source.indexOf("\n}\n\nfunction createEmptyUserState"));
 
   assert.doesNotMatch(startupFlow, /if \(!sharedListId\) finishAppStartup/);
-  assert.match(startupFlow, /await checkAuthAndLoad\(\{ deferAdminTemplates: true \}\)/);
+  assert.match(startupFlow, /const authLoading = checkAuthAndLoad\(\{ deferAdminTemplates: true \}\)/);
+  assert.match(startupFlow, /await waitForStartupTask\(authLoading\)/);
+  assert.match(startupFlow, /if \(!currentUser && !signedOut\) activateOfflineRememberedSession\(\)/);
+  assert.match(startupFlow, /await authLoading/);
   assert.match(startupFlow, /onCatalogReady: resolvePublicCatalogReady/);
   assert.match(startupFlow, /await waitForStartupTask\(publicCatalogReady, \{\s*timeoutMs: PUBLIC_CATALOG_STARTUP_TIMEOUT_MS/);
   assert.match(startupFlow, /renderBeforeFinishingAppStartup\(\{ documentRef: document, render \}\)/);
