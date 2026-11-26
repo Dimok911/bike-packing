@@ -854,6 +854,7 @@ import {
   fullBackupRestoreConfirm
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
+import { createConnectivityState } from "./src/sync/connectivity-state.js";
 import { createConnectionStatusController } from "./src/ui/connection-status.js";
 import { shouldReportConnectionFailure } from "./src/sync/connection-failure-policy.js";
 import { createNetworkTransitionController } from "./src/sync/network-transition.js";
@@ -1364,6 +1365,10 @@ const desktopInputLayoutController = createDesktopInputLayoutController({
   windowRef: window
 });
 createMobileDialogFieldControls({ refs, windowRef: window });
+const connectivityState = createConnectivityState({
+  online: navigator.onLine,
+  onChange: () => updateSyncUi()
+});
 const connectionStatusController = createConnectionStatusController({
   getElement: () => refs.connectionStatus,
   getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),
@@ -3504,6 +3509,7 @@ async function init() {
   });
   const networkTransitionController = createNetworkTransitionController({
     onOnline: () => {
+      connectivityState.browserChanged(true);
       if (isForcedOffline()) {
         updateSyncUi();
         return;
@@ -3511,18 +3517,20 @@ async function init() {
       if (currentUser) {
         uploadPendingPhotos({ markDirty: true }).catch(() => null);
         syncNow();
-      } else if (isOfflineRememberedSession()) {
+      } else {
         checkAuthAndLoad({
           restoreLayoutChoice: false,
           preferredLayout: preferredCurrentLayoutRef()
         });
-      } else if (appUnlocked) {
-        updateSyncUi("Connection restored · click “Sync” to check sign-in");
       }
     },
     onOffline: () => {
       // Safari may report `offline` while LTE can still reach the API.
       // Authentication scope changes only after a real request fails.
+      connectivityState.browserChanged(false);
+      if (!isForcedOffline()) apiFetch("/auth/me", {
+        timeoutMs: 5000, connectionFailureMode: "background"
+      }).catch(() => null);
       updateSyncUi();
     }
   });
@@ -3560,6 +3568,13 @@ async function init() {
     renderGuestPublicDemoPreviewDuringAuthCheck();
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
   }
+  if (navigator.onLine === false && !sharedListId) {
+    if (!signedOut) activateOfflineRememberedSession(
+      localText("Offline · local copy", "Офлайн · локальная копия")
+    );
+    renderInitialLocalFallbackIfNeeded();
+    renderBeforeFinishingAppStartup({ documentRef: document, render });
+  }
   startRemoteStateWatcher();
   let resolvePublicCatalogReady;
   const publicCatalogReady = new Promise((resolve) => { resolvePublicCatalogReady = resolve; });
@@ -3576,7 +3591,15 @@ async function init() {
       if (signedOut) await enterSignedOutPublicMode(localText("Signed out · personal lists are hidden, local demo copy is open", "Вы вышли · личные списки скрыты, открыта локальная демо-копия"));
       else unlockOfflineState(localText("Forced offline · local layout is available", "Принудительный офлайн · локальная укладка доступна"));
     } else {
-      await checkAuthAndLoad({ deferAdminTemplates: true });
+      const authLoading = checkAuthAndLoad({ deferAdminTemplates: true });
+      if (await waitForStartupTask(authLoading) === "timeout") {
+        // A connected Wi-Fi interface can still have no route to the server.
+        // Show the saved scope while the normal auth/sync flow keeps running.
+        if (!currentUser && !signedOut) activateOfflineRememberedSession();
+        renderInitialLocalFallbackIfNeeded();
+        renderBeforeFinishingAppStartup({ documentRef: document, render });
+      }
+      await authLoading;
     }
     const publicIndexStartupStatus = await waitForStartupTask(publicCatalogReady, {
       timeoutMs: PUBLIC_CATALOG_STARTUP_TIMEOUT_MS
@@ -6096,6 +6119,7 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 
 function renderSyncUi(effectiveMessage = "") {
   updateSyncUiControls({
+    connectionState: connectivityState.current(),
     adminReportsDialogController,
     appUnlocked,
     canOpenAdminPublishedEdit,
@@ -6133,7 +6157,14 @@ function updateSyncUi(message = "") {
   const rememberedStatus = isOfflineRememberedSession()
     ? offlineRememberedStatusMessages(offlineRememberedSessionReason)
     : { sync: "" };
+  const connectivityMessage = isForcedOffline() ? "" : connectivityState.current() === "offline"
+    ? localText("Offline · work continues locally", "Офлайн · работа продолжается локально")
+    : connectivityState.current() === "checking"
+      ? localText("Checking connection…", "Проверяем соединение…")
+      : "";
+  document.body.dataset.connectionState = isForcedOffline() ? "offline" : connectivityState.current();
   const effectiveMessage = connectionStatusController.currentMessage() ||
+    connectivityMessage ||
     offlinePhotoCacheController.currentMessage() ||
     message ||
     rememberedStatus.sync;
@@ -6144,11 +6175,14 @@ function updateSyncUi(message = "") {
 
 async function apiFetch(path, options = {}) {
   const { connectionFailureMode = "auto", ...requestOptions } = options;
+  const connectivityToken = connectivityState.begin();
   try {
     const response = await apiFetchRequest(path, requestOptions, { isForcedOffline });
+    connectivityState.observe(connectivityToken, true);
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
+    if (!isForcedOffline()) connectivityState.observe(connectivityToken, !isNetworkError(error));
     if (!isForcedOffline() && isNetworkError(error) && shouldReportConnectionFailure({
       mode: connectionFailureMode,
       method: requestOptions.method
@@ -6161,11 +6195,14 @@ async function apiFetch(path, options = {}) {
 
 async function apiUploadFormData(path, options = {}) {
   const { connectionFailureMode = "auto", ...requestOptions } = options;
+  const connectivityToken = connectivityState.begin();
   try {
     const response = await apiUploadFormDataRequest(path, requestOptions, { isForcedOffline });
+    connectivityState.observe(connectivityToken, true);
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
+    if (!isForcedOffline()) connectivityState.observe(connectivityToken, !isNetworkError(error));
     if (!isForcedOffline() && isNetworkError(error) && shouldReportConnectionFailure({ mode: connectionFailureMode, method: "POST" })) {
       connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
     }
